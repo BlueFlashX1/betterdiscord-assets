@@ -1,0 +1,129 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// §1  Constants + Fallback Selectors
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const RA_PLUGIN_NAME = "RulersAuthority";
+export const RA_VERSION = "2.1.2";
+export const RA_STYLE_ID = "rulers-authority-css";
+export const RA_VARS_STYLE_ID = "rulers-authority-vars";
+export const RA_TOOLBAR_ICON_ID = "ra-toolbar-icon";
+export const RA_ICON_REINJECT_DELAY_MS = 140;
+export const RA_STATS_CACHE_TTL = 5000;
+export const RA_OBSERVER_THROTTLE_MS = 200;
+export const RA_RESIZE_MIN_WIDTH = 80;
+export const RA_PANEL_HOVER_REVEAL_MIN_MS = 500;
+export const RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
+
+// Fallback selectors — used when Webpack module extraction fails.
+// These use wildcard attribute selectors (less precise but always work).
+export const SIDEBAR_FALLBACKS = [
+  'nav[aria-label="Channels sidebar"]',
+  'nav[aria-label="Channels"]',
+  '[class*="sidebar_"][class*="container_"]',
+  '[class*="sidebar_"]',
+];
+
+// CSS-safe subset — excludes the broad [class*="sidebar_"] which also matches
+// the settings modal's navigation sidebar, causing it to collapse to width:0.
+// The first 3 selectors are specific enough for CSS targeting.
+export const SIDEBAR_CSS_SAFE = SIDEBAR_FALLBACKS.slice(0, -1);
+
+export const MEMBERS_FALLBACKS = [
+  '[class^="membersWrap_"]',
+  '[class*=" membersWrap_"]',
+  '[class*="membersWrap"]',
+];
+
+export const PROFILE_FALLBACKS = [
+  '[class*="userProfileOuter_"]',
+  '[class*="userPanelOuter_"]',
+  '[class*="profilePanel_"]',
+];
+
+export const SEARCH_FALLBACKS = [
+  '[class*="searchResultsWrap_"]',
+];
+
+export const TOOLBAR_FALLBACKS = [
+  '[aria-label="Channel header"] [class*="toolbar_"]',
+  '[class*="titleWrapper_"] [class*="toolbar_"]',
+  'header [class*="toolbar_"]',
+];
+
+export const DM_LIST_FALLBACKS = [
+  '[class*="privateChannels_"] [class*="scroller_"]',
+  '[class*="privateChannels_"] [role="list"]',
+];
+
+// Panel definition — label, hover support, which Webpack module + property to use
+export const PANEL_DEFS = {
+  sidebar: { label: "Channel Sidebar", hoverCapable: true, moduleName: "sidebar", moduleKey: "sidebarList" },
+  members: { label: "Members List",    hoverCapable: true,  moduleName: "members", moduleKey: "membersWrap" },
+  profile: { label: "User Profile",    hoverCapable: true,  moduleName: "panel",   moduleKey: "outer" },
+  search:  { label: "Search Results",  hoverCapable: false, moduleName: "search",  moduleKey: "searchResultsWrap" },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §3  Default Settings
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const DEFAULT_SETTINGS = {
+  enabled: true,
+  debugMode: false,
+  transitionSpeed: 250,
+  animationsEnabled: true,
+
+  // Panel states + widths
+  panels: {
+    sidebar: { pushed: false, hotkey: "Ctrl+Shift+R", hoverExpand: true, width: 0 },
+    members: { pushed: false, hotkey: "", hoverExpand: true, width: 0 },
+    profile: { pushed: false, hotkey: "", hoverExpand: true, width: 0 },
+    search:  { pushed: false, hotkey: "", width: 0 },
+  },
+
+  // Default panel widths (used for reset)
+  defaultWidths: {
+    sidebar: 240,
+    members: 245,
+    profile: 340,
+    search: 400,
+  },
+
+  // Hover config
+  hoverFudgePx: 15,
+  hoverRevealDelayMs: 500,
+  hoverHideDelayMs: 300,
+
+  // Per-guild micro state
+  guilds: {},
+  // { [guildId]: { hiddenChannels: [{ id, name }], crushedCategories: [{ id, name }] } }
+
+  // DM gripping
+  grippedDMs: [],
+  // [{ channelId, username }]
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §4  Shared PluginUtils
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = (f) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
+    const moduleShim = { exports: {} };
+    const factory = new Function("module", "exports", "require", source);
+    factory(moduleShim, moduleShim.exports, require);
+    const loaded = moduleShim.exports;
+    if (typeof loaded === "function") return loaded;
+    if (loaded && typeof loaded === "object" && Object.keys(loaded).length > 0) return loaded;
+    return null;
+  } catch (_) {
+    return null;
+  }
+};
+
+export let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }

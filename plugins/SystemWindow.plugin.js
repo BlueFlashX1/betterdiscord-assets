@@ -1,53 +1,337 @@
 /**
  * @name SystemWindow
- * @author BlueFlashX1
  * @description Styles Discord messages as Solo Leveling System windows — codeblock-style grouped containers. Purple for your messages (Monarch), blue for others (System).
  * @version 2.6.0
+ * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
 
-/**
- * TABLE OF CONTENTS
- * 1) Lifecycle
- * 2) Observer + Classification
- * 3) Styling
- * 4) Settings
- */
+// src/SystemWindow/styles.css
+var styles_default = `/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   SystemWindow v2.5.0 \u2014 LI-level codeblock wrapping
+   Wraps avatar + username + timestamp + message text
 
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+   Colors:
+     BLUE:   59, 130, 246  (#3b82f6) \u2014 System (others)
+     PURPLE: 155, 50, 255  (#9b32ff) \u2014 Monarch (self)
+     BG:     rgba(0, 0, 0, 0.55) \u2014 Darker codeblock background
+     R:      2px \u2014 Border radius
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   PRE-STYLE: CSS-only base applied to ALL message
+   items BEFORE JS classification. Prevents the flash
+   when Discord replaces DOM nodes on re-render.
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li[class*="messageListItem_"] {
+  background: rgba(0, 0, 0, 0.55) !important;
+  border-left: 3px solid rgba(59, 130, 246, 0.5) !important;
+  border-right: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-top: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 2px !important;
+  position: relative !important;
+  margin-left: 48px !important;
+  margin-right: 96px !important;
+  margin-top: 4px !important;
+  margin-bottom: 4px !important;
+  padding: 4px 12px 8px 8px !important;
+  transition: box-shadow 200ms ease,
+              border-color 200ms ease !important;
+}
+
+/* Mentioned messages pre-style (CSS-only) */
+li[class*="messageListItem_"]:has(div[class*="mentioned"]) {
+  border-left-color: rgba(239, 68, 68, 0.7) !important;
+  border-right-color: rgba(239, 68, 68, 0.25) !important;
+  border-top-color: rgba(239, 68, 68, 0.25) !important;
+  border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   BASE: Classified messages (JS-applied)
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo,
+li.sw-group-start,
+li.sw-group-middle,
+li.sw-group-end {
+  background: rgba(0, 0, 0, 0.55) !important;
+  border-left: 3px solid rgba(59, 130, 246, 0.5) !important;
+  border-right: 1px solid rgba(59, 130, 246, 0.2) !important;
+  position: relative !important;
+  margin-left: 48px !important;
+  margin-right: 96px !important;
+  padding: 4px 12px 8px 8px !important;
+  transition: box-shadow 200ms ease,
+              border-color 200ms ease !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   SOLO: Full border + full radius
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo {
+  border-top: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 2px !important;
+  margin-top: 12px !important;
+  margin-bottom: 12px !important;
+  padding-bottom: 10px !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   GROUP START: Top border + top radius
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-start {
+  border-top: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-bottom: none !important;
+  border-radius: 2px 2px 0 0 !important;
+  margin-top: 12px !important;
+  margin-bottom: 0 !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   GROUP MIDDLE: Side borders only
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-middle {
+  border-top: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   GROUP END: Bottom border + bottom radius
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-end {
+  border-top: none !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 0 0 2px 2px !important;
+  margin-top: 0 !important;
+  margin-bottom: 12px !important;
+  padding-bottom: 10px !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   SELF: Purple accent (Monarch)
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-self {
+  border-left-color: rgba(155, 50, 255, 0.5) !important;
+  border-right-color: rgba(155, 50, 255, 0.2) !important;
+}
+
+li.sw-self.sw-group-solo,
+li.sw-self.sw-group-start {
+  border-top-color: rgba(155, 50, 255, 0.2) !important;
+}
+
+li.sw-self.sw-group-solo,
+li.sw-self.sw-group-end {
+  border-bottom-color: rgba(155, 50, 255, 0.2) !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   HOVER: Glow on the codeblock
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo:hover,
+li.sw-group-start:hover,
+li.sw-group-middle:hover,
+li.sw-group-end:hover {
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.45),
+              0 0 40px rgba(59, 130, 246, 0.15),
+              inset 0 0 12px rgba(59, 130, 246, 0.1) !important;
+  border-left-color: rgba(59, 130, 246, 1) !important;
+}
+
+li.sw-self.sw-group-solo:hover,
+li.sw-self.sw-group-start:hover,
+li.sw-self.sw-group-middle:hover,
+li.sw-self.sw-group-end:hover {
+  box-shadow: 0 0 20px rgba(155, 50, 255, 0.6),
+              0 0 45px rgba(155, 50, 255, 0.25),
+              inset 0 0 12px rgba(155, 50, 255, 0.1) !important;
+  border-left-color: rgba(155, 50, 255, 1) !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   AVATAR: Clean circle inside codeblock
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo [class*="avatar"],
+li.sw-group-start [class*="avatar"] {
+  z-index: 1 !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   USERNAMES: System label feel
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo [class*="username"],
+li.sw-group-start [class*="username"] {
+  letter-spacing: 0.03em !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   TIMESTAMPS: Subtle metadata
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo time, li.sw-group-start time,
+li.sw-group-middle time, li.sw-group-end time,
+li.sw-group-solo [class*="timestamp"],
+li.sw-group-start [class*="timestamp"],
+li.sw-group-middle [class*="timestamp"],
+li.sw-group-end [class*="timestamp"] {
+  opacity: 0.6 !important;
+  font-size: 0.68rem !important;
+  transition: opacity 200ms ease !important;
+}
+
+li.sw-group-solo:hover time, li.sw-group-start:hover time,
+li.sw-group-middle:hover time, li.sw-group-end:hover time,
+li.sw-group-solo:hover [class*="timestamp"],
+li.sw-group-start:hover [class*="timestamp"],
+li.sw-group-middle:hover [class*="timestamp"],
+li.sw-group-end:hover [class*="timestamp"] {
+  opacity: 0.8 !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   REPLY BLOCKS: Nested mini-codeblock
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo [class*="repliedMessage"],
+li.sw-group-start [class*="repliedMessage"] {
+  background: rgba(0, 0, 0, 0.25) !important;
+  border: 1px solid rgba(59, 130, 246, 0.15) !important;
+  border-left: 2px solid rgba(59, 130, 246, 0.3) !important;
+  border-radius: 2px !important;
+  padding: 4px 8px !important;
+  margin-bottom: 4px !important;
+}
+
+li.sw-self.sw-group-solo [class*="repliedMessage"],
+li.sw-self.sw-group-start [class*="repliedMessage"] {
+  border-color: rgba(155, 50, 255, 0.15) !important;
+  border-left-color: rgba(155, 50, 255, 0.3) !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   EMBEDS: Codeblock accent
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-group-solo [class*="embedWrapper"],
+li.sw-group-start [class*="embedWrapper"],
+li.sw-group-middle [class*="embedWrapper"],
+li.sw-group-end [class*="embedWrapper"] {
+  background: rgba(0, 0, 0, 0.25) !important;
+  border: 1px solid rgba(59, 130, 246, 0.15) !important;
+  border-left: 2px solid rgba(59, 130, 246, 0.3) !important;
+  border-radius: 2px !important;
+}
+
+li.sw-self [class*="embedWrapper"] {
+  border-color: rgba(155, 50, 255, 0.15) !important;
+  border-left-color: rgba(155, 50, 255, 0.3) !important;
+}
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   MENTIONED: Crimson "Emergency Quest" accent
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+li.sw-mentioned {
+  border-left-color: rgba(239, 68, 68, 0.7) !important;
+  border-right-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+li.sw-mentioned.sw-group-solo,
+li.sw-mentioned.sw-group-start {
+  border-top-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+li.sw-mentioned.sw-group-solo,
+li.sw-mentioned.sw-group-end {
+  border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* Kill the theme's mention bg + ::before bar inside codeblocks */
+li.sw-mentioned div[class*="mentioned_"] {
+  background: transparent !important;
+}
+li.sw-mentioned div[class*="mentioned_"]::before {
+  display: none !important;
+}
+
+/* Kill Discord's native message hover highlight inside codeblocks */
+li.sw-group-solo div[class*="message_"]:hover,
+li.sw-group-start div[class*="message_"]:hover,
+li.sw-group-middle div[class*="message_"]:hover,
+li.sw-group-end div[class*="message_"]:hover,
+li.sw-group-solo div[role="article"]:hover,
+li.sw-group-start div[role="article"]:hover,
+li.sw-group-middle div[role="article"]:hover,
+li.sw-group-end div[role="article"]:hover {
+  background: transparent !important;
+}
+
+/* Mentioned hover: crimson glow */
+li.sw-mentioned.sw-group-solo:hover,
+li.sw-mentioned.sw-group-start:hover,
+li.sw-mentioned.sw-group-middle:hover,
+li.sw-mentioned.sw-group-end:hover {
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.5),
+              0 0 40px rgba(239, 68, 68, 0.2),
+              inset 0 0 12px rgba(239, 68, 68, 0.1) !important;
+  border-left-color: rgba(239, 68, 68, 1) !important;
+}
+`;
+
+// src/SystemWindow/index.js
 function _bdLoad(fileName) {
   if (!fileName) return null;
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
+    const fs = require("fs");
+    const path = require("path");
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
     const moduleObj = { exports: {} };
     const factory = new Function(
-      'module',
-      'exports',
-      'require',
-      'BdApi',
-      `${source}\nreturn module.exports || exports || null;`
+      "module",
+      "exports",
+      "require",
+      "BdApi",
+      `${source}
+return module.exports || exports || null;`
     );
     const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
     const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === 'function') return candidate;
-    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {}
+    if (typeof candidate === "function") return candidate;
+    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {
+  }
   return null;
 }
-
-let _PluginUtils;
-try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
-
-const SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
-
+var _PluginUtils;
+try {
+  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+} catch (_) {
+  _PluginUtils = null;
+}
+var SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
 module.exports = class SystemWindow {
   constructor() {
     this._STYLE_ID = "system-window-css";
     this._defaultSettings = {
       enabled: true,
-      debugMode: false,
+      debugMode: false
     };
     this.settings = structuredClone(this._defaultSettings);
     this._observer = null;
@@ -57,24 +341,21 @@ module.exports = class SystemWindow {
     this._classifyRAF = null;
     this._started = false;
   }
-
   /* ═══════════════════════════════════════════════
      §1  Lifecycle
      ═══════════════════════════════════════════════ */
-
   start() {
+    var _a, _b, _c;
     if (this._started) {
       this.stop();
     }
-
-    this._toast = _PluginUtils?.createToastHelper?.("systemWindow") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "systemWindow")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this.settings = {
       ...this._defaultSettings,
-      ...(BdApi.Data.load("SystemWindow", "settings") || {}),
+      ...BdApi.Data.load("SystemWindow", "settings") || {}
     };
-    // Cache current user ID for self-message detection (purple vs blue)
     try {
-      this._currentUserId = BdApi.Webpack.getStore("UserStore")?.getCurrentUser()?.id || null;
+      this._currentUserId = ((_c = (_b = BdApi.Webpack.getStore("UserStore")) == null ? void 0 : _b.getCurrentUser()) == null ? void 0 : _c.id) || null;
     } catch (e) {
       this._currentUserId = null;
     }
@@ -83,9 +364,8 @@ module.exports = class SystemWindow {
       this._attachObserver();
     }
     this._started = true;
-    this._toast("SystemWindow active", "success", 2000);
+    this._toast("SystemWindow active", "success", 2e3);
   }
-
   stop() {
     BdApi.DOM.removeStyle(this._STYLE_ID);
     this._detachObserver();
@@ -93,40 +373,20 @@ module.exports = class SystemWindow {
     this._currentUserId = null;
     this._started = false;
   }
-
   /* ═══════════════════════════════════════════════
      §2  Observer — Classify message groups
-     ═══════════════════════════════════════════════
-
-     Two mechanisms:
-     1. Scroller observer (childList) — catches new messages,
-        deletions, edits in the current channel
-     2. Poll (1s interval) — catches channel switches by
-        detecting scroller element replacement. More reliable
-        than watching chatContent_ which may itself be replaced.
      ═══════════════════════════════════════════════ */
-
   _attachObserver() {
-    // Idempotent attach to prevent duplicate timers/subscriptions.
     this._detachObserver();
-
-    // Immediately find and observe the current scroller
     this._findAndObserve();
-
-    // ── Event-driven channel detection (replaces 1s poll) ──
-    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
-    if (_PluginUtils?.NavigationBus) {
+    if (_PluginUtils == null ? void 0 : _PluginUtils.NavigationBus) {
       this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => this._checkChannelSwitch());
     }
-
-    // Safety-net fallback: 10s poll (catches edge cases the events miss)
     this._pollInterval = setInterval(() => {
       if (document.hidden) return;
       this._checkChannelSwitch();
-    }, 10000);
+    }, 1e4);
   }
-
-  /** Check if scroller element changed (channel switch) */
   _checkChannelSwitch() {
     const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (!scroller) return;
@@ -135,11 +395,10 @@ module.exports = class SystemWindow {
       this._observeScroller(scroller);
       this._classifyMessages();
       if (this.settings.debugMode) {
-        console.log("[SystemWindow] Channel switch detected — re-classified");
+        console.log("[SystemWindow] Channel switch detected \u2014 re-classified");
       }
     }
   }
-
   _findAndObserve(retryCount = 0) {
     const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (scroller) {
@@ -147,20 +406,16 @@ module.exports = class SystemWindow {
       this._observeScroller(scroller);
       this._classifyMessages();
     } else if (retryCount < 10) {
-      // Discord hasn't loaded yet — retry (max 10 attempts = 20s)
       this._findRetryTimer = setTimeout(() => {
         if (this.settings.enabled) this._findAndObserve(retryCount + 1);
-      }, 2000);
+      }, 2e3);
     }
   }
-
   _observeScroller(scroller) {
     if (this._observer) this._observer.disconnect();
     this._observer = new MutationObserver(() => this._throttledClassify());
-    // Only watch direct children (li items) — not subtree
     this._observer.observe(scroller, { childList: true });
   }
-
   _detachObserver() {
     if (this._observer) {
       this._observer.disconnect();
@@ -174,7 +429,6 @@ module.exports = class SystemWindow {
       clearTimeout(this._findRetryTimer);
       this._findRetryTimer = null;
     }
-    // PERF(P5-1): Unsubscribe from shared NavigationBus
     if (this._navBusUnsub) {
       this._navBusUnsub();
       this._navBusUnsub = null;
@@ -187,12 +441,10 @@ module.exports = class SystemWindow {
     this._throttleTimer = null;
     this._lastScrollerEl = null;
   }
-
   _throttledClassify() {
     if (this._throttleTimer) return;
     this._throttleTimer = setTimeout(() => {
       this._throttleTimer = null;
-      // Schedule at start of next frame so we don't compete with Discord's rendering
       if (this._classifyRAF) cancelAnimationFrame(this._classifyRAF);
       this._classifyRAF = requestAnimationFrame(() => {
         this._classifyRAF = null;
@@ -200,35 +452,23 @@ module.exports = class SystemWindow {
       });
     }, 150);
   }
-
   /* ═══════════════════════════════════════════════
      §3  Message Classification
-     ═══════════════════════════════════════════════
-
-     Walks the message list and assigns CSS classes to LI:
-       sw-group-solo   — single message, own group
-       sw-group-start  — first in a consecutive group
-       sw-group-middle — middle of a consecutive group
-       sw-group-end    — last in a consecutive group
-       sw-self         — message sent by current user
      ═══════════════════════════════════════════════ */
-
   _getGroupSelfFlag(firstArticle) {
-    if (firstArticle.hasAttribute('data-sw-self')) {
-      return firstArticle.getAttribute('data-sw-self') === '1';
+    if (firstArticle.hasAttribute("data-sw-self")) {
+      return firstArticle.getAttribute("data-sw-self") === "1";
     }
     const isSelf = this._isOwnMessage(firstArticle);
-    firstArticle.setAttribute('data-sw-self', isSelf ? '1' : '0');
+    firstArticle.setAttribute("data-sw-self", isSelf ? "1" : "0");
     return isSelf;
   }
-
   _getDesiredGroupPosition(groupSize, index) {
     if (groupSize === 1) return "sw-group-solo";
     if (index === 0) return "sw-group-start";
     if (index === groupSize - 1) return "sw-group-end";
     return "sw-group-middle";
   }
-
   _syncPositionClass(li, desiredPos) {
     if (li.classList.contains(desiredPos)) return;
     li.classList.add(desiredPos);
@@ -236,30 +476,23 @@ module.exports = class SystemWindow {
       if (cls !== desiredPos) li.classList.remove(cls);
     }
   }
-
   _syncToggleClass(li, className, shouldHave) {
     if (shouldHave) li.classList.add(className);
     else li.classList.remove(className);
   }
-
   _applyGroupClasses(li, desiredPos, wantSelf, wantMentioned) {
     const hasPos = li.classList.contains(desiredPos);
     const hasSelf = li.classList.contains("sw-self");
     const hasMentioned = li.classList.contains("sw-mentioned");
-
     if (hasPos && hasSelf === wantSelf && hasMentioned === wantMentioned) return;
-
     this._syncPositionClass(li, desiredPos);
     this._syncToggleClass(li, "sw-self", wantSelf);
     this._syncToggleClass(li, "sw-mentioned", wantMentioned);
   }
-
   _classifyGroup(group) {
     if (!group.length) return;
-
     const isSelf = this._getGroupSelfFlag(group[0].article);
     const groupSize = group.length;
-
     for (let i = 0; i < groupSize; i++) {
       const { li, article } = group[i];
       const desiredPos = this._getDesiredGroupPosition(groupSize, i);
@@ -267,17 +500,11 @@ module.exports = class SystemWindow {
       this._applyGroupClasses(li, desiredPos, isSelf, wantMentioned);
     }
   }
-
   _classifyMessages() {
-    const scroller =
-      this._lastScrollerEl ||
-      document.querySelector('ol[role="list"][class*="scrollerInner_"]');
+    const scroller = this._lastScrollerEl || document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (!scroller) return;
-
     const items = scroller.querySelectorAll(':scope > li[class*="messageListItem_"]');
     if (!items.length) return;
-
-    // Build/process groups using Discord's groupStart_ class as boundary.
     let groupCount = 0;
     let currentGroup = [];
     const flushGroup = () => {
@@ -286,394 +513,60 @@ module.exports = class SystemWindow {
       groupCount++;
       currentGroup = [];
     };
-
     for (const li of items) {
       const article = li.querySelector(':scope > div[role="article"]');
       if (!article) {
-        // Non-message element (date divider, unread bar, etc.)
         flushGroup();
         continue;
       }
-
-      const isGroupStart = article.className.includes('groupStart');
-
+      const isGroupStart = article.className.includes("groupStart");
       if (isGroupStart) flushGroup();
-
       currentGroup.push({ li, article });
     }
-
     flushGroup();
-
     if (this.settings.debugMode) {
       console.log(`[SystemWindow] Classified ${items.length} messages into ${groupCount} groups`);
     }
   }
-
-  /**
-   * Checks if a message article belongs to the current user via React fiber.
-   * Walks up fiber tree (max 15 levels) looking for message.author.id.
-   */
   _isOwnMessage(article) {
+    var _a, _b, _c, _d, _e, _f;
     if (!this._currentUserId || !article) return false;
     try {
       let fiber = BdApi.ReactUtils.getInternalInstance(article);
       for (let i = 0; i < 15 && fiber; i++) {
-        const authorId =
-          fiber.memoizedProps?.message?.author?.id ||
-          fiber.memoizedState?.message?.author?.id;
+        const authorId = ((_c = (_b = (_a = fiber.memoizedProps) == null ? void 0 : _a.message) == null ? void 0 : _b.author) == null ? void 0 : _c.id) || ((_f = (_e = (_d = fiber.memoizedState) == null ? void 0 : _d.message) == null ? void 0 : _e.author) == null ? void 0 : _f.id);
         if (authorId) return authorId === this._currentUserId;
         fiber = fiber.return;
       }
-    } catch (e) {}
+    } catch (e) {
+    }
     return false;
   }
-
   _cleanupClasses() {
-    document
-      .querySelectorAll(".sw-group-solo, .sw-group-start, .sw-group-middle, .sw-group-end, .sw-self, .sw-mentioned")
-      .forEach((el) =>
-        el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned"),
-      );
-    document
-      .querySelectorAll('div[role="article"][data-sw-self]')
-      .forEach((el) => el.removeAttribute('data-sw-self'));
+    document.querySelectorAll(".sw-group-solo, .sw-group-start, .sw-group-middle, .sw-group-end, .sw-self, .sw-mentioned").forEach(
+      (el) => el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned")
+    );
+    document.querySelectorAll('div[role="article"][data-sw-self]').forEach((el) => el.removeAttribute("data-sw-self"));
   }
-
   /* ═══════════════════════════════════════════════
-     §4  CSS
-     ═══════════════════════════════════════════════
-
-     v2.5.0: Styles the LI element directly (not the
-     child article). This ensures the codeblock visually
-     wraps EVERYTHING — avatar, username, timestamp, and
-     message content — since the avatar may be a sibling
-     of the article at the LI level.
+     §4  CSS Injection
      ═══════════════════════════════════════════════ */
-
   _injectCSS() {
     BdApi.DOM.removeStyle(this._STYLE_ID);
-    BdApi.DOM.addStyle(this._STYLE_ID, this._getCSS());
+    BdApi.DOM.addStyle(this._STYLE_ID, styles_default);
   }
-
-  _getCSS() {
-    // ── Colors ──
-    const BLUE = "59, 130, 246"; // #3b82f6 — System (others)
-    const PURPLE = "155, 50, 255"; // #9b32ff — Monarch (self), saturated violet
-    const R = "2px";
-    const BG = "rgba(0, 0, 0, 0.55)"; // Darker codeblock background
-
-    return /* css */ `
-      /* ═══════════════════════════════════════════════
-         SystemWindow v2.5.0 — LI-level codeblock wrapping
-         Wraps avatar + username + timestamp + message text
-         ═══════════════════════════════════════════════ */
-
-      /* ════════════════════════════════════════════
-         PRE-STYLE: CSS-only base applied to ALL message
-         items BEFORE JS classification. Prevents the flash
-         when Discord replaces DOM nodes on re-render.
-
-         Specificity (0,1,1) with !important — same as the
-         sw-group-* rules below. Since equal !important +
-         equal specificity = last rule wins, the grouping
-         rules that come AFTER this block always override.
-         ════════════════════════════════════════════ */
-
-      li[class*="messageListItem_"] {
-        background: ${BG} !important;
-        border-left: 3px solid rgba(${BLUE}, 0.5) !important;
-        border-right: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-top: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-bottom: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-radius: ${R} !important;
-        position: relative !important;
-        margin-left: 48px !important;
-        margin-right: 96px !important;
-        margin-top: 4px !important;
-        margin-bottom: 4px !important;
-        padding: 4px 12px 8px 8px !important;
-        transition: box-shadow 200ms ease,
-                    border-color 200ms ease !important;
-      }
-
-      /* Self messages pre-style — handled by .sw-self class from JS classification.
-         data-is-self attribute was never set; now using React fiber detection. */
-
-      /* Mentioned messages pre-style (CSS-only) */
-      li[class*="messageListItem_"]:has(div[class*="mentioned"]) {
-        border-left-color: rgba(239, 68, 68, 0.7) !important;
-        border-right-color: rgba(239, 68, 68, 0.25) !important;
-        border-top-color: rgba(239, 68, 68, 0.25) !important;
-        border-bottom-color: rgba(239, 68, 68, 0.25) !important;
-        background: rgba(239, 68, 68, 0.08) !important;
-      }
-
-      /* ════════════════════════════════════════════
-         BASE: Classified messages (JS-applied) —
-         overrides pre-style with proper grouping
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo,
-      li.sw-group-start,
-      li.sw-group-middle,
-      li.sw-group-end {
-        background: ${BG} !important;
-        border-left: 3px solid rgba(${BLUE}, 0.5) !important;
-        border-right: 1px solid rgba(${BLUE}, 0.2) !important;
-        position: relative !important;
-        margin-left: 48px !important;
-        margin-right: 96px !important;
-        padding: 4px 12px 8px 8px !important;
-        transition: box-shadow 200ms ease,
-                    border-color 200ms ease !important;
-      }
-
-      /* ════════════════════════════════════════════
-         SOLO: Full border + full radius
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo {
-        border-top: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-bottom: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-radius: ${R} !important;
-        margin-top: 12px !important;
-        margin-bottom: 12px !important;
-        padding-bottom: 10px !important;
-      }
-
-      /* ════════════════════════════════════════════
-         GROUP START: Top border + top radius
-         ════════════════════════════════════════════ */
-
-      li.sw-group-start {
-        border-top: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-bottom: none !important;
-        border-radius: ${R} ${R} 0 0 !important;
-        margin-top: 12px !important;
-        margin-bottom: 0 !important;
-      }
-
-      /* ════════════════════════════════════════════
-         GROUP MIDDLE: Side borders only
-         ════════════════════════════════════════════ */
-
-      li.sw-group-middle {
-        border-top: none !important;
-        border-bottom: none !important;
-        border-radius: 0 !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-      }
-
-      /* ════════════════════════════════════════════
-         GROUP END: Bottom border + bottom radius
-         ════════════════════════════════════════════ */
-
-      li.sw-group-end {
-        border-top: none !important;
-        border-bottom: 1px solid rgba(${BLUE}, 0.2) !important;
-        border-radius: 0 0 ${R} ${R} !important;
-        margin-top: 0 !important;
-        margin-bottom: 12px !important;
-        padding-bottom: 10px !important;
-      }
-
-      /* ════════════════════════════════════════════
-         SELF: Purple accent (Monarch)
-         Same darkened bg as others — only border color
-         differs. Glow is hover-only.
-         ════════════════════════════════════════════ */
-
-      li.sw-self {
-        border-left-color: rgba(${PURPLE}, 0.5) !important;
-        border-right-color: rgba(${PURPLE}, 0.2) !important;
-      }
-
-      li.sw-self.sw-group-solo,
-      li.sw-self.sw-group-start {
-        border-top-color: rgba(${PURPLE}, 0.2) !important;
-      }
-
-      li.sw-self.sw-group-solo,
-      li.sw-self.sw-group-end {
-        border-bottom-color: rgba(${PURPLE}, 0.2) !important;
-      }
-
-      /* ════════════════════════════════════════════
-         HOVER: Glow on the codeblock
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo:hover,
-      li.sw-group-start:hover,
-      li.sw-group-middle:hover,
-      li.sw-group-end:hover {
-        box-shadow: 0 0 18px rgba(${BLUE}, 0.45),
-                    0 0 40px rgba(${BLUE}, 0.15),
-                    inset 0 0 12px rgba(${BLUE}, 0.1) !important;
-        border-left-color: rgba(${BLUE}, 1) !important;
-      }
-
-      li.sw-self.sw-group-solo:hover,
-      li.sw-self.sw-group-start:hover,
-      li.sw-self.sw-group-middle:hover,
-      li.sw-self.sw-group-end:hover {
-        box-shadow: 0 0 20px rgba(${PURPLE}, 0.6),
-                    0 0 45px rgba(${PURPLE}, 0.25),
-                    inset 0 0 12px rgba(${PURPLE}, 0.1) !important;
-        border-left-color: rgba(${PURPLE}, 1) !important;
-      }
-
-      /* ════════════════════════════════════════════
-         AVATAR: Clean circle inside codeblock
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo [class*="avatar"],
-      li.sw-group-start [class*="avatar"] {
-        z-index: 1 !important;
-      }
-
-      /* ════════════════════════════════════════════
-         USERNAMES: System label feel
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo [class*="username"],
-      li.sw-group-start [class*="username"] {
-        letter-spacing: 0.03em !important;
-      }
-
-      /* ════════════════════════════════════════════
-         TIMESTAMPS: Subtle metadata
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo time, li.sw-group-start time,
-      li.sw-group-middle time, li.sw-group-end time,
-      li.sw-group-solo [class*="timestamp"],
-      li.sw-group-start [class*="timestamp"],
-      li.sw-group-middle [class*="timestamp"],
-      li.sw-group-end [class*="timestamp"] {
-        opacity: 0.6 !important;
-        font-size: 0.68rem !important;
-        transition: opacity 200ms ease !important;
-      }
-
-      li.sw-group-solo:hover time, li.sw-group-start:hover time,
-      li.sw-group-middle:hover time, li.sw-group-end:hover time,
-      li.sw-group-solo:hover [class*="timestamp"],
-      li.sw-group-start:hover [class*="timestamp"],
-      li.sw-group-middle:hover [class*="timestamp"],
-      li.sw-group-end:hover [class*="timestamp"] {
-        opacity: 0.8 !important;
-      }
-
-      /* ════════════════════════════════════════════
-         REPLY BLOCKS: Nested mini-codeblock
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo [class*="repliedMessage"],
-      li.sw-group-start [class*="repliedMessage"] {
-        background: rgba(0, 0, 0, 0.25) !important;
-        border: 1px solid rgba(${BLUE}, 0.15) !important;
-        border-left: 2px solid rgba(${BLUE}, 0.3) !important;
-        border-radius: ${R} !important;
-        padding: 4px 8px !important;
-        margin-bottom: 4px !important;
-      }
-
-      li.sw-self.sw-group-solo [class*="repliedMessage"],
-      li.sw-self.sw-group-start [class*="repliedMessage"] {
-        border-color: rgba(${PURPLE}, 0.15) !important;
-        border-left-color: rgba(${PURPLE}, 0.3) !important;
-      }
-
-      /* ════════════════════════════════════════════
-         EMBEDS: Codeblock accent
-         ════════════════════════════════════════════ */
-
-      li.sw-group-solo [class*="embedWrapper"],
-      li.sw-group-start [class*="embedWrapper"],
-      li.sw-group-middle [class*="embedWrapper"],
-      li.sw-group-end [class*="embedWrapper"] {
-        background: rgba(0, 0, 0, 0.25) !important;
-        border: 1px solid rgba(${BLUE}, 0.15) !important;
-        border-left: 2px solid rgba(${BLUE}, 0.3) !important;
-        border-radius: ${R} !important;
-      }
-
-      li.sw-self [class*="embedWrapper"] {
-        border-color: rgba(${PURPLE}, 0.15) !important;
-        border-left-color: rgba(${PURPLE}, 0.3) !important;
-      }
-
-      /* ════════════════════════════════════════════
-         MENTIONED: Crimson "Emergency Quest" accent
-         Overrides blue/purple with System alert red
-         when the message mentions you (@you / @everyone)
-         ════════════════════════════════════════════ */
-
-      li.sw-mentioned {
-        border-left-color: rgba(239, 68, 68, 0.7) !important;
-        border-right-color: rgba(239, 68, 68, 0.25) !important;
-        background: rgba(239, 68, 68, 0.08) !important;
-      }
-
-      li.sw-mentioned.sw-group-solo,
-      li.sw-mentioned.sw-group-start {
-        border-top-color: rgba(239, 68, 68, 0.25) !important;
-      }
-
-      li.sw-mentioned.sw-group-solo,
-      li.sw-mentioned.sw-group-end {
-        border-bottom-color: rgba(239, 68, 68, 0.25) !important;
-      }
-
-      /* Kill the theme's mention bg + ::before bar inside codeblocks */
-      li.sw-mentioned div[class*="mentioned_"] {
-        background: transparent !important;
-      }
-      li.sw-mentioned div[class*="mentioned_"]::before {
-        display: none !important;
-      }
-
-      /* Kill Discord's native message hover highlight inside codeblocks —
-         the codeblock glow handles hover feedback instead */
-      li.sw-group-solo div[class*="message_"]:hover,
-      li.sw-group-start div[class*="message_"]:hover,
-      li.sw-group-middle div[class*="message_"]:hover,
-      li.sw-group-end div[class*="message_"]:hover,
-      li.sw-group-solo div[role="article"]:hover,
-      li.sw-group-start div[role="article"]:hover,
-      li.sw-group-middle div[role="article"]:hover,
-      li.sw-group-end div[role="article"]:hover {
-        background: transparent !important;
-      }
-
-      /* Mentioned hover: crimson glow */
-      li.sw-mentioned.sw-group-solo:hover,
-      li.sw-mentioned.sw-group-start:hover,
-      li.sw-mentioned.sw-group-middle:hover,
-      li.sw-mentioned.sw-group-end:hover {
-        box-shadow: 0 0 18px rgba(239, 68, 68, 0.5),
-                    0 0 40px rgba(239, 68, 68, 0.2),
-                    inset 0 0 12px rgba(239, 68, 68, 0.1) !important;
-        border-left-color: rgba(239, 68, 68, 1) !important;
-      }
-    `;
-  }
-
   /* ═══════════════════════════════════════════════
      §5  Settings
      ═══════════════════════════════════════════════ */
-
   _saveSettings(next) {
     const merged = { ...this.settings, ...next };
     BdApi.Data.save("SystemWindow", "settings", merged);
     this.settings = merged;
   }
-
   getSettingsPanel() {
+    var _a, _b;
     const panel = document.createElement("div");
     panel.style.cssText = "padding: 16px; background: #1e1e2e; border-radius: 0;";
-
     panel.innerHTML = `
       <div>
         <h2 style="margin: 0 0 4px 0; color: #dcddde; font-size: 18px;">SystemWindow</h2>
@@ -694,8 +587,7 @@ module.exports = class SystemWindow {
         </label>
       </div>
     `;
-
-    panel.querySelector("#sw-enabled")?.addEventListener("change", (e) => {
+    (_a = panel.querySelector("#sw-enabled")) == null ? void 0 : _a.addEventListener("change", (e) => {
       this._saveSettings({ enabled: e.target.checked });
       if (e.target.checked) {
         this._injectCSS();
@@ -706,11 +598,9 @@ module.exports = class SystemWindow {
         this._cleanupClasses();
       }
     });
-
-    panel.querySelector("#sw-debug")?.addEventListener("change", (e) => {
+    (_b = panel.querySelector("#sw-debug")) == null ? void 0 : _b.addEventListener("change", (e) => {
       this._saveSettings({ debugMode: e.target.checked });
     });
-
     return panel;
   }
 };

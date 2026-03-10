@@ -1,0 +1,6 @@
+{
+  "name": "UserPanelDockMover",
+  "description": "Visually moves the user status/settings panel into the horizontal server list dock via CSS positioning.",
+  "version": "3.7.0",
+  "author": "BlueFlashX1"
+}

@@ -4,52 +4,86 @@
  * @version 2.1.2
  * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
- *
- * ============================================================================
- * RULER'S AUTHORITY — Sung Jin-Woo's Telekinesis (v2)
- * ============================================================================
- *
- * Macro (panel-level): Push/pull sidebar, members list, profile, search
- *   - Hover-to-expand on members list and profile panel
- *   - Resize handles on all panels (drag edge to resize)
- *   - Toolbar icon in channel header
- *
- * Micro (channel-level): Push channels, crush categories, grip DMs
- *   - Right-click context menu integration
- *   - Per-guild persistence with MutationObserver re-render resilience
- *
- * Architecture: Matches CollapsibleUI + Hide Channels core patterns
- *   - Webpack module extraction for CSS class discovery (lazy getters)
- *   - CSS custom properties (--ra-*) for dynamic state management
- *   - Resize handles via ::before pseudo-elements
- *   - Wildcard selector fallbacks when Webpack modules unavailable
- *
- * SkillTree integration: rulers_authority active skill → visual Amplified Mode
- *   (pulsing glow on toolbar icon, purple aura effects)
- *
- * Sections:
- *   §1  Constants + Fallback Selectors .................. ~L 40
- *   §2  Webpack Module Definitions ...................... ~L 90
- *   §3  Default Settings ................................ ~L 140
- *   §4  Hotkey Utilities ................................ ~L 190
- *   §5  Core Class (constructor, start, stop) ........... ~L 230
- *   §6  Webpack Init + Dynamic Selectors ................ ~L 360
- *   §7  Inter-Plugin Integration (SLS, SkillTree) ....... ~L 440
- *   §8  Macro Panel Control ............................. ~L 510
- *   §9  Hover-to-Expand System .......................... ~L 570
- *   §10 Resize Handle System ............................ ~L 680
- *   §11 Micro: Push Channel + Crush Category ............ ~L 760
- *   §12 Micro: Grip DM ................................. ~L 910
- *   §13 Context Menu Patches ............................ ~L 990
- *   §14 Toolbar Icon + Observer ......................... ~L 1080
- *   §15 Visual Effects .................................. ~L 1190
- *   §16 Settings Panel .................................. ~L 1230
- *   §17 CSS Builder (custom props + dynamic selectors) .. ~L 1400
- *   §18 Utilities ....................................... ~L 1660
  */
 
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = (f) => {
+// src/RulersAuthority/constants.js
+var RA_PLUGIN_NAME = "RulersAuthority";
+var RA_VERSION = "2.1.2";
+var RA_STYLE_ID = "rulers-authority-css";
+var RA_VARS_STYLE_ID = "rulers-authority-vars";
+var RA_TOOLBAR_ICON_ID = "ra-toolbar-icon";
+var RA_ICON_REINJECT_DELAY_MS = 140;
+var RA_STATS_CACHE_TTL = 5e3;
+var RA_OBSERVER_THROTTLE_MS = 200;
+var RA_RESIZE_MIN_WIDTH = 80;
+var RA_PANEL_HOVER_REVEAL_MIN_MS = 500;
+var RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
+var SIDEBAR_FALLBACKS = [
+  'nav[aria-label="Channels sidebar"]',
+  'nav[aria-label="Channels"]',
+  '[class*="sidebar_"][class*="container_"]',
+  '[class*="sidebar_"]'
+];
+var SIDEBAR_CSS_SAFE = SIDEBAR_FALLBACKS.slice(0, -1);
+var MEMBERS_FALLBACKS = [
+  '[class^="membersWrap_"]',
+  '[class*=" membersWrap_"]',
+  '[class*="membersWrap"]'
+];
+var PROFILE_FALLBACKS = [
+  '[class*="userProfileOuter_"]',
+  '[class*="userPanelOuter_"]',
+  '[class*="profilePanel_"]'
+];
+var SEARCH_FALLBACKS = [
+  '[class*="searchResultsWrap_"]'
+];
+var TOOLBAR_FALLBACKS = [
+  '[aria-label="Channel header"] [class*="toolbar_"]',
+  '[class*="titleWrapper_"] [class*="toolbar_"]',
+  'header [class*="toolbar_"]'
+];
+var DM_LIST_FALLBACKS = [
+  '[class*="privateChannels_"] [class*="scroller_"]',
+  '[class*="privateChannels_"] [role="list"]'
+];
+var PANEL_DEFS = {
+  sidebar: { label: "Channel Sidebar", hoverCapable: true, moduleName: "sidebar", moduleKey: "sidebarList" },
+  members: { label: "Members List", hoverCapable: true, moduleName: "members", moduleKey: "membersWrap" },
+  profile: { label: "User Profile", hoverCapable: true, moduleName: "panel", moduleKey: "outer" },
+  search: { label: "Search Results", hoverCapable: false, moduleName: "search", moduleKey: "searchResultsWrap" }
+};
+var DEFAULT_SETTINGS = {
+  enabled: true,
+  debugMode: false,
+  transitionSpeed: 250,
+  animationsEnabled: true,
+  // Panel states + widths
+  panels: {
+    sidebar: { pushed: false, hotkey: "Ctrl+Shift+R", hoverExpand: true, width: 0 },
+    members: { pushed: false, hotkey: "", hoverExpand: true, width: 0 },
+    profile: { pushed: false, hotkey: "", hoverExpand: true, width: 0 },
+    search: { pushed: false, hotkey: "", width: 0 }
+  },
+  // Default panel widths (used for reset)
+  defaultWidths: {
+    sidebar: 240,
+    members: 245,
+    profile: 340,
+    search: 400
+  },
+  // Hover config
+  hoverFudgePx: 15,
+  hoverRevealDelayMs: 500,
+  hoverHideDelayMs: 300,
+  // Per-guild micro state
+  guilds: {},
+  // { [guildId]: { hiddenChannels: [{ id, name }], crushedCategories: [{ id, name }] } }
+  // DM gripping
+  grippedDMs: []
+  // [{ channelId, username }]
+};
+var _bdLoad = (f) => {
   try {
     const fs = require("fs");
     const path = require("path");
@@ -65,1678 +99,892 @@ const _bdLoad = (f) => {
     return null;
   }
 };
+var _PluginUtils;
+try {
+  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+} catch (_) {
+  _PluginUtils = null;
+}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// §1  Constants + Fallback Selectors
-// ═══════════════════════════════════════════════════════════════════════════
+// src/RulersAuthority/hotkeys.js
+var _pluginUtilsRef = null;
+function setPluginUtils(utils) {
+  _pluginUtilsRef = utils;
+}
+function isEditableTarget(t) {
+  var _a2, _b;
+  if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.isEditableTarget) return _pluginUtilsRef.isEditableTarget(t);
+  if (!t) return false;
+  const tag = ((_b = (_a2 = t.tagName) == null ? void 0 : _a2.toLowerCase) == null ? void 0 : _b.call(_a2)) || "";
+  return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable;
+}
+function matchesHotkey(e, hotkey) {
+  if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.matchesHotkey) return _pluginUtilsRef.matchesHotkey(e, hotkey);
+  return false;
+}
 
-const RA_PLUGIN_NAME = "RulersAuthority";
-const RA_VERSION = "2.1.2";
-const RA_STYLE_ID = "rulers-authority-css";
-const RA_VARS_STYLE_ID = "rulers-authority-vars";
-const RA_TOOLBAR_ICON_ID = "ra-toolbar-icon";
-const RA_ICON_REINJECT_DELAY_MS = 140;
-const RA_STATS_CACHE_TTL = 5000;
-const RA_OBSERVER_THROTTLE_MS = 200;
-const RA_RESIZE_MIN_WIDTH = 80;
-const RA_PANEL_HOVER_REVEAL_MIN_MS = 500;
-const RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
-
-// Fallback selectors — used when Webpack module extraction fails.
-// These use wildcard attribute selectors (less precise but always work).
-const SIDEBAR_FALLBACKS = [
-  'nav[aria-label="Channels sidebar"]',
-  'nav[aria-label="Channels"]',
-  '[class*="sidebar_"][class*="container_"]',
-  '[class*="sidebar_"]',
-];
-
-// CSS-safe subset — excludes the broad [class*="sidebar_"] which also matches
-// the settings modal's navigation sidebar, causing it to collapse to width:0.
-// The first 3 selectors are specific enough for CSS targeting.
-const SIDEBAR_CSS_SAFE = SIDEBAR_FALLBACKS.slice(0, -1);
-
-const MEMBERS_FALLBACKS = [
-  '[class^="membersWrap_"]',
-  '[class*=" membersWrap_"]',
-  '[class*="membersWrap"]',
-];
-
-const PROFILE_FALLBACKS = [
-  '[class*="userProfileOuter_"]',
-  '[class*="userPanelOuter_"]',
-  '[class*="profilePanel_"]',
-];
-
-const SEARCH_FALLBACKS = [
-  '[class*="searchResultsWrap_"]',
-];
-
-const TOOLBAR_FALLBACKS = [
-  '[aria-label="Channel header"] [class*="toolbar_"]',
-  '[class*="titleWrapper_"] [class*="toolbar_"]',
-  'header [class*="toolbar_"]',
-];
-
-const DM_LIST_FALLBACKS = [
-  '[class*="privateChannels_"] [class*="scroller_"]',
-  '[class*="privateChannels_"] [role="list"]',
-];
-
-// ═══════════════════════════════════════════════════════════════════════════
-// §2  Webpack Module Definitions (lazy getter pattern — matches CollapsibleUI)
-// ═══════════════════════════════════════════════════════════════════════════
-//
-// Each getter calls BdApi.Webpack.getByKeys() once and caches the result.
-// Key combinations are chosen to uniquely identify CSS class modules.
-// If Discord changes their module structure, these degrade gracefully to null
-// and the fallback selectors in §1 take over.
-
-// CRITICAL FIX: Use _resolved flags to avoid repeated Webpack lookups.
-// getByKeys() can return null/undefined for missing modules — we must cache
-// that result rather than re-querying on every access.
-const _createModules = () => ({
-  _members: undefined, _membersResolved: false,
-  _sidebar: undefined, _sidebarResolved: false,
-  _panel: undefined,   _panelResolved: false,
-  _search: undefined,  _searchResolved: false,
-  _toolbar: undefined, _toolbarResolved: false,
-  _icons: undefined,   _iconsResolved: false,
-  _guilds: undefined,  _guildsResolved: false,
-  _channels: undefined, _channelsResolved: false,
-
-  get members()  { if (!this._membersResolved)  { this._members  = BdApi.Webpack.getByKeys("membersWrap", "hiddenMembers") || null;               this._membersResolved = true; }  return this._members; },
-  get sidebar()  { if (!this._sidebarResolved)  { this._sidebar  = BdApi.Webpack.getByKeys("sidebar", "activityPanel", "sidebarListRounded") || null; this._sidebarResolved = true; }  return this._sidebar; },
-  get panel()    { if (!this._panelResolved)    { this._panel    = BdApi.Webpack.getByKeys("outer", "inner", "overlay") || null;                   this._panelResolved = true; }    return this._panel; },
-  get search()   { if (!this._searchResolved)   { this._search   = BdApi.Webpack.getByKeys("searchResultsWrap", "stillIndexing", "noResults") || null; this._searchResolved = true; }   return this._search; },
-  get toolbar()  { if (!this._toolbarResolved)  { this._toolbar  = BdApi.Webpack.getByKeys("updateIconForeground", "search", "downloadArrow") || null; this._toolbarResolved = true; }  return this._toolbar; },
-  get icons()    { if (!this._iconsResolved)    { this._icons    = BdApi.Webpack.getByKeys("selected", "iconWrapper", "clickable", "icon") || null;    this._iconsResolved = true; }    return this._icons; },
-  get guilds()   { if (!this._guildsResolved)   { this._guilds   = BdApi.Webpack.getByKeys("chatContent", "noChat", "parentChannelName") || null;      this._guildsResolved = true; }   return this._guilds; },
-  get channels() { if (!this._channelsResolved) { this._channels = BdApi.Webpack.getByKeys("channel", "closeIcon", "dm") || null;                     this._channelsResolved = true; } return this._channels; },
-});
-
-// Panel definition — label, hover support, which Webpack module + property to use
-const PANEL_DEFS = {
-  sidebar: { label: "Channel Sidebar", hoverCapable: true, moduleName: "sidebar", moduleKey: "sidebarList" },
-  members: { label: "Members List",    hoverCapable: true,  moduleName: "members", moduleKey: "membersWrap" },
-  profile: { label: "User Profile",    hoverCapable: true,  moduleName: "panel",   moduleKey: "outer" },
-  search:  { label: "Search Results",  hoverCapable: false, moduleName: "search",  moduleKey: "searchResultsWrap" },
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// §3  Default Settings
-// ═══════════════════════════════════════════════════════════════════════════
-
-const DEFAULT_SETTINGS = {
-  enabled: true,
-  debugMode: false,
-  transitionSpeed: 250,
-  animationsEnabled: true,
-
-  // Panel states + widths
-  panels: {
-    sidebar: { pushed: false, hotkey: "Ctrl+Shift+R", hoverExpand: true, width: 0 },
-    members: { pushed: false, hotkey: "", hoverExpand: true, width: 0 },
-    profile: { pushed: false, hotkey: "", hoverExpand: true, width: 0 },
-    search:  { pushed: false, hotkey: "", width: 0 },
-  },
-
-  // Default panel widths (used for reset)
-  defaultWidths: {
-    sidebar: 240,
-    members: 245,
-    profile: 340,
-    search: 400,
-  },
-
-  // Hover config
-  hoverFudgePx: 15,
-  hoverRevealDelayMs: 500,
-  hoverHideDelayMs: 300,
-
-  // Per-guild micro state
-  guilds: {},
-  // { [guildId]: { hiddenChannels: [{ id, name }], crushedCategories: [{ id, name }] } }
-
-  // DM gripping
-  grippedDMs: [],
-  // [{ channelId, username }]
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// §4  Hotkey Utilities (from BetterDiscordPluginUtils)
-// ═══════════════════════════════════════════════════════════════════════════
-let _PluginUtils;
-try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
-
-const { isEditableTarget, matchesHotkey } = _PluginUtils || {
-  isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
-  matchesHotkey: () => false,
-};
-const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
-
-// ═══════════════════════════════════════════════════════════════════════════
-// §5  Core Class
-// ═══════════════════════════════════════════════════════════════════════════
-
-module.exports = class RulersAuthority {
-  constructor() {
-    this.settings = structuredClone(DEFAULT_SETTINGS);
-    this._amplifiedMode = false;
-    this._amplifiedExpiresAt = 0;
-
-    // Webpack modules (lazy getters — CollapsibleUI pattern)
-    this._modules = null;
-
-    // Webpack stores
-    this._ChannelStore = null;
-    this._GuildStore = null;
-    this._SelectedGuildStore = null;
-    this._SelectedChannelStore = null;
-
-    // Caches
-    this._statsCache = _ttl(RA_STATS_CACHE_TTL);
-    this._panelElCache = null;
-
-    // Resolved selectors (built from Webpack modules + fallbacks)
-    this._resolvedSelectors = {};
-
-    // AbortController for clean listener teardown (CollapsibleUI pattern)
-    this._controller = null;
-
-    // Observers
-    this._channelObserver = null;
-    this._dmObserver = null;
-    this._toolbarObserver = null;
-    this._settingsObserver = null;
-    this._iconReinjectTimeout = null;
-
-    // Hover timers
-    this._sidebarRevealTimer = null;
-    this._sidebarHideTimer = null;
-    this._membersRevealTimer = null;
-    this._membersHideTimer = null;
-    this._profileRevealTimer = null;
-    this._profileHideTimer = null;
-    this._channelRevealTimer = null;
-    this._channelHideTimer = null;
-    this._channelsHoverRevealActive = false;
-
-    // SkillTree event handlers
-    this._onSkillActivated = null;
-    this._onSkillExpired = null;
-
-    // Animation timers
-    this._pushAnimTimer = null;
-    this._pullAnimTimer = null;
-
-    // Resize state
-    this._dragging = null;
-    this._dragPanel = null;
-
-    // Guild + channel change handlers
-    this._guildChangeHandler = null;
-    this._channelChangeHandler = null;
-    this._guildChangeApplyTimer = null;
-    this._channelObserverRetryTimer = null;
-  }
-
-  // ── Lifecycle ──────────────────────────────────────────────
-
-  start() {
-    this._toast = _PluginUtils?.createToastHelper?.("rulersAuthority") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
-    try {
-      this._controller = new AbortController();
-      this.loadSettings();
-      this.initWebpack();
-      this.setupSettingsGuard();
-      this.injectCSS();
-      this.updateCSSVars();
-      this.restorePanelStates();
-      this.injectToolbarIcon();
-      this.setupToolbarObserver();
-      this.patchContextMenus();
-      this.setupHotkeyListener();
-      this.setupHoverHandlers();
-      this.setupResizeHandlers();
-      this.setupChannelObserver();
-      this.setupGuildChangeListener();
-      this.setupSkillTreeListeners();
-      this.applyMicroStateForCurrentGuild();
-      this.applyDMGripping();
-      this.setupDMObserver();
-      this._toast("Ruler's Authority — Active", "info");
-    } catch (err) {
-      this.debugError("Lifecycle", "Error during start:", err);
-      this._toast("Ruler's Authority — Failed to start", "error");
-    }
-  }
-
-  stop() {
-    try {
-      // 1. Clear all timers first (prevents callbacks on stopped plugin).
-      this._clearLifecycleTimers();
-
-      // 2. Abort all listeners registered via AbortController.
-      if (this._controller) {
-        this._controller.abort();
-        this._controller = null;
-      }
-
-      // 3. Remove body classes and visual state.
-      this._resetBodyVisualState();
-
-      // 4. Remove CSS.
-      BdApi.DOM.removeStyle(RA_STYLE_ID);
-      BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
-
-      // 5. Remove toolbar icon + tooltip.
-      const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-      if (icon) icon.remove();
-      const raTip = document.getElementById("sl-toolbar-tip-ra");
-      if (raTip) raTip.remove();
-      this.teardownToolbarObserver();
-
-      // 6. Unpatch context menus.
-      if (this._unpatchChannelCtx) { this._unpatchChannelCtx(); this._unpatchChannelCtx = null; }
-
-      // 7. Disconnect observers + guard interval.
-      this._disconnectObserversAndGuards();
-
-      // 8. SkillTree listeners.
-      this._detachSkillTreeListeners();
-
-      // 9. Guild + channel change listeners.
-      this._detachStoreListeners();
-
-      // 10. Restore hidden channels.
-      this.restoreAllHiddenChannels();
-      this.restoreAllCrushedCategories();
-
-      // 11. Remove resize inline styles.
-      this._removeAllResizeStyles();
-      document.body.classList.remove(RA_SETTINGS_OPEN_CLASS);
-
-      // 12. Null refs.
-      this._resetRuntimeReferences();
-    } catch (err) {
-      this.debugError("Lifecycle", "Error during stop:", err);
-    }
-    this._toast("Ruler's Authority — Dormant", "info");
-  }
-
-  _clearLifecycleTimers() {
-    const timeoutKeys = [
-      "_iconReinjectTimeout",
-      "_sidebarRevealTimer",
-      "_sidebarHideTimer",
-      "_membersRevealTimer",
-      "_membersHideTimer",
-      "_profileRevealTimer",
-      "_profileHideTimer",
-      "_channelRevealTimer",
-      "_channelHideTimer",
-      "_pushAnimTimer",
-      "_pullAnimTimer",
-      "_guildChangeApplyTimer",
-      "_channelObserverRetryTimer",
-    ];
-    for (const key of timeoutKeys) {
-      clearTimeout(this[key]);
-      this[key] = null;
-    }
-  }
-
-  _resetBodyVisualState() {
+// src/RulersAuthority/resize.js
+function setupResizeHandlers(ctx) {
+  if (!ctx._controller) return;
+  const signal = ctx._controller.signal;
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const target = e.target;
     for (const panelName of Object.keys(PANEL_DEFS)) {
-      document.body.classList.remove(`ra-${panelName}-pushed`, `ra-${panelName}-hover-reveal`);
-    }
-    document.body.classList.remove("ra-amplified", "ra-pushing", "ra-pulling", "ra-channels-hover-reveal");
-    this._channelsHoverRevealActive = false;
-  }
-
-  _disconnectObserversAndGuards() {
-    if (this._channelObserver) { this._channelObserver.disconnect(); this._channelObserver = null; }
-    if (this._dmObserver) { this._dmObserver.disconnect(); this._dmObserver = null; }
-    if (this._settingsObserver) { this._settingsObserver.disconnect(); this._settingsObserver = null; }
-    if (this._settingsGuardInterval) { clearInterval(this._settingsGuardInterval); this._settingsGuardInterval = null; }
-  }
-
-  _detachSkillTreeListeners() {
-    if (this._onSkillActivated) {
-      document.removeEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
-      this._onSkillActivated = null;
-    }
-    if (this._onSkillExpired) {
-      document.removeEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
-      this._onSkillExpired = null;
-    }
-  }
-
-  _detachStoreListeners() {
-    if (this._guildChangeHandler && this._SelectedGuildStore) {
-      this._SelectedGuildStore.removeChangeListener(this._guildChangeHandler);
-      this._guildChangeHandler = null;
-    }
-    if (this._channelChangeHandler && this._SelectedChannelStore) {
-      this._SelectedChannelStore.removeChangeListener(this._channelChangeHandler);
-      this._channelChangeHandler = null;
-    }
-  }
-
-  _resetRuntimeReferences() {
-    this._ChannelStore = null;
-    this._GuildStore = null;
-    this._SelectedGuildStore = null;
-    this._SelectedChannelStore = null;
-    this._statsCache.invalidate();
-    this._modules = null;
-    this._resolvedSelectors = {};
-    this._dragging = null;
-    this._dragPanel = null;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §6  Webpack Init + Dynamic Selectors
-  // ═══════════════════════════════════════════════════════════════════════
-
-  initWebpack() {
-    const { Webpack } = BdApi;
-
-    // ── Flux stores ──
-    this._ChannelStore = Webpack.getStore("ChannelStore");
-    this._GuildStore = Webpack.getStore("GuildStore");
-    this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
-    this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
-
-    // ── CSS class modules (lazy getters — CollapsibleUI pattern) ──
-    this._modules = _createModules();
-
-    // ── Build resolved selectors from Webpack + fallbacks ──
-    this._buildResolvedSelectors();
-
-    this.debugLog("Webpack", "Modules acquired", {
-      stores: {
-        ChannelStore: !!this._ChannelStore,
-        GuildStore: !!this._GuildStore,
-        SelectedGuildStore: !!this._SelectedGuildStore,
-        SelectedChannelStore: !!this._SelectedChannelStore,
-      },
-      cssModules: {
-        members: !!this._modules.members,
-        sidebar: !!this._modules.sidebar,
-        panel: !!this._modules.panel,
-        search: !!this._modules.search,
-        toolbar: !!this._modules.toolbar,
-        icons: !!this._modules.icons,
-        guilds: !!this._modules.guilds,
-      },
-    });
-  }
-
-  _buildResolvedSelectors() {
-    const m = this._modules;
-
-    // For each panel, prefer Webpack-discovered class, fall back to wildcard
-    this._resolvedSelectors = {
-      sidebar: m.sidebar?.sidebarList
-        ? [`.${m.sidebar.sidebarList}`]
-        : SIDEBAR_FALLBACKS,
-
-      members: m.members?.membersWrap
-        ? [`.${m.members.membersWrap}`]
-        : MEMBERS_FALLBACKS,
-
-      profile: m.panel?.outer
-        ? [
-            ...(m.guilds?.content ? [`.${m.guilds.content} .${m.panel.outer}`] : []),
-            `.${m.panel.outer}`,
-          ]
-        : PROFILE_FALLBACKS,
-
-      search: m.search?.searchResultsWrap
-        ? [`.${m.search.searchResultsWrap}`]
-        : SEARCH_FALLBACKS,
-
-      toolbar: m.icons?.toolbar
-        ? [`.${m.icons.toolbar}`]
-        : TOOLBAR_FALLBACKS,
-
-      dmList: DM_LIST_FALLBACKS, // DM list doesn't change often, keep fallbacks
-    };
-
-    this.debugLog("Selectors", "Resolved selectors", {
-      sidebar: m.sidebar?.sidebarList ? "webpack" : "fallback",
-      members: m.members?.membersWrap ? "webpack" : "fallback",
-      profile: m.panel?.outer ? "webpack" : "fallback",
-      search: m.search?.searchResultsWrap ? "webpack" : "fallback",
-      toolbar: m.icons?.toolbar ? "webpack" : "fallback",
-    });
-  }
-
-  // Find a DOM element using resolved selectors for a panel
-  // PERF: Caches element refs — panel elements rarely change (only on guild/channel switch).
-  // Eliminates up to 4 querySelector() calls per mousemove frame.
-  _findPanelElement(panelName) {
-    const cached = this._panelElCache?.[panelName];
-    if (cached && cached.isConnected) return cached;
-    const selectors = this._resolvedSelectors[panelName];
-    if (!selectors) return null;
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el && el.isConnected) {
-        if (!this._panelElCache) this._panelElCache = {};
-        this._panelElCache[panelName] = el;
-        return el;
-      }
-    }
-    if (this._panelElCache) this._panelElCache[panelName] = null;
-    return null;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §7  Inter-Plugin Integration (SoloLevelingStats, SkillTree)
-  // ═══════════════════════════════════════════════════════════════════════
-
-  getSoloLevelingData() {
-    const cached = this._statsCache.get();
-    if (cached && BdApi.Plugins.isEnabled("SoloLevelingStats")) {
-      return cached;
-    }
-    if (!BdApi.Plugins.isEnabled("SoloLevelingStats")) return null;
-
-    const soloPlugin = BdApi.Plugins.get("SoloLevelingStats");
-    const instance = soloPlugin?.instance || soloPlugin;
-    if (!instance?.settings) return null;
-
-    const data = {
-      level: instance.settings.level || 1,
-      intelligence: instance.settings.stats?.intelligence || 0,
-      stats: { ...instance.settings.stats },
-    };
-
-    this._statsCache.set(data);
-    return data;
-  }
-
-  setupSkillTreeListeners() {
-    this._onSkillActivated = (e) => {
-      if (e.detail?.skillId === "rulers_authority") {
-        this._amplifiedMode = true;
-        this._amplifiedExpiresAt = e.detail.expiresAt || 0;
-        this.onAmplifiedModeChange(true);
-      }
-    };
-    this._onSkillExpired = (e) => {
-      if (e.detail?.skillId === "rulers_authority") {
-        this._amplifiedMode = false;
-        this.onAmplifiedModeChange(false);
-      }
-    };
-    document.addEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
-    document.addEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
-
-    // Check if skill is already active on start
-    if (BdApi.Plugins.isEnabled("SkillTree")) {
-      const stInstance = BdApi.Plugins.get("SkillTree")?.instance;
-      if (stInstance?.isActiveSkillRunning?.("rulers_authority")) {
-        this._amplifiedMode = true;
-        this.debugLog("SkillTree", "rulers_authority already active on start");
-      }
-    }
-  }
-
-  onAmplifiedModeChange(active) {
-    if (active) {
-      document.body.classList.add("ra-amplified");
-      this._toast("Ruler's Authority AMPLIFIED — Full telekinetic power!", "success", 4000);
-    } else {
-      document.body.classList.remove("ra-amplified");
-      this._toast("Ruler's Authority amplification expired.", "info");
-    }
-    this.updateToolbarIcon();
-  }
-
-  setupGuildChangeListener() {
-    if (!this._SelectedGuildStore) return;
-    this._guildChangeHandler = () => {
-      this._panelElCache = null; // Invalidate panel element cache on guild switch
-      clearTimeout(this._guildChangeApplyTimer);
-      this._guildChangeApplyTimer = setTimeout(() => {
-        if (!this._controller) return;
-        this.applyMicroStateForCurrentGuild();
-        this.setupChannelObserver();
-      }, 300);
-    };
-    this._SelectedGuildStore.addChangeListener(this._guildChangeHandler);
-
-    // Also listen for channel changes within the same guild — Discord can
-    // remount the sidebar when navigating to/from forums, stages, threads, etc.
-    // This re-applies micro state and reconnects the observer if orphaned.
-    if (this._SelectedChannelStore) {
-      this._channelChangeHandler = this._throttle(() => {
-        if (!this._controller) return;
-        this._panelElCache = null;
-        this.applyMicroStateForCurrentGuild();
-        // Reconnect observer only if it's missing or its target detached
-        if (!this._channelObserver) {
-          this.setupChannelObserver();
-        }
-      }, 500); // Throttle to 500ms — channel switches can fire rapidly
-      this._SelectedChannelStore.addChangeListener(this._channelChangeHandler);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §8  Macro Panel Control
-  // ═══════════════════════════════════════════════════════════════════════
-
-  togglePanel(panelName) {
-    const def = PANEL_DEFS[panelName];
-    if (!def) return;
-
-    // No tier gating — all panels available immediately
-    const isPushed = this.settings.panels[panelName].pushed;
-    this.settings.panels[panelName].pushed = !isPushed;
-
-    if (!isPushed) {
-      // Capture current width before pushing (for restore)
-      const el = this._findPanelElement(panelName);
-      if (el && !this.settings.panels[panelName].width) {
-        this.settings.panels[panelName].width = el.getBoundingClientRect().width;
-      }
-      document.body.classList.add(`ra-${panelName}-pushed`);
-      this.showPushEffect(panelName);
-      this.debugLog("Panel", `Pushed ${panelName}`);
-    } else {
-      document.body.classList.remove(`ra-${panelName}-pushed`);
-      document.body.classList.remove(`ra-${panelName}-hover-reveal`);
-      this.showPullEffect(panelName);
-      this.debugLog("Panel", `Pulled ${panelName}`);
-    }
-
-    this.saveSettings();
-    this.updateCSSVars();
-    this.updateToolbarIcon();
-  }
-
-  restorePanelStates() {
-    for (const [panelName, config] of Object.entries(this.settings.panels)) {
-      if (config.pushed) {
-        document.body.classList.add(`ra-${panelName}-pushed`);
-      }
-    }
-  }
-
-  getPushedPanelCount() {
-    return Object.values(this.settings.panels).filter((p) => p.pushed).length;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §9  Hover-to-Expand System
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /**
-   * Shared timer-based reveal/hide logic for hover-to-expand panels.
-   * Manages a reveal timer and a hide timer for the given panel name,
-   * toggling visibility via a body class (`ra-{name}-hover-reveal`).
-   *
-   * @param {string} name     Timer prefix (sidebar, members, profile, channel)
-   * @param {boolean} inZone  Whether cursor is inside the activation zone/panel
-   * @param {number} revealDelay  ms before reveal fires
-   * @param {number} hideDelay    ms before hide fires
-   * @param {function} [isActive]  Custom "is currently revealed" check (defaults to body class)
-   * @param {function} [setActive] Custom reveal/hide setter (defaults to body class toggle)
-   */
-  _applyHoverRevealState(name, inZone, revealDelay, hideDelay, isActive, setActive) {
-    const revealKey = `_${name}RevealTimer`;
-    const hideKey = `_${name}HideTimer`;
-    const className = `ra-${name}-hover-reveal`;
-
-    const checkActive = isActive || (() => document.body.classList.contains(className));
-    const applyActive = setActive || ((revealed) => {
-      if (revealed) {
-        document.body.classList.add(className);
-      } else {
-        document.body.classList.remove(className);
-      }
-    });
-
-    if (inZone) {
-      clearTimeout(this[hideKey]);
-      this[hideKey] = null;
-      if (!this[revealKey] && !checkActive()) {
-        this[revealKey] = setTimeout(() => {
-          this[revealKey] = null;
-          applyActive(true);
-        }, revealDelay);
-      }
-    } else {
-      clearTimeout(this[revealKey]);
-      this[revealKey] = null;
-      if (!this[hideKey] && checkActive()) {
-        this[hideKey] = setTimeout(() => {
-          this[hideKey] = null;
-          applyActive(false);
-        }, hideDelay);
-      }
-    }
-  }
-
-  setupHoverHandlers() {
-    if (!this._controller) return;
-
-    // Read settings dynamically inside handler so changes take effect immediately
-    const handler = this._throttle((e) => {
-      if (!this._controller) return; // Guard: plugin stopped
-      if (document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) {
-        this._clearAllHoverStates();
-        return;
-      }
-      const sidebarHoverEnabled = this.settings.panels.sidebar.hoverExpand;
-      const membersHoverEnabled = this.settings.panels.members.hoverExpand;
-      const profileHoverEnabled = this.settings.panels.profile.hoverExpand;
-      const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
-      const hiddenChannelsCount = currentGuildId
-        ? this.settings.guilds?.[currentGuildId]?.hiddenChannels?.length || 0
-        : 0;
-      const channelHoverEnabled = hiddenChannelsCount > 0;
-      if (!sidebarHoverEnabled && !membersHoverEnabled && !profileHoverEnabled && !channelHoverEnabled) {
-        this._setHiddenChannelRevealState(false);
-        return;
-      }
-
-      const fudge = this.settings.hoverFudgePx;
-      const revealDelay = this.settings.hoverRevealDelayMs;
-      const hideDelay = this.settings.hoverHideDelayMs;
-      const viewportWidth = window.innerWidth;
-      const panelRevealDelay = {
-        sidebar: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
-        members: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
-      };
-
-      // ── Channel sidebar hover (left edge) ──
-      if (sidebarHoverEnabled && this.settings.panels.sidebar.pushed) {
-        const inZone = e.clientX <= fudge;
-        const sidebarEl = this._findPanelElement("sidebar");
-        const inPanel = sidebarEl ? this._isInsideElement(e, sidebarEl, fudge) : false;
-        this._applyHoverRevealState("sidebar", inZone || inPanel, panelRevealDelay.sidebar, hideDelay);
-      } else {
-        clearTimeout(this._sidebarRevealTimer);
-        clearTimeout(this._sidebarHideTimer);
-        this._sidebarRevealTimer = null;
-        this._sidebarHideTimer = null;
-        document.body.classList.remove("ra-sidebar-hover-reveal");
-      }
-
-      // ── Members list hover (right edge) ──
-      if (membersHoverEnabled && this.settings.panels.members.pushed) {
-        const distFromRight = viewportWidth - e.clientX;
-        const inZone = distFromRight <= fudge;
-        const membersEl = this._findPanelElement("members");
-        const inPanel = membersEl ? this._isInsideElement(e, membersEl, fudge) : false;
-        this._applyHoverRevealState("members", inZone || inPanel, panelRevealDelay.members, hideDelay);
-      } else {
-        clearTimeout(this._membersRevealTimer);
-        clearTimeout(this._membersHideTimer);
-        this._membersRevealTimer = null;
-        this._membersHideTimer = null;
-        document.body.classList.remove("ra-members-hover-reveal");
-      }
-
-      // ── Profile panel hover (right edge, offset from members) ──
-      if (profileHoverEnabled && this.settings.panels.profile.pushed) {
-        const profileEl = this._findPanelElement("profile");
-        const inPanel = profileEl ? this._isInsideElement(e, profileEl, fudge) : false;
-        const distFromRight = viewportWidth - e.clientX;
-        const inZone = distFromRight <= fudge && !document.body.classList.contains("ra-members-hover-reveal");
-        this._applyHoverRevealState("profile", inZone || inPanel, revealDelay, hideDelay);
-      }
-
-      // ── Pushed channel hover reveal (channel sidebar region) ──
-      if (channelHoverEnabled) {
-        const hoverEl = this._getChannelHoverElement();
-        const inChannelPanel = hoverEl ? this._isInsideElement(e, hoverEl, fudge) : false;
-        this._applyHoverRevealState(
-          "channel", inChannelPanel, revealDelay, hideDelay,
-          () => this._channelsHoverRevealActive,
-          (revealed) => this._setHiddenChannelRevealState(revealed)
-        );
-      } else {
-        clearTimeout(this._channelRevealTimer);
-        clearTimeout(this._channelHideTimer);
-        this._channelRevealTimer = null;
-        this._channelHideTimer = null;
-        this._setHiddenChannelRevealState(false);
-      }
-    }, 16); // ~60fps throttle
-
-    document.addEventListener("mousemove", handler, {
-      passive: true,
-      signal: this._controller.signal,
-    });
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §10  Resize Handle System (CollapsibleUI pattern)
-  // ═══════════════════════════════════════════════════════════════════════
-  //
-  // Resize handles are ::before pseudo-elements on the panel itself.
-  // mousedown on the panel edge → track mousemove → mouseup commits width.
-  // CSS for handles is in §17 buildCSS().
-
-  setupResizeHandlers() {
-    if (!this._controller) return;
-    const signal = this._controller.signal;
-
-    // ── mousedown: detect drag start (on document for full coverage) ──
-    document.addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;
-      const target = e.target;
-
-      // Check if target matches any panel's resize handle zone
-      for (const panelName of Object.keys(PANEL_DEFS)) {
-        if (panelName === "sidebar" && document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) continue;
-        const panelEl = this._findPanelElement(panelName);
-        if (!panelEl) continue;
-
-        // The ::before pseudo-element click registers on the parent element
-        if (target === panelEl || target.parentElement === panelEl) {
-          const rect = panelEl.getBoundingClientRect();
-          // Only trigger if click is near the resize edge (left edge for right panels, right edge for sidebar)
-          const isLeftEdge = panelName !== "sidebar" && e.clientX <= rect.left + 12;
-          const isRightEdge = panelName === "sidebar" && e.clientX >= rect.right - 12;
-
-          if (isLeftEdge || isRightEdge) {
-            e.preventDefault();
-            this._dragging = panelEl;
-            this._dragPanel = panelName;
-            panelEl.style.setProperty("transition", "none", "important");
-            this.debugLog("Resize", `Started dragging ${panelName}`);
-          }
+      if (panelName === "sidebar" && document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) continue;
+      const panelEl = ctx._findPanelElement(panelName);
+      if (!panelEl) continue;
+      if (target === panelEl || target.parentElement === panelEl) {
+        const rect = panelEl.getBoundingClientRect();
+        const isLeftEdge = panelName !== "sidebar" && e.clientX <= rect.left + 12;
+        const isRightEdge = panelName === "sidebar" && e.clientX >= rect.right - 12;
+        if (isLeftEdge || isRightEdge) {
+          e.preventDefault();
+          ctx._dragging = panelEl;
+          ctx._dragPanel = panelName;
+          panelEl.style.setProperty("transition", "none", "important");
+          ctx.debugLog("Resize", `Started dragging ${panelName}`);
         }
       }
-    }, { passive: false, signal });
-
-    // ── mousemove: update width while dragging (on document for full coverage) ──
-    document.addEventListener("mousemove", (e) => {
-      if (!this._dragging || !this._dragPanel) return;
-
-      const rect = this._dragging.getBoundingClientRect();
-      let width;
-
-      if (this._dragPanel === "sidebar") {
-        // Sidebar: cursor X minus left edge
-        width = e.clientX - rect.left;
-      } else {
-        // Right-side panels: right edge minus cursor X
-        width = rect.right - e.clientX;
-      }
-
-      // Clamp: min 80px, max 60vw
-      width = Math.max(RA_RESIZE_MIN_WIDTH, Math.min(width, window.innerWidth * 0.6));
-
-      this._dragging.style.setProperty("width", `${width}px`, "important");
-      this._dragging.style.setProperty("max-width", `${width}px`, "important");
-      this._dragging.style.setProperty("min-width", `${width}px`, "important");
-    }, { passive: true, signal });
-
-    // ── mouseup: commit width and restore transitions (on document for full coverage) ──
-    document.addEventListener("mouseup", (e) => {
-      if (!this._dragging || !this._dragPanel) return;
-      if (e.button !== 0) return; // Only commit on left-click release
-
-      const panelName = this._dragPanel;
-      const dragged = this._dragging;
-
-      // Commit dragged width
-      this.settings.panels[panelName].width = parseInt(dragged.style.width, 10) || this.settings.defaultWidths[panelName];
-
-      // Remove inline overrides, let CSS vars take over
-      dragged.style.removeProperty("width");
-      dragged.style.removeProperty("max-width");
-      dragged.style.removeProperty("min-width");
-
-      this.saveSettings();
-      this.updateCSSVars();
-
-      // Restore transitions after a tick
-      setTimeout(() => {
-        dragged.style.removeProperty("transition");
-      }, this.settings.transitionSpeed);
-
-      this._dragging = null;
-      this._dragPanel = null;
-      this.debugLog("Resize", `Committed ${panelName} width: ${this.settings.panels[panelName].width}px`);
-    }, { passive: true, signal });
-  }
-
-  _removeAllResizeStyles() {
-    for (const panelName of Object.keys(PANEL_DEFS)) {
-      const el = this._findPanelElement(panelName);
-      if (el) {
-        el.style.removeProperty("width");
-        el.style.removeProperty("max-width");
-        el.style.removeProperty("min-width");
-        el.style.removeProperty("transition");
-      }
     }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §11  Micro: Push Channel + Crush Category
-  // ═══════════════════════════════════════════════════════════════════════
-
-  _getGuildData(guildId) {
-    if (!this.settings.guilds[guildId]) {
-      this.settings.guilds[guildId] = { hiddenChannels: [], crushedCategories: [] };
+  }, { passive: false, signal });
+  document.addEventListener("mousemove", (e) => {
+    if (!ctx._dragging || !ctx._dragPanel) return;
+    const rect = ctx._dragging.getBoundingClientRect();
+    let width;
+    if (ctx._dragPanel === "sidebar") {
+      width = e.clientX - rect.left;
+    } else {
+      width = rect.right - e.clientX;
     }
-    return this.settings.guilds[guildId];
-  }
-
-  // ── Push Channel ──
-
-  pushChannel(guildId, channelId, channelName) {
-    const guildData = this._getGuildData(guildId);
-    if (guildData.hiddenChannels.some((c) => c.id === channelId)) return;
-    guildData.hiddenChannels.push({ id: channelId, name: channelName });
-    this.applyChannelHiding(guildId);
-    this.saveSettings();
-    this.debugLog("PushChannel", `Pushed #${channelName} in ${guildId}`);
-  }
-
-  recallChannel(guildId, channelId) {
-    const guildData = this._getGuildData(guildId);
-    guildData.hiddenChannels = guildData.hiddenChannels.filter((c) => c.id !== channelId);
-    const el = document.querySelector(`[data-list-item-id="channels___${channelId}"]`);
+    width = Math.max(RA_RESIZE_MIN_WIDTH, Math.min(width, window.innerWidth * 0.6));
+    ctx._dragging.style.setProperty("width", `${width}px`, "important");
+    ctx._dragging.style.setProperty("max-width", `${width}px`, "important");
+    ctx._dragging.style.setProperty("min-width", `${width}px`, "important");
+  }, { passive: true, signal });
+  document.addEventListener("mouseup", (e) => {
+    if (!ctx._dragging || !ctx._dragPanel) return;
+    if (e.button !== 0) return;
+    const panelName = ctx._dragPanel;
+    const dragged = ctx._dragging;
+    ctx.settings.panels[panelName].width = parseInt(dragged.style.width, 10) || ctx.settings.defaultWidths[panelName];
+    dragged.style.removeProperty("width");
+    dragged.style.removeProperty("max-width");
+    dragged.style.removeProperty("min-width");
+    ctx.saveSettings();
+    ctx.updateCSSVars();
+    setTimeout(() => {
+      dragged.style.removeProperty("transition");
+    }, ctx.settings.transitionSpeed);
+    ctx._dragging = null;
+    ctx._dragPanel = null;
+    ctx.debugLog("Resize", `Committed ${panelName} width: ${ctx.settings.panels[panelName].width}px`);
+  }, { passive: true, signal });
+}
+function removeAllResizeStyles(ctx) {
+  for (const panelName of Object.keys(PANEL_DEFS)) {
+    const el = ctx._findPanelElement(panelName);
     if (el) {
-      el.style.display = "";
-      el.removeAttribute("data-ra-pushed");
+      el.style.removeProperty("width");
+      el.style.removeProperty("max-width");
+      el.style.removeProperty("min-width");
+      el.style.removeProperty("transition");
     }
-    this.applyChannelHiding(guildId);
-    this.saveSettings();
-    this.debugLog("RecallChannel", `Recalled ${channelId} in ${guildId}`);
   }
+}
 
-  isChannelHidden(guildId, channelId) {
-    const guildData = this.settings.guilds[guildId];
-    return guildData?.hiddenChannels?.some((c) => c.id === channelId) || false;
-  }
-
-  _getChannelHoverElement() {
-    const channelTree =
-      document.querySelector('ul[aria-label="Channels"]') ||
-      document.querySelector('[role="tree"][aria-label="Channels"]') ||
-      document.querySelector('[class*="sidebar_"] [role="tree"]');
-    if (!channelTree) return null;
-    return channelTree.closest('[class*="sidebar_"]') || channelTree;
-  }
-
-  _setHiddenChannelRevealState(shouldReveal) {
-    const next = !!shouldReveal;
-    if (this._channelsHoverRevealActive === next) return;
-    this._channelsHoverRevealActive = next;
-    document.body.classList.toggle("ra-channels-hover-reveal", next);
-    this.applyChannelHiding();
-  }
-
-  applyChannelHiding(guildId) {
-    const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
-    if (guildId && guildId !== currentGuildId) return;
-
-    const effectiveGuildId = guildId || currentGuildId;
-    if (!effectiveGuildId) return;
-    const guildData = this.settings.guilds[effectiveGuildId];
-    const hiddenIds = new Set((guildData?.hiddenChannels || []).map((entry) => String(entry.id)));
-
-    // Clear stale pushed markers first (when channels were recalled or guild changed)
-    const pushedEls = document.querySelectorAll("[data-ra-pushed]");
-    for (const el of pushedEls) {
-      const listId = el.getAttribute("data-list-item-id") || "";
-      const channelId = listId.startsWith("channels___")
-        ? listId.replace("channels___", "")
-        : null;
-      if (!channelId || !hiddenIds.has(channelId)) {
-        el.style.display = "";
-        el.removeAttribute("data-ra-pushed");
-      }
+// src/RulersAuthority/panels.js
+function togglePanel(ctx, panelName) {
+  const def = PANEL_DEFS[panelName];
+  if (!def) return;
+  const isPushed = ctx.settings.panels[panelName].pushed;
+  ctx.settings.panels[panelName].pushed = !isPushed;
+  if (!isPushed) {
+    const el = ctx._findPanelElement(panelName);
+    if (el && !ctx.settings.panels[panelName].width) {
+      ctx.settings.panels[panelName].width = el.getBoundingClientRect().width;
     }
-
-    if (hiddenIds.size === 0) {
-      this._channelsHoverRevealActive = false;
-      document.body.classList.remove("ra-channels-hover-reveal");
+    document.body.classList.add(`ra-${panelName}-pushed`);
+    showPushEffect(ctx, panelName);
+    ctx.debugLog("Panel", `Pushed ${panelName}`);
+  } else {
+    document.body.classList.remove(`ra-${panelName}-pushed`);
+    document.body.classList.remove(`ra-${panelName}-hover-reveal`);
+    showPullEffect(ctx, panelName);
+    ctx.debugLog("Panel", `Pulled ${panelName}`);
+  }
+  ctx.saveSettings();
+  ctx.updateCSSVars();
+  updateToolbarIcon(ctx);
+}
+function restorePanelStates(ctx) {
+  for (const [panelName, config] of Object.entries(ctx.settings.panels)) {
+    if (config.pushed) {
+      document.body.classList.add(`ra-${panelName}-pushed`);
+    }
+  }
+}
+function getPushedPanelCount(ctx) {
+  return Object.values(ctx.settings.panels).filter((p) => p.pushed).length;
+}
+function applyHoverRevealState(ctx, name, inZone, revealDelay, hideDelay, isActive, setActive) {
+  const revealKey = `_${name}RevealTimer`;
+  const hideKey = `_${name}HideTimer`;
+  const className = `ra-${name}-hover-reveal`;
+  const checkActive = isActive || (() => document.body.classList.contains(className));
+  const applyActive = setActive || ((revealed) => {
+    if (revealed) {
+      document.body.classList.add(className);
+    } else {
+      document.body.classList.remove(className);
+    }
+  });
+  if (inZone) {
+    clearTimeout(ctx[hideKey]);
+    ctx[hideKey] = null;
+    if (!ctx[revealKey] && !checkActive()) {
+      ctx[revealKey] = setTimeout(() => {
+        ctx[revealKey] = null;
+        applyActive(true);
+      }, revealDelay);
+    }
+  } else {
+    clearTimeout(ctx[revealKey]);
+    ctx[revealKey] = null;
+    if (!ctx[hideKey] && checkActive()) {
+      ctx[hideKey] = setTimeout(() => {
+        ctx[hideKey] = null;
+        applyActive(false);
+      }, hideDelay);
+    }
+  }
+}
+function setupHoverHandlers(ctx) {
+  if (!ctx._controller) return;
+  const handler = ctx._throttle((e) => {
+    var _a2, _b, _c, _d, _e;
+    if (!ctx._controller) return;
+    if (document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) {
+      clearAllHoverStates(ctx);
       return;
     }
-
-    for (const id of hiddenIds) {
-      const el = document.querySelector(`[data-list-item-id="channels___${id}"]`);
-      if (el) {
-        el.style.display = this._channelsHoverRevealActive ? "" : "none";
-        el.setAttribute("data-ra-pushed", "true");
-      }
+    const sidebarHoverEnabled = ctx.settings.panels.sidebar.hoverExpand;
+    const membersHoverEnabled = ctx.settings.panels.members.hoverExpand;
+    const profileHoverEnabled = ctx.settings.panels.profile.hoverExpand;
+    const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
+    const hiddenChannelsCount = currentGuildId ? ((_e = (_d = (_c = ctx.settings.guilds) == null ? void 0 : _c[currentGuildId]) == null ? void 0 : _d.hiddenChannels) == null ? void 0 : _e.length) || 0 : 0;
+    const channelHoverEnabled = hiddenChannelsCount > 0;
+    if (!sidebarHoverEnabled && !membersHoverEnabled && !profileHoverEnabled && !channelHoverEnabled) {
+      setHiddenChannelRevealState(ctx, false);
+      return;
     }
+    const fudge = ctx.settings.hoverFudgePx;
+    const revealDelay = ctx.settings.hoverRevealDelayMs;
+    const hideDelay = ctx.settings.hoverHideDelayMs;
+    const viewportWidth = window.innerWidth;
+    const panelRevealDelay = {
+      sidebar: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
+      members: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay)
+    };
+    if (sidebarHoverEnabled && ctx.settings.panels.sidebar.pushed) {
+      const inZone = e.clientX <= fudge;
+      const sidebarEl = ctx._findPanelElement("sidebar");
+      const inPanel = sidebarEl ? ctx._isInsideElement(e, sidebarEl, fudge) : false;
+      applyHoverRevealState(ctx, "sidebar", inZone || inPanel, panelRevealDelay.sidebar, hideDelay);
+    } else {
+      clearTimeout(ctx._sidebarRevealTimer);
+      clearTimeout(ctx._sidebarHideTimer);
+      ctx._sidebarRevealTimer = null;
+      ctx._sidebarHideTimer = null;
+      document.body.classList.remove("ra-sidebar-hover-reveal");
+    }
+    if (membersHoverEnabled && ctx.settings.panels.members.pushed) {
+      const distFromRight = viewportWidth - e.clientX;
+      const inZone = distFromRight <= fudge;
+      const membersEl = ctx._findPanelElement("members");
+      const inPanel = membersEl ? ctx._isInsideElement(e, membersEl, fudge) : false;
+      applyHoverRevealState(ctx, "members", inZone || inPanel, panelRevealDelay.members, hideDelay);
+    } else {
+      clearTimeout(ctx._membersRevealTimer);
+      clearTimeout(ctx._membersHideTimer);
+      ctx._membersRevealTimer = null;
+      ctx._membersHideTimer = null;
+      document.body.classList.remove("ra-members-hover-reveal");
+    }
+    if (profileHoverEnabled && ctx.settings.panels.profile.pushed) {
+      const profileEl = ctx._findPanelElement("profile");
+      const inPanel = profileEl ? ctx._isInsideElement(e, profileEl, fudge) : false;
+      const distFromRight = viewportWidth - e.clientX;
+      const inZone = distFromRight <= fudge && !document.body.classList.contains("ra-members-hover-reveal");
+      applyHoverRevealState(ctx, "profile", inZone || inPanel, revealDelay, hideDelay);
+    }
+    if (channelHoverEnabled) {
+      const hoverEl = getChannelHoverElement();
+      const inChannelPanel = hoverEl ? ctx._isInsideElement(e, hoverEl, fudge) : false;
+      applyHoverRevealState(
+        ctx,
+        "channel",
+        inChannelPanel,
+        revealDelay,
+        hideDelay,
+        () => ctx._channelsHoverRevealActive,
+        (revealed) => setHiddenChannelRevealState(ctx, revealed)
+      );
+    } else {
+      clearTimeout(ctx._channelRevealTimer);
+      clearTimeout(ctx._channelHideTimer);
+      ctx._channelRevealTimer = null;
+      ctx._channelHideTimer = null;
+      setHiddenChannelRevealState(ctx, false);
+    }
+  }, 16);
+  document.addEventListener("mousemove", handler, {
+    passive: true,
+    signal: ctx._controller.signal
+  });
+}
+function getGuildData(ctx, guildId) {
+  if (!ctx.settings.guilds[guildId]) {
+    ctx.settings.guilds[guildId] = { hiddenChannels: [], crushedCategories: [] };
   }
-
-  restoreAllHiddenChannels() {
-    const pushed = document.querySelectorAll("[data-ra-pushed]");
-    for (const el of pushed) {
+  return ctx.settings.guilds[guildId];
+}
+function pushChannel(ctx, guildId, channelId, channelName) {
+  const guildData = getGuildData(ctx, guildId);
+  if (guildData.hiddenChannels.some((c) => c.id === channelId)) return;
+  guildData.hiddenChannels.push({ id: channelId, name: channelName });
+  applyChannelHiding(ctx, guildId);
+  ctx.saveSettings();
+  ctx.debugLog("PushChannel", `Pushed #${channelName} in ${guildId}`);
+}
+function recallChannel(ctx, guildId, channelId) {
+  const guildData = getGuildData(ctx, guildId);
+  guildData.hiddenChannels = guildData.hiddenChannels.filter((c) => c.id !== channelId);
+  const el = document.querySelector(`[data-list-item-id="channels___${channelId}"]`);
+  if (el) {
+    el.style.display = "";
+    el.removeAttribute("data-ra-pushed");
+  }
+  applyChannelHiding(ctx, guildId);
+  ctx.saveSettings();
+  ctx.debugLog("RecallChannel", `Recalled ${channelId} in ${guildId}`);
+}
+function isChannelHidden(ctx, guildId, channelId) {
+  var _a2;
+  const guildData = ctx.settings.guilds[guildId];
+  return ((_a2 = guildData == null ? void 0 : guildData.hiddenChannels) == null ? void 0 : _a2.some((c) => c.id === channelId)) || false;
+}
+function getChannelHoverElement() {
+  const channelTree = document.querySelector('ul[aria-label="Channels"]') || document.querySelector('[role="tree"][aria-label="Channels"]') || document.querySelector('[class*="sidebar_"] [role="tree"]');
+  if (!channelTree) return null;
+  return channelTree.closest('[class*="sidebar_"]') || channelTree;
+}
+function setHiddenChannelRevealState(ctx, shouldReveal) {
+  const next = !!shouldReveal;
+  if (ctx._channelsHoverRevealActive === next) return;
+  ctx._channelsHoverRevealActive = next;
+  document.body.classList.toggle("ra-channels-hover-reveal", next);
+  applyChannelHiding(ctx);
+}
+function applyChannelHiding(ctx, guildId) {
+  var _a2, _b;
+  const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
+  if (guildId && guildId !== currentGuildId) return;
+  const effectiveGuildId = guildId || currentGuildId;
+  if (!effectiveGuildId) return;
+  const guildData = ctx.settings.guilds[effectiveGuildId];
+  const hiddenIds = new Set(((guildData == null ? void 0 : guildData.hiddenChannels) || []).map((entry) => String(entry.id)));
+  const pushedEls = document.querySelectorAll("[data-ra-pushed]");
+  for (const el of pushedEls) {
+    const listId = el.getAttribute("data-list-item-id") || "";
+    const channelId = listId.startsWith("channels___") ? listId.replace("channels___", "") : null;
+    if (!channelId || !hiddenIds.has(channelId)) {
       el.style.display = "";
       el.removeAttribute("data-ra-pushed");
     }
-    this._channelsHoverRevealActive = false;
+  }
+  if (hiddenIds.size === 0) {
+    ctx._channelsHoverRevealActive = false;
     document.body.classList.remove("ra-channels-hover-reveal");
+    return;
   }
-
-  // ── Crush Category ──
-
-  crushCategory(guildId, categoryId, categoryName) {
-    const guildData = this._getGuildData(guildId);
-    if (guildData.crushedCategories.some((c) => c.id === categoryId)) return;
-    guildData.crushedCategories.push({ id: categoryId, name: categoryName });
-    this.applyCategoryCrushing(guildId);
-    this.saveSettings();
-    this.debugLog("CrushCategory", `Crushed ${categoryName} in ${guildId}`);
-  }
-
-  releaseCategory(guildId, categoryId) {
-    const guildData = this._getGuildData(guildId);
-    guildData.crushedCategories = guildData.crushedCategories.filter((c) => c.id !== categoryId);
-    const children = document.querySelectorAll(`[data-ra-category-crushed="${categoryId}"]`);
-    for (const el of children) {
-      el.style.display = "";
-      el.removeAttribute("data-ra-category-crushed");
+  for (const id of hiddenIds) {
+    const el = document.querySelector(`[data-list-item-id="channels___${id}"]`);
+    if (el) {
+      el.style.display = ctx._channelsHoverRevealActive ? "" : "none";
+      el.setAttribute("data-ra-pushed", "true");
     }
-    const catEl = document.querySelector(`[data-list-item-id="channels___${categoryId}"]`);
-    if (catEl) catEl.removeAttribute("data-ra-crushed");
-    this.saveSettings();
-    this.debugLog("ReleaseCategory", `Released ${categoryId} in ${guildId}`);
   }
-
-  isCategoryCrushed(guildId, categoryId) {
-    const guildData = this.settings.guilds[guildId];
-    return guildData?.crushedCategories?.some((c) => c.id === categoryId) || false;
+}
+function restoreAllHiddenChannels() {
+  const pushed = document.querySelectorAll("[data-ra-pushed]");
+  for (const el of pushed) {
+    el.style.display = "";
+    el.removeAttribute("data-ra-pushed");
   }
-
-  applyCategoryCrushing(guildId) {
-    const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
-    if (guildId && guildId !== currentGuildId) return;
-
-    const effectiveGuildId = guildId || currentGuildId;
-    if (!effectiveGuildId) return;
-    const guildData = this.settings.guilds[effectiveGuildId];
-    if (!guildData?.crushedCategories?.length) return;
-
-    for (const { id: catId } of guildData.crushedCategories) {
-      const catEl = document.querySelector(`[data-list-item-id="channels___${catId}"]`);
-      if (!catEl) continue;
-
-      catEl.setAttribute("data-ra-crushed", "true");
-
-      let next = catEl.nextElementSibling;
-      let safetyLimit = 200; // Prevent runaway walks (Discord guilds rarely have >200 channels)
-      let nonChannelSkips = 0;
-      while (next && safetyLimit-- > 0) {
-        const listId = next.getAttribute("data-list-item-id") || "";
-        if (!listId.startsWith("channels___")) {
-          nonChannelSkips++;
-          // If we've skipped too many non-channel elements, we've likely crossed into another section
-          if (nonChannelSkips > 5) break;
-          next = next.nextElementSibling;
-          continue;
-        }
-        nonChannelSkips = 0; // Reset on valid channel element
-        const channelId = listId.replace("channels___", "");
-        const channel = this._ChannelStore?.getChannel?.(channelId);
-        if (!channel || channel.type === 4) break; // Stop at next category or unknown channel
-        next.style.display = "none";
-        next.setAttribute("data-ra-category-crushed", catId);
+  document.body.classList.remove("ra-channels-hover-reveal");
+}
+function crushCategory(ctx, guildId, categoryId, categoryName) {
+  const guildData = getGuildData(ctx, guildId);
+  if (guildData.crushedCategories.some((c) => c.id === categoryId)) return;
+  guildData.crushedCategories.push({ id: categoryId, name: categoryName });
+  applyCategoryCrushing(ctx, guildId);
+  ctx.saveSettings();
+  ctx.debugLog("CrushCategory", `Crushed ${categoryName} in ${guildId}`);
+}
+function releaseCategory(ctx, guildId, categoryId) {
+  const guildData = getGuildData(ctx, guildId);
+  guildData.crushedCategories = guildData.crushedCategories.filter((c) => c.id !== categoryId);
+  const children = document.querySelectorAll(`[data-ra-category-crushed="${categoryId}"]`);
+  for (const el of children) {
+    el.style.display = "";
+    el.removeAttribute("data-ra-category-crushed");
+  }
+  const catEl = document.querySelector(`[data-list-item-id="channels___${categoryId}"]`);
+  if (catEl) catEl.removeAttribute("data-ra-crushed");
+  ctx.saveSettings();
+  ctx.debugLog("ReleaseCategory", `Released ${categoryId} in ${guildId}`);
+}
+function isCategoryCrushed(ctx, guildId, categoryId) {
+  var _a2;
+  const guildData = ctx.settings.guilds[guildId];
+  return ((_a2 = guildData == null ? void 0 : guildData.crushedCategories) == null ? void 0 : _a2.some((c) => c.id === categoryId)) || false;
+}
+function applyCategoryCrushing(ctx, guildId) {
+  var _a2, _b, _c, _d, _e;
+  const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
+  if (guildId && guildId !== currentGuildId) return;
+  const effectiveGuildId = guildId || currentGuildId;
+  if (!effectiveGuildId) return;
+  const guildData = ctx.settings.guilds[effectiveGuildId];
+  if (!((_c = guildData == null ? void 0 : guildData.crushedCategories) == null ? void 0 : _c.length)) return;
+  for (const { id: catId } of guildData.crushedCategories) {
+    const catEl = document.querySelector(`[data-list-item-id="channels___${catId}"]`);
+    if (!catEl) continue;
+    catEl.setAttribute("data-ra-crushed", "true");
+    let next = catEl.nextElementSibling;
+    let safetyLimit = 200;
+    let nonChannelSkips = 0;
+    while (next && safetyLimit-- > 0) {
+      const listId = next.getAttribute("data-list-item-id") || "";
+      if (!listId.startsWith("channels___")) {
+        nonChannelSkips++;
+        if (nonChannelSkips > 5) break;
         next = next.nextElementSibling;
+        continue;
       }
+      nonChannelSkips = 0;
+      const channelId = listId.replace("channels___", "");
+      const channel = (_e = (_d = ctx._ChannelStore) == null ? void 0 : _d.getChannel) == null ? void 0 : _e.call(_d, channelId);
+      if (!channel || channel.type === 4) break;
+      next.style.display = "none";
+      next.setAttribute("data-ra-category-crushed", catId);
+      next = next.nextElementSibling;
     }
   }
-
-  restoreAllCrushedCategories() {
-    const crushed = document.querySelectorAll("[data-ra-category-crushed]");
-    for (const el of crushed) {
-      el.style.display = "";
-      el.removeAttribute("data-ra-category-crushed");
+}
+function restoreAllCrushedCategories() {
+  const crushed = document.querySelectorAll("[data-ra-category-crushed]");
+  for (const el of crushed) {
+    el.style.display = "";
+    el.removeAttribute("data-ra-category-crushed");
+  }
+  const cats = document.querySelectorAll("[data-ra-crushed]");
+  for (const el of cats) {
+    el.removeAttribute("data-ra-crushed");
+  }
+}
+function applyMicroStateForCurrentGuild(ctx) {
+  var _a2, _b;
+  const guildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
+  if (guildId) {
+    applyChannelHiding(ctx, guildId);
+    applyCategoryCrushing(ctx, guildId);
+  }
+}
+function gripDM(ctx, channelId, username) {
+  if (ctx.settings.grippedDMs.some((d) => d.channelId === channelId)) return;
+  ctx.settings.grippedDMs.push({ channelId, username });
+  applyDMGripping(ctx);
+  ctx.saveSettings();
+  ctx._toast(`Gripped DM: ${username}`, "success");
+  ctx.debugLog("GripDM", `Gripped ${username} (${channelId})`);
+}
+function releaseDM(ctx, channelId) {
+  ctx.settings.grippedDMs = ctx.settings.grippedDMs.filter((d) => d.channelId !== channelId);
+  const el = document.querySelector(`[data-list-item-id*="${channelId}"] .ra-grip-indicator`);
+  if (el) el.remove();
+  ctx.saveSettings();
+  ctx._toast("Released DM grip", "info");
+  ctx.debugLog("ReleaseDM", `Released ${channelId}`);
+}
+function isDMGripped(ctx, channelId) {
+  return ctx.settings.grippedDMs.some((d) => d.channelId === channelId);
+}
+function setupDMObserver(ctx) {
+  if (ctx._dmObserver) {
+    ctx._dmObserver.disconnect();
+    ctx._dmObserver = null;
+  }
+  if (ctx.settings.grippedDMs.length === 0) return;
+  const dmList = ctx._findElement(DM_LIST_FALLBACKS);
+  if (!dmList) return;
+  const throttledGrip = ctx._throttle(() => {
+    if (!ctx._dmObserver) return;
+    applyDMGripping(ctx);
+  }, RA_OBSERVER_THROTTLE_MS);
+  ctx._dmObserver = new MutationObserver(throttledGrip);
+  ctx._dmObserver.observe(dmList, { childList: true, subtree: true });
+}
+function applyDMGripping(ctx) {
+  var _a2;
+  const dmList = ctx._findElement(DM_LIST_FALLBACKS);
+  if (!dmList) return;
+  const header = dmList.querySelector('[class*="searchBar_"]') || dmList.querySelector('[class*="privateChannelsHeaderContainer_"]') || dmList.querySelector("h2");
+  const insertAfterEl = (header == null ? void 0 : header.closest('[class*="listItem_"]')) || (header == null ? void 0 : header.parentElement) || null;
+  for (const { channelId } of [...ctx.settings.grippedDMs].reverse()) {
+    const dmEl = dmList.querySelector(`[data-list-item-id*="${channelId}"]`) || ((_a2 = dmList.querySelector(`a[href="/channels/@me/${channelId}"]`)) == null ? void 0 : _a2.closest("[data-list-item-id]"));
+    if (!dmEl) continue;
+    if (!dmEl.querySelector(".ra-grip-indicator")) {
+      const indicator = document.createElement("div");
+      indicator.className = "ra-grip-indicator";
+      indicator.title = "Telekinetic Grip";
+      dmEl.style.position = "relative";
+      dmEl.appendChild(indicator);
     }
-    const cats = document.querySelectorAll("[data-ra-crushed]");
-    for (const el of cats) {
-      el.removeAttribute("data-ra-crushed");
+    if (insertAfterEl && insertAfterEl.nextSibling !== dmEl) {
+      dmList.insertBefore(dmEl, insertAfterEl.nextSibling);
+    } else if (!insertAfterEl && dmList.firstChild !== dmEl) {
+      dmList.insertBefore(dmEl, dmList.firstChild);
     }
   }
-
-  applyMicroStateForCurrentGuild() {
-    const guildId = this._SelectedGuildStore?.getGuildId?.();
-    if (guildId) {
-      this.applyChannelHiding(guildId);
-      this.applyCategoryCrushing(guildId);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §12  Micro: Grip DM
-  // ═══════════════════════════════════════════════════════════════════════
-
-  gripDM(channelId, username) {
-    if (this.settings.grippedDMs.some((d) => d.channelId === channelId)) return;
-    this.settings.grippedDMs.push({ channelId, username });
-    this.applyDMGripping();
-    this.saveSettings();
-    this._toast(`Gripped DM: ${username}`, "success");
-    this.debugLog("GripDM", `Gripped ${username} (${channelId})`);
-  }
-
-  releaseDM(channelId) {
-    this.settings.grippedDMs = this.settings.grippedDMs.filter((d) => d.channelId !== channelId);
-    const el = document.querySelector(`[data-list-item-id*="${channelId}"] .ra-grip-indicator`);
-    if (el) el.remove();
-    this.saveSettings();
-    this._toast("Released DM grip", "info");
-    this.debugLog("ReleaseDM", `Released ${channelId}`);
-  }
-
-  isDMGripped(channelId) {
-    return this.settings.grippedDMs.some((d) => d.channelId === channelId);
-  }
-
-  setupDMObserver() {
-    if (this._dmObserver) { this._dmObserver.disconnect(); this._dmObserver = null; }
-    if (this.settings.grippedDMs.length === 0) return;
-
-    const dmList = this._findElement(DM_LIST_FALLBACKS);
-    if (!dmList) return;
-
-    const throttledGrip = this._throttle(() => {
-      if (!this._dmObserver) return;
-      this.applyDMGripping();
-    }, RA_OBSERVER_THROTTLE_MS);
-
-    this._dmObserver = new MutationObserver(throttledGrip);
-    this._dmObserver.observe(dmList, { childList: true, subtree: true });
-  }
-
-  applyDMGripping() {
-    const dmList = this._findElement(DM_LIST_FALLBACKS);
-    if (!dmList) return;
-
-    const header = dmList.querySelector('[class*="searchBar_"]') ||
-                   dmList.querySelector('[class*="privateChannelsHeaderContainer_"]') ||
-                   dmList.querySelector("h2");
-    const insertAfterEl = header?.closest('[class*="listItem_"]') || header?.parentElement || null;
-
-    for (const { channelId } of [...this.settings.grippedDMs].reverse()) {
-      const dmEl = dmList.querySelector(`[data-list-item-id*="${channelId}"]`) ||
-                   dmList.querySelector(`a[href="/channels/@me/${channelId}"]`)?.closest("[data-list-item-id]");
-      if (!dmEl) continue;
-
-      if (!dmEl.querySelector(".ra-grip-indicator")) {
-        const indicator = document.createElement("div");
-        indicator.className = "ra-grip-indicator";
-        indicator.title = "Telekinetic Grip";
-        dmEl.style.position = "relative";
-        dmEl.appendChild(indicator);
+}
+function patchContextMenus(ctx) {
+  try {
+    if (ctx._unpatchChannelCtx) {
+      try {
+        ctx._unpatchChannelCtx();
+      } catch (_) {
       }
-
-      if (insertAfterEl && insertAfterEl.nextSibling !== dmEl) {
-        dmList.insertBefore(dmEl, insertAfterEl.nextSibling);
-      } else if (!insertAfterEl && dmList.firstChild !== dmEl) {
-        dmList.insertBefore(dmEl, dmList.firstChild);
-      }
+      ctx._unpatchChannelCtx = null;
     }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §13  Context Menu Patches
-  // ═══════════════════════════════════════════════════════════════════════
-
-  patchContextMenus() {
-    try {
-      if (this._unpatchChannelCtx) {
-        try { this._unpatchChannelCtx(); } catch (_) {}
-        this._unpatchChannelCtx = null;
-      }
-      this._unpatchChannelCtx = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
-        if (!props?.channel) return;
-        const channel = props.channel;
-        const channelId = channel.id;
-        const guildId = channel.guild_id || null;
-
-        // ── DM Context: Grip ──
-        if (!guildId && (channel.type === 1 || channel.type === 3)) {
-          const isGripped = this.isDMGripped(channelId);
-          const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
-          const item = BdApi.ContextMenu.buildItem({
-            type: "text",
-            label: isGripped ? "Release Grip" : "Grip DM",
-            id: isGripped ? "ra-release-dm" : "ra-grip-dm",
-            action: () => {
-              if (isGripped) {
-                this.releaseDM(channelId);
-              } else {
-                this.gripDM(channelId, channel.rawRecipients?.[0]?.username || channel.name || "Unknown");
-              }
-            },
-          });
-          const children = tree?.props?.children;
-          if (Array.isArray(children)) children.push(separator, item);
-          return;
-        }
-
-        // ── Guild Context: Push Channel / Crush Category ──
-        if (!guildId) return;
-        const items = [];
-
-        // Category (type === 4): Crush
-        if (channel.type === 4) {
-          const isCrushed = this.isCategoryCrushed(guildId, channelId);
-          items.push({
-            type: "text",
-            label: isCrushed ? "Release Category" : "Crush Category",
-            id: isCrushed ? "ra-release-category" : "ra-crush-category",
-            action: () => {
-              if (isCrushed) {
-                this.releaseCategory(guildId, channelId);
-                this._toast(`Released ${channel.name}`, "info");
-              } else {
-                this.crushCategory(guildId, channelId, channel.name);
-                this._toast(`Crushed ${channel.name}`, "success");
-              }
-            },
-          });
-        }
-
-        // Regular channel: Push
-        if (channel.type !== 4) {
-          const isHidden = this.isChannelHidden(guildId, channelId);
-          items.push({
-            type: "text",
-            label: isHidden ? "Recall Channel" : "Push Channel",
-            id: isHidden ? "ra-recall-channel" : "ra-push-channel",
-            action: () => {
-              if (isHidden) {
-                this.recallChannel(guildId, channelId);
-                this._toast(`Recalled #${channel.name}`, "info");
-              } else {
-                this.pushChannel(guildId, channelId, channel.name);
-                this._toast(`Pushed #${channel.name}`, "success");
-              }
-            },
-          });
-        }
-
-        if (items.length === 0) return;
-
-        const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
-        const submenu = BdApi.ContextMenu.buildItem({
-          type: "submenu",
-          label: "Ruler's Authority",
-          id: "ra-submenu",
-          items,
+    ctx._unpatchChannelCtx = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
+      var _a2, _b;
+      if (!(props == null ? void 0 : props.channel)) return;
+      const channel = props.channel;
+      const channelId = channel.id;
+      const guildId = channel.guild_id || null;
+      if (!guildId && (channel.type === 1 || channel.type === 3)) {
+        const isGripped = isDMGripped(ctx, channelId);
+        const separator2 = BdApi.ContextMenu.buildItem({ type: "separator" });
+        const item = BdApi.ContextMenu.buildItem({
+          type: "text",
+          label: isGripped ? "Release Grip" : "Grip DM",
+          id: isGripped ? "ra-release-dm" : "ra-grip-dm",
+          action: () => {
+            var _a3, _b2;
+            if (isGripped) {
+              releaseDM(ctx, channelId);
+            } else {
+              gripDM(ctx, channelId, ((_b2 = (_a3 = channel.rawRecipients) == null ? void 0 : _a3[0]) == null ? void 0 : _b2.username) || channel.name || "Unknown");
+            }
+          }
         });
-
-        const children = tree?.props?.children;
-        if (Array.isArray(children)) children.push(separator, submenu);
-      });
-      this.debugLog("ContextMenu", "Patched channel-context");
-    } catch (err) {
-      this.debugError("ContextMenu", "Failed to patch:", err);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §14  Toolbar Icon + Observer
-  // ═══════════════════════════════════════════════════════════════════════
-
-  _getChannelHeaderToolbar() {
-    const selectors = this._resolvedSelectors.toolbar || TOOLBAR_FALLBACKS;
-    for (const selector of selectors) {
-      const nodes = document.querySelectorAll(selector);
-      for (const node of nodes) {
-        if (!node || node.offsetParent === null) continue;
-        const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
-        if (host && host.offsetParent === null) continue;
-        return node;
+        const children2 = (_a2 = tree == null ? void 0 : tree.props) == null ? void 0 : _a2.children;
+        if (Array.isArray(children2)) children2.push(separator2, item);
+        return;
       }
-    }
-    return null;
-  }
-
-  _attachToolbarIcon(icon) {
-    const toolbar = this._getChannelHeaderToolbar();
-    if (!toolbar) return false;
-    if (icon.parentElement !== toolbar) {
-      toolbar.appendChild(icon);
-    }
-    icon.classList.remove("ra-toolbar-icon--hidden");
-    return true;
-  }
-
-  injectToolbarIcon() {
-    let icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-
-    if (!icon) {
-      icon = document.createElement("div");
-      icon.id = RA_TOOLBAR_ICON_ID;
-      icon.className = "ra-toolbar-icon";
-      icon.setAttribute("role", "button");
-      icon.setAttribute("aria-label", "Ruler's Authority — Toggle Sidebar");
-      icon.setAttribute("tabindex", "0");
-
-      // Hand SVG
-      icon.innerHTML = [
-        '<svg viewBox="0 0 32 32" width="18" height="18" xmlns="http://www.w3.org/2000/svg">',
-        '<path fill="#b5b5be" d="M31 8.5c0 0-2.53 5.333-3.215 8.062-0.896 3.57 0.13 6.268-1.172 9.73-2.25 4.060-2.402 4.717-10.613 4.708-3.009-0.003-11.626-2.297-11.626-2.297-1.188-0.305-3.373-0.125-3.373-1.453s1.554-2.296 2.936-2.3l5.439 0.478c1.322-0.083 2.705-0.856 2.747-2.585-0.022-2.558-0.275-4.522-1.573-6.6l-5.042-7.867c-0.301-0.626-0.373-1.694 0.499-2.171s1.862 0.232 2.2 0.849l5.631 7.66c0.602 0.559 1.671 0.667 1.58-0.524l-2.487-11.401c-0.155-0.81 0.256-1.791 1.194-1.791 1.231 0 1.987 0.47 1.963 1.213l2.734 11.249c0.214 0.547 0.972 0.475 1.176-0.031l0.779-10.939c0.040-0.349 0.495-0.957 1.369-0.831s1.377 1.063 1.285 1.424l-0.253 10.809c0.177 0.958 0.93 1.098 1.517 0.563l3.827-6.843c0.232-0.574 1.143-0.693 1.67-0.466 0.491 0.32 0.81 0.748 0.81 1.351v0z"/>',
-        "</svg>",
-      ].join("");
-
-      // Left click = toggle sidebar (signal for clean teardown)
-      const iconSignal = this._controller ? { signal: this._controller.signal } : {};
-      icon.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        this.togglePanel("sidebar");
-      }, iconSignal);
-
-      // Right click = cycle through panels
-      icon.addEventListener("contextmenu", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        this.togglePanel("members");
-      }, iconSignal);
-
-      // Custom themed tooltip (appended to body to avoid overflow clipping)
-      icon.addEventListener("mouseenter", () => {
-        let tip = document.getElementById("sl-toolbar-tip-ra");
-        if (!tip) {
-          tip = document.createElement("div");
-          tip.id = "sl-toolbar-tip-ra";
-          tip.className = "sl-toolbar-tip";
-          tip.textContent = "Ruler's Authority";
-          document.body.appendChild(tip);
-        }
-        const rect = icon.getBoundingClientRect();
-        tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
-        tip.style.left = `${rect.left + rect.width / 2}px`;
-        tip.classList.add("sl-toolbar-tip--visible");
-      }, iconSignal);
-      icon.addEventListener("mouseleave", () => {
-        const tip = document.getElementById("sl-toolbar-tip-ra");
-        if (tip) tip.classList.remove("sl-toolbar-tip--visible");
-      }, iconSignal);
-    }
-
-    this.updateToolbarIcon();
-
-    const anchored = this._attachToolbarIcon(icon);
-    if (!anchored) {
-      if (!icon.parentElement) document.body.appendChild(icon);
-      icon.classList.add("ra-toolbar-icon--hidden");
-    }
-  }
-
-  updateToolbarIcon() {
-    const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-    if (!icon) return;
-    const anyPushed = this.getPushedPanelCount() > 0;
-    icon.classList.toggle("ra-toolbar-icon--active", anyPushed);
-    icon.classList.toggle("ra-toolbar-icon--amplified", this._amplifiedMode);
-
-    icon.title = `Ruler's Authority${anyPushed ? ` (${this.getPushedPanelCount()} pushed)` : ""}${this._amplifiedMode ? " [AMPLIFIED]" : ""}`;
-  }
-
-  _scheduleIconReinject(delayMs = RA_ICON_REINJECT_DELAY_MS) {
-    if (this._iconReinjectTimeout) clearTimeout(this._iconReinjectTimeout);
-    this._iconReinjectTimeout = setTimeout(() => {
-      this._iconReinjectTimeout = null;
-      this.injectToolbarIcon();
-    }, delayMs);
-  }
-
-  setupToolbarObserver() {
-    if (this._layoutBusUnsub) return;
-
-    // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
-    if (_PluginUtils?.LayoutObserverBus) {
-      this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('RulersAuthority', () => {
-        const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-        const toolbar = this._getChannelHeaderToolbar();
-        if (!icon || !toolbar || icon.parentElement !== toolbar) {
-          this._scheduleIconReinject();
-        }
-      }, 250);
-    }
-
-    if (this._controller) {
-      window.addEventListener("resize", () => this._scheduleIconReinject(80), {
-        passive: true,
-        signal: this._controller.signal,
+      if (!guildId) return;
+      const items = [];
+      if (channel.type === 4) {
+        const crushed = isCategoryCrushed(ctx, guildId, channelId);
+        items.push({
+          type: "text",
+          label: crushed ? "Release Category" : "Crush Category",
+          id: crushed ? "ra-release-category" : "ra-crush-category",
+          action: () => {
+            if (crushed) {
+              releaseCategory(ctx, guildId, channelId);
+              ctx._toast(`Released ${channel.name}`, "info");
+            } else {
+              crushCategory(ctx, guildId, channelId, channel.name);
+              ctx._toast(`Crushed ${channel.name}`, "success");
+            }
+          }
+        });
+      }
+      if (channel.type !== 4) {
+        const hidden = isChannelHidden(ctx, guildId, channelId);
+        items.push({
+          type: "text",
+          label: hidden ? "Recall Channel" : "Push Channel",
+          id: hidden ? "ra-recall-channel" : "ra-push-channel",
+          action: () => {
+            if (hidden) {
+              recallChannel(ctx, guildId, channelId);
+              ctx._toast(`Recalled #${channel.name}`, "info");
+            } else {
+              pushChannel(ctx, guildId, channelId, channel.name);
+              ctx._toast(`Pushed #${channel.name}`, "success");
+            }
+          }
+        });
+      }
+      if (items.length === 0) return;
+      const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
+      const submenu = BdApi.ContextMenu.buildItem({
+        type: "submenu",
+        label: "Ruler's Authority",
+        id: "ra-submenu",
+        items
       });
-    }
-
-    this._scheduleIconReinject(60);
+      const children = (_b = tree == null ? void 0 : tree.props) == null ? void 0 : _b.children;
+      if (Array.isArray(children)) children.push(separator, submenu);
+    });
+    ctx.debugLog("ContextMenu", "Patched channel-context");
+  } catch (err) {
+    ctx.debugError("ContextMenu", "Failed to patch:", err);
   }
-
-  teardownToolbarObserver() {
-    // PERF(P5-4): Unsubscribe from shared LayoutObserverBus
-    if (this._layoutBusUnsub) {
-      this._layoutBusUnsub();
-      this._layoutBusUnsub = null;
-    }
-    if (this._iconReinjectTimeout) {
-      clearTimeout(this._iconReinjectTimeout);
-      this._iconReinjectTimeout = null;
+}
+function getChannelHeaderToolbar(ctx) {
+  const selectors = ctx._resolvedSelectors.toolbar || TOOLBAR_FALLBACKS;
+  for (const selector of selectors) {
+    const nodes = document.querySelectorAll(selector);
+    for (const node of nodes) {
+      if (!node || node.offsetParent === null) continue;
+      const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
+      if (host && host.offsetParent === null) continue;
+      return node;
     }
   }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §15  Visual Effects + Animations
-  // ═══════════════════════════════════════════════════════════════════════
-
-  showPushEffect(panelName) {
-    if (!this.settings.animationsEnabled) return;
-    document.body.classList.add("ra-pushing");
-    clearTimeout(this._pushAnimTimer);
-    this._pushAnimTimer = setTimeout(() => {
-      document.body.classList.remove("ra-pushing");
+  return null;
+}
+function attachToolbarIcon(ctx, icon) {
+  const toolbar = getChannelHeaderToolbar(ctx);
+  if (!toolbar) return false;
+  if (icon.parentElement !== toolbar) {
+    toolbar.appendChild(icon);
+  }
+  icon.classList.remove("ra-toolbar-icon--hidden");
+  return true;
+}
+function injectToolbarIcon(ctx) {
+  let icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+  if (!icon) {
+    icon = document.createElement("div");
+    icon.id = RA_TOOLBAR_ICON_ID;
+    icon.className = "ra-toolbar-icon";
+    icon.setAttribute("role", "button");
+    icon.setAttribute("aria-label", "Ruler's Authority \u2014 Toggle Sidebar");
+    icon.setAttribute("tabindex", "0");
+    icon.innerHTML = [
+      '<svg viewBox="0 0 32 32" width="18" height="18" xmlns="http://www.w3.org/2000/svg">',
+      '<path fill="#b5b5be" d="M31 8.5c0 0-2.53 5.333-3.215 8.062-0.896 3.57 0.13 6.268-1.172 9.73-2.25 4.060-2.402 4.717-10.613 4.708-3.009-0.003-11.626-2.297-11.626-2.297-1.188-0.305-3.373-0.125-3.373-1.453s1.554-2.296 2.936-2.3l5.439 0.478c1.322-0.083 2.705-0.856 2.747-2.585-0.022-2.558-0.275-4.522-1.573-6.6l-5.042-7.867c-0.301-0.626-0.373-1.694 0.499-2.171s1.862 0.232 2.2 0.849l5.631 7.66c0.602 0.559 1.671 0.667 1.58-0.524l-2.487-11.401c-0.155-0.81 0.256-1.791 1.194-1.791 1.231 0 1.987 0.47 1.963 1.213l2.734 11.249c0.214 0.547 0.972 0.475 1.176-0.031l0.779-10.939c0.040-0.349 0.495-0.957 1.369-0.831s1.377 1.063 1.285 1.424l-0.253 10.809c0.177 0.958 0.93 1.098 1.517 0.563l3.827-6.843c0.232-0.574 1.143-0.693 1.67-0.466 0.491 0.32 0.81 0.748 0.81 1.351v0z"/>',
+      "</svg>"
+    ].join("");
+    const iconSignal = ctx._controller ? { signal: ctx._controller.signal } : {};
+    icon.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      togglePanel(ctx, "sidebar");
+    }, iconSignal);
+    icon.addEventListener("contextmenu", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      togglePanel(ctx, "members");
+    }, iconSignal);
+    icon.addEventListener("mouseenter", () => {
+      let tip = document.getElementById("sl-toolbar-tip-ra");
+      if (!tip) {
+        tip = document.createElement("div");
+        tip.id = "sl-toolbar-tip-ra";
+        tip.className = "sl-toolbar-tip";
+        tip.textContent = "Ruler's Authority";
+        document.body.appendChild(tip);
+      }
+      const rect = icon.getBoundingClientRect();
+      tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
+      tip.style.left = `${rect.left + rect.width / 2}px`;
+      tip.classList.add("sl-toolbar-tip--visible");
+    }, iconSignal);
+    icon.addEventListener("mouseleave", () => {
+      const tip = document.getElementById("sl-toolbar-tip-ra");
+      if (tip) tip.classList.remove("sl-toolbar-tip--visible");
+    }, iconSignal);
+  }
+  updateToolbarIcon(ctx);
+  const anchored = attachToolbarIcon(ctx, icon);
+  if (!anchored) {
+    if (!icon.parentElement) document.body.appendChild(icon);
+    icon.classList.add("ra-toolbar-icon--hidden");
+  }
+}
+function updateToolbarIcon(ctx) {
+  const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+  if (!icon) return;
+  const anyPushed = getPushedPanelCount(ctx) > 0;
+  icon.classList.toggle("ra-toolbar-icon--active", anyPushed);
+  icon.classList.toggle("ra-toolbar-icon--amplified", ctx._amplifiedMode);
+  icon.title = `Ruler's Authority${anyPushed ? ` (${getPushedPanelCount(ctx)} pushed)` : ""}${ctx._amplifiedMode ? " [AMPLIFIED]" : ""}`;
+}
+function scheduleIconReinject(ctx, delayMs = RA_ICON_REINJECT_DELAY_MS) {
+  if (ctx._iconReinjectTimeout) clearTimeout(ctx._iconReinjectTimeout);
+  ctx._iconReinjectTimeout = setTimeout(() => {
+    ctx._iconReinjectTimeout = null;
+    injectToolbarIcon(ctx);
+  }, delayMs);
+}
+function setupToolbarObserver(ctx) {
+  var _a2;
+  if (ctx._layoutBusUnsub) return;
+  if ((_a2 = _PluginUtils) == null ? void 0 : _a2.LayoutObserverBus) {
+    ctx._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe("RulersAuthority", () => {
+      const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+      const toolbar = getChannelHeaderToolbar(ctx);
+      if (!icon || !toolbar || icon.parentElement !== toolbar) {
+        scheduleIconReinject(ctx);
+      }
+    }, 250);
+  }
+  if (ctx._controller) {
+    window.addEventListener("resize", () => scheduleIconReinject(ctx, 80), {
+      passive: true,
+      signal: ctx._controller.signal
+    });
+  }
+  scheduleIconReinject(ctx, 60);
+}
+function teardownToolbarObserver(ctx) {
+  if (ctx._layoutBusUnsub) {
+    ctx._layoutBusUnsub();
+    ctx._layoutBusUnsub = null;
+  }
+  if (ctx._iconReinjectTimeout) {
+    clearTimeout(ctx._iconReinjectTimeout);
+    ctx._iconReinjectTimeout = null;
+  }
+}
+function showPushEffect(ctx, panelName) {
+  if (!ctx.settings.animationsEnabled) return;
+  document.body.classList.add("ra-pushing");
+  clearTimeout(ctx._pushAnimTimer);
+  ctx._pushAnimTimer = setTimeout(() => {
+    document.body.classList.remove("ra-pushing");
+  }, 500);
+}
+function showPullEffect(ctx, panelName) {
+  if (!ctx.settings.animationsEnabled) return;
+  document.body.classList.add("ra-pulling");
+  clearTimeout(ctx._pullAnimTimer);
+  ctx._pullAnimTimer = setTimeout(() => {
+    document.body.classList.remove("ra-pulling");
+  }, 350);
+}
+function getSoloLevelingData(ctx) {
+  var _a2;
+  const cached = ctx._statsCache.get();
+  if (cached && BdApi.Plugins.isEnabled("SoloLevelingStats")) {
+    return cached;
+  }
+  if (!BdApi.Plugins.isEnabled("SoloLevelingStats")) return null;
+  const soloPlugin = BdApi.Plugins.get("SoloLevelingStats");
+  const instance = (soloPlugin == null ? void 0 : soloPlugin.instance) || soloPlugin;
+  if (!(instance == null ? void 0 : instance.settings)) return null;
+  const data = {
+    level: instance.settings.level || 1,
+    intelligence: ((_a2 = instance.settings.stats) == null ? void 0 : _a2.intelligence) || 0,
+    stats: { ...instance.settings.stats }
+  };
+  ctx._statsCache.set(data);
+  return data;
+}
+function setupSkillTreeListeners(ctx) {
+  var _a2, _b;
+  ctx._onSkillActivated = (e) => {
+    var _a3;
+    if (((_a3 = e.detail) == null ? void 0 : _a3.skillId) === "rulers_authority") {
+      ctx._amplifiedMode = true;
+      ctx._amplifiedExpiresAt = e.detail.expiresAt || 0;
+      onAmplifiedModeChange(ctx, true);
+    }
+  };
+  ctx._onSkillExpired = (e) => {
+    var _a3;
+    if (((_a3 = e.detail) == null ? void 0 : _a3.skillId) === "rulers_authority") {
+      ctx._amplifiedMode = false;
+      onAmplifiedModeChange(ctx, false);
+    }
+  };
+  document.addEventListener("SkillTree:activeSkillActivated", ctx._onSkillActivated);
+  document.addEventListener("SkillTree:activeSkillExpired", ctx._onSkillExpired);
+  if (BdApi.Plugins.isEnabled("SkillTree")) {
+    const stInstance = (_a2 = BdApi.Plugins.get("SkillTree")) == null ? void 0 : _a2.instance;
+    if ((_b = stInstance == null ? void 0 : stInstance.isActiveSkillRunning) == null ? void 0 : _b.call(stInstance, "rulers_authority")) {
+      ctx._amplifiedMode = true;
+      ctx.debugLog("SkillTree", "rulers_authority already active on start");
+    }
+  }
+}
+function onAmplifiedModeChange(ctx, active) {
+  if (active) {
+    document.body.classList.add("ra-amplified");
+    ctx._toast("Ruler's Authority AMPLIFIED \u2014 Full telekinetic power!", "success", 4e3);
+  } else {
+    document.body.classList.remove("ra-amplified");
+    ctx._toast("Ruler's Authority amplification expired.", "info");
+  }
+  updateToolbarIcon(ctx);
+}
+function setupGuildChangeListener(ctx) {
+  if (!ctx._SelectedGuildStore) return;
+  ctx._guildChangeHandler = () => {
+    ctx._panelElCache = null;
+    clearTimeout(ctx._guildChangeApplyTimer);
+    ctx._guildChangeApplyTimer = setTimeout(() => {
+      if (!ctx._controller) return;
+      applyMicroStateForCurrentGuild(ctx);
+      setupChannelObserver(ctx);
+    }, 300);
+  };
+  ctx._SelectedGuildStore.addChangeListener(ctx._guildChangeHandler);
+  if (ctx._SelectedChannelStore) {
+    ctx._channelChangeHandler = ctx._throttle(() => {
+      if (!ctx._controller) return;
+      ctx._panelElCache = null;
+      applyMicroStateForCurrentGuild(ctx);
+      if (!ctx._channelObserver) {
+        setupChannelObserver(ctx);
+      }
     }, 500);
+    ctx._SelectedChannelStore.addChangeListener(ctx._channelChangeHandler);
   }
-
-  showPullEffect(panelName) {
-    if (!this.settings.animationsEnabled) return;
-    document.body.classList.add("ra-pulling");
-    clearTimeout(this._pullAnimTimer);
-    this._pullAnimTimer = setTimeout(() => {
-      document.body.classList.remove("ra-pulling");
-    }, 350);
+}
+function setupChannelObserver(ctx, retries = 0) {
+  var _a2;
+  if (ctx._channelObserver) {
+    ctx._channelObserver.disconnect();
+    ctx._channelObserver = null;
   }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §16  Settings Panel
-  // ═══════════════════════════════════════════════════════════════════════
-
-  getSettingsPanel() {
-    const React = BdApi.React;
-    const { useState, useCallback, useReducer } = React;
-    const ce = React.createElement;
-    const self = this;
-
-    const SettingsPanel = () => {
-      const [, forceUpdate] = useReducer((x) => x + 1, 0);
-      const [debug, setDebug] = useState(self.settings.debugMode);
-      const [transSpeed, setTransSpeed] = useState(self.settings.transitionSpeed);
-      const [anims, setAnims] = useState(self.settings.animationsEnabled);
-
-      const slsData = self.getSoloLevelingData();
-
-      const updateSetting = useCallback((key, value) => {
-        self.settings[key] = value;
-        self.saveSettings();
-        forceUpdate();
-      }, []);
-
-      // ── Styles ──
-      const containerStyle = {
-        background: "#1e1e2e", padding: "16px", borderRadius: "8px",
-        color: "#ccc", fontFamily: "inherit", fontSize: "14px",
-      };
-      const sectionStyle = {
-        marginBottom: "16px", padding: "12px",
-        background: "#252540", borderRadius: "6px",
-      };
-      const headerStyle = { color: "#b49bff", fontSize: "16px", marginBottom: "8px", fontWeight: "600" };
-      const subHeaderStyle = { color: "#9b8ec4", fontSize: "13px", marginBottom: "6px", fontWeight: "500" };
-      const labelStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" };
-      const dimStyle = { fontSize: "11px", color: "#666", marginTop: "2px" };
-      const btnStyle = {
-        background: "#9b59b6", border: "none", color: "#fff", padding: "4px 10px",
-        borderRadius: "4px", cursor: "pointer", fontSize: "12px", marginRight: "6px", marginBottom: "4px",
-      };
-      const btnDimStyle = { ...btnStyle, background: "#444" };
-
-      // ── Toggle Helper ──
-      const Toggle = ({ label, checked, onChange }) =>
-        ce("label", { style: labelStyle },
-          ce("span", null, label),
-          ce("input", {
-            type: "checkbox", checked,
-            style: { accentColor: "#9b59b6" },
-            onChange: (e) => onChange(e.target.checked),
-          })
-        );
-
-      // ── Status Display ──
-      const StatusSection = () =>
-        ce("div", { style: sectionStyle },
-          ce("div", { style: headerStyle }, "Ruler's Authority"),
-          ce("div", { style: dimStyle },
-            slsData ? `INT: ${slsData.intelligence} | Level: ${slsData.level}` : "SoloLevelingStats not detected"
-          ),
-          self._amplifiedMode && ce("div", { style: { ...dimStyle, color: "#b49bff", marginTop: "4px" } },
-            "AMPLIFIED MODE ACTIVE"
-          ),
-          ce("div", { style: { ...dimStyle, marginTop: "4px" } },
-            `Webpack: ${Object.keys(self._resolvedSelectors).filter((k) => {
-              const m = self._modules;
-              if (k === "sidebar") return !!m.sidebar?.sidebarList;
-              if (k === "members") return !!m.members?.membersWrap;
-              if (k === "profile") return !!m.panel?.outer;
-              if (k === "search") return !!m.search?.searchResultsWrap;
-              if (k === "toolbar") return !!m.icons?.toolbar;
-              return false;
-            }).length}/5 modules resolved`
-          )
-        );
-
-      // ── Panel Toggles ──
-      const PanelSection = () =>
-        ce("div", { style: sectionStyle },
-          ce("div", { style: subHeaderStyle }, "Panel Controls"),
-          Object.entries(PANEL_DEFS).map(([name, def]) =>
-            ce("div", { key: name, style: { marginBottom: "8px" } },
-              ce(Toggle, {
-                label: def.label,
-                checked: self.settings.panels[name].pushed,
-                onChange: () => {
-                  self.togglePanel(name);
-                  forceUpdate();
-                },
-              }),
-              def.hoverCapable &&
-                ce(Toggle, {
-                  label: "  \u21b3 Hover to expand",
-                  checked: self.settings.panels[name].hoverExpand,
-                  onChange: (v) => {
-                    self.settings.panels[name].hoverExpand = v;
-                    self.saveSettings();
-                    forceUpdate();
-                  },
-                }),
-              // Width display (if panel has been resized)
-              self.settings.panels[name].width > 0 &&
-                ce("div", { style: { ...dimStyle, display: "flex", alignItems: "center", gap: "6px" } },
-                  ce("span", null, `Width: ${self.settings.panels[name].width}px`),
-                  ce("button", {
-                    style: { ...btnDimStyle, fontSize: "10px", padding: "2px 6px", marginBottom: "0" },
-                    onClick: () => {
-                      self.settings.panels[name].width = self.settings.defaultWidths[name];
-                      self.saveSettings();
-                      self.updateCSSVars();
-                      forceUpdate();
-                    },
-                  }, "Reset")
-                )
-            )
-          )
-        );
-
-      // ── Hidden Channels (per guild) ──
-      const HiddenChannelsSection = () => {
-        const guildEntries = Object.entries(self.settings.guilds).filter(
-          ([, data]) => data.hiddenChannels?.length > 0 || data.crushedCategories?.length > 0
-        );
-        if (guildEntries.length === 0) return null;
-
-        return ce("div", { style: sectionStyle },
-          ce("div", { style: subHeaderStyle }, "Pushed Channels & Crushed Categories"),
-          guildEntries.map(([guildId, data]) => {
-            const guild = self._GuildStore?.getGuild?.(guildId);
-            const guildName = guild?.name || guildId;
-            return ce("div", { key: guildId, style: { marginBottom: "10px" } },
-              ce("div", { style: { fontSize: "12px", color: "#999", marginBottom: "4px" } }, guildName),
-              data.hiddenChannels?.map((ch) =>
-                ce("button", {
-                  key: ch.id, style: btnDimStyle,
-                  onClick: () => { self.recallChannel(guildId, ch.id); forceUpdate(); },
-                }, `Recall #${ch.name}`)
-              ),
-              data.crushedCategories?.map((cat) =>
-                ce("button", {
-                  key: cat.id, style: btnDimStyle,
-                  onClick: () => { self.releaseCategory(guildId, cat.id); forceUpdate(); },
-                }, `Release ${cat.name}`)
-              )
-            );
-          })
-        );
-      };
-
-      // ── Gripped DMs ──
-      const GrippedDMsSection = () => {
-        if (self.settings.grippedDMs.length === 0) return null;
-        return ce("div", { style: sectionStyle },
-          ce("div", { style: subHeaderStyle }, "Gripped DMs"),
-          self.settings.grippedDMs.map((dm) =>
-            ce("button", {
-              key: dm.channelId, style: btnDimStyle,
-              onClick: () => { self.releaseDM(dm.channelId); forceUpdate(); },
-            }, `Release ${dm.username}`)
-          )
-        );
-      };
-
-      // ── General Settings ──
-      const GeneralSection = () =>
-        ce("div", { style: sectionStyle },
-          ce("div", { style: subHeaderStyle }, "General"),
-          ce("label", { style: { ...labelStyle, marginBottom: "10px" } },
-            ce("span", null, `Transition Speed: ${transSpeed}ms`),
-            ce("input", {
-              type: "range", min: 0, max: 600, step: 50, value: transSpeed,
-              style: { width: "120px", accentColor: "#9b59b6" },
-              onChange: (e) => {
-                const v = Number(e.target.value);
-                setTransSpeed(v);
-                self.settings.transitionSpeed = v;
-                self.saveSettings();
-                self.updateCSSVars();
-              },
-            })
-          ),
-          ce(Toggle, {
-            label: "Animations",
-            checked: anims,
-            onChange: (v) => { setAnims(v); updateSetting("animationsEnabled", v); },
-          }),
-          ce(Toggle, {
-            label: "Debug Mode",
-            checked: debug,
-            onChange: (v) => { setDebug(v); updateSetting("debugMode", v); },
-          })
-        );
-
-      return ce("div", { style: containerStyle },
-        ce(StatusSection),
-        ce(PanelSection),
-        ce(HiddenChannelsSection),
-        ce(GrippedDMsSection),
-        ce(GeneralSection)
-      );
-    };
-
-    return React.createElement(SettingsPanel);
+  clearTimeout(ctx._channelObserverRetryTimer);
+  const m = ctx._modules;
+  const channelList = ((_a2 = m == null ? void 0 : m.sidebar) == null ? void 0 : _a2.sidebarList) && document.querySelector(`.${m.sidebar.sidebarList} [role="tree"]`) || document.querySelector('[class*="sidebar_"] [role="tree"]') || document.querySelector('[class*="sidebar_"] [class*="scroller_"]');
+  if (!channelList) {
+    if (retries < 4 && ctx._controller) {
+      const delay = 300 * (retries + 1);
+      ctx._channelObserverRetryTimer = setTimeout(() => {
+        if (ctx._controller) setupChannelObserver(ctx, retries + 1);
+      }, delay);
+    }
+    return;
   }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // §17  CSS Builder (custom properties + dynamic selectors)
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /**
-   * Updates CSS custom properties on :root.
-   * Called whenever settings change (transition speed, panel widths).
-   * Matches CollapsibleUI's styles.update() pattern.
-   */
-  updateCSSVars() {
-    const s = this.settings;
-    BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
-    BdApi.DOM.addStyle(RA_VARS_STYLE_ID, `
-      :root {
-        --ra-transition-speed: ${s.transitionSpeed}ms;
-        --ra-sidebar-width: ${s.panels.sidebar.width || s.defaultWidths.sidebar}px;
-        --ra-members-width: ${s.panels.members.width || s.defaultWidths.members}px;
-        --ra-profile-width: ${s.panels.profile.width || s.defaultWidths.profile}px;
-        --ra-search-width: ${s.panels.search.width || s.defaultWidths.search}px;
-        --ra-push-color: rgba(138, 43, 226, 0.25);
-        --ra-members-bg: rgba(10, 14, 24, 0.44);
-        --ra-hover-fudge: ${s.hoverFudgePx}px;
-      }
-    `.replace(/\s+/g, " "));
+  const throttledApply = ctx._throttle(() => {
+    if (!ctx._channelObserver) return;
+    if (!channelList.isConnected) {
+      setupChannelObserver(ctx);
+      return;
+    }
+    applyMicroStateForCurrentGuild(ctx);
+  }, RA_OBSERVER_THROTTLE_MS);
+  ctx._channelObserver = new MutationObserver(throttledApply);
+  ctx._channelObserver.observe(channelList, { childList: true, subtree: true });
+}
+function setupSettingsGuard(ctx) {
+  if (ctx._settingsObserver) {
+    ctx._settingsObserver.disconnect();
+    ctx._settingsObserver = null;
   }
+  if (ctx._settingsGuardInterval) {
+    clearInterval(ctx._settingsGuardInterval);
+    ctx._settingsGuardInterval = null;
+  }
+  syncSettingsGuardState(ctx);
+  ctx._settingsGuardInterval = setInterval(() => {
+    if (!ctx._controller) return;
+    if (document.hidden) return;
+    syncSettingsGuardState(ctx);
+  }, 1500);
+}
+function isSettingsModalOpen() {
+  return !!document.querySelector('[class*="standardSidebarView_"]');
+}
+function syncSettingsGuardState(ctx, forceOpen) {
+  const body = document.body;
+  if (!body) return false;
+  const isOpen = typeof forceOpen === "boolean" ? forceOpen : isSettingsModalOpen();
+  body.classList.toggle(RA_SETTINGS_OPEN_CLASS, isOpen);
+  if (isOpen) clearAllHoverStates(ctx);
+  return isOpen;
+}
+function clearSidebarHoverState(ctx) {
+  clearTimeout(ctx._sidebarRevealTimer);
+  clearTimeout(ctx._sidebarHideTimer);
+  clearTimeout(ctx._channelRevealTimer);
+  clearTimeout(ctx._channelHideTimer);
+  ctx._sidebarRevealTimer = null;
+  ctx._sidebarHideTimer = null;
+  ctx._channelRevealTimer = null;
+  ctx._channelHideTimer = null;
+  document.body.classList.remove("ra-sidebar-hover-reveal");
+  if (ctx._channelsHoverRevealActive) setHiddenChannelRevealState(ctx, false);
+}
+function clearAllHoverStates(ctx) {
+  clearSidebarHoverState(ctx);
+  clearTimeout(ctx._membersRevealTimer);
+  clearTimeout(ctx._membersHideTimer);
+  clearTimeout(ctx._profileRevealTimer);
+  clearTimeout(ctx._profileHideTimer);
+  ctx._membersRevealTimer = null;
+  ctx._membersHideTimer = null;
+  ctx._profileRevealTimer = null;
+  ctx._profileHideTimer = null;
+  document.body.classList.remove("ra-members-hover-reveal", "ra-profile-hover-reveal");
+}
 
-  /**
-   * Builds the static CSS rules using dynamic Webpack selectors.
-   * Selectors are built from discovered CSS class modules when available,
-   * falling back to wildcard attribute selectors when Webpack fails.
-   */
-  buildCSS() {
-    const m = this._modules || {};
+// src/RulersAuthority/styles.js
+function updateCSSVars(ctx) {
+  const s = ctx.settings;
+  BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
+  BdApi.DOM.addStyle(RA_VARS_STYLE_ID, `
+    :root {
+      --ra-transition-speed: ${s.transitionSpeed}ms;
+      --ra-sidebar-width: ${s.panels.sidebar.width || s.defaultWidths.sidebar}px;
+      --ra-members-width: ${s.panels.members.width || s.defaultWidths.members}px;
+      --ra-profile-width: ${s.panels.profile.width || s.defaultWidths.profile}px;
+      --ra-search-width: ${s.panels.search.width || s.defaultWidths.search}px;
+      --ra-push-color: rgba(138, 43, 226, 0.25);
+      --ra-members-bg: rgba(10, 14, 24, 0.44);
+      --ra-hover-fudge: ${s.hoverFudgePx}px;
+    }
+  `.replace(/\s+/g, " "));
+}
+function buildCSS(ctx) {
+  var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+  const m = ctx._modules || {};
+  const sidebarSel = ((_a2 = m.sidebar) == null ? void 0 : _a2.sidebarList) ? `.${m.sidebar.sidebarList}` : SIDEBAR_CSS_SAFE.join(", ");
+  const membersSel = ((_b = m.members) == null ? void 0 : _b.membersWrap) ? `.${m.members.membersWrap}` : MEMBERS_FALLBACKS.join(", ");
+  const profileSel = ((_c = m.panel) == null ? void 0 : _c.outer) ? `.${m.panel.outer}` : PROFILE_FALLBACKS.join(", ");
+  const searchSel = ((_d = m.search) == null ? void 0 : _d.searchResultsWrap) ? `.${m.search.searchResultsWrap}` : SEARCH_FALLBACKS.join(", ");
+  const chatSel = ((_e = m.guilds) == null ? void 0 : _e.chatContent) ? `.${m.guilds.chatContent}` : '[class*="chatContent_"]';
+  const sidebarPush = SIDEBAR_CSS_SAFE.map((s) => `body.ra-sidebar-pushed:not(.${RA_SETTINGS_OPEN_CLASS}) ${s}`);
+  const membersPush = MEMBERS_FALLBACKS.map((s) => `body.ra-members-pushed ${s}`);
+  const profilePush = PROFILE_FALLBACKS.map((s) => `body.ra-profile-pushed ${s}`);
+  const searchPush = SEARCH_FALLBACKS.map((s) => `body.ra-search-pushed ${s}`);
+  if ((_f = m.sidebar) == null ? void 0 : _f.sidebarList) sidebarPush.unshift(`body.ra-sidebar-pushed:not(.${RA_SETTINGS_OPEN_CLASS}) .${m.sidebar.sidebarList}`);
+  if ((_g = m.members) == null ? void 0 : _g.membersWrap) membersPush.unshift(`body.ra-members-pushed .${m.members.membersWrap}`);
+  if ((_h = m.panel) == null ? void 0 : _h.outer) profilePush.unshift(`body.ra-profile-pushed .${m.panel.outer}`);
+  if ((_i = m.search) == null ? void 0 : _i.searchResultsWrap) searchPush.unshift(`body.ra-search-pushed .${m.search.searchResultsWrap}`);
+  const sidebarHover = SIDEBAR_CSS_SAFE.map((s) => `body.ra-sidebar-pushed.ra-sidebar-hover-reveal:not(.${RA_SETTINGS_OPEN_CLASS}) ${s}`);
+  const membersHover = MEMBERS_FALLBACKS.map((s) => `body.ra-members-pushed.ra-members-hover-reveal ${s}`);
+  const profileHover = PROFILE_FALLBACKS.map((s) => `body.ra-profile-pushed.ra-profile-hover-reveal ${s}`);
+  if ((_j = m.sidebar) == null ? void 0 : _j.sidebarList) sidebarHover.unshift(`body.ra-sidebar-pushed.ra-sidebar-hover-reveal:not(.${RA_SETTINGS_OPEN_CLASS}) .${m.sidebar.sidebarList}`);
+  if ((_k = m.members) == null ? void 0 : _k.membersWrap) membersHover.unshift(`body.ra-members-pushed.ra-members-hover-reveal .${m.members.membersWrap}`);
+  if ((_l = m.panel) == null ? void 0 : _l.outer) profileHover.unshift(`body.ra-profile-pushed.ra-profile-hover-reveal .${m.panel.outer}`);
+  const sidebarHandleDisable = SIDEBAR_FALLBACKS.map((s) => `body.${RA_SETTINGS_OPEN_CLASS} ${s}::before`);
+  if ((_m = m.sidebar) == null ? void 0 : _m.sidebarList) sidebarHandleDisable.unshift(`body.${RA_SETTINGS_OPEN_CLASS} .${m.sidebar.sidebarList}::before`);
+  return `
+/* \u2500\u2500 Ruler's Authority v${RA_VERSION} \u2014 Dynamic CSS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
-    // Build panel selectors — prefer Webpack class, fall back to wildcard
-    const sidebarSel = m.sidebar?.sidebarList
-      ? `.${m.sidebar.sidebarList}`
-      : SIDEBAR_CSS_SAFE.join(", ");
-    const membersSel = m.members?.membersWrap
-      ? `.${m.members.membersWrap}`
-      : MEMBERS_FALLBACKS.join(", ");
-    const profileSel = m.panel?.outer
-      ? `.${m.panel.outer}`
-      : PROFILE_FALLBACKS.join(", ");
-    const searchSel = m.search?.searchResultsWrap
-      ? `.${m.search.searchResultsWrap}`
-      : SEARCH_FALLBACKS.join(", ");
-    const chatSel = m.guilds?.chatContent
-      ? `.${m.guilds.chatContent}`
-      : '[class*="chatContent_"]';
-
-    // Build push selectors with body class qualifier
-    // Use SIDEBAR_CSS_SAFE to avoid matching the settings modal's nav sidebar
-    const sidebarPush = SIDEBAR_CSS_SAFE.map((s) => `body.ra-sidebar-pushed:not(.${RA_SETTINGS_OPEN_CLASS}) ${s}`);
-    const membersPush = MEMBERS_FALLBACKS.map((s) => `body.ra-members-pushed ${s}`);
-    const profilePush = PROFILE_FALLBACKS.map((s) => `body.ra-profile-pushed ${s}`);
-    const searchPush  = SEARCH_FALLBACKS.map((s) => `body.ra-search-pushed ${s}`);
-
-    // Add Webpack-derived selectors first (more specific, faster matching)
-    if (m.sidebar?.sidebarList)      sidebarPush.unshift(`body.ra-sidebar-pushed:not(.${RA_SETTINGS_OPEN_CLASS}) .${m.sidebar.sidebarList}`);
-    if (m.members?.membersWrap)      membersPush.unshift(`body.ra-members-pushed .${m.members.membersWrap}`);
-    if (m.panel?.outer)              profilePush.unshift(`body.ra-profile-pushed .${m.panel.outer}`);
-    if (m.search?.searchResultsWrap) searchPush.unshift(`body.ra-search-pushed .${m.search.searchResultsWrap}`);
-
-    // Hover selectors (also use CSS-safe subset for sidebar)
-    const sidebarHover = SIDEBAR_CSS_SAFE.map((s) => `body.ra-sidebar-pushed.ra-sidebar-hover-reveal:not(.${RA_SETTINGS_OPEN_CLASS}) ${s}`);
-    const membersHover = MEMBERS_FALLBACKS.map((s) => `body.ra-members-pushed.ra-members-hover-reveal ${s}`);
-    const profileHover = PROFILE_FALLBACKS.map((s) => `body.ra-profile-pushed.ra-profile-hover-reveal ${s}`);
-    if (m.sidebar?.sidebarList) sidebarHover.unshift(`body.ra-sidebar-pushed.ra-sidebar-hover-reveal:not(.${RA_SETTINGS_OPEN_CLASS}) .${m.sidebar.sidebarList}`);
-    if (m.members?.membersWrap) membersHover.unshift(`body.ra-members-pushed.ra-members-hover-reveal .${m.members.membersWrap}`);
-    if (m.panel?.outer) profileHover.unshift(`body.ra-profile-pushed.ra-profile-hover-reveal .${m.panel.outer}`);
-
-    const sidebarHandleDisable = SIDEBAR_FALLBACKS.map((s) => `body.${RA_SETTINGS_OPEN_CLASS} ${s}::before`);
-    if (m.sidebar?.sidebarList) sidebarHandleDisable.unshift(`body.${RA_SETTINGS_OPEN_CLASS} .${m.sidebar.sidebarList}::before`);
-
-    return `
-/* ── Ruler's Authority v${RA_VERSION} — Dynamic CSS ──────────────────── */
-
-/* ── Core Panel Push ────────────────────────────────────────────── */
+/* \u2500\u2500 Core Panel Push \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 ${sidebarPush.join(",\n")} {
   width: 0 !important;
@@ -1778,7 +1026,7 @@ ${searchPush.join(",\n")} {
               max-width var(--ra-transition-speed) ease;
 }
 
-/* ── Members Column Surface (transparent) ──────────────────────── */
+/* \u2500\u2500 Members Column Surface (transparent) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 ${membersSel},
 ${membersSel} > div[class*="members_"],
@@ -1807,12 +1055,12 @@ ${membersSel} [class*="scrollerBase_"]::-webkit-scrollbar {
   display: none !important;
 }
 
-/* ── Chat content dark overlay ───────────────────────────────── */
+/* \u2500\u2500 Chat content dark overlay \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 body.ra-members-pushed.ra-members-hover-reveal ${chatSel} {
   background: rgba(0, 0, 0, 0.4) !important;
 }
 
-/* ── Members: outer wrap matches inner dark overlay ── */
+/* \u2500\u2500 Members: outer wrap matches inner dark overlay \u2500\u2500 */
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel},
 body.ra-members-pushed.ra-members-hover-reveal div[class^="membersWrap_"] {
   background: rgba(0, 0, 0, 0.4) !important;
@@ -1836,7 +1084,7 @@ body.ra-members-pushed.ra-members-hover-reveal div[aria-label="Members"][role="l
   mask-image: none !important;
 }
 
-/* ── Hover-to-Expand (float overlay) ────────────────────────────── */
+/* \u2500\u2500 Hover-to-Expand (float overlay) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 ${sidebarHover.join(",\n")} {
   width: var(--ra-sidebar-width) !important;
@@ -1896,7 +1144,7 @@ ${profileHover.join(",\n")} {
               max-width var(--ra-transition-speed) ease;
 }
 
-/* ── Resize Handles (::before pseudo-elements — CollapsibleUI pattern) ── */
+/* \u2500\u2500 Resize Handles (::before pseudo-elements \u2014 CollapsibleUI pattern) \u2500\u2500 */
 
 ${membersSel}:before,
 ${profileSel}:before,
@@ -1943,14 +1191,14 @@ ${sidebarHandleDisable.join(",\n")} {
   pointer-events: none !important;
 }
 
-/* ── Crushed Category Visual ────────────────────────────────────── */
+/* \u2500\u2500 Crushed Category Visual \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 [data-ra-crushed="true"] {
   opacity: 0.5;
   border-left: 2px solid rgba(138, 43, 226, 0.4);
 }
 
-/* ── Grip DM Indicator ──────────────────────────────────────────── */
+/* \u2500\u2500 Grip DM Indicator \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 .ra-grip-indicator {
   position: absolute;
@@ -1969,7 +1217,7 @@ ${sidebarHandleDisable.join(",\n")} {
   50% { opacity: 1; transform: scale(1.3); }
 }
 
-/* ── Toolbar Icon ───────────────────────────────────────────────── */
+/* \u2500\u2500 Toolbar Icon \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 .ra-toolbar-icon {
   display: flex;
@@ -1992,7 +1240,7 @@ ${sidebarHandleDisable.join(",\n")} {
   filter: drop-shadow(0 0 4px rgba(200, 170, 255, 0.7));
 }
 
-/* ── Shared Toolbar Tooltip ────────────────────────────────────── */
+/* \u2500\u2500 Shared Toolbar Tooltip \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .sl-toolbar-tip {
   position: fixed;
   transform: translateX(-50%);
@@ -2036,7 +1284,7 @@ ${sidebarHandleDisable.join(",\n")} {
   display: none !important;
 }
 
-/* ── Amplified Mode ─────────────────────────────────────────────── */
+/* \u2500\u2500 Amplified Mode \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 .ra-toolbar-icon--amplified svg {
   filter: drop-shadow(0 0 8px rgba(138, 43, 226, 0.8)) !important;
@@ -2056,7 +1304,7 @@ body.ra-amplified .ra-grip-indicator {
   background: radial-gradient(circle, #c78dff 0%, rgba(180, 60, 255, 0.5) 100%);
 }
 
-/* ── Push/Pull Animation ────────────────────────────────────────── */
+/* \u2500\u2500 Push/Pull Animation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
 @keyframes ra-push-ripple {
   0% { box-shadow: inset 3px 0 12px rgba(138, 43, 226, 0.5); }
@@ -2079,18 +1327,624 @@ body.ra-pulling ${chatSel},
 body.ra-pulling [class*="chatContent_"] {
   animation: ra-pull-bounce 350ms ease-out;
 }
-    `.trim();
-  }
+  `.trim();
+}
+function injectCSS(ctx) {
+  BdApi.DOM.removeStyle(RA_STYLE_ID);
+  BdApi.DOM.addStyle(RA_STYLE_ID, buildCSS(ctx));
+}
 
-  injectCSS() {
-    BdApi.DOM.removeStyle(RA_STYLE_ID);
-    BdApi.DOM.addStyle(RA_STYLE_ID, this.buildCSS());
-  }
+// src/RulersAuthority/settings.js
+function getSettingsPanel(ctx) {
+  const React = BdApi.React;
+  const { useState, useCallback, useReducer } = React;
+  const ce = React.createElement;
+  const SettingsPanel = () => {
+    const [, forceUpdate] = useReducer((x) => x + 1, 0);
+    const [debug, setDebug] = useState(ctx.settings.debugMode);
+    const [transSpeed, setTransSpeed] = useState(ctx.settings.transitionSpeed);
+    const [anims, setAnims] = useState(ctx.settings.animationsEnabled);
+    const slsData = getSoloLevelingData(ctx);
+    const updateSetting = useCallback((key, value) => {
+      ctx.settings[key] = value;
+      ctx.saveSettings();
+      forceUpdate();
+    }, []);
+    const containerStyle = {
+      background: "#1e1e2e",
+      padding: "16px",
+      borderRadius: "8px",
+      color: "#ccc",
+      fontFamily: "inherit",
+      fontSize: "14px"
+    };
+    const sectionStyle = {
+      marginBottom: "16px",
+      padding: "12px",
+      background: "#252540",
+      borderRadius: "6px"
+    };
+    const headerStyle = { color: "#b49bff", fontSize: "16px", marginBottom: "8px", fontWeight: "600" };
+    const subHeaderStyle = { color: "#9b8ec4", fontSize: "13px", marginBottom: "6px", fontWeight: "500" };
+    const labelStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" };
+    const dimStyle = { fontSize: "11px", color: "#666", marginTop: "2px" };
+    const btnStyle = {
+      background: "#9b59b6",
+      border: "none",
+      color: "#fff",
+      padding: "4px 10px",
+      borderRadius: "4px",
+      cursor: "pointer",
+      fontSize: "12px",
+      marginRight: "6px",
+      marginBottom: "4px"
+    };
+    const btnDimStyle = { ...btnStyle, background: "#444" };
+    const Toggle = ({ label, checked, onChange }) => ce(
+      "label",
+      { style: labelStyle },
+      ce("span", null, label),
+      ce("input", {
+        type: "checkbox",
+        checked,
+        style: { accentColor: "#9b59b6" },
+        onChange: (e) => onChange(e.target.checked)
+      })
+    );
+    const StatusSection = () => ce(
+      "div",
+      { style: sectionStyle },
+      ce("div", { style: headerStyle }, "Ruler's Authority"),
+      ce(
+        "div",
+        { style: dimStyle },
+        slsData ? `INT: ${slsData.intelligence} | Level: ${slsData.level}` : "SoloLevelingStats not detected"
+      ),
+      ctx._amplifiedMode && ce(
+        "div",
+        { style: { ...dimStyle, color: "#b49bff", marginTop: "4px" } },
+        "AMPLIFIED MODE ACTIVE"
+      ),
+      ce(
+        "div",
+        { style: { ...dimStyle, marginTop: "4px" } },
+        `Webpack: ${Object.keys(ctx._resolvedSelectors).filter((k) => {
+          var _a2, _b, _c, _d, _e;
+          const m = ctx._modules;
+          if (k === "sidebar") return !!((_a2 = m.sidebar) == null ? void 0 : _a2.sidebarList);
+          if (k === "members") return !!((_b = m.members) == null ? void 0 : _b.membersWrap);
+          if (k === "profile") return !!((_c = m.panel) == null ? void 0 : _c.outer);
+          if (k === "search") return !!((_d = m.search) == null ? void 0 : _d.searchResultsWrap);
+          if (k === "toolbar") return !!((_e = m.icons) == null ? void 0 : _e.toolbar);
+          return false;
+        }).length}/5 modules resolved`
+      )
+    );
+    const PanelSection = () => ce(
+      "div",
+      { style: sectionStyle },
+      ce("div", { style: subHeaderStyle }, "Panel Controls"),
+      Object.entries(PANEL_DEFS).map(
+        ([name, def]) => ce(
+          "div",
+          { key: name, style: { marginBottom: "8px" } },
+          ce(Toggle, {
+            label: def.label,
+            checked: ctx.settings.panels[name].pushed,
+            onChange: () => {
+              togglePanel(ctx, name);
+              forceUpdate();
+            }
+          }),
+          def.hoverCapable && ce(Toggle, {
+            label: "  \u21B3 Hover to expand",
+            checked: ctx.settings.panels[name].hoverExpand,
+            onChange: (v) => {
+              ctx.settings.panels[name].hoverExpand = v;
+              ctx.saveSettings();
+              forceUpdate();
+            }
+          }),
+          // Width display (if panel has been resized)
+          ctx.settings.panels[name].width > 0 && ce(
+            "div",
+            { style: { ...dimStyle, display: "flex", alignItems: "center", gap: "6px" } },
+            ce("span", null, `Width: ${ctx.settings.panels[name].width}px`),
+            ce("button", {
+              style: { ...btnDimStyle, fontSize: "10px", padding: "2px 6px", marginBottom: "0" },
+              onClick: () => {
+                ctx.settings.panels[name].width = ctx.settings.defaultWidths[name];
+                ctx.saveSettings();
+                updateCSSVars(ctx);
+                forceUpdate();
+              }
+            }, "Reset")
+          )
+        )
+      )
+    );
+    const HiddenChannelsSection = () => {
+      const guildEntries = Object.entries(ctx.settings.guilds).filter(
+        ([, data]) => {
+          var _a2, _b;
+          return ((_a2 = data.hiddenChannels) == null ? void 0 : _a2.length) > 0 || ((_b = data.crushedCategories) == null ? void 0 : _b.length) > 0;
+        }
+      );
+      if (guildEntries.length === 0) return null;
+      return ce(
+        "div",
+        { style: sectionStyle },
+        ce("div", { style: subHeaderStyle }, "Pushed Channels & Crushed Categories"),
+        guildEntries.map(([guildId, data]) => {
+          var _a2, _b, _c, _d;
+          const guild = (_b = (_a2 = ctx._GuildStore) == null ? void 0 : _a2.getGuild) == null ? void 0 : _b.call(_a2, guildId);
+          const guildName = (guild == null ? void 0 : guild.name) || guildId;
+          return ce(
+            "div",
+            { key: guildId, style: { marginBottom: "10px" } },
+            ce("div", { style: { fontSize: "12px", color: "#999", marginBottom: "4px" } }, guildName),
+            (_c = data.hiddenChannels) == null ? void 0 : _c.map(
+              (ch) => ce("button", {
+                key: ch.id,
+                style: btnDimStyle,
+                onClick: () => {
+                  recallChannel(ctx, guildId, ch.id);
+                  forceUpdate();
+                }
+              }, `Recall #${ch.name}`)
+            ),
+            (_d = data.crushedCategories) == null ? void 0 : _d.map(
+              (cat) => ce("button", {
+                key: cat.id,
+                style: btnDimStyle,
+                onClick: () => {
+                  releaseCategory(ctx, guildId, cat.id);
+                  forceUpdate();
+                }
+              }, `Release ${cat.name}`)
+            )
+          );
+        })
+      );
+    };
+    const GrippedDMsSection = () => {
+      if (ctx.settings.grippedDMs.length === 0) return null;
+      return ce(
+        "div",
+        { style: sectionStyle },
+        ce("div", { style: subHeaderStyle }, "Gripped DMs"),
+        ctx.settings.grippedDMs.map(
+          (dm) => ce("button", {
+            key: dm.channelId,
+            style: btnDimStyle,
+            onClick: () => {
+              releaseDM(ctx, dm.channelId);
+              forceUpdate();
+            }
+          }, `Release ${dm.username}`)
+        )
+      );
+    };
+    const GeneralSection = () => ce(
+      "div",
+      { style: sectionStyle },
+      ce("div", { style: subHeaderStyle }, "General"),
+      ce(
+        "label",
+        { style: { ...labelStyle, marginBottom: "10px" } },
+        ce("span", null, `Transition Speed: ${transSpeed}ms`),
+        ce("input", {
+          type: "range",
+          min: 0,
+          max: 600,
+          step: 50,
+          value: transSpeed,
+          style: { width: "120px", accentColor: "#9b59b6" },
+          onChange: (e) => {
+            const v = Number(e.target.value);
+            setTransSpeed(v);
+            ctx.settings.transitionSpeed = v;
+            ctx.saveSettings();
+            updateCSSVars(ctx);
+          }
+        })
+      ),
+      ce(Toggle, {
+        label: "Animations",
+        checked: anims,
+        onChange: (v) => {
+          setAnims(v);
+          updateSetting("animationsEnabled", v);
+        }
+      }),
+      ce(Toggle, {
+        label: "Debug Mode",
+        checked: debug,
+        onChange: (v) => {
+          setDebug(v);
+          updateSetting("debugMode", v);
+        }
+      })
+    );
+    return ce(
+      "div",
+      { style: containerStyle },
+      ce(StatusSection),
+      ce(PanelSection),
+      ce(HiddenChannelsSection),
+      ce(GrippedDMsSection),
+      ce(GeneralSection)
+    );
+  };
+  return React.createElement(SettingsPanel);
+}
 
+// src/RulersAuthority/index.js
+var _createModules = () => ({
+  _members: void 0,
+  _membersResolved: false,
+  _sidebar: void 0,
+  _sidebarResolved: false,
+  _panel: void 0,
+  _panelResolved: false,
+  _search: void 0,
+  _searchResolved: false,
+  _toolbar: void 0,
+  _toolbarResolved: false,
+  _icons: void 0,
+  _iconsResolved: false,
+  _guilds: void 0,
+  _guildsResolved: false,
+  _channels: void 0,
+  _channelsResolved: false,
+  get members() {
+    if (!this._membersResolved) {
+      this._members = BdApi.Webpack.getByKeys("membersWrap", "hiddenMembers") || null;
+      this._membersResolved = true;
+    }
+    return this._members;
+  },
+  get sidebar() {
+    if (!this._sidebarResolved) {
+      this._sidebar = BdApi.Webpack.getByKeys("sidebar", "activityPanel", "sidebarListRounded") || null;
+      this._sidebarResolved = true;
+    }
+    return this._sidebar;
+  },
+  get panel() {
+    if (!this._panelResolved) {
+      this._panel = BdApi.Webpack.getByKeys("outer", "inner", "overlay") || null;
+      this._panelResolved = true;
+    }
+    return this._panel;
+  },
+  get search() {
+    if (!this._searchResolved) {
+      this._search = BdApi.Webpack.getByKeys("searchResultsWrap", "stillIndexing", "noResults") || null;
+      this._searchResolved = true;
+    }
+    return this._search;
+  },
+  get toolbar() {
+    if (!this._toolbarResolved) {
+      this._toolbar = BdApi.Webpack.getByKeys("updateIconForeground", "search", "downloadArrow") || null;
+      this._toolbarResolved = true;
+    }
+    return this._toolbar;
+  },
+  get icons() {
+    if (!this._iconsResolved) {
+      this._icons = BdApi.Webpack.getByKeys("selected", "iconWrapper", "clickable", "icon") || null;
+      this._iconsResolved = true;
+    }
+    return this._icons;
+  },
+  get guilds() {
+    if (!this._guildsResolved) {
+      this._guilds = BdApi.Webpack.getByKeys("chatContent", "noChat", "parentChannelName") || null;
+      this._guildsResolved = true;
+    }
+    return this._guilds;
+  },
+  get channels() {
+    if (!this._channelsResolved) {
+      this._channels = BdApi.Webpack.getByKeys("channel", "closeIcon", "dm") || null;
+      this._channelsResolved = true;
+    }
+    return this._channels;
+  }
+});
+var _a;
+var _ttl = ((_a = _PluginUtils) == null ? void 0 : _a.createTTLCache) || ((ms) => {
+  let v, t = 0;
+  return { get: () => Date.now() - t < ms ? v : null, set: (x) => {
+    v = x;
+    t = Date.now();
+  }, invalidate: () => {
+    v = null;
+    t = 0;
+  } };
+});
+setPluginUtils(_PluginUtils);
+module.exports = class RulersAuthority {
+  constructor() {
+    this.settings = structuredClone(DEFAULT_SETTINGS);
+    this._amplifiedMode = false;
+    this._amplifiedExpiresAt = 0;
+    this._modules = null;
+    this._ChannelStore = null;
+    this._GuildStore = null;
+    this._SelectedGuildStore = null;
+    this._SelectedChannelStore = null;
+    this._statsCache = _ttl(RA_STATS_CACHE_TTL);
+    this._panelElCache = null;
+    this._resolvedSelectors = {};
+    this._controller = null;
+    this._channelObserver = null;
+    this._dmObserver = null;
+    this._toolbarObserver = null;
+    this._settingsObserver = null;
+    this._iconReinjectTimeout = null;
+    this._sidebarRevealTimer = null;
+    this._sidebarHideTimer = null;
+    this._membersRevealTimer = null;
+    this._membersHideTimer = null;
+    this._profileRevealTimer = null;
+    this._profileHideTimer = null;
+    this._channelRevealTimer = null;
+    this._channelHideTimer = null;
+    this._channelsHoverRevealActive = false;
+    this._onSkillActivated = null;
+    this._onSkillExpired = null;
+    this._pushAnimTimer = null;
+    this._pullAnimTimer = null;
+    this._dragging = null;
+    this._dragPanel = null;
+    this._guildChangeHandler = null;
+    this._channelChangeHandler = null;
+    this._guildChangeApplyTimer = null;
+    this._channelObserverRetryTimer = null;
+  }
+  // ── Lifecycle ──────────────────────────────────────────────
+  start() {
+    var _a2, _b;
+    this._toast = ((_b = (_a2 = _PluginUtils) == null ? void 0 : _a2.createToastHelper) == null ? void 0 : _b.call(_a2, "rulersAuthority")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    try {
+      this._controller = new AbortController();
+      this.loadSettings();
+      this.initWebpack();
+      setupSettingsGuard(this);
+      injectCSS(this);
+      updateCSSVars(this);
+      restorePanelStates(this);
+      injectToolbarIcon(this);
+      setupToolbarObserver(this);
+      patchContextMenus(this);
+      this.setupHotkeyListener();
+      setupHoverHandlers(this);
+      setupResizeHandlers(this);
+      setupChannelObserver(this);
+      setupGuildChangeListener(this);
+      setupSkillTreeListeners(this);
+      applyMicroStateForCurrentGuild(this);
+      applyDMGripping(this);
+      setupDMObserver(this);
+      this._toast("Ruler's Authority \u2014 Active", "info");
+    } catch (err) {
+      this.debugError("Lifecycle", "Error during start:", err);
+      this._toast("Ruler's Authority \u2014 Failed to start", "error");
+    }
+  }
+  stop() {
+    try {
+      this._clearLifecycleTimers();
+      if (this._controller) {
+        this._controller.abort();
+        this._controller = null;
+      }
+      this._resetBodyVisualState();
+      BdApi.DOM.removeStyle(RA_STYLE_ID);
+      BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
+      const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+      if (icon) icon.remove();
+      const raTip = document.getElementById("sl-toolbar-tip-ra");
+      if (raTip) raTip.remove();
+      teardownToolbarObserver(this);
+      if (this._unpatchChannelCtx) {
+        this._unpatchChannelCtx();
+        this._unpatchChannelCtx = null;
+      }
+      this._disconnectObserversAndGuards();
+      this._detachSkillTreeListeners();
+      this._detachStoreListeners();
+      restoreAllHiddenChannels();
+      restoreAllCrushedCategories();
+      removeAllResizeStyles(this);
+      document.body.classList.remove(RA_SETTINGS_OPEN_CLASS);
+      this._resetRuntimeReferences();
+    } catch (err) {
+      this.debugError("Lifecycle", "Error during stop:", err);
+    }
+    this._toast("Ruler's Authority \u2014 Dormant", "info");
+  }
+  _clearLifecycleTimers() {
+    const timeoutKeys = [
+      "_iconReinjectTimeout",
+      "_sidebarRevealTimer",
+      "_sidebarHideTimer",
+      "_membersRevealTimer",
+      "_membersHideTimer",
+      "_profileRevealTimer",
+      "_profileHideTimer",
+      "_channelRevealTimer",
+      "_channelHideTimer",
+      "_pushAnimTimer",
+      "_pullAnimTimer",
+      "_guildChangeApplyTimer",
+      "_channelObserverRetryTimer"
+    ];
+    for (const key of timeoutKeys) {
+      clearTimeout(this[key]);
+      this[key] = null;
+    }
+  }
+  _resetBodyVisualState() {
+    for (const panelName of Object.keys(PANEL_DEFS)) {
+      document.body.classList.remove(`ra-${panelName}-pushed`, `ra-${panelName}-hover-reveal`);
+    }
+    document.body.classList.remove("ra-amplified", "ra-pushing", "ra-pulling", "ra-channels-hover-reveal");
+    this._channelsHoverRevealActive = false;
+  }
+  _disconnectObserversAndGuards() {
+    if (this._channelObserver) {
+      this._channelObserver.disconnect();
+      this._channelObserver = null;
+    }
+    if (this._dmObserver) {
+      this._dmObserver.disconnect();
+      this._dmObserver = null;
+    }
+    if (this._settingsObserver) {
+      this._settingsObserver.disconnect();
+      this._settingsObserver = null;
+    }
+    if (this._settingsGuardInterval) {
+      clearInterval(this._settingsGuardInterval);
+      this._settingsGuardInterval = null;
+    }
+  }
+  _detachSkillTreeListeners() {
+    if (this._onSkillActivated) {
+      document.removeEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
+      this._onSkillActivated = null;
+    }
+    if (this._onSkillExpired) {
+      document.removeEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
+      this._onSkillExpired = null;
+    }
+  }
+  _detachStoreListeners() {
+    if (this._guildChangeHandler && this._SelectedGuildStore) {
+      this._SelectedGuildStore.removeChangeListener(this._guildChangeHandler);
+      this._guildChangeHandler = null;
+    }
+    if (this._channelChangeHandler && this._SelectedChannelStore) {
+      this._SelectedChannelStore.removeChangeListener(this._channelChangeHandler);
+      this._channelChangeHandler = null;
+    }
+  }
+  _resetRuntimeReferences() {
+    this._ChannelStore = null;
+    this._GuildStore = null;
+    this._SelectedGuildStore = null;
+    this._SelectedChannelStore = null;
+    this._statsCache.invalidate();
+    this._modules = null;
+    this._resolvedSelectors = {};
+    this._dragging = null;
+    this._dragPanel = null;
+  }
+  // ═══════════════════════════════════════════════════════════════════════
+  // §6  Webpack Init + Dynamic Selectors
+  // ═══════════════════════════════════════════════════════════════════════
+  initWebpack() {
+    const { Webpack } = BdApi;
+    this._ChannelStore = Webpack.getStore("ChannelStore");
+    this._GuildStore = Webpack.getStore("GuildStore");
+    this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
+    this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
+    this._modules = _createModules();
+    this._buildResolvedSelectors();
+    this.debugLog("Webpack", "Modules acquired", {
+      stores: {
+        ChannelStore: !!this._ChannelStore,
+        GuildStore: !!this._GuildStore,
+        SelectedGuildStore: !!this._SelectedGuildStore,
+        SelectedChannelStore: !!this._SelectedChannelStore
+      },
+      cssModules: {
+        members: !!this._modules.members,
+        sidebar: !!this._modules.sidebar,
+        panel: !!this._modules.panel,
+        search: !!this._modules.search,
+        toolbar: !!this._modules.toolbar,
+        icons: !!this._modules.icons,
+        guilds: !!this._modules.guilds
+      }
+    });
+  }
+  _buildResolvedSelectors() {
+    var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    const m = this._modules;
+    this._resolvedSelectors = {
+      sidebar: ((_a2 = m.sidebar) == null ? void 0 : _a2.sidebarList) ? [`.${m.sidebar.sidebarList}`] : SIDEBAR_FALLBACKS,
+      members: ((_b = m.members) == null ? void 0 : _b.membersWrap) ? [`.${m.members.membersWrap}`] : MEMBERS_FALLBACKS,
+      profile: ((_c = m.panel) == null ? void 0 : _c.outer) ? [
+        ...((_d = m.guilds) == null ? void 0 : _d.content) ? [`.${m.guilds.content} .${m.panel.outer}`] : [],
+        `.${m.panel.outer}`
+      ] : PROFILE_FALLBACKS,
+      search: ((_e = m.search) == null ? void 0 : _e.searchResultsWrap) ? [`.${m.search.searchResultsWrap}`] : SEARCH_FALLBACKS,
+      toolbar: ((_f = m.icons) == null ? void 0 : _f.toolbar) ? [`.${m.icons.toolbar}`] : TOOLBAR_FALLBACKS,
+      dmList: DM_LIST_FALLBACKS
+      // DM list doesn't change often, keep fallbacks
+    };
+    this.debugLog("Selectors", "Resolved selectors", {
+      sidebar: ((_g = m.sidebar) == null ? void 0 : _g.sidebarList) ? "webpack" : "fallback",
+      members: ((_h = m.members) == null ? void 0 : _h.membersWrap) ? "webpack" : "fallback",
+      profile: ((_i = m.panel) == null ? void 0 : _i.outer) ? "webpack" : "fallback",
+      search: ((_j = m.search) == null ? void 0 : _j.searchResultsWrap) ? "webpack" : "fallback",
+      toolbar: ((_k = m.icons) == null ? void 0 : _k.toolbar) ? "webpack" : "fallback"
+    });
+  }
+  // Find a DOM element using resolved selectors for a panel
+  // PERF: Caches element refs — panel elements rarely change (only on guild/channel switch).
+  _findPanelElement(panelName) {
+    var _a2;
+    const cached = (_a2 = this._panelElCache) == null ? void 0 : _a2[panelName];
+    if (cached && cached.isConnected) return cached;
+    const selectors = this._resolvedSelectors[panelName];
+    if (!selectors) return null;
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el && el.isConnected) {
+        if (!this._panelElCache) this._panelElCache = {};
+        this._panelElCache[panelName] = el;
+        return el;
+      }
+    }
+    if (this._panelElCache) this._panelElCache[panelName] = null;
+    return null;
+  }
+  // ── Delegated methods (call module functions with `this` context) ──
+  togglePanel(panelName) {
+    togglePanel(this, panelName);
+  }
+  updateCSSVars() {
+    updateCSSVars(this);
+  }
+  updateToolbarIcon() {
+    updateToolbarIcon(this);
+  }
+  setupHotkeyListener() {
+    if (!this._controller) return;
+    document.addEventListener("keydown", (e) => {
+      if (isEditableTarget(e.target)) return;
+      for (const [panelName, config] of Object.entries(this.settings.panels)) {
+        if (config.hotkey && matchesHotkey(e, config.hotkey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          togglePanel(this, panelName);
+          return;
+        }
+      }
+    }, { capture: true, signal: this._controller.signal });
+  }
+  getSettingsPanel() {
+    return getSettingsPanel(this);
+  }
   // ═══════════════════════════════════════════════════════════════════════
   // §18  Utilities
   // ═══════════════════════════════════════════════════════════════════════
-
   loadSettings() {
     try {
       const saved = BdApi.Data.load(RA_PLUGIN_NAME, "settings") || {};
@@ -2109,7 +1963,6 @@ body.ra-pulling [class*="chatContent_"] {
           this.settings.panels[panelName].hoverExpand = true;
         }
       }
-      // Migration: old default reveal delay (120ms) caused accidental panel opens.
       if (this.settings.hoverRevealDelayMs === 120) {
         this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
       }
@@ -2123,7 +1976,6 @@ body.ra-pulling [class*="chatContent_"] {
       this.settings = structuredClone(DEFAULT_SETTINGS);
     }
   }
-
   saveSettings() {
     try {
       BdApi.Data.save(RA_PLUGIN_NAME, "settings", this.settings);
@@ -2131,136 +1983,7 @@ body.ra-pulling [class*="chatContent_"] {
       this.debugError("Settings", "Failed to save:", err);
     }
   }
-
-  setupHotkeyListener() {
-    if (!this._controller) return;
-    document.addEventListener("keydown", (e) => {
-      if (isEditableTarget(e.target)) return;
-
-      for (const [panelName, config] of Object.entries(this.settings.panels)) {
-        if (config.hotkey && matchesHotkey(e, config.hotkey)) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.togglePanel(panelName);
-          return;
-        }
-      }
-    }, { capture: true, signal: this._controller.signal });
-  }
-
-  setupChannelObserver(retries = 0) {
-    if (this._channelObserver) {
-      this._channelObserver.disconnect();
-      this._channelObserver = null;
-    }
-    clearTimeout(this._channelObserverRetryTimer);
-
-    // Try Webpack-discovered selector first, then fallback
-    const m = this._modules;
-    const channelList =
-      (m?.sidebar?.sidebarList && document.querySelector(`.${m.sidebar.sidebarList} [role="tree"]`)) ||
-      document.querySelector('[class*="sidebar_"] [role="tree"]') ||
-      document.querySelector('[class*="sidebar_"] [class*="scroller_"]');
-
-    if (!channelList) {
-      // Retry with increasing delay — DOM may not be ready after guild/channel switch
-      if (retries < 4 && this._controller) {
-        const delay = 300 * (retries + 1);
-        this._channelObserverRetryTimer = setTimeout(() => {
-          if (this._controller) this.setupChannelObserver(retries + 1);
-        }, delay);
-      }
-      return;
-    }
-
-    const throttledApply = this._throttle(() => {
-      if (!this._channelObserver) return;
-      // Self-heal: if Discord replaced the tree element, reconnect observer
-      if (!channelList.isConnected) {
-        this.setupChannelObserver();
-        return;
-      }
-      this.applyMicroStateForCurrentGuild();
-    }, RA_OBSERVER_THROTTLE_MS);
-
-    this._channelObserver = new MutationObserver(throttledApply);
-    this._channelObserver.observe(channelList, { childList: true, subtree: true });
-  }
-
-  // PERF(P5-5): Replaced document.body subtree MutationObserver with 1.5s polling.
-  // The observer fired on every DOM mutation in all of Discord (~50+/sec in active channels)
-  // just to detect settings modal open/close (a rare, latency-insensitive event).
-  // Polling at 1.5s is unnoticeable for this use case and eliminates the most expensive
-  // single observer in the plugin suite.
-  setupSettingsGuard() {
-    // Clean up previous observer (if any from older version) or interval
-    if (this._settingsObserver) {
-      this._settingsObserver.disconnect();
-      this._settingsObserver = null;
-    }
-    if (this._settingsGuardInterval) {
-      clearInterval(this._settingsGuardInterval);
-      this._settingsGuardInterval = null;
-    }
-
-    this._syncSettingsGuardState();
-    this._settingsGuardInterval = setInterval(() => {
-      if (!this._controller) return;
-      if (document.hidden) return;
-      this._syncSettingsGuardState();
-    }, 1500);
-  }
-
-  _isSettingsModalOpen() {
-    // standardSidebarView_ is specific to Discord's settings modal layout
-    // (User Settings, Server Settings, Channel Settings). It does NOT appear
-    // in normal Discord UI, so this check alone is reliable.
-    //
-    // REMOVED: [aria-label="User Settings"] — this matched the always-present
-    // gear icon button in the user panel, causing a permanent false positive
-    // that blocked all hover processing.
-    return !!document.querySelector('[class*="standardSidebarView_"]');
-  }
-
-  _syncSettingsGuardState(forceOpen) {
-    const body = document.body;
-    if (!body) return false;
-
-    const isOpen = typeof forceOpen === "boolean" ? forceOpen : this._isSettingsModalOpen();
-    body.classList.toggle(RA_SETTINGS_OPEN_CLASS, isOpen);
-    if (isOpen) this._clearAllHoverStates();
-    return isOpen;
-  }
-
-  _clearSidebarHoverState() {
-    clearTimeout(this._sidebarRevealTimer);
-    clearTimeout(this._sidebarHideTimer);
-    clearTimeout(this._channelRevealTimer);
-    clearTimeout(this._channelHideTimer);
-    this._sidebarRevealTimer = null;
-    this._sidebarHideTimer = null;
-    this._channelRevealTimer = null;
-    this._channelHideTimer = null;
-    document.body.classList.remove("ra-sidebar-hover-reveal");
-    if (this._channelsHoverRevealActive) this._setHiddenChannelRevealState(false);
-  }
-
-  _clearAllHoverStates() {
-    // Clear ALL hover timers and reveal states (used when settings open or plugin stopping)
-    this._clearSidebarHoverState();
-    clearTimeout(this._membersRevealTimer);
-    clearTimeout(this._membersHideTimer);
-    clearTimeout(this._profileRevealTimer);
-    clearTimeout(this._profileHideTimer);
-    this._membersRevealTimer = null;
-    this._membersHideTimer = null;
-    this._profileRevealTimer = null;
-    this._profileHideTimer = null;
-    document.body.classList.remove("ra-members-hover-reveal", "ra-profile-hover-reveal");
-  }
-
   // ── DOM Helpers ──
-
   _findElement(selectorArray) {
     for (const selector of selectorArray) {
       const el = document.querySelector(selector);
@@ -2268,42 +1991,37 @@ body.ra-pulling [class*="chatContent_"] {
     }
     return null;
   }
-
   _isInsideElement(mouseEvent, element, fudgePx = 0) {
     const rect = element.getBoundingClientRect();
-    return (
-      mouseEvent.clientX >= rect.left - fudgePx &&
-      mouseEvent.clientX <= rect.right + fudgePx &&
-      mouseEvent.clientY >= rect.top - fudgePx &&
-      mouseEvent.clientY <= rect.bottom + fudgePx
-    );
+    return mouseEvent.clientX >= rect.left - fudgePx && mouseEvent.clientX <= rect.right + fudgePx && mouseEvent.clientY >= rect.top - fudgePx && mouseEvent.clientY <= rect.bottom + fudgePx;
   }
-
   // ── General Helpers ──
-
   _throttle(fn, wait) {
-    if (_PluginUtils?.createThrottle) return _PluginUtils.createThrottle(fn, wait);
+    var _a2;
+    if ((_a2 = _PluginUtils) == null ? void 0 : _a2.createThrottle) return _PluginUtils.createThrottle(fn, wait);
     let lastTime = 0;
     let timer = null;
-    return function (...args) {
+    return function(...args) {
       const now = Date.now();
       const remaining = wait - (now - lastTime);
-      if (remaining <= 0) { clearTimeout(timer); timer = null; lastTime = now; fn(...args); }
-      else if (!timer) { timer = setTimeout(() => { lastTime = Date.now(); timer = null; fn(...args); }, remaining); }
+      if (remaining <= 0) {
+        clearTimeout(timer);
+        timer = null;
+        lastTime = now;
+        fn(...args);
+      } else if (!timer) {
+        timer = setTimeout(() => {
+          lastTime = Date.now();
+          timer = null;
+          fn(...args);
+        }, remaining);
+      }
     };
   }
-
   _deepMerge(target, source) {
     const result = { ...target };
     for (const key of Object.keys(source)) {
-      if (
-        source[key] &&
-        typeof source[key] === "object" &&
-        !Array.isArray(source[key]) &&
-        target[key] &&
-        typeof target[key] === "object" &&
-        !Array.isArray(target[key])
-      ) {
+      if (source[key] && typeof source[key] === "object" && !Array.isArray(source[key]) && target[key] && typeof target[key] === "object" && !Array.isArray(target[key])) {
         result[key] = this._deepMerge(target[key], source[key]);
       } else {
         result[key] = source[key];
@@ -2311,12 +2029,10 @@ body.ra-pulling [class*="chatContent_"] {
     }
     return result;
   }
-
   debugLog(tag, msg, data) {
     if (!this.settings.debugMode) return;
     console.log(`[${RA_PLUGIN_NAME}][${tag}]`, msg, data || "");
   }
-
   debugError(tag, msg, err) {
     console.error(`[${RA_PLUGIN_NAME}][${tag}]`, msg, err || "");
   }

@@ -1,0 +1,6 @@
+{
+  "name": "HSLWheelBridge",
+  "description": "Makes horizontal wheel gestures work on rotated Horizontal Server List by mapping deltaX/Shift+wheel into scrollTop.",
+  "version": "2.0.0",
+  "author": "Solo Leveling Theme Dev"
+}

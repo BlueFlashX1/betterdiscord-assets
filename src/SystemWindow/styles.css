@@ -1,0 +1,286 @@
+/* ═══════════════════════════════════════════════
+   SystemWindow v2.5.0 — LI-level codeblock wrapping
+   Wraps avatar + username + timestamp + message text
+
+   Colors:
+     BLUE:   59, 130, 246  (#3b82f6) — System (others)
+     PURPLE: 155, 50, 255  (#9b32ff) — Monarch (self)
+     BG:     rgba(0, 0, 0, 0.55) — Darker codeblock background
+     R:      2px — Border radius
+   ═══════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════
+   PRE-STYLE: CSS-only base applied to ALL message
+   items BEFORE JS classification. Prevents the flash
+   when Discord replaces DOM nodes on re-render.
+   ════════════════════════════════════════════ */
+
+li[class*="messageListItem_"] {
+  background: rgba(0, 0, 0, 0.55) !important;
+  border-left: 3px solid rgba(59, 130, 246, 0.5) !important;
+  border-right: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-top: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 2px !important;
+  position: relative !important;
+  margin-left: 48px !important;
+  margin-right: 96px !important;
+  margin-top: 4px !important;
+  margin-bottom: 4px !important;
+  padding: 4px 12px 8px 8px !important;
+  transition: box-shadow 200ms ease,
+              border-color 200ms ease !important;
+}
+
+/* Mentioned messages pre-style (CSS-only) */
+li[class*="messageListItem_"]:has(div[class*="mentioned"]) {
+  border-left-color: rgba(239, 68, 68, 0.7) !important;
+  border-right-color: rgba(239, 68, 68, 0.25) !important;
+  border-top-color: rgba(239, 68, 68, 0.25) !important;
+  border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+/* ════════════════════════════════════════════
+   BASE: Classified messages (JS-applied)
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo,
+li.sw-group-start,
+li.sw-group-middle,
+li.sw-group-end {
+  background: rgba(0, 0, 0, 0.55) !important;
+  border-left: 3px solid rgba(59, 130, 246, 0.5) !important;
+  border-right: 1px solid rgba(59, 130, 246, 0.2) !important;
+  position: relative !important;
+  margin-left: 48px !important;
+  margin-right: 96px !important;
+  padding: 4px 12px 8px 8px !important;
+  transition: box-shadow 200ms ease,
+              border-color 200ms ease !important;
+}
+
+/* ════════════════════════════════════════════
+   SOLO: Full border + full radius
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo {
+  border-top: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 2px !important;
+  margin-top: 12px !important;
+  margin-bottom: 12px !important;
+  padding-bottom: 10px !important;
+}
+
+/* ════════════════════════════════════════════
+   GROUP START: Top border + top radius
+   ════════════════════════════════════════════ */
+
+li.sw-group-start {
+  border-top: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-bottom: none !important;
+  border-radius: 2px 2px 0 0 !important;
+  margin-top: 12px !important;
+  margin-bottom: 0 !important;
+}
+
+/* ════════════════════════════════════════════
+   GROUP MIDDLE: Side borders only
+   ════════════════════════════════════════════ */
+
+li.sw-group-middle {
+  border-top: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* ════════════════════════════════════════════
+   GROUP END: Bottom border + bottom radius
+   ════════════════════════════════════════════ */
+
+li.sw-group-end {
+  border-top: none !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2) !important;
+  border-radius: 0 0 2px 2px !important;
+  margin-top: 0 !important;
+  margin-bottom: 12px !important;
+  padding-bottom: 10px !important;
+}
+
+/* ════════════════════════════════════════════
+   SELF: Purple accent (Monarch)
+   ════════════════════════════════════════════ */
+
+li.sw-self {
+  border-left-color: rgba(155, 50, 255, 0.5) !important;
+  border-right-color: rgba(155, 50, 255, 0.2) !important;
+}
+
+li.sw-self.sw-group-solo,
+li.sw-self.sw-group-start {
+  border-top-color: rgba(155, 50, 255, 0.2) !important;
+}
+
+li.sw-self.sw-group-solo,
+li.sw-self.sw-group-end {
+  border-bottom-color: rgba(155, 50, 255, 0.2) !important;
+}
+
+/* ════════════════════════════════════════════
+   HOVER: Glow on the codeblock
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo:hover,
+li.sw-group-start:hover,
+li.sw-group-middle:hover,
+li.sw-group-end:hover {
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.45),
+              0 0 40px rgba(59, 130, 246, 0.15),
+              inset 0 0 12px rgba(59, 130, 246, 0.1) !important;
+  border-left-color: rgba(59, 130, 246, 1) !important;
+}
+
+li.sw-self.sw-group-solo:hover,
+li.sw-self.sw-group-start:hover,
+li.sw-self.sw-group-middle:hover,
+li.sw-self.sw-group-end:hover {
+  box-shadow: 0 0 20px rgba(155, 50, 255, 0.6),
+              0 0 45px rgba(155, 50, 255, 0.25),
+              inset 0 0 12px rgba(155, 50, 255, 0.1) !important;
+  border-left-color: rgba(155, 50, 255, 1) !important;
+}
+
+/* ════════════════════════════════════════════
+   AVATAR: Clean circle inside codeblock
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo [class*="avatar"],
+li.sw-group-start [class*="avatar"] {
+  z-index: 1 !important;
+}
+
+/* ════════════════════════════════════════════
+   USERNAMES: System label feel
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo [class*="username"],
+li.sw-group-start [class*="username"] {
+  letter-spacing: 0.03em !important;
+}
+
+/* ════════════════════════════════════════════
+   TIMESTAMPS: Subtle metadata
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo time, li.sw-group-start time,
+li.sw-group-middle time, li.sw-group-end time,
+li.sw-group-solo [class*="timestamp"],
+li.sw-group-start [class*="timestamp"],
+li.sw-group-middle [class*="timestamp"],
+li.sw-group-end [class*="timestamp"] {
+  opacity: 0.6 !important;
+  font-size: 0.68rem !important;
+  transition: opacity 200ms ease !important;
+}
+
+li.sw-group-solo:hover time, li.sw-group-start:hover time,
+li.sw-group-middle:hover time, li.sw-group-end:hover time,
+li.sw-group-solo:hover [class*="timestamp"],
+li.sw-group-start:hover [class*="timestamp"],
+li.sw-group-middle:hover [class*="timestamp"],
+li.sw-group-end:hover [class*="timestamp"] {
+  opacity: 0.8 !important;
+}
+
+/* ════════════════════════════════════════════
+   REPLY BLOCKS: Nested mini-codeblock
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo [class*="repliedMessage"],
+li.sw-group-start [class*="repliedMessage"] {
+  background: rgba(0, 0, 0, 0.25) !important;
+  border: 1px solid rgba(59, 130, 246, 0.15) !important;
+  border-left: 2px solid rgba(59, 130, 246, 0.3) !important;
+  border-radius: 2px !important;
+  padding: 4px 8px !important;
+  margin-bottom: 4px !important;
+}
+
+li.sw-self.sw-group-solo [class*="repliedMessage"],
+li.sw-self.sw-group-start [class*="repliedMessage"] {
+  border-color: rgba(155, 50, 255, 0.15) !important;
+  border-left-color: rgba(155, 50, 255, 0.3) !important;
+}
+
+/* ════════════════════════════════════════════
+   EMBEDS: Codeblock accent
+   ════════════════════════════════════════════ */
+
+li.sw-group-solo [class*="embedWrapper"],
+li.sw-group-start [class*="embedWrapper"],
+li.sw-group-middle [class*="embedWrapper"],
+li.sw-group-end [class*="embedWrapper"] {
+  background: rgba(0, 0, 0, 0.25) !important;
+  border: 1px solid rgba(59, 130, 246, 0.15) !important;
+  border-left: 2px solid rgba(59, 130, 246, 0.3) !important;
+  border-radius: 2px !important;
+}
+
+li.sw-self [class*="embedWrapper"] {
+  border-color: rgba(155, 50, 255, 0.15) !important;
+  border-left-color: rgba(155, 50, 255, 0.3) !important;
+}
+
+/* ════════════════════════════════════════════
+   MENTIONED: Crimson "Emergency Quest" accent
+   ════════════════════════════════════════════ */
+
+li.sw-mentioned {
+  border-left-color: rgba(239, 68, 68, 0.7) !important;
+  border-right-color: rgba(239, 68, 68, 0.25) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+
+li.sw-mentioned.sw-group-solo,
+li.sw-mentioned.sw-group-start {
+  border-top-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+li.sw-mentioned.sw-group-solo,
+li.sw-mentioned.sw-group-end {
+  border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+/* Kill the theme's mention bg + ::before bar inside codeblocks */
+li.sw-mentioned div[class*="mentioned_"] {
+  background: transparent !important;
+}
+li.sw-mentioned div[class*="mentioned_"]::before {
+  display: none !important;
+}
+
+/* Kill Discord's native message hover highlight inside codeblocks */
+li.sw-group-solo div[class*="message_"]:hover,
+li.sw-group-start div[class*="message_"]:hover,
+li.sw-group-middle div[class*="message_"]:hover,
+li.sw-group-end div[class*="message_"]:hover,
+li.sw-group-solo div[role="article"]:hover,
+li.sw-group-start div[role="article"]:hover,
+li.sw-group-middle div[role="article"]:hover,
+li.sw-group-end div[role="article"]:hover {
+  background: transparent !important;
+}
+
+/* Mentioned hover: crimson glow */
+li.sw-mentioned.sw-group-solo:hover,
+li.sw-mentioned.sw-group-start:hover,
+li.sw-mentioned.sw-group-middle:hover,
+li.sw-mentioned.sw-group-end:hover {
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.5),
+              0 0 40px rgba(239, 68, 68, 0.2),
+              inset 0 0 12px rgba(239, 68, 68, 0.1) !important;
+  border-left-color: rgba(239, 68, 68, 1) !important;
+}

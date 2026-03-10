@@ -1,0 +1,373 @@
+/* ── SoloLevelingToasts — Toast Engine v2 ── */
+/* Dynamic durations are set via CSS custom properties on .sl-toast-container:
+ *   --sl-anim-duration   (slide-in, default 150ms)
+ *   --sl-fade-duration   (fade-out, default 0.4s)
+ */
+
+.sl-toast-container {
+  position: fixed;
+  z-index: 999997;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.sl-toast-container.top-right {
+  top: 40px;
+  right: 20px;
+  align-items: flex-end;
+}
+
+.sl-toast-container.top-left {
+  top: 40px;
+  left: 20px;
+  align-items: flex-start;
+}
+
+.sl-toast-container.bottom-right {
+  bottom: 20px;
+  right: 20px;
+  align-items: flex-end;
+}
+
+.sl-toast-container.bottom-left {
+  bottom: 20px;
+  left: 20px;
+  align-items: flex-start;
+}
+
+.sl-toast {
+  position: relative;
+  min-width: 280px;
+  max-width: 360px;
+  min-height: 50px;
+  max-height: fit-content;
+  padding: 14px 18px 14px 22px;
+  background: rgb(10, 10, 15);
+  border: 1px solid color-mix(in srgb, var(--sl-card-accent, #8a2be2) 30%, transparent);
+  border-radius: 0;
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),
+              0 0 40px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 20%, transparent);
+  pointer-events: auto;
+  cursor: pointer;
+  overflow: visible;
+  animation: sl-toast-slide-in var(--sl-anim-duration, 150ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  word-wrap: break-word;
+  white-space: normal;
+}
+
+.sl-toast.fading-out {
+  animation-fill-mode: forwards !important;
+}
+
+@keyframes sl-toast-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sl-toast-container.top-left .sl-toast {
+  animation-name: sl-toast-slide-in-left;
+}
+
+@keyframes sl-toast-slide-in-left {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sl-toast-container.bottom-right .sl-toast,
+.sl-toast-container.bottom-left .sl-toast {
+  animation-name: sl-toast-slide-in-bottom;
+}
+
+@keyframes sl-toast-slide-in-bottom {
+  0% {
+    opacity: 0;
+    transform: translateY(100%) scale(0.9);
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sl-toast-title {
+  font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  margin-bottom: 6px;
+  background: linear-gradient(135deg, #8a2be2 0%, #7b21c6 30%, #6b1fb0 60%, #000000 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  word-wrap: break-word;
+  white-space: normal;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  text-shadow: 0 0 3px rgba(138, 43, 226, 0.5),
+               0 0 6px rgba(123, 33, 198, 0.4),
+               0 0 9px rgba(107, 31, 176, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  line-height: 1.3;
+}
+
+.sl-toast-message {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.sl-toast-particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: radial-gradient(circle, #8a2be2 0%, rgba(138, 43, 226, 0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: sl-particle-fade 1.5s ease-out forwards;
+}
+
+@keyframes sl-particle-fade {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--sl-particle-x, 0), var(--sl-particle-y, -50px)) scale(0);
+  }
+}
+
+.sl-toast::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);
+  animation: sl-toast-progress linear forwards;
+}
+
+@keyframes sl-toast-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@keyframes sl-toast-fade-out-right {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%) scale(0.9);
+  }
+}
+
+@keyframes sl-toast-fade-out-left {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-100%) scale(0.9);
+  }
+}
+
+@keyframes sl-toast-fade-out-bottom-right {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(100%, 100%) scale(0.9);
+  }
+}
+
+@keyframes sl-toast-fade-out-bottom-left {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-100%, 100%) scale(0.9);
+  }
+}
+
+.sl-toast-container .sl-toast {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+}
+
+.sl-toast-container.top-right .sl-toast.fading-out {
+  animation: sl-toast-fade-out-right var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+.sl-toast-container.top-left .sl-toast.fading-out {
+  animation: sl-toast-fade-out-left var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+.sl-toast-container.bottom-right .sl-toast.fading-out {
+  animation: sl-toast-fade-out-bottom-right var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+.sl-toast-container.bottom-left .sl-toast.fading-out {
+  animation: sl-toast-fade-out-bottom-left var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+.sl-toast-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--sl-card-accent, #8a2be2);
+  border-radius: 8px 0 0 8px;
+  z-index: 1;
+}
+
+/* ── Toast Engine v2: Card Toasts ── */
+
+.sl-toast.sl-toast-card {
+  padding: 0;
+  min-width: 300px;
+  max-width: 380px;
+  min-height: auto;
+  border-color: var(--sl-card-accent, rgba(138, 43, 226, 0.3));
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),
+              0 0 30px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 20%, transparent);
+}
+
+.sl-toast-card-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--sl-card-accent, #8a2be2);
+  border-radius: 0;
+}
+
+.sl-toast-card-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px 12px 18px;
+}
+
+.sl-toast-card-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+}
+
+.sl-toast-card-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--sl-card-accent, #8a2be2);
+}
+
+.sl-toast-card-status {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgb(10, 10, 15);
+  background: var(--sl-card-accent, #8a2be2);
+}
+
+.sl-toast-card-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sl-toast-card-header {
+  font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 60%, transparent);
+}
+
+.sl-toast-card-body {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-toast-card-detail {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-toast.sl-toast-card::before {
+  display: none;
+}
+
+.sl-toast-card .sl-toast-card-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);
+  animation: sl-toast-progress linear forwards;
+}

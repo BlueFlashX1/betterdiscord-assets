@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "description": "BetterDiscord plugin and theme development environment",
   "scripts": {
-    "build:plugin": "node scripts/build-plugin.js",
-    "watch:plugin": "node scripts/watch-plugin.js",
+    "build": "node scripts/build-plugin.js",
+    "watch": "node scripts/build-plugin.js --watch",
     "link:plugin": "node scripts/link-plugin.js",
     "link:theme": "node scripts/link-theme.js",
-    "dev": "npm run watch:plugin",
     "harness:harmony": "node scripts/plugin-harmony-harness.js"
   },
   "keywords": [
@@ -20,6 +19,7 @@
   "license": "MIT",
   "devDependencies": {
     "chokidar": "^3.5.3",
+    "esbuild": "^0.27.3",
     "fs-extra": "^11.2.0"
   }
 }

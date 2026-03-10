@@ -1,0 +1,50 @@
+/* Hide native jump-to-present bars globally */
+div[class^="jumpToPresentBar_"] {
+  display: none !important;
+}
+
+.sl-chat-nav-arrow {
+  position: absolute;
+  z-index: 500;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(8, 10, 20, 0.92);
+  border: 1px solid rgba(138, 43, 226, 0.45);
+  color: #b48cff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease,
+              box-shadow 0.15s ease, transform 0.15s ease,
+              opacity 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  right: 24px;
+  pointer-events: none;
+  opacity: 0;
+}
+.sl-chat-nav-arrow.sl-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sl-chat-nav-arrow:hover {
+  background: rgba(138, 43, 226, 0.2);
+  border-color: #8a2be2;
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.35);
+  transform: scale(1.1);
+}
+.sl-chat-nav-arrow:active {
+  transform: scale(0.95);
+}
+.sl-chat-nav-arrow svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.sl-chat-nav-down {
+  bottom: 24px;
+}
+.sl-chat-nav-up {
+  bottom: 68px;
+}

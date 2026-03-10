@@ -1,0 +1,6 @@
+{
+  "name": "ChatNavArrows",
+  "description": "Replaces the Jump to Present bar with a compact down-arrow button, and adds an up-arrow button to jump to the first message in the channel.",
+  "version": "2.0.1",
+  "author": "Solo Leveling Theme Dev"
+}
