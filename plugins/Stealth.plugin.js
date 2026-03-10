@@ -208,6 +208,218 @@ var require_styles = __commonJS({
   }
 });
 
+// src/Stealth/status-policy.js
+var require_status_policy = __commonJS({
+  "src/Stealth/status-policy.js"(exports2, module2) {
+    var STEALTH_PLUGIN_ID2 = "Stealth";
+    function attachStealthStatusPolicyMethods2(StealthClass) {
+      Object.assign(StealthClass.prototype, {
+        _syncStatusPolicy() {
+          const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
+          if (!shouldForceInvisible) {
+            if (this._forcedInvisible) {
+              this._restoreOriginalStatus();
+              this._forcedInvisible = false;
+            }
+            return;
+          }
+          const forced = this._ensureInvisibleStatus();
+          if (!forced && this.settings.showToasts) {
+            this._toast("Stealth: could not force Invisible status", "warning");
+          }
+        },
+        _resolveStatusSetters() {
+          const candidates = [];
+          const add = (module3, fnName) => {
+            if (!module3 || typeof module3[fnName] !== "function") return;
+            candidates.push({ module: module3, fnName });
+          };
+          const addByKeys = (...keys) => {
+            try {
+              const mod = BdApi.Webpack.getByKeys(...keys);
+              if (!mod) return;
+              keys.forEach((key) => add(mod, key));
+            } catch (error) {
+              this._logWarning(
+                "STATUS",
+                `Status setter lookup failed: ${keys.join(",")}`,
+                error,
+                `status-lookup:${keys.join(",")}`
+              );
+            }
+          };
+          addByKeys("setStatus", "getStatus");
+          addByKeys("setStatus");
+          addByKeys("updateStatus");
+          addByKeys("setPresence");
+          try {
+            const mod = BdApi.Webpack.getModule(
+              (m) => m && typeof m.setStatus === "function"
+            );
+            add(mod, "setStatus");
+          } catch (error) {
+            this._logWarning("STATUS", "Fallback setStatus module scan failed", error, "status-fallback-scan");
+          }
+          const unique = [];
+          const seen = /* @__PURE__ */ new WeakMap();
+          candidates.forEach((entry) => {
+            const { module: module3, fnName } = entry;
+            if (!seen.has(module3)) {
+              seen.set(module3, /* @__PURE__ */ new Set());
+            }
+            const fnSet = seen.get(module3);
+            if (fnSet.has(fnName)) return;
+            fnSet.add(fnName);
+            unique.push(entry);
+          });
+          return unique;
+        },
+        /** Find Discord's PreloadedUserSettings proto module.
+         *  This is the REAL status-change mechanism in modern Discord —
+         *  updateAsync("status", cb) is what the UI status picker calls. */
+        _initProtoUtils() {
+          var _a;
+          try {
+            const allProtos = [];
+            BdApi.Webpack.getModule((exp) => {
+              try {
+                if (typeof exp.updateAsync === "function") allProtos.push(exp);
+              } catch (e) {
+              }
+              return false;
+            }, { searchExports: true });
+            for (const p of allProtos) {
+              try {
+                if (String(((_a = p.ProtoClass) == null ? void 0 : _a.typeName) || "").includes("PreloadedUserSettings")) {
+                  this._protoUtils = p;
+                  if (this.settings.debugMode) console.log("[Stealth] Proto settings acquired (PreloadedUserSettings)");
+                  return;
+                }
+              } catch (e) {
+              }
+            }
+            if (this.settings.debugMode) console.warn("[Stealth] All strategies failed \u2014 no proto with 'status' field found");
+          } catch (err) {
+            this._logWarning("STATUS", "Failed to find PreloadedUserSettings proto module", err, "proto-init");
+          }
+        },
+        /** Patch updateAsync so ANY status change via the proto system
+         *  (including Discord's own UI status picker) gets forced to invisible.
+         *  Proto status enum: 0=unset, 1=online, 2=idle, 3=dnd, 4=invisible */
+        _patchProtoStatusUpdate() {
+          if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") {
+            this._logWarning("STATUS", "Proto utils unavailable \u2014 cannot intercept proto status changes", null, "proto-patch-skip");
+            return;
+          }
+          BdApi.Patcher.before(STEALTH_PLUGIN_ID2, this._protoUtils, "updateAsync", (_ctx, args) => {
+            if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+            if (args[0] === "status" && typeof args[1] === "function") {
+              const originalCallback = args[1];
+              args[1] = (data) => {
+                originalCallback(data);
+                if (data == null ? void 0 : data.status) {
+                  data.status.value = "invisible";
+                }
+              };
+            }
+          });
+        },
+        /** Direct proto call to set status to invisible — used by _ensureInvisibleStatus
+         *  as primary method, with legacy setStatus as fallback. */
+        _setStatusViaProto(statusString) {
+          if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") return false;
+          try {
+            this._protoUtils.updateAsync("status", (data) => {
+              if (data == null ? void 0 : data.status) {
+                data.status.value = statusString;
+              }
+            }, 0);
+            return true;
+          } catch (err) {
+            this._logWarning("STATUS", "Proto updateAsync call failed", err, "proto-set");
+            return false;
+          }
+        },
+        _ensureInvisibleStatus() {
+          const current = this._getCurrentStatus();
+          if (current && current !== "invisible" && !this._originalStatus) {
+            this._originalStatus = current;
+          }
+          if (current === "invisible") {
+            this._forcedInvisible = true;
+            return true;
+          }
+          if (this._setStatusViaProto("invisible")) {
+            this._forcedInvisible = true;
+            return true;
+          }
+          const updated = this._setStatus("invisible");
+          if (updated) {
+            this._forcedInvisible = true;
+          }
+          return updated;
+        },
+        _setStatus(status) {
+          if (!status) return false;
+          if (!Array.isArray(this._statusSetters) || this._statusSetters.length === 0) {
+            this._statusSetters = this._resolveStatusSetters();
+          }
+          let lastError = null;
+          for (const entry of this._statusSetters) {
+            const { module: module3, fnName } = entry;
+            try {
+              if (fnName === "setPresence") {
+                try {
+                  module3[fnName].call(module3, { status });
+                } catch (presenceError) {
+                  this._logWarning("STATUS", "setPresence({status}) failed, trying plain string", presenceError, "status-presence-obj");
+                  module3[fnName].call(module3, status);
+                }
+                return true;
+              }
+              if (fnName === "updateStatus") {
+                module3[fnName].call(module3, status);
+                return true;
+              }
+              module3[fnName].call(module3, status);
+              return true;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          if (lastError) {
+            this._logWarning("STATUS", "All status setter candidates failed", lastError, "status-all-setters-failed");
+          }
+          return false;
+        },
+        _restoreOriginalStatus() {
+          if (!this._originalStatus) return;
+          this._setStatusViaProto(this._originalStatus);
+          this._setStatus(this._originalStatus);
+          this._originalStatus = null;
+        },
+        _getCurrentStatus() {
+          var _a, _b, _c;
+          try {
+            const user = (_b = (_a = this._stores.user) == null ? void 0 : _a.getCurrentUser) == null ? void 0 : _b.call(_a);
+            const userId = user == null ? void 0 : user.id;
+            if (userId && ((_c = this._stores.presence) == null ? void 0 : _c.getStatus)) {
+              const status = this._stores.presence.getStatus(userId);
+              if (typeof status === "string") {
+                return status.toLowerCase();
+              }
+            }
+          } catch (error) {
+            this._logWarning("STATUS", "Failed reading current presence status", error, "status-read");
+          }
+          return null;
+        }
+      });
+    }
+    module2.exports = { attachStealthStatusPolicyMethods: attachStealthStatusPolicyMethods2 };
+  }
+});
+
 // src/Stealth/index.js
 var _bdLoad = (f) => {
   try {
@@ -226,6 +438,7 @@ try {
 }
 var { buildStealthSettingsPanel } = require_settings_panel();
 var { STEALTH_SETTINGS_CSS } = require_styles();
+var { attachStealthStatusPolicyMethods } = require_status_policy();
 var STEALTH_PLUGIN_ID = "Stealth";
 var STEALTH_STYLE_ID = "stealth-plugin-css";
 var DEFAULT_SETTINGS = {
@@ -816,207 +1029,6 @@ module.exports = class Stealth {
     });
     return unique;
   }
-  // ── Status Policy + Proto Integration ─────────────────────────────────
-  _syncStatusPolicy() {
-    const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
-    if (!shouldForceInvisible) {
-      if (this._forcedInvisible) {
-        this._restoreOriginalStatus();
-        this._forcedInvisible = false;
-      }
-      return;
-    }
-    const forced = this._ensureInvisibleStatus();
-    if (!forced && this.settings.showToasts) {
-      this._toast("Stealth: could not force Invisible status", "warning");
-    }
-  }
-  _resolveStatusSetters() {
-    const candidates = [];
-    const add = (module2, fnName) => {
-      if (!module2 || typeof module2[fnName] !== "function") return;
-      candidates.push({ module: module2, fnName });
-    };
-    const addByKeys = (...keys) => {
-      try {
-        const mod = BdApi.Webpack.getByKeys(...keys);
-        if (!mod) return;
-        keys.forEach((key) => add(mod, key));
-      } catch (error) {
-        this._logWarning(
-          "STATUS",
-          `Status setter lookup failed: ${keys.join(",")}`,
-          error,
-          `status-lookup:${keys.join(",")}`
-        );
-      }
-    };
-    addByKeys("setStatus", "getStatus");
-    addByKeys("setStatus");
-    addByKeys("updateStatus");
-    addByKeys("setPresence");
-    try {
-      const mod = BdApi.Webpack.getModule(
-        (m) => m && typeof m.setStatus === "function"
-      );
-      add(mod, "setStatus");
-    } catch (error) {
-      this._logWarning("STATUS", "Fallback setStatus module scan failed", error, "status-fallback-scan");
-    }
-    const unique = [];
-    const seen = /* @__PURE__ */ new WeakMap();
-    candidates.forEach((entry) => {
-      const { module: module2, fnName } = entry;
-      if (!seen.has(module2)) {
-        seen.set(module2, /* @__PURE__ */ new Set());
-      }
-      const fnSet = seen.get(module2);
-      if (fnSet.has(fnName)) return;
-      fnSet.add(fnName);
-      unique.push(entry);
-    });
-    return unique;
-  }
-  /** Find Discord's PreloadedUserSettings proto module.
-   *  This is the REAL status-change mechanism in modern Discord —
-   *  updateAsync("status", cb) is what the UI status picker calls. */
-  _initProtoUtils() {
-    var _a;
-    try {
-      const allProtos = [];
-      BdApi.Webpack.getModule((exp) => {
-        try {
-          if (typeof exp.updateAsync === "function") allProtos.push(exp);
-        } catch (e) {
-        }
-        return false;
-      }, { searchExports: true });
-      for (const p of allProtos) {
-        try {
-          if (String(((_a = p.ProtoClass) == null ? void 0 : _a.typeName) || "").includes("PreloadedUserSettings")) {
-            this._protoUtils = p;
-            if (this.settings.debugMode) console.log("[Stealth] Proto settings acquired (PreloadedUserSettings)");
-            return;
-          }
-        } catch (e) {
-        }
-      }
-      if (this.settings.debugMode) console.warn("[Stealth] All strategies failed \u2014 no proto with 'status' field found");
-    } catch (err) {
-      this._logWarning("STATUS", "Failed to find PreloadedUserSettings proto module", err, "proto-init");
-    }
-  }
-  /** Patch updateAsync so ANY status change via the proto system
-   *  (including Discord's own UI status picker) gets forced to invisible.
-   *  Proto status enum: 0=unset, 1=online, 2=idle, 3=dnd, 4=invisible */
-  _patchProtoStatusUpdate() {
-    if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") {
-      this._logWarning("STATUS", "Proto utils unavailable \u2014 cannot intercept proto status changes", null, "proto-patch-skip");
-      return;
-    }
-    BdApi.Patcher.before(STEALTH_PLUGIN_ID, this._protoUtils, "updateAsync", (_ctx, args) => {
-      if (!this.settings.enabled || !this.settings.invisibleStatus) return;
-      if (args[0] === "status" && typeof args[1] === "function") {
-        const originalCallback = args[1];
-        args[1] = (data) => {
-          originalCallback(data);
-          if (data == null ? void 0 : data.status) {
-            data.status.value = "invisible";
-          }
-        };
-      }
-    });
-  }
-  /** Direct proto call to set status to invisible — used by _ensureInvisibleStatus
-   *  as primary method, with legacy setStatus as fallback. */
-  _setStatusViaProto(statusString) {
-    if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") return false;
-    try {
-      this._protoUtils.updateAsync("status", (data) => {
-        if (data == null ? void 0 : data.status) {
-          data.status.value = statusString;
-        }
-      }, 0);
-      return true;
-    } catch (err) {
-      this._logWarning("STATUS", "Proto updateAsync call failed", err, "proto-set");
-      return false;
-    }
-  }
-  _ensureInvisibleStatus() {
-    const current = this._getCurrentStatus();
-    if (current && current !== "invisible" && !this._originalStatus) {
-      this._originalStatus = current;
-    }
-    if (current === "invisible") {
-      this._forcedInvisible = true;
-      return true;
-    }
-    if (this._setStatusViaProto("invisible")) {
-      this._forcedInvisible = true;
-      return true;
-    }
-    const updated = this._setStatus("invisible");
-    if (updated) {
-      this._forcedInvisible = true;
-    }
-    return updated;
-  }
-  _setStatus(status) {
-    if (!status) return false;
-    if (!Array.isArray(this._statusSetters) || this._statusSetters.length === 0) {
-      this._statusSetters = this._resolveStatusSetters();
-    }
-    let lastError = null;
-    for (const entry of this._statusSetters) {
-      const { module: module2, fnName } = entry;
-      try {
-        if (fnName === "setPresence") {
-          try {
-            module2[fnName].call(module2, { status });
-          } catch (presenceError) {
-            this._logWarning("STATUS", `setPresence({status}) failed, trying plain string`, presenceError, "status-presence-obj");
-            module2[fnName].call(module2, status);
-          }
-          return true;
-        }
-        if (fnName === "updateStatus") {
-          module2[fnName].call(module2, status);
-          return true;
-        }
-        module2[fnName].call(module2, status);
-        return true;
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    if (lastError) {
-      this._logWarning("STATUS", "All status setter candidates failed", lastError, "status-all-setters-failed");
-    }
-    return false;
-  }
-  _restoreOriginalStatus() {
-    if (!this._originalStatus) return;
-    this._setStatusViaProto(this._originalStatus);
-    this._setStatus(this._originalStatus);
-    this._originalStatus = null;
-  }
-  _getCurrentStatus() {
-    var _a, _b, _c;
-    try {
-      const user = (_b = (_a = this._stores.user) == null ? void 0 : _a.getCurrentUser) == null ? void 0 : _b.call(_a);
-      const userId = user == null ? void 0 : user.id;
-      if (userId && ((_c = this._stores.presence) == null ? void 0 : _c.getStatus)) {
-        const status = this._stores.presence.getStatus(userId);
-        if (typeof status === "string") {
-          return status.toLowerCase();
-        }
-      }
-    } catch (error) {
-      this._logWarning("STATUS", "Failed reading current presence status", error, "status-read");
-    }
-    return null;
-  }
   // ── Diagnostics / Warning Throttle ────────────────────────────────────
   _trimWarningTimestamps(now, targetSize = 192) {
     if (this._warningTimestamps.size <= 256) return;
@@ -1099,3 +1111,4 @@ module.exports = class Stealth {
     BdApi.DOM.addStyle(STEALTH_STYLE_ID, STEALTH_SETTINGS_CSS);
   }
 };
+attachStealthStatusPolicyMethods(module.exports);

@@ -5,6 +5,98 @@
  * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/LevelProgressBar/settings-panel.js
+var require_settings_panel = __commonJS({
+  "src/LevelProgressBar/settings-panel.js"(exports2, module2) {
+    function buildLevelProgressBarSettingsPanel2(plugin) {
+      plugin.detachLevelProgressBarSettingsPanelHandlers();
+      const panel = document.createElement("div");
+      panel.style.padding = "20px";
+      panel.innerHTML = `
+      <div style="background: #1e1e2e; border-radius: 0; padding: 20px;">
+        <h3 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 16px; font-weight: 600;">Level Progress Bar</h3>
+        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: #2a2a3e; border-radius: 2px; border: 1px solid #3a3a4e;">
+          <input type="checkbox" ${plugin.settings.debugMode ? "checked" : ""} data-lpb-setting="debugMode"
+            style="accent-color: #8a2be2; width: 16px; height: 16px; margin: 0;">
+          <span style="margin-left: 10px; color: #e0e0e0; font-size: 14px;">Debug Mode</span>
+        </label>
+        <p style="font-size: 12px; color: #6a6a8a; margin: 8px 0 0 0;">
+          Show detailed console logs for troubleshooting. Reload Discord after changing.
+        </p>
+      </div>
+    `;
+      const onChange = (event) => {
+        var _a;
+        const target = event.target;
+        const key = (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, "data-lpb-setting");
+        if (!key) return;
+        const nextValue = target.type === "checkbox" ? target.checked : target.value;
+        const handlers = {
+          debugMode: (value) => {
+            plugin.settings.debugMode = !!value;
+            plugin.saveSettings();
+            plugin.debugLog("SETTINGS", `Debug mode: ${value ? "ENABLED" : "DISABLED"}`);
+          }
+        };
+        (handlers[key] || (() => {
+        }))(nextValue);
+      };
+      panel.addEventListener("change", onChange);
+      plugin._settingsPanelRoot = panel;
+      plugin._settingsPanelHandlers = { onChange };
+      return panel;
+    }
+    module2.exports = { buildLevelProgressBarSettingsPanel: buildLevelProgressBarSettingsPanel2 };
+  }
+});
+
+// src/LevelProgressBar/fallback-styles.js
+var require_fallback_styles = __commonJS({
+  "src/LevelProgressBar/fallback-styles.js"(exports2, module2) {
+    function getFallbackLevelProgressBarCss2() {
+      return `
+      .lpb-progress-container {
+        position: fixed;
+        left: 0;
+        right: 0;
+        z-index: 999997;
+        pointer-events: none;
+      }
+      .lpb-progress-container.top { top: 0; }
+      .lpb-progress-container.bottom { bottom: 0; }
+      .lpb-progress-bar {
+        width: 100%;
+        background: rgba(10, 10, 15, 0.95);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.5);
+        padding: 12px 20px 12px 80px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .lpb-progress-track {
+        flex: 1 1 auto;
+        min-width: 180px;
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(20, 20, 30, 0.8);
+      }
+      .lpb-progress-fill {
+        width: 100%;
+        height: 100%;
+        transform-origin: left center;
+        background: linear-gradient(90deg, #8a2be2 0%, #7b27cc 50%, #6c22b6 100%);
+      }
+    `;
+    }
+    module2.exports = { getFallbackLevelProgressBarCss: getFallbackLevelProgressBarCss2 };
+  }
+});
 
 // src/LevelProgressBar/index.js
 var _bdLoad = (f) => {
@@ -18,6 +110,8 @@ var _bdLoad = (f) => {
 };
 var PLUGIN_ID = "LevelProgressBar";
 var STYLE_ID = "level-progress-bar-css";
+var { buildLevelProgressBarSettingsPanel } = require_settings_panel();
+var { getFallbackLevelProgressBarCss } = require_fallback_styles();
 var _loadOptionalModule = (fileName, isValid) => {
   try {
     const mod = _bdLoad(fileName);
@@ -479,42 +573,7 @@ module.exports = class LevelProgressBar {
     this._settingsPanelHandlers = null;
   }
   getSettingsPanel() {
-    this.detachLevelProgressBarSettingsPanelHandlers();
-    const panel = document.createElement("div");
-    panel.style.padding = "20px";
-    panel.innerHTML = `
-      <div style="background: #1e1e2e; border-radius: 0; padding: 20px;">
-        <h3 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 16px; font-weight: 600;">Level Progress Bar</h3>
-        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: #2a2a3e; border-radius: 2px; border: 1px solid #3a3a4e;">
-          <input type="checkbox" ${this.settings.debugMode ? "checked" : ""} data-lpb-setting="debugMode"
-            style="accent-color: #8a2be2; width: 16px; height: 16px; margin: 0;">
-          <span style="margin-left: 10px; color: #e0e0e0; font-size: 14px;">Debug Mode</span>
-        </label>
-        <p style="font-size: 12px; color: #6a6a8a; margin: 8px 0 0 0;">
-          Show detailed console logs for troubleshooting. Reload Discord after changing.
-        </p>
-      </div>
-    `;
-    const onChange = (event) => {
-      var _a;
-      const target = event.target;
-      const key = (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, "data-lpb-setting");
-      if (!key) return;
-      const nextValue = target.type === "checkbox" ? target.checked : target.value;
-      const handlers = {
-        debugMode: (value) => {
-          this.settings.debugMode = !!value;
-          this.saveSettings();
-          this.debugLog("SETTINGS", `Debug mode: ${value ? "ENABLED" : "DISABLED"}`);
-        }
-      };
-      (handlers[key] || (() => {
-      }))(nextValue);
-    };
-    panel.addEventListener("change", onChange);
-    this._settingsPanelRoot = panel;
-    this._settingsPanelHandlers = { onChange };
-    return panel;
+    return buildLevelProgressBarSettingsPanel(this);
   }
   // === Styles + DOM Mount ===
   getProgressBarCSS() {
@@ -528,40 +587,7 @@ module.exports = class LevelProgressBar {
     return this.getFallbackProgressBarCSS();
   }
   getFallbackProgressBarCSS() {
-    return `
-      .lpb-progress-container {
-        position: fixed;
-        left: 0;
-        right: 0;
-        z-index: 999997;
-        pointer-events: none;
-      }
-      .lpb-progress-container.top { top: 0; }
-      .lpb-progress-container.bottom { bottom: 0; }
-      .lpb-progress-bar {
-        width: 100%;
-        background: rgba(10, 10, 15, 0.95);
-        border-bottom: 2px solid rgba(138, 43, 226, 0.5);
-        padding: 12px 20px 12px 80px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .lpb-progress-track {
-        flex: 1 1 auto;
-        min-width: 180px;
-        height: 12px;
-        border-radius: 999px;
-        overflow: hidden;
-        background: rgba(20, 20, 30, 0.8);
-      }
-      .lpb-progress-fill {
-        width: 100%;
-        height: 100%;
-        transform-origin: left center;
-        background: linear-gradient(90deg, #8a2be2 0%, #7b27cc 50%, #6c22b6 100%);
-      }
-    `;
+    return getFallbackLevelProgressBarCss();
   }
   injectCSS() {
     const cssContent = this.getProgressBarCSS();

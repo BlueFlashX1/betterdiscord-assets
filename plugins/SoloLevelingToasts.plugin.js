@@ -4,6 +4,141 @@
  * @version 2.0.0
  * @author BlueFlashX1
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/SoloLevelingToasts/settings-panel.js
+var require_settings_panel = __commonJS({
+  "src/SoloLevelingToasts/settings-panel.js"(exports2, module2) {
+    function buildSoloLevelingToastsSettingsPanel2(BdApi2, plugin) {
+      plugin.detachSoloLevelingToastsSettingsPanelHandlers();
+      const panel = document.createElement("div");
+      panel.style.cssText = "padding: 20px; background: #1e1e2e; border-radius: 0;";
+      panel.innerHTML = `
+      <div>
+        <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Engine Settings</h3>
+
+        <label style="display: flex; align-items: center; margin-bottom: 15px;">
+          <input type="checkbox" ${plugin.settings.showParticles ? "checked" : ""} id="toast-particles" data-slt-setting="showParticles">
+          <span style="margin-left: 10px;">Show Particles</span>
+        </label>
+
+        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
+          <span style="margin-bottom: 5px;">Particle Count: <strong>${plugin.settings.particleCount}</strong></span>
+          <input type="range" min="5" max="50" value="${plugin.settings.particleCount}" id="toast-particle-count" data-slt-setting="particleCount" style="width: 100%;">
+        </label>
+
+        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
+          <span style="margin-bottom: 5px;">Max Toasts: <strong>${plugin.settings.maxToasts}</strong></span>
+          <input type="range" min="1" max="10" value="${plugin.settings.maxToasts}" id="toast-max-toasts" data-slt-setting="maxToasts" style="width: 100%;">
+        </label>
+
+        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
+          <span style="margin-bottom: 5px;">Position:</span>
+          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(138, 43, 226, 0.2); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 2px; color: #fff; width: 100%;">
+            <option value="top-right" ${plugin.settings.position === "top-right" ? "selected" : ""}>Top Right</option>
+            <option value="top-left" ${plugin.settings.position === "top-left" ? "selected" : ""}>Top Left</option>
+            <option value="bottom-right" ${plugin.settings.position === "bottom-right" ? "selected" : ""}>Bottom Right</option>
+            <option value="bottom-left" ${plugin.settings.position === "bottom-left" ? "selected" : ""}>Bottom Left</option>
+          </select>
+        </label>
+
+        <label style="display: flex; align-items: center; margin-bottom: 15px;">
+          <input type="checkbox" ${plugin.settings.debugMode ? "checked" : ""} id="toast-debug" data-slt-setting="debugMode">
+          <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
+        </label>
+
+        <div style="margin-top: 20px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Toast Engine Status</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            <div>Engine Version: <strong style="color: #8a2be2;">v2.0</strong></div>
+            <div style="margin-top: 4px;">Active Toasts: <strong>${plugin.activeToasts.length}</strong></div>
+            <div style="margin-top: 4px;">Registered Consumers: <strong>${plugin._registeredConsumers.size > 0 ? [...plugin._registeredConsumers].join(", ") : "None yet"}</strong></div>
+          </div>
+        </div>
+
+        <div style="margin-top: 12px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Toast creation and rendering</li>
+              <li>Rate limiting and dedup</li>
+              <li>Card toast lifecycle</li>
+              <li>Consumer registration</li>
+              <li>Hook into SoloLevelingStats</li>
+              <li>Settings and CSS injection</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    `;
+      const onInput = (event) => {
+        var _a, _b;
+        const target = event.target;
+        const key = (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, "data-slt-setting");
+        if (!key) return;
+        const handlers = {
+          particleCount: () => {
+            var _a2, _b2;
+            const value = parseInt(target.value, 10);
+            plugin.settings.particleCount = Number.isFinite(value) ? value : plugin.settings.particleCount;
+            ((_b2 = (_a2 = target.previousElementSibling) == null ? void 0 : _a2.querySelector) == null ? void 0 : _b2.call(_a2, "strong")) && (target.previousElementSibling.querySelector("strong").textContent = target.value);
+          },
+          maxToasts: () => {
+            var _a2, _b2;
+            const value = parseInt(target.value, 10);
+            plugin.settings.maxToasts = Number.isFinite(value) ? value : plugin.settings.maxToasts;
+            ((_b2 = (_a2 = target.previousElementSibling) == null ? void 0 : _a2.querySelector) == null ? void 0 : _b2.call(_a2, "strong")) && (target.previousElementSibling.querySelector("strong").textContent = target.value);
+          }
+        };
+        (_b = handlers[key]) == null ? void 0 : _b.call(handlers);
+      };
+      const onChange = (event) => {
+        var _a, _b;
+        const target = event.target;
+        const key = (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, "data-slt-setting");
+        if (!key) return;
+        const handlers = {
+          showParticles: () => {
+            plugin.settings.showParticles = !!target.checked;
+            plugin.saveSettings();
+          },
+          particleCount: () => {
+            const value = parseInt(target.value, 10);
+            plugin.settings.particleCount = Number.isFinite(value) ? value : plugin.settings.particleCount;
+            plugin.saveSettings();
+          },
+          maxToasts: () => {
+            const value = parseInt(target.value, 10);
+            plugin.settings.maxToasts = Number.isFinite(value) ? value : plugin.settings.maxToasts;
+            plugin.saveSettings();
+          },
+          position: () => {
+            plugin.settings.position = target.value;
+            plugin.saveSettings();
+            plugin.updateContainerPosition();
+          },
+          debugMode: () => {
+            plugin.settings.debugMode = !!target.checked;
+            plugin.debugMode = !!target.checked;
+            plugin.saveSettings();
+            plugin.debugLog("SETTINGS", "Debug mode toggled", { enabled: target.checked });
+          }
+        };
+        (_b = handlers[key]) == null ? void 0 : _b.call(handlers);
+      };
+      panel.addEventListener("input", onInput);
+      panel.addEventListener("change", onChange);
+      plugin._settingsPanelRoot = panel;
+      plugin._settingsPanelHandlers = { onInput, onChange };
+      return panel;
+    }
+    module2.exports = { buildSoloLevelingToastsSettingsPanel: buildSoloLevelingToastsSettingsPanel2 };
+  }
+});
 
 // src/SoloLevelingToasts/styles.css
 var styles_default = "/* \u2500\u2500 SoloLevelingToasts \u2014 Toast Engine v2 \u2500\u2500 */\n/* Dynamic durations are set via CSS custom properties on .sl-toast-container:\n *   --sl-anim-duration   (slide-in, default 150ms)\n *   --sl-fade-duration   (fade-out, default 0.4s)\n */\n\n.sl-toast-container {\n  position: fixed;\n  z-index: 999997;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  pointer-events: none;\n}\n\n.sl-toast-container.top-right {\n  top: 40px;\n  right: 20px;\n  align-items: flex-end;\n}\n\n.sl-toast-container.top-left {\n  top: 40px;\n  left: 20px;\n  align-items: flex-start;\n}\n\n.sl-toast-container.bottom-right {\n  bottom: 20px;\n  right: 20px;\n  align-items: flex-end;\n}\n\n.sl-toast-container.bottom-left {\n  bottom: 20px;\n  left: 20px;\n  align-items: flex-start;\n}\n\n.sl-toast {\n  position: relative;\n  min-width: 280px;\n  max-width: 360px;\n  min-height: 50px;\n  max-height: fit-content;\n  padding: 14px 18px 14px 22px;\n  background: rgb(10, 10, 15);\n  border: 1px solid color-mix(in srgb, var(--sl-card-accent, #8a2be2) 30%, transparent);\n  border-radius: 0;\n  box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),\n              0 0 40px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 20%, transparent);\n  pointer-events: auto;\n  cursor: pointer;\n  overflow: visible;\n  animation: sl-toast-slide-in var(--sl-anim-duration, 150ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;\n  will-change: transform, opacity;\n  transform: translateZ(0);\n  backface-visibility: hidden;\n  word-wrap: break-word;\n  white-space: normal;\n}\n\n.sl-toast.fading-out {\n  animation-fill-mode: forwards !important;\n}\n\n@keyframes sl-toast-slide-in {\n  0% {\n    opacity: 0;\n    transform: translateX(100%) scale(0.9);\n  }\n  50% {\n    opacity: 1;\n  }\n  100% {\n    opacity: 1;\n    transform: translateX(0) scale(1);\n  }\n}\n\n.sl-toast-container.top-left .sl-toast {\n  animation-name: sl-toast-slide-in-left;\n}\n\n@keyframes sl-toast-slide-in-left {\n  0% {\n    opacity: 0;\n    transform: translateX(-100%) scale(0.9);\n  }\n  50% {\n    opacity: 1;\n  }\n  100% {\n    opacity: 1;\n    transform: translateX(0) scale(1);\n  }\n}\n\n.sl-toast-container.bottom-right .sl-toast,\n.sl-toast-container.bottom-left .sl-toast {\n  animation-name: sl-toast-slide-in-bottom;\n}\n\n@keyframes sl-toast-slide-in-bottom {\n  0% {\n    opacity: 0;\n    transform: translateY(100%) scale(0.9);\n  }\n  50% {\n    opacity: 1;\n  }\n  100% {\n    opacity: 1;\n    transform: translateY(0) scale(1);\n  }\n}\n\n.sl-toast-title {\n  font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;\n  font-size: 11px;\n  font-weight: bold;\n  margin-bottom: 6px;\n  background: linear-gradient(135deg, #8a2be2 0%, #7b21c6 30%, #6b1fb0 60%, #000000 100%);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  word-wrap: break-word;\n  white-space: normal;\n  overflow-wrap: break-word;\n  max-width: 100%;\n  text-shadow: 0 0 3px rgba(138, 43, 226, 0.5),\n               0 0 6px rgba(123, 33, 198, 0.4),\n               0 0 9px rgba(107, 31, 176, 0.3);\n  text-transform: uppercase;\n  letter-spacing: 1px;\n  line-height: 1.3;\n}\n\n.sl-toast-message {\n  color: rgba(255, 255, 255, 0.9);\n  font-size: 13px;\n  line-height: 1.5;\n  white-space: normal;\n  word-wrap: break-word;\n  overflow-wrap: break-word;\n  max-width: 100%;\n}\n\n.sl-toast-particle {\n  position: absolute;\n  width: 4px;\n  height: 4px;\n  background: radial-gradient(circle, #8a2be2 0%, rgba(138, 43, 226, 0) 70%);\n  border-radius: 50%;\n  pointer-events: none;\n  animation: sl-particle-fade 1.5s ease-out forwards;\n}\n\n@keyframes sl-particle-fade {\n  0% {\n    opacity: 1;\n    transform: translate(0, 0) scale(1);\n  }\n  100% {\n    opacity: 0;\n    transform: translate(var(--sl-particle-x, 0), var(--sl-particle-y, -50px)) scale(0);\n  }\n}\n\n.sl-toast::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  height: 2px;\n  background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);\n  animation: sl-toast-progress linear forwards;\n}\n\n@keyframes sl-toast-progress {\n  from {\n    width: 100%;\n  }\n  to {\n    width: 0%;\n  }\n}\n\n@keyframes sl-toast-fade-out-right {\n  from {\n    opacity: 1;\n    transform: translateX(0) scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: translateX(100%) scale(0.9);\n  }\n}\n\n@keyframes sl-toast-fade-out-left {\n  from {\n    opacity: 1;\n    transform: translateX(0) scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: translateX(-100%) scale(0.9);\n  }\n}\n\n@keyframes sl-toast-fade-out-bottom-right {\n  from {\n    opacity: 1;\n    transform: translate(0, 0) scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: translate(100%, 100%) scale(0.9);\n  }\n}\n\n@keyframes sl-toast-fade-out-bottom-left {\n  from {\n    opacity: 1;\n    transform: translate(0, 0) scale(1);\n  }\n  to {\n    opacity: 0;\n    transform: translate(-100%, 100%) scale(0.9);\n  }\n}\n\n.sl-toast-container .sl-toast {\n  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;\n}\n\n.sl-toast-container.top-right .sl-toast.fading-out {\n  animation: sl-toast-fade-out-right var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;\n  pointer-events: none;\n}\n\n.sl-toast-container.top-left .sl-toast.fading-out {\n  animation: sl-toast-fade-out-left var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;\n  pointer-events: none;\n}\n\n.sl-toast-container.bottom-right .sl-toast.fading-out {\n  animation: sl-toast-fade-out-bottom-right var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;\n  pointer-events: none;\n}\n\n.sl-toast-container.bottom-left .sl-toast.fading-out {\n  animation: sl-toast-fade-out-bottom-left var(--sl-fade-duration, 0.4s) cubic-bezier(0.4, 0, 1, 1) forwards !important;\n  pointer-events: none;\n}\n\n.sl-toast-accent {\n  position: absolute;\n  top: 0;\n  left: 0;\n  bottom: 0;\n  width: 3px;\n  background: var(--sl-card-accent, #8a2be2);\n  border-radius: 8px 0 0 8px;\n  z-index: 1;\n}\n\n/* \u2500\u2500 Toast Engine v2: Card Toasts \u2500\u2500 */\n\n.sl-toast.sl-toast-card {\n  padding: 0;\n  min-width: 300px;\n  max-width: 380px;\n  min-height: auto;\n  border-color: var(--sl-card-accent, rgba(138, 43, 226, 0.3));\n  box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),\n              0 0 30px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 20%, transparent);\n}\n\n.sl-toast-card-accent {\n  position: absolute;\n  top: 0;\n  left: 0;\n  bottom: 0;\n  width: 3px;\n  background: var(--sl-card-accent, #8a2be2);\n  border-radius: 0;\n}\n\n.sl-toast-card-inner {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  padding: 12px 14px 12px 18px;\n}\n\n.sl-toast-card-avatar-wrap {\n  position: relative;\n  flex-shrink: 0;\n  width: 40px;\n  height: 40px;\n}\n\n.sl-toast-card-avatar {\n  width: 40px;\n  height: 40px;\n  border-radius: 50%;\n  object-fit: cover;\n  border: 2px solid var(--sl-card-accent, #8a2be2);\n}\n\n.sl-toast-card-status {\n  position: absolute;\n  bottom: -1px;\n  right: -1px;\n  width: 12px;\n  height: 12px;\n  border-radius: 50%;\n  border: 2px solid rgb(10, 10, 15);\n  background: var(--sl-card-accent, #8a2be2);\n}\n\n.sl-toast-card-content {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n}\n\n.sl-toast-card-header {\n  font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;\n  font-size: 12px;\n  font-weight: bold;\n  color: #fff;\n  text-transform: uppercase;\n  letter-spacing: 0.5px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  text-shadow: 0 0 6px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 60%, transparent);\n}\n\n.sl-toast-card-body {\n  font-size: 13px;\n  color: rgba(255, 255, 255, 0.85);\n  margin-top: 2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.sl-toast-card-detail {\n  font-size: 11px;\n  color: rgba(255, 255, 255, 0.5);\n  margin-top: 3px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.sl-toast.sl-toast-card::before {\n  display: none;\n}\n\n.sl-toast-card .sl-toast-card-progress {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  height: 2px;\n  background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);\n  animation: sl-toast-progress linear forwards;\n}\n";
@@ -181,6 +316,7 @@ function getNotificationFilterFlags(messageText) {
 }
 
 // src/SoloLevelingToasts/index.js
+var { buildSoloLevelingToastsSettingsPanel } = require_settings_panel();
 module.exports = class SoloLevelingToasts {
   // ==========================================================================
   // SECTION 1: CONSTRUCTOR & LOW-LEVEL HELPERS
@@ -933,128 +1069,7 @@ module.exports = class SoloLevelingToasts {
   // SECTION 12: SETTINGS PANEL
   // ==========================================================================
   getSettingsPanel() {
-    this.detachSoloLevelingToastsSettingsPanelHandlers();
-    const panel = document.createElement("div");
-    panel.style.cssText = "padding: 20px; background: #1e1e2e; border-radius: 0;";
-    panel.innerHTML = `
-      <div>
-        <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Engine Settings</h3>
-
-        <label style="display: flex; align-items: center; margin-bottom: 15px;">
-          <input type="checkbox" ${this.settings.showParticles ? "checked" : ""} id="toast-particles" data-slt-setting="showParticles">
-          <span style="margin-left: 10px;">Show Particles</span>
-        </label>
-
-        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
-          <span style="margin-bottom: 5px;">Particle Count: <strong>${this.settings.particleCount}</strong></span>
-          <input type="range" min="5" max="50" value="${this.settings.particleCount}" id="toast-particle-count" data-slt-setting="particleCount" style="width: 100%;">
-        </label>
-
-        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
-          <span style="margin-bottom: 5px;">Max Toasts: <strong>${this.settings.maxToasts}</strong></span>
-          <input type="range" min="1" max="10" value="${this.settings.maxToasts}" id="toast-max-toasts" data-slt-setting="maxToasts" style="width: 100%;">
-        </label>
-
-        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
-          <span style="margin-bottom: 5px;">Position:</span>
-          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(138, 43, 226, 0.2); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 2px; color: #fff; width: 100%;">
-            <option value="top-right" ${this.settings.position === "top-right" ? "selected" : ""}>Top Right</option>
-            <option value="top-left" ${this.settings.position === "top-left" ? "selected" : ""}>Top Left</option>
-            <option value="bottom-right" ${this.settings.position === "bottom-right" ? "selected" : ""}>Bottom Right</option>
-            <option value="bottom-left" ${this.settings.position === "bottom-left" ? "selected" : ""}>Bottom Left</option>
-          </select>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 15px;">
-          <input type="checkbox" ${this.settings.debugMode ? "checked" : ""} id="toast-debug" data-slt-setting="debugMode">
-          <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
-        </label>
-
-        <div style="margin-top: 20px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
-          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Toast Engine Status</div>
-          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
-            <div>Engine Version: <strong style="color: #8a2be2;">v2.0</strong></div>
-            <div style="margin-top: 4px;">Active Toasts: <strong>${this.activeToasts.length}</strong></div>
-            <div style="margin-top: 4px;">Registered Consumers: <strong>${this._registeredConsumers.size > 0 ? [...this._registeredConsumers].join(", ") : "None yet"}</strong></div>
-          </div>
-        </div>
-
-        <div style="margin-top: 12px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
-          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
-          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
-            Enable Debug Mode to see detailed console logs for:
-            <ul style="margin: 5px 0; padding-left: 20px;">
-              <li>Toast creation and rendering</li>
-              <li>Rate limiting and dedup</li>
-              <li>Card toast lifecycle</li>
-              <li>Consumer registration</li>
-              <li>Hook into SoloLevelingStats</li>
-              <li>Settings and CSS injection</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    `;
-    const onInput = (event) => {
-      var _a, _b;
-      const target = event.target;
-      const key = (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, "data-slt-setting");
-      if (!key) return;
-      const handlers = {
-        particleCount: () => {
-          var _a2, _b2;
-          const value = parseInt(target.value, 10);
-          this.settings.particleCount = Number.isFinite(value) ? value : this.settings.particleCount;
-          ((_b2 = (_a2 = target.previousElementSibling) == null ? void 0 : _a2.querySelector) == null ? void 0 : _b2.call(_a2, "strong")) && (target.previousElementSibling.querySelector("strong").textContent = target.value);
-        },
-        maxToasts: () => {
-          var _a2, _b2;
-          const value = parseInt(target.value, 10);
-          this.settings.maxToasts = Number.isFinite(value) ? value : this.settings.maxToasts;
-          ((_b2 = (_a2 = target.previousElementSibling) == null ? void 0 : _a2.querySelector) == null ? void 0 : _b2.call(_a2, "strong")) && (target.previousElementSibling.querySelector("strong").textContent = target.value);
-        }
-      };
-      (_b = handlers[key]) == null ? void 0 : _b.call(handlers);
-    };
-    const onChange = (event) => {
-      var _a, _b;
-      const target = event.target;
-      const key = (_a = target == null ? void 0 : target.getAttribute) == null ? void 0 : _a.call(target, "data-slt-setting");
-      if (!key) return;
-      const handlers = {
-        showParticles: () => {
-          this.settings.showParticles = !!target.checked;
-          this.saveSettings();
-        },
-        particleCount: () => {
-          const value = parseInt(target.value, 10);
-          this.settings.particleCount = Number.isFinite(value) ? value : this.settings.particleCount;
-          this.saveSettings();
-        },
-        maxToasts: () => {
-          const value = parseInt(target.value, 10);
-          this.settings.maxToasts = Number.isFinite(value) ? value : this.settings.maxToasts;
-          this.saveSettings();
-        },
-        position: () => {
-          this.settings.position = target.value;
-          this.saveSettings();
-          this.updateContainerPosition();
-        },
-        debugMode: () => {
-          this.settings.debugMode = !!target.checked;
-          this.debugMode = !!target.checked;
-          this.saveSettings();
-          this.debugLog("SETTINGS", "Debug mode toggled", { enabled: target.checked });
-        }
-      };
-      (_b = handlers[key]) == null ? void 0 : _b.call(handlers);
-    };
-    panel.addEventListener("input", onInput);
-    panel.addEventListener("change", onChange);
-    this._settingsPanelRoot = panel;
-    this._settingsPanelHandlers = { onInput, onChange };
-    return panel;
+    return buildSoloLevelingToastsSettingsPanel(BdApi, this);
   }
   // ==========================================================================
   // SECTION 13: DEBUGGING & UTILITIES
