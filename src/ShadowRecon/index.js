@@ -1,36 +1,23 @@
-/**
- * @name ShadowRecon
- * @description Lore-accurate recon suite: mark guilds for dossiers, track staff authority, and inspect marked targets from ShadowSenses.
- * @version 1.0.5
- * @author matthewthompson
- */
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
-// src/ShadowRecon/index.js
-var _bdLoad = (f) => {
-  try {
-    const m = { exports: {} };
-    new Function("module", "exports", require("fs").readFileSync(require("path").join(BdApi.Plugins.folder, f), "utf8"))(m, m.exports);
-    return typeof m.exports === "function" || Object.keys(m.exports).length ? m.exports : null;
-  } catch (e) {
-    return null;
-  }
-};
-var PLUGIN_NAME = "ShadowRecon";
-var PLUGIN_VERSION = "1.0.5";
-var STYLE_ID = "shadow-recon-css";
-var WIDGET_ID = "shadow-recon-widget";
-var MEMBER_BANNER_ID = "shadow-recon-member-banner";
-var MODAL_ID = "shadow-recon-modal-root";
-var DEFAULT_SETTINGS = {
+const PLUGIN_NAME = "ShadowRecon";
+const PLUGIN_VERSION = "1.0.5";
+const STYLE_ID = "shadow-recon-css";
+const WIDGET_ID = "shadow-recon-widget";
+const MEMBER_BANNER_ID = "shadow-recon-member-banner";
+const MODAL_ID = "shadow-recon-modal-root";
+
+const DEFAULT_SETTINGS = {
   loreLockedRecon: true,
   showServerCounterWidget: true,
-  showMemberCounterBanner: false,
-  // deprecated: member-list banner removed by request
+  showMemberCounterBanner: false, // deprecated: member-list banner removed by request
   showGuildHoverIntel: true,
   showStaffIntelInContextMenu: true,
-  showMarkedTargetIntelInContext: true
+  showMarkedTargetIntelInContext: true,
 };
-var IMPORTANT_PERMISSIONS = [
+
+const IMPORTANT_PERMISSIONS = [
   "ADMINISTRATOR",
   "MANAGE_GUILD",
   "MANAGE_CHANNELS",
@@ -46,9 +33,10 @@ var IMPORTANT_PERMISSIONS = [
   "VIEW_CHANNEL",
   "SEND_MESSAGES",
   "CONNECT",
-  "SPEAK"
+  "SPEAK",
 ];
-var STAFF_PERMISSION_KEYS = [
+
+const STAFF_PERMISSION_KEYS = [
   "ADMINISTRATOR",
   "MANAGE_GUILD",
   "MANAGE_CHANNELS",
@@ -58,74 +46,78 @@ var STAFF_PERMISSION_KEYS = [
   "KICK_MEMBERS",
   "MANAGE_EVENTS",
   "MANAGE_THREADS",
-  "MODERATE_MEMBERS"
+  "MODERATE_MEMBERS",
 ];
-var PLATFORM_LABELS = {
+
+const PLATFORM_LABELS = {
   desktop: "Desktop",
   web: "Web",
   mobile: "Mobile",
-  embedded: "Embedded"
+  embedded: "Embedded",
 };
-var STATUS_LABELS = {
+
+const STATUS_LABELS = {
   online: "Online",
   idle: "Idle",
   dnd: "Do Not Disturb",
   offline: "Offline",
   invisible: "Invisible",
-  streaming: "Streaming"
+  streaming: "Streaming",
 };
-var _ReactUtils;
-try {
-  _ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
-} catch (_) {
-  _ReactUtils = null;
-}
-var _PluginUtils;
-try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
-} catch (_) {
-  _PluginUtils = null;
-}
+
+let _ReactUtils;
+try { _ReactUtils = _bdLoad("BetterDiscordReactUtils.js"); } catch (_) { _ReactUtils = null; }
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class ShadowRecon {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
-    this._markedGuildIds = /* @__PURE__ */ new Set();
+    this._markedGuildIds = new Set();
     this._stopped = true;
+
     this._guildContextUnpatch = null;
     this._channelContextUnpatch = null;
     this._userContextUnpatch = null;
+
     this._domObserver = null;
     this._refreshInterval = null;
     this._visualRefreshTimeout = null;
+
     this._modalEl = null;
-    this._shadowCache = { timestamp: 0, map: /* @__PURE__ */ new Map() };
+
+    this._shadowCache = { timestamp: 0, map: new Map() };
     this._permissionBitsCache = null;
     this._guildNavOrientationCache = { target: null, measuredAt: 0, horizontal: false };
     this._guildNavOrientationCacheTTL = 1200;
   }
+
   start() {
-    var _a;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowRecon")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("shadowRecon") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     try {
       this._stopped = false;
       this.loadSettings();
       this.loadMarkedGuilds();
       this.initWebpack();
       this.injectCSS();
+
       this.patchGuildContextMenu();
       this.patchChannelContextMenu();
       this.patchUserContextMenu();
+
       this.injectServerCounterWidget();
       this.removeMemberCounterBanner();
       this.refreshGuildIconHints();
       this.startRefreshLoops();
       this.setupObserver();
+
       this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} - Recon online`, "info");
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed to start`, err);
       this._toast(`${PLUGIN_NAME} failed to start: ${err.message}`, "error");
     }
   }
+
   stop() {
     this._stopped = true;
     this.unpatchContextMenus();
@@ -138,19 +130,22 @@ module.exports = class ShadowRecon {
     BdApi.DOM.removeStyle(STYLE_ID);
     this._toast(`${PLUGIN_NAME} - Recon dismissed`, "info");
   }
+
   // ---- Data / Settings -------------------------------------------------
+
   loadSettings() {
     try {
       const saved = BdApi.Data.load(PLUGIN_NAME, "settings");
       this.settings = {
         ...DEFAULT_SETTINGS,
-        ...saved && typeof saved === "object" ? saved : {}
+        ...(saved && typeof saved === "object" ? saved : {}),
       };
     } catch (err) {
       this.settings = { ...DEFAULT_SETTINGS };
       console.error(`[${PLUGIN_NAME}] Failed loading settings`, err);
     }
   }
+
   saveSettings() {
     try {
       BdApi.Data.save(PLUGIN_NAME, "settings", this.settings);
@@ -158,15 +153,17 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed saving settings`, err);
     }
   }
+
   loadMarkedGuilds() {
     try {
       const raw = BdApi.Data.load(PLUGIN_NAME, "markedGuildIds");
       this._markedGuildIds = new Set(Array.isArray(raw) ? raw.map(String) : []);
     } catch (err) {
-      this._markedGuildIds = /* @__PURE__ */ new Set();
+      this._markedGuildIds = new Set();
       console.error(`[${PLUGIN_NAME}] Failed loading marked guilds`, err);
     }
   }
+
   saveMarkedGuilds() {
     try {
       BdApi.Data.save(PLUGIN_NAME, "markedGuildIds", Array.from(this._markedGuildIds));
@@ -174,10 +171,12 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed saving marked guilds`, err);
     }
   }
+
   isGuildMarked(guildId) {
     if (!guildId) return false;
     return this._markedGuildIds.has(String(guildId));
   }
+
   toggleGuildMark(guildId) {
     if (!guildId) return false;
     const id = String(guildId);
@@ -188,104 +187,129 @@ module.exports = class ShadowRecon {
     this.refreshAllVisuals();
     return !marked;
   }
+
   _getCurrentGuildId() {
-    var _a, _b;
-    return ((_b = (_a = this._SelectedGuildStore) == null ? void 0 : _a.getGuildId) == null ? void 0 : _b.call(_a)) || null;
+    return this._SelectedGuildStore?.getGuildId?.() || null;
   }
+
   _toggleCurrentGuildMarkWithToast() {
-    var _a, _b;
     const guildId = this._getCurrentGuildId();
     if (!guildId) {
       this._toast("Select a guild first", "warning");
       return null;
     }
     const marked = this.toggleGuildMark(guildId);
-    const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
+    const guild = this._GuildStore?.getGuild?.(guildId);
     this._toast(
-      marked ? `Recon enabled for guild: ${(guild == null ? void 0 : guild.name) || guildId}` : `Recon removed for guild: ${(guild == null ? void 0 : guild.name) || guildId}`,
+      marked
+        ? `Recon enabled for guild: ${guild?.name || guildId}`
+        : `Recon removed for guild: ${guild?.name || guildId}`,
       marked ? "success" : "info"
     );
     return marked;
   }
+
   // ---- Webpack ---------------------------------------------------------
+
   initWebpack() {
-    var _a;
     const { Webpack } = BdApi;
-    this._Dispatcher = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a.call(_PluginUtils)) || null;
+
+    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._GuildChannelStore = Webpack.getStore("GuildChannelStore");
+
     this._UserStore = Webpack.getStore("UserStore");
     this._PresenceStore = Webpack.getStore("PresenceStore");
     this._GuildMemberStore = Webpack.getStore("GuildMemberStore");
     this._GuildMemberCountStore = Webpack.getStore("GuildMemberCountStore");
     this._SessionsStore = Webpack.getStore("SessionsStore");
+
     this._PermissionStore = Webpack.getStore("PermissionStore");
+
     this._UserProfileStore = Webpack.getStore("UserProfileStore");
-    this._UserProfileActions = Webpack.getByKeys("fetchProfile", "fetchUserProfile") || Webpack.getModule((m) => m && (typeof m.fetchProfile === "function" || typeof m.fetchUserProfile === "function"));
-    this._PermissionsBits = Webpack.getModule((m) => m && typeof m === "object" && m.ADMINISTRATOR && m.VIEW_CHANNEL, { searchExports: true }) || Webpack.getByKeys("ADMINISTRATOR", "VIEW_CHANNEL");
+
+    this._UserProfileActions =
+      Webpack.getByKeys("fetchProfile", "fetchUserProfile") ||
+      Webpack.getModule(m => m && (typeof m.fetchProfile === "function" || typeof m.fetchUserProfile === "function"));
+
+    this._PermissionsBits =
+      Webpack.getModule(m => m && typeof m === "object" && m.ADMINISTRATOR && m.VIEW_CHANNEL, { searchExports: true }) ||
+      Webpack.getByKeys("ADMINISTRATOR", "VIEW_CHANNEL");
+
     this._sortedGuildStore = Webpack.getStore("SortedGuildStore");
+
+    // Cache stores used in per-guild counting methods (avoid repeated getStore calls)
     this._EmojiStore = Webpack.getStore("EmojiStore");
     this._StickersStore = Webpack.getStore("StickersStore");
     this._SoundboardStore = Webpack.getStore("SoundboardStore");
   }
+
   // ---- ShadowSenses Integration ---------------------------------------
+
   _getShadowDeploymentMap() {
-    var _a, _b;
     const now = Date.now();
-    if (now - this._shadowCache.timestamp < 3e3 && BdApi.Plugins.isEnabled("ShadowSenses")) return this._shadowCache.map;
-    const nextMap = /* @__PURE__ */ new Map();
+    if (now - this._shadowCache.timestamp < 3000 &&
+        BdApi.Plugins.isEnabled("ShadowSenses")) return this._shadowCache.map;
+
+    const nextMap = new Map();
     try {
       const plugin = BdApi.Plugins.get("ShadowSenses");
-      const instance = (plugin == null ? void 0 : plugin.instance) || plugin;
-      const live = (_b = (_a = instance == null ? void 0 : instance.deploymentManager) == null ? void 0 : _a.getDeployments) == null ? void 0 : _b.call(_a);
-      const deployments = Array.isArray(live) ? live : BdApi.Data.load("ShadowSenses", "deployments") || [];
+      const instance = plugin?.instance || plugin;
+      const live = instance?.deploymentManager?.getDeployments?.();
+      const deployments = Array.isArray(live)
+        ? live
+        : (BdApi.Data.load("ShadowSenses", "deployments") || []);
+
       for (const dep of deployments) {
-        const userId = String((dep == null ? void 0 : dep.targetUserId) || "");
+        const userId = String(dep?.targetUserId || "");
         if (!userId) continue;
         nextMap.set(userId, dep);
       }
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed loading ShadowSenses deployments`, err);
     }
+
     this._shadowCache = { timestamp: now, map: nextMap };
     return nextMap;
   }
+
   _isMarkedTarget(userId) {
     if (!userId) return false;
     return this._getShadowDeploymentMap().has(String(userId));
   }
+
   // ---- Context Menus ---------------------------------------------------
+
   _resetContextPatch(unpatchKey) {
-    const unpatch = this == null ? void 0 : this[unpatchKey];
+    const unpatch = this?.[unpatchKey];
     if (typeof unpatch !== "function") return;
-    try {
-      unpatch();
-    } catch (_) {
-    }
+    try { unpatch(); } catch (_) {}
     this[unpatchKey] = null;
   }
+
   patchGuildContextMenu() {
     try {
       this._resetContextPatch("_guildContextUnpatch");
       this._guildContextUnpatch = BdApi.ContextMenu.patch("guild-context", (tree, props) => {
-        var _a, _b;
         try {
-          const guild = (props == null ? void 0 : props.guild) || ((_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, props == null ? void 0 : props.guildId));
-          const guildId = (guild == null ? void 0 : guild.id) || (props == null ? void 0 : props.guildId);
+          const guild = props?.guild || this._GuildStore?.getGuild?.(props?.guildId);
+          const guildId = guild?.id || props?.guildId;
           if (!guildId) return;
+
           const items = this._buildGuildReconActions(guildId, guild);
           let groupedItem = null;
           try {
             groupedItem = BdApi.ContextMenu.buildItem({
               type: "submenu",
               label: "Shadow Recon",
-              items
+              items,
             });
-          } catch (_) {
-          }
+          } catch (_) {}
+
           this._appendContextItems(tree, groupedItem ? [groupedItem] : items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] guild-context patch error`, err);
@@ -295,15 +319,20 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed to patch guild-context`, err);
     }
   }
+
   patchChannelContextMenu() {
     try {
       this._resetContextPatch("_channelContextUnpatch");
       this._channelContextUnpatch = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
-        var _a, _b, _c, _d;
         try {
-          const guildId = ((_a = props == null ? void 0 : props.channel) == null ? void 0 : _a.guild_id) || ((_b = props == null ? void 0 : props.channel) == null ? void 0 : _b.guildId) || (props == null ? void 0 : props.guildId) || this._getCurrentGuildId();
+          const guildId =
+            props?.channel?.guild_id ||
+            props?.channel?.guildId ||
+            props?.guildId ||
+            this._getCurrentGuildId();
           if (!guildId) return;
-          const guild = (_d = (_c = this._GuildStore) == null ? void 0 : _c.getGuild) == null ? void 0 : _d.call(_c, guildId);
+
+          const guild = this._GuildStore?.getGuild?.(guildId);
           const marked = this.isGuildMarked(guildId);
           const items = [
             BdApi.ContextMenu.buildItem({
@@ -312,16 +341,18 @@ module.exports = class ShadowRecon {
               action: () => {
                 const nextMarked = this.toggleGuildMark(guildId);
                 this._toast(
-                  nextMarked ? `Recon enabled for guild: ${(guild == null ? void 0 : guild.name) || guildId}` : `Recon removed for guild: ${(guild == null ? void 0 : guild.name) || guildId}`,
+                  nextMarked
+                    ? `Recon enabled for guild: ${guild?.name || guildId}`
+                    : `Recon removed for guild: ${guild?.name || guildId}`,
                   nextMarked ? "success" : "info"
                 );
-              }
+              },
             }),
             BdApi.ContextMenu.buildItem({
               type: "text",
               label: "Shadow Recon: Open Current Guild Dossier",
-              action: () => this.openGuildDossier(guildId)
-            })
+              action: () => this.openGuildDossier(guildId),
+            }),
           ];
           this._appendContextItems(tree, items);
         } catch (err) {
@@ -332,16 +363,18 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed to patch channel-context`, err);
     }
   }
+
   patchUserContextMenu() {
     try {
       this._resetContextPatch("_userContextUnpatch");
       this._userContextUnpatch = BdApi.ContextMenu.patch("user-context", (tree, props) => {
-        var _a, _b;
         try {
-          const user = props == null ? void 0 : props.user;
-          if (!(user == null ? void 0 : user.id)) return;
-          const currentGuildId = (_b = (_a = this._SelectedGuildStore) == null ? void 0 : _a.getGuildId) == null ? void 0 : _b.call(_a);
+          const user = props?.user;
+          if (!user?.id) return;
+
+          const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
           const items = this._buildUserContextReconItems(user.id, currentGuildId);
+
           if (items.length > 0) this._appendContextItems(tree, items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] user-context patch error`, err);
@@ -351,70 +384,74 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed to patch user-context`, err);
     }
   }
+
   _buildStaffContextItems(userId, currentGuildId) {
     if (!this.settings.showStaffIntelInContextMenu) return [];
     const staff = this.getStaffIntel(userId, currentGuildId);
     if (!staff) return [];
+
     const detailedUnlocked = this.isDetailedStaffIntelUnlocked(currentGuildId);
     return [
       BdApi.ContextMenu.buildItem({
         type: "text",
         label: `Shadow Recon: ${staff.label}`,
-        disabled: true
+        disabled: true,
       }),
       BdApi.ContextMenu.buildItem({
         type: "text",
-        label: detailedUnlocked ? "Shadow Recon: Open Staff Dossier" : "Shadow Recon: Staff Dossier (recon guild)",
-        action: detailedUnlocked ? () => this.openStaffIntelModal(userId, currentGuildId) : void 0,
-        disabled: !detailedUnlocked
-      })
+        label: detailedUnlocked
+          ? "Shadow Recon: Open Staff Dossier"
+          : "Shadow Recon: Staff Dossier (recon guild)",
+        action: detailedUnlocked
+          ? () => this.openStaffIntelModal(userId, currentGuildId)
+          : undefined,
+        disabled: !detailedUnlocked,
+      }),
     ];
   }
+
   _buildMarkedTargetContextItems(userId, currentGuildId) {
     if (!this.settings.showMarkedTargetIntelInContext) return [];
     if (!this._isMarkedTarget(userId)) return [];
+
     const deployment = this._getShadowDeploymentMap().get(String(userId));
     return [
       BdApi.ContextMenu.buildItem({
         type: "text",
-        label: `Shadow Recon: Target Intel${(deployment == null ? void 0 : deployment.shadowRank) ? ` [${deployment.shadowRank}]` : ""}`,
-        action: () => this.openUserIntelModal(userId, currentGuildId)
-      })
+        label: `Shadow Recon: Target Intel${deployment?.shadowRank ? ` [${deployment.shadowRank}]` : ""}`,
+        action: () => this.openUserIntelModal(userId, currentGuildId),
+      }),
     ];
   }
+
   _buildUserContextReconItems(userId, currentGuildId) {
     return [
       ...this._buildStaffContextItems(userId, currentGuildId),
-      ...this._buildMarkedTargetContextItems(userId, currentGuildId)
+      ...this._buildMarkedTargetContextItems(userId, currentGuildId),
     ];
   }
+
   unpatchContextMenus() {
-    try {
-      if (this._guildContextUnpatch) this._guildContextUnpatch();
-    } catch (_) {
-    }
-    try {
-      if (this._channelContextUnpatch) this._channelContextUnpatch();
-    } catch (_) {
-    }
-    try {
-      if (this._userContextUnpatch) this._userContextUnpatch();
-    } catch (_) {
-    }
+    try { if (this._guildContextUnpatch) this._guildContextUnpatch(); } catch (_) {}
+    try { if (this._channelContextUnpatch) this._channelContextUnpatch(); } catch (_) {}
+    try { if (this._userContextUnpatch) this._userContextUnpatch(); } catch (_) {}
     this._guildContextUnpatch = null;
     this._channelContextUnpatch = null;
     this._userContextUnpatch = null;
   }
+
   _appendContextItems(tree, items) {
     if (!Array.isArray(items) || items.length === 0) return;
     const target = this._resolveContextChildrenArray(tree);
     if (!target || !Array.isArray(target)) return;
     target.push(BdApi.ContextMenu.buildItem({ type: "separator" }), ...items);
   }
+
   _buildGuildReconActions(guildId, guild = null) {
     if (!guildId) return [];
     const marked = this.isGuildMarked(guildId);
-    const guildName = (guild == null ? void 0 : guild.name) || guildId;
+    const guildName = guild?.name || guildId;
+
     return [
       BdApi.ContextMenu.buildItem({
         type: "text",
@@ -422,31 +459,34 @@ module.exports = class ShadowRecon {
         action: () => {
           const nextMarked = this.toggleGuildMark(guildId);
           this._toast(
-            nextMarked ? `Recon enabled for guild: ${guildName}` : `Recon removed for guild: ${guildName}`,
+            nextMarked
+              ? `Recon enabled for guild: ${guildName}`
+              : `Recon removed for guild: ${guildName}`,
             nextMarked ? "success" : "info"
           );
-        }
+        },
       }),
       BdApi.ContextMenu.buildItem({
         type: "text",
         label: "Open Guild Dossier",
-        action: () => this.openGuildDossier(guildId)
-      })
+        action: () => this.openGuildDossier(guildId),
+      }),
     ];
   }
+
   _getDirectContextChildrenArray(node) {
-    var _a;
     if (Array.isArray(node)) return node;
-    if (Array.isArray((_a = node == null ? void 0 : node.props) == null ? void 0 : _a.children)) return node.props.children;
-    if (Array.isArray(node == null ? void 0 : node.children)) return node.children;
+    if (Array.isArray(node?.props?.children)) return node.props.children;
+    if (Array.isArray(node?.children)) return node.children;
     return null;
   }
+
   _collectContextChildrenCandidates(node) {
-    var _a;
     const candidates = [];
-    if ((_a = node == null ? void 0 : node.props) == null ? void 0 : _a.children) candidates.push(node.props.children);
-    if (node == null ? void 0 : node.children) candidates.push(node.children);
-    if ((node == null ? void 0 : node.props) && typeof node.props === "object") {
+    if (node?.props?.children) candidates.push(node.props.children);
+    if (node?.children) candidates.push(node.children);
+
+    if (node?.props && typeof node.props === "object") {
       for (const value of Object.values(node.props)) {
         if (!value || value === node.props.children) continue;
         if (typeof value === "object") candidates.push(value);
@@ -454,39 +494,49 @@ module.exports = class ShadowRecon {
     }
     return candidates;
   }
+
   _resolveContextChildrenArray(node, depth = 0, seen = null) {
     if (!node || depth > 7) return null;
-    if (!seen) seen = /* @__PURE__ */ new Set();
+    if (!seen) seen = new Set();
     if (typeof node !== "object") return null;
     if (seen.has(node)) return null;
     seen.add(node);
+
     const direct = this._getDirectContextChildrenArray(node);
     if (direct) return direct;
+
     for (const candidate of this._collectContextChildrenCandidates(node)) {
       const found = this._resolveContextChildrenArray(candidate, depth + 1, seen);
       if (found) return found;
     }
+
     return null;
   }
+
   // ---- Visual Refresh --------------------------------------------------
+
   startRefreshLoops() {
     this.stopRefreshLoops();
+    // PERF: 15s refresh (was 4s — guild hints rarely change, MutationObserver handles DOM)
     this._refreshInterval = setInterval(() => {
       if (this._stopped || document.hidden) return;
       this._queueVisualRefresh(0);
-    }, 15e3);
+    }, 15000);
   }
+
   stopRefreshLoops() {
     if (this._refreshInterval) clearInterval(this._refreshInterval);
     this._refreshInterval = null;
     if (this._visualRefreshTimeout) clearTimeout(this._visualRefreshTimeout);
     this._visualRefreshTimeout = null;
   }
+
   refreshAllVisuals() {
     this.updateServerCounterWidget();
     this.removeMemberCounterBanner();
     this.refreshGuildIconHints();
   }
+
   _queueVisualRefresh(delayMs = 120) {
     if (this._visualRefreshTimeout) return;
     this._visualRefreshTimeout = setTimeout(() => {
@@ -495,10 +545,12 @@ module.exports = class ShadowRecon {
       this.refreshAllVisuals();
     }, Math.max(0, delayMs));
   }
+
   setupObserver() {
     try {
-      if (_PluginUtils == null ? void 0 : _PluginUtils.LayoutObserverBus) {
-        this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe("ShadowRecon", () => {
+      // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
+      if (_PluginUtils?.LayoutObserverBus) {
+        this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('ShadowRecon', () => {
           if (this._stopped || document.hidden) return;
           this._queueVisualRefresh(120);
         }, 500);
@@ -507,48 +559,62 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed observer setup`, err);
     }
   }
+
   teardownObserver() {
+    // PERF(P5-4): Unsubscribe from shared LayoutObserverBus
     if (this._layoutBusUnsub) {
       this._layoutBusUnsub();
       this._layoutBusUnsub = null;
     }
   }
+
   // ---- Server Counter Widget ------------------------------------------
+
   _getGuildsTarget() {
-    return document.querySelector('[data-list-id="guildsnav"]') || document.querySelector('[class*="guilds_"] [class*="scroller_"]') || document.querySelector('[class*="guilds_"]');
+    return (
+      document.querySelector('[data-list-id="guildsnav"]') ||
+      document.querySelector('[class*="guilds_"] [class*="scroller_"]') ||
+      document.querySelector('[class*="guilds_"]')
+    );
   }
+
   _isHorizontalGuildNav(target) {
     if (!target || typeof window === "undefined" || typeof window.getComputedStyle !== "function") return false;
     const cache = this._guildNavOrientationCache;
     const now = Date.now();
-    if (cache.target === target && now - cache.measuredAt < this._guildNavOrientationCacheTTL) {
+    if (
+      cache.target === target
+      && (now - cache.measuredAt) < this._guildNavOrientationCacheTTL
+    ) {
       return cache.horizontal;
     }
+
     let horizontal = false;
     const candidates = [target, target.firstElementChild, target.parentElement].filter(Boolean);
     for (const node of candidates) {
       try {
         const style = window.getComputedStyle(node);
-        const direction = String((style == null ? void 0 : style.flexDirection) || "").toLowerCase();
+        const direction = String(style?.flexDirection || "").toLowerCase();
         if (direction.startsWith("row")) {
           horizontal = true;
           break;
         }
-      } catch (_) {
-      }
+      } catch (_) {}
     }
+
     if (!horizontal) {
       try {
         const rect = target.getBoundingClientRect();
         if (rect.width > rect.height * 1.3) horizontal = true;
-      } catch (_) {
-      }
+      } catch (_) {}
     }
+
     cache.target = target;
     cache.measuredAt = now;
     cache.horizontal = horizontal;
     return horizontal;
   }
+
   _syncServerCounterWidgetOrientation(widget, target = null) {
     if (!widget) return false;
     const navTarget = target || this._getGuildsTarget();
@@ -560,13 +626,16 @@ module.exports = class ShadowRecon {
     }
     return horizontal;
   }
+
   injectServerCounterWidget() {
     if (!this.settings.showServerCounterWidget) {
       this.removeServerCounterWidget();
       return;
     }
+
     const target = this._getGuildsTarget();
     if (!target) return;
+
     let widget = document.getElementById(WIDGET_ID);
     if (!widget) {
       widget = document.createElement("div");
@@ -582,11 +651,14 @@ module.exports = class ShadowRecon {
         event.preventDefault();
         this._toggleCurrentGuildMarkWithToast();
       });
+
       if (target.firstChild) target.insertBefore(widget, target.firstChild);
       else target.appendChild(widget);
     }
+
     this.updateServerCounterWidget(target);
   }
+
   updateServerCounterWidget(target = null) {
     const widget = document.getElementById(WIDGET_ID);
     if (!widget) return;
@@ -594,24 +666,31 @@ module.exports = class ShadowRecon {
     const guildCount = this.getServerCount();
     const markedGuildCount = this._markedGuildIds.size;
     const markedTargetCount = this._getShadowDeploymentMap().size;
-    const nextText = horizontal ? `R ${guildCount} / ${markedGuildCount} / ${markedTargetCount}` : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
+    const nextText = horizontal
+      ? `R ${guildCount} / ${markedGuildCount} / ${markedTargetCount}`
+      : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
     if (widget.textContent !== nextText) {
       widget.textContent = nextText;
     }
   }
+
   removeServerCounterWidget() {
     const widget = document.getElementById(WIDGET_ID);
     if (widget) widget.remove();
   }
+
   // ---- Member Counter Banner ------------------------------------------
+
   removeMemberCounterBanner() {
     const banner = document.getElementById(MEMBER_BANNER_ID);
     if (banner) banner.remove();
   }
+
   _safeNonNegativeInt(value) {
     const n = Number(value);
     return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
   }
+
   _readOnlineCountFromObject(obj) {
     if (!obj || typeof obj !== "object") return null;
     const keys = [
@@ -620,7 +699,7 @@ module.exports = class ShadowRecon {
       "presence",
       "presenceCount",
       "approximatePresenceCount",
-      "approximate_presence_count"
+      "approximate_presence_count",
     ];
     for (const key of keys) {
       const parsed = this._safeNonNegativeInt(obj[key]);
@@ -628,19 +707,21 @@ module.exports = class ShadowRecon {
     }
     return null;
   }
+
   _readOnlineCountFromStore(guildId) {
     const countStore = this._GuildMemberCountStore;
     if (!countStore || typeof countStore !== "object") return null;
+
     const storeMethods = [
       "getOnlineCount",
       "getOnlineMemberCount",
       "getPresenceCount",
       "getMemberCounts",
       "getCounts",
-      "getGuildCounts"
+      "getGuildCounts",
     ];
     for (const methodName of storeMethods) {
-      const fn = countStore == null ? void 0 : countStore[methodName];
+      const fn = countStore?.[methodName];
       if (typeof fn !== "function") continue;
       try {
         const result = fn.call(countStore, guildId);
@@ -648,41 +729,51 @@ module.exports = class ShadowRecon {
         if (direct !== null) return direct;
         const nested = this._readOnlineCountFromObject(result);
         if (nested !== null) return nested;
-      } catch (_) {
-      }
+      } catch (_) {}
     }
     return null;
   }
+
   _getGuildOnlineCount(guildId, guild = null) {
-    var _a, _b;
     if (!guildId) return 0;
+
     const fromStore = this._readOnlineCountFromStore(guildId);
     if (fromStore !== null) return fromStore;
-    const activeGuild = guild || ((_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId));
+
+    const activeGuild = guild || this._GuildStore?.getGuild?.(guildId);
     const fromGuild = this._readOnlineCountFromObject(activeGuild);
     if (fromGuild !== null) return fromGuild;
+
     return 0;
   }
+
   // ---- Guild Hover Intel ----------------------------------------------
+
   refreshGuildIconHints() {
-    var _a, _b, _c, _d;
     if (!this.settings.showGuildHoverIntel) return;
     const nodes = document.querySelectorAll('[data-list-item-id*="guild"]');
     for (const node of nodes) {
       const raw = node.getAttribute("data-list-item-id") || "";
       const guildId = this._extractSnowflake(raw);
       if (!guildId) continue;
-      const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
+
+      const guild = this._GuildStore?.getGuild?.(guildId);
       if (!guild) continue;
-      const memberCount = ((_d = (_c = this._GuildMemberCountStore) == null ? void 0 : _c.getMemberCount) == null ? void 0 : _d.call(_c, guildId)) || (guild == null ? void 0 : guild.memberCount) || (guild == null ? void 0 : guild.member_count) || 0;
+
+      const memberCount = this._GuildMemberCountStore?.getMemberCount?.(guildId)
+        || guild?.memberCount
+        || guild?.member_count
+        || 0;
       const online = this._getGuildOnlineCount(guildId, guild);
       const markedLabel = this.isGuildMarked(guildId) ? "[Marked]" : "[Unmarked]";
+
       const title = `${markedLabel} ${guild.name} | Online ${this._formatNumber(online)} | Members ${this._formatNumber(memberCount)}`;
-      if (node.getAttribute("title") === title) continue;
+      if (node.getAttribute('title') === title) continue;
       node.setAttribute("title", title);
       node.setAttribute("data-shadow-recon-title", "1");
     }
   }
+
   clearGuildIconHints() {
     const nodes = document.querySelectorAll('[data-shadow-recon-title="1"]');
     for (const node of nodes) {
@@ -690,24 +781,29 @@ module.exports = class ShadowRecon {
       node.removeAttribute("data-shadow-recon-title");
     }
   }
+
   _extractSnowflake(text) {
     if (!text) return null;
     const match = String(text).match(/\d{16,20}/);
     return match ? match[0] : null;
   }
+
   // ---- Guild Dossier ---------------------------------------------------
+
   openGuildDossier(guildId) {
-    var _a, _b;
-    const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
+    const guild = this._GuildStore?.getGuild?.(guildId);
     if (!guild) {
       this._toast("Guild intel unavailable", "error");
       return;
     }
+
     const marked = this.isGuildMarked(guildId);
     const lockFull = this.settings.loreLockedRecon && !marked;
     const intel = this.getGuildIntel(guildId);
+
     const overlay = this._createModal(`Shadow Recon - Guild Dossier`, `${guild.name}${marked ? " [Marked]" : " [Unmarked]"}`);
     const body = overlay.querySelector(".shadow-recon-modal-body");
+
     body.appendChild(this._buildKeyValueSection("Server Details", [
       ["Guild ID", guild.id],
       ["Owner", intel.ownerName],
@@ -717,21 +813,25 @@ module.exports = class ShadowRecon {
       ["Boost Count", this._formatNumber(intel.premiumSubscriptionCount)],
       ["Roles", this._formatNumber(intel.roleCount)],
       ["Channels", this._formatNumber(intel.channelCount)],
-      ["Features", intel.featuresLabel]
+      ["Features", intel.featuresLabel],
     ]));
+
     body.appendChild(this._buildKeyValueSection("Server Counter", [
       ["Total Guilds", this._formatNumber(this.getServerCount())],
       ["Marked Guilds", this._formatNumber(this._markedGuildIds.size)],
-      ["Marked Targets", this._formatNumber(this._getShadowDeploymentMap().size)]
+      ["Marked Targets", this._formatNumber(this._getShadowDeploymentMap().size)],
     ]));
+
     body.appendChild(this._buildKeyValueSection("Member Counter", [
       ["Total Members", this._formatNumber(intel.memberCount)],
-      ["Online Members", this._formatNumber(intel.onlineCount)]
+      ["Online Members", this._formatNumber(intel.onlineCount)],
     ]));
+
     if (lockFull) {
       const notice = document.createElement("div");
       notice.className = "shadow-recon-notice";
       notice.textContent = "Guild is not recon-marked. Recon this guild to unlock full Shadow Recon intel (lore lock).";
+
       const markBtn = document.createElement("button");
       markBtn.className = "shadow-recon-button";
       markBtn.textContent = "Recon Guild Now";
@@ -740,106 +840,133 @@ module.exports = class ShadowRecon {
         this.closeModal();
         this.openGuildDossier(guildId);
       });
+
       body.appendChild(notice);
       body.appendChild(markBtn);
       return;
     }
+
     body.appendChild(this._buildPermissionsSection("Your Guild Permissions", intel.currentUserPermissionSummary));
+
     body.appendChild(this._buildKeyValueSection("Guild Profile", [
       ["Description", intel.description || "None"],
       ["Emoji Count", this._formatNumber(intel.emojiCount)],
       ["Sticker Count", this._formatNumber(intel.stickerCount)],
       ["Soundboard Count", this._formatNumber(intel.soundboardCount)],
-      ["Preferred Locale", intel.preferredLocale || "Unknown"]
+      ["Preferred Locale", intel.preferredLocale || "Unknown"],
     ]));
   }
+
   _getGuildOwner(guild) {
-    var _a, _b;
     if (!guild) return null;
-    return ((_b = (_a = this._UserStore) == null ? void 0 : _a.getUser) == null ? void 0 : _b.call(_a, guild.ownerId)) || null;
+    return this._UserStore?.getUser?.(guild.ownerId) || null;
   }
+
   _getGuildOwnerName(owner, guild) {
     if (owner) return owner.globalName || owner.username || owner.id;
-    return (guild == null ? void 0 : guild.ownerId) || "Unknown";
+    return guild?.ownerId || "Unknown";
   }
+
   _getGuildJoinedAtLabel(guild) {
-    return (guild == null ? void 0 : guild.joinedAt) ? new Date(guild.joinedAt).toLocaleString() : "Unknown";
+    return guild?.joinedAt ? new Date(guild.joinedAt).toLocaleString() : "Unknown";
   }
+
   _getGuildRoleCount(guild) {
-    return (guild == null ? void 0 : guild.roles) ? Object.keys(guild.roles).length : 0;
+    return guild?.roles ? Object.keys(guild.roles).length : 0;
   }
+
   _getGuildMemberCount(guildId, guild) {
-    var _a, _b;
-    return ((_b = (_a = this._GuildMemberCountStore) == null ? void 0 : _a.getMemberCount) == null ? void 0 : _b.call(_a, guildId)) || (guild == null ? void 0 : guild.memberCount) || (guild == null ? void 0 : guild.member_count) || 0;
+    return this._GuildMemberCountStore?.getMemberCount?.(guildId)
+      || guild?.memberCount
+      || guild?.member_count
+      || 0;
   }
+
   _getGuildFeaturesLabel(guild) {
-    const features = guild == null ? void 0 : guild.features;
+    const features = guild?.features;
     if (!Array.isArray(features) || features.length === 0) return "None";
     return features.slice(0, 8).join(", ");
   }
+
   _getGuildPreferredLocale(guild) {
-    return (guild == null ? void 0 : guild.preferredLocale) || (guild == null ? void 0 : guild.preferred_locale) || "";
+    return guild?.preferredLocale || guild?.preferred_locale || "";
   }
+
   getGuildIntel(guildId) {
-    var _a, _b;
-    const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
+    const guild = this._GuildStore?.getGuild?.(guildId);
     const owner = this._getGuildOwner(guild);
-    const createdAt = this._safeDateFromSnowflake(guild == null ? void 0 : guild.id);
+
+    const createdAt = this._safeDateFromSnowflake(guild?.id);
     const joinedAt = this._getGuildJoinedAtLabel(guild);
+
     const channelCount = this._countGuildChannels(guildId);
     const roleCount = this._getGuildRoleCount(guild);
+
     const memberCount = this._getGuildMemberCount(guildId, guild);
     const onlineCount = this._getGuildOnlineCount(guildId, guild);
+
     const permissionSummary = this.getCurrentUserPermissionSummary(guildId);
+
     return {
       ownerName: this._getGuildOwnerName(owner, guild),
       createdAt,
       joinedAt,
-      premiumTier: (guild == null ? void 0 : guild.premiumTier) || 0,
-      premiumSubscriptionCount: (guild == null ? void 0 : guild.premiumSubscriptionCount) || 0,
+      premiumTier: guild?.premiumTier || 0,
+      premiumSubscriptionCount: guild?.premiumSubscriptionCount || 0,
       roleCount,
       channelCount,
       featuresLabel: this._getGuildFeaturesLabel(guild),
       memberCount,
       onlineCount,
-      description: (guild == null ? void 0 : guild.description) || "",
+      description: guild?.description || "",
       emojiCount: this._countGuildEmojis(guildId, guild),
       stickerCount: this._countGuildStickers(guildId, guild),
       soundboardCount: this._countGuildSoundboard(guildId),
       preferredLocale: this._getGuildPreferredLocale(guild),
-      currentUserPermissionSummary: permissionSummary
+      currentUserPermissionSummary: permissionSummary,
     };
   }
+
   // ---- Target Intel Modal ---------------------------------------------
+
   async openUserIntelModal(userId, guildId) {
-    var _a, _b;
-    const user = (_b = (_a = this._UserStore) == null ? void 0 : _a.getUser) == null ? void 0 : _b.call(_a, userId);
+    const user = this._UserStore?.getUser?.(userId);
     const deployment = this._getShadowDeploymentMap().get(String(userId));
+
     const overlay = this._createModal(
       "Shadow Recon - Target Intel",
-      `${(user == null ? void 0 : user.globalName) || (user == null ? void 0 : user.username) || userId}${(deployment == null ? void 0 : deployment.shadowName) ? ` | reported by ${deployment.shadowName}` : ""}`
+      `${user?.globalName || user?.username || userId}${deployment?.shadowName ? ` | reported by ${deployment.shadowName}` : ""}`
     );
+
     const body = overlay.querySelector(".shadow-recon-modal-body");
     const platformData = this.getPlatformIntel(userId);
     const staff = this.getStaffIntel(userId, guildId);
     const detailedStaffUnlocked = this.isDetailedStaffIntelUnlocked(guildId);
-    body.appendChild(this._buildKeyValueSection(
-      "Platform Indicators",
-      platformData.length ? platformData.map((p) => [p.platform, p.status]) : [["Intel", "No platform statuses reported"]]
+
+    body.appendChild(this._buildKeyValueSection("Platform Indicators", platformData.length
+      ? platformData.map(p => [p.platform, p.status])
+      : [["Intel", "No platform statuses reported"]]
     ));
+
     body.appendChild(this._buildKeyValueSection(
       "Staff Intel",
-      staff ? [
-        ["Rank", staff.label],
-        ["Capabilities", detailedStaffUnlocked ? staff.capabilities.join(", ") || "None" : "Locked - recon guild for full staff dossier"]
-      ] : [["Rank", "No elevated staff permissions detected"]]
+      staff
+        ? [
+            ["Rank", staff.label],
+            ["Capabilities", detailedStaffUnlocked ? (staff.capabilities.join(", ") || "None") : "Locked - recon guild for full staff dossier"],
+          ]
+        : [["Rank", "No elevated staff permissions detected"]]
     ));
+
     const connectionsSection = this._buildKeyValueSection("Connections", [["Status", "Fetching profile intel..."]]);
     body.appendChild(connectionsSection);
+
     try {
       const connections = await this.getConnectionsIntel(userId, guildId);
       connectionsSection.innerHTML = "";
-      const rows = connections.length ? connections.map((c) => [c.type, `${c.name}${c.verified ? " (verified)" : ""}`]) : [["Status", "No public connections returned for this target"]];
+      const rows = connections.length
+        ? connections.map(c => [c.type, `${c.name}${c.verified ? " (verified)" : ""}`])
+        : [["Status", "No public connections returned for this target"]];
       connectionsSection.appendChild(this._buildGrid(rows));
     } catch (err) {
       connectionsSection.innerHTML = "";
@@ -847,26 +974,27 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed fetching target connections`, err);
     }
   }
+
   _collectSessionClientStatuses() {
-    var _a, _b;
     const out = {};
-    if (!((_a = this._SessionsStore) == null ? void 0 : _a.getSessions)) return out;
+    if (!this._SessionsStore?.getSessions) return out;
     const sessions = this._SessionsStore.getSessions() || {};
     for (const session of Object.values(sessions)) {
-      const client = (_b = session == null ? void 0 : session.clientInfo) == null ? void 0 : _b.client;
+      const client = session?.clientInfo?.client;
       if (!client) continue;
-      out[client] = (session == null ? void 0 : session.status) || "unknown";
+      out[client] = session?.status || "unknown";
     }
     return out;
   }
+
   _collectClientStatuses(userId) {
-    var _a, _b, _c, _d, _e, _f, _g;
-    const currentUserId = (_c = (_b = (_a = this._UserStore) == null ? void 0 : _a.getCurrentUser) == null ? void 0 : _b.call(_a)) == null ? void 0 : _c.id;
+    const currentUserId = this._UserStore?.getCurrentUser?.()?.id;
     if (currentUserId && String(userId) === String(currentUserId)) {
       return this._collectSessionClientStatuses();
     }
-    return ((_g = (_f = (_e = (_d = this._PresenceStore) == null ? void 0 : _d.getState) == null ? void 0 : _e.call(_d)) == null ? void 0 : _f.clientStatuses) == null ? void 0 : _g[userId]) || {};
+    return this._PresenceStore?.getState?.()?.clientStatuses?.[userId] || {};
   }
+
   _mapClientStatusesToRows(clientStatuses) {
     const rows = [];
     for (const [platformRaw, statusRaw] of Object.entries(clientStatuses || {})) {
@@ -876,16 +1004,17 @@ module.exports = class ShadowRecon {
     }
     return rows;
   }
+
   _appendPresenceFallbackRow(rows, userId) {
-    var _a, _b;
     if (rows.length > 0) return;
-    const statusRaw = (_b = (_a = this._PresenceStore) == null ? void 0 : _a.getStatus) == null ? void 0 : _b.call(_a, userId);
+    const statusRaw = this._PresenceStore?.getStatus?.(userId);
     if (!statusRaw) return;
     rows.push({
       platform: "Presence",
-      status: STATUS_LABELS[statusRaw] || this._capitalize(statusRaw)
+      status: STATUS_LABELS[statusRaw] || this._capitalize(statusRaw),
     });
   }
+
   getPlatformIntel(userId) {
     try {
       const rows = this._mapClientStatusesToRows(this._collectClientStatuses(userId));
@@ -896,21 +1025,34 @@ module.exports = class ShadowRecon {
       return [];
     }
   }
+
   async getConnectionsIntel(userId, guildId) {
-    var _a, _b;
     await this._requestUserProfile(userId, guildId);
+
     const profile = this._getUserProfile(userId);
-    const possible = (profile == null ? void 0 : profile.connectedAccounts) || (profile == null ? void 0 : profile.connected_accounts) || (profile == null ? void 0 : profile.connections) || ((_a = profile == null ? void 0 : profile.userProfile) == null ? void 0 : _a.connectedAccounts) || ((_b = profile == null ? void 0 : profile.userProfile) == null ? void 0 : _b.connected_accounts) || [];
+    const possible =
+      profile?.connectedAccounts ||
+      profile?.connected_accounts ||
+      profile?.connections ||
+      profile?.userProfile?.connectedAccounts ||
+      profile?.userProfile?.connected_accounts ||
+      [];
+
     if (!Array.isArray(possible)) return [];
-    return possible.map((c) => ({
-      type: this._capitalize(String((c == null ? void 0 : c.type) || (c == null ? void 0 : c.platform) || "unknown")),
-      name: String((c == null ? void 0 : c.name) || (c == null ? void 0 : c.username) || (c == null ? void 0 : c.id) || "unknown"),
-      verified: Boolean(c == null ? void 0 : c.verified)
-    })).slice(0, 20);
+
+    return possible
+      .map((c) => ({
+        type: this._capitalize(String(c?.type || c?.platform || "unknown")),
+        name: String(c?.name || c?.username || c?.id || "unknown"),
+        verified: Boolean(c?.verified),
+      }))
+      .slice(0, 20);
   }
+
   async _requestUserProfile(userId, guildId) {
     const actions = this._UserProfileActions;
     if (!actions) return;
+
     try {
       if (typeof actions.fetchProfile === "function") {
         await Promise.resolve(actions.fetchProfile(userId, { guildId }));
@@ -928,53 +1070,64 @@ module.exports = class ShadowRecon {
         console.error(`[${PLUGIN_NAME}] profile request failed`, err);
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
+
   _getUserProfile(userId) {
     const store = this._UserProfileStore;
     if (!store) return null;
+
     try {
       if (typeof store.getUserProfile === "function") return store.getUserProfile(userId);
       if (typeof store.getProfile === "function") return store.getProfile(userId);
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed reading UserProfileStore`, err);
     }
+
     return null;
   }
+
   // ---- Staff / Permissions --------------------------------------------
+
   isDetailedStaffIntelUnlocked(guildId) {
     if (!guildId) return false;
     if (!this.settings.loreLockedRecon) return true;
     return this.isGuildMarked(guildId);
   }
+
   openStaffIntelModal(userId, guildId) {
-    var _a, _b, _c, _d;
     if (!guildId || !userId) {
       this._toast("Guild context required for staff dossier", "warning");
       return;
     }
-    const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
-    const user = (_d = (_c = this._UserStore) == null ? void 0 : _c.getUser) == null ? void 0 : _d.call(_c, userId);
+
+    const guild = this._GuildStore?.getGuild?.(guildId);
+    const user = this._UserStore?.getUser?.(userId);
     const staff = this.getStaffIntel(userId, guildId);
     if (!guild || !staff) {
       this._toast("No staff dossier available for this user", "warning");
       return;
     }
+
     const overlay = this._createModal(
       "Shadow Recon - Staff Dossier",
-      `${(user == null ? void 0 : user.globalName) || (user == null ? void 0 : user.username) || userId} @ ${guild.name}`
+      `${user?.globalName || user?.username || userId} @ ${guild.name}`
     );
     const body = overlay.querySelector(".shadow-recon-modal-body");
+
     body.appendChild(this._buildKeyValueSection("Staff Profile", [
       ["Rank", staff.label],
       ["Guild", guild.name],
-      ["User ID", String(userId)]
+      ["User ID", String(userId)],
     ]));
+
     const unlocked = this.isDetailedStaffIntelUnlocked(guildId);
     if (!unlocked) {
       const notice = document.createElement("div");
       notice.className = "shadow-recon-notice";
       notice.textContent = "Detailed staff capability intel is lore-locked. Recon this guild to unlock full staff dossier.";
+
       const markBtn = document.createElement("button");
       markBtn.className = "shadow-recon-button";
       markBtn.textContent = "Recon Guild and Reload Dossier";
@@ -983,74 +1136,92 @@ module.exports = class ShadowRecon {
         this.closeModal();
         this.openStaffIntelModal(userId, guildId);
       });
+
       body.appendChild(notice);
       body.appendChild(markBtn);
       return;
     }
+
     body.appendChild(this._buildKeyValueSection("Capabilities", [
-      ["Capabilities", staff.capabilities.join(", ") || "None"]
+      ["Capabilities", staff.capabilities.join(", ") || "None"],
     ]));
+
     body.appendChild(this._buildPermissionsSection(
       "Permission Breakdown",
       this.getPermissionSummaryForMember(guildId, userId)
     ));
   }
+
   getCurrentUserPermissionSummary(guildId) {
-    var _a, _b;
-    const currentUser = (_b = (_a = this._UserStore) == null ? void 0 : _a.getCurrentUser) == null ? void 0 : _b.call(_a);
-    if (!(currentUser == null ? void 0 : currentUser.id)) return [];
+    const currentUser = this._UserStore?.getCurrentUser?.();
+    if (!currentUser?.id) return [];
     return this.getPermissionSummaryForMember(guildId, currentUser.id);
   }
+
   getStaffIntel(userId, guildId) {
-    var _a, _b;
     if (!guildId || !userId) return null;
-    const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
+    const guild = this._GuildStore?.getGuild?.(guildId);
     if (!guild) return null;
+
     if (String(guild.ownerId) === String(userId)) {
       return { label: "Server Owner", capabilities: ["Full control"] };
     }
+
     const summary = this.getPermissionSummaryForMember(guildId, userId);
-    const hasAdmin = summary.find((p) => p.key === "ADMINISTRATOR" && p.allowed);
+    const hasAdmin = summary.find(p => p.key === "ADMINISTRATOR" && p.allowed);
     if (hasAdmin) {
       return { label: "Administrator", capabilities: ["Full administrative access"] };
     }
-    const capabilities = summary.filter((p) => p.allowed && STAFF_PERMISSION_KEYS.includes(p.key) && p.key !== "ADMINISTRATOR").map((p) => p.label);
+
+    const capabilities = summary
+      .filter(p => p.allowed && STAFF_PERMISSION_KEYS.includes(p.key) && p.key !== "ADMINISTRATOR")
+      .map(p => p.label);
+
     if (capabilities.length > 0) {
       return { label: "Management", capabilities };
     }
+
     return null;
   }
+
   getPermissionSummaryForMember(guildId, userId) {
     const bits = this._computeGuildPermissionBits(guildId, userId);
     const bitMap = this._getPermissionBitsMap();
     const adminBit = bitMap.ADMINISTRATOR || 0n;
-    const hasAdmin = adminBit !== 0n && (bits & adminBit) === adminBit;
+    const hasAdmin = adminBit !== 0n && ((bits & adminBit) === adminBit);
+
     const summary = [];
     for (const key of IMPORTANT_PERMISSIONS) {
       const bit = bitMap[key] || 0n;
-      const allowed = hasAdmin || bit !== 0n && (bits & bit) === bit;
+      const allowed = hasAdmin || (bit !== 0n && ((bits & bit) === bit));
       summary.push({ key, label: this._humanizePermissionKey(key), allowed });
     }
     return summary;
   }
+
   _computeGuildPermissionBits(guildId, userId) {
-    var _a, _b, _c, _d, _e;
-    const guild = (_b = (_a = this._GuildStore) == null ? void 0 : _a.getGuild) == null ? void 0 : _b.call(_a, guildId);
+    const guild = this._GuildStore?.getGuild?.(guildId);
     if (!guild) return 0n;
+
     if (String(guild.ownerId) === String(userId)) {
       return this._allPermissionBits();
     }
-    const member = (_d = (_c = this._GuildMemberStore) == null ? void 0 : _c.getMember) == null ? void 0 : _d.call(_c, guildId, userId);
+
+    const member = this._GuildMemberStore?.getMember?.(guildId, userId);
     if (!member) return 0n;
-    const roleIds = /* @__PURE__ */ new Set([String(guildId), ...Array.isArray(member.roles) ? member.roles.map(String) : []]);
+
+    const roleIds = new Set([String(guildId), ...(Array.isArray(member.roles) ? member.roles.map(String) : [])]);
     let bits = 0n;
+
     for (const roleId of roleIds) {
-      const role = (_e = guild.roles) == null ? void 0 : _e[roleId];
+      const role = guild.roles?.[roleId];
       if (!role) continue;
       bits |= this._toBigInt(role.permissions);
     }
+
     return bits;
   }
+
   _allPermissionBits() {
     const map = this._getPermissionBitsMap();
     let all = 0n;
@@ -1059,8 +1230,10 @@ module.exports = class ShadowRecon {
     }
     return all;
   }
+
   _getPermissionBitsMap() {
     if (this._permissionBitsCache) return this._permissionBitsCache;
+
     const source = this._PermissionsBits || {};
     const map = {};
     for (const [key, value] of Object.entries(source)) {
@@ -1068,126 +1241,157 @@ module.exports = class ShadowRecon {
       if (!["number", "string", "bigint"].includes(typeof value)) continue;
       try {
         map[key] = this._toBigInt(value);
-      } catch (_) {
-      }
+      } catch (_) {}
     }
+
     this._permissionBitsCache = map;
     return map;
   }
+
   // ---- Modal Builders --------------------------------------------------
+
   _createModal(title, subtitle = "") {
     this.closeModal();
+
     const overlay = document.createElement("div");
     overlay.id = MODAL_ID;
     overlay.className = "shadow-recon-overlay";
+
     const panel = document.createElement("div");
     panel.className = "shadow-recon-modal";
+
     const header = document.createElement("div");
     header.className = "shadow-recon-modal-header";
+
     const titleWrap = document.createElement("div");
     titleWrap.className = "shadow-recon-modal-title-wrap";
+
     const titleEl = document.createElement("h2");
     titleEl.className = "shadow-recon-modal-title";
     titleEl.textContent = title;
+
     const subtitleEl = document.createElement("div");
     subtitleEl.className = "shadow-recon-modal-subtitle";
     subtitleEl.textContent = subtitle;
+
     const closeBtn = document.createElement("button");
     closeBtn.className = "shadow-recon-close";
     closeBtn.textContent = "x";
     closeBtn.addEventListener("click", () => this.closeModal());
+
     titleWrap.appendChild(titleEl);
     titleWrap.appendChild(subtitleEl);
     header.appendChild(titleWrap);
     header.appendChild(closeBtn);
+
     const body = document.createElement("div");
     body.className = "shadow-recon-modal-body";
+
     panel.appendChild(header);
     panel.appendChild(body);
     overlay.appendChild(panel);
+
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) this.closeModal();
     });
+
     document.body.appendChild(overlay);
     this._modalEl = overlay;
     return overlay;
   }
+
   closeModal() {
     const el = document.getElementById(MODAL_ID);
     if (el) el.remove();
     this._modalEl = null;
   }
+
   _buildKeyValueSection(title, rows) {
     const section = document.createElement("section");
     section.className = "shadow-recon-section";
+
     const h = document.createElement("h3");
     h.className = "shadow-recon-section-title";
     h.textContent = title;
+
     section.appendChild(h);
     section.appendChild(this._buildGrid(rows));
     return section;
   }
+
   _buildPermissionsSection(title, summary) {
     const section = document.createElement("section");
     section.className = "shadow-recon-section";
+
     const h = document.createElement("h3");
     h.className = "shadow-recon-section-title";
     h.textContent = title;
+
     const list = document.createElement("div");
     list.className = "shadow-recon-perm-list";
+
     for (const item of summary) {
       const row = document.createElement("div");
       row.className = `shadow-recon-perm-item ${item.allowed ? "allowed" : "denied"}`;
+
       const label = document.createElement("span");
       label.textContent = item.label;
+
       const status = document.createElement("span");
       status.textContent = item.allowed ? "Allowed" : "Denied";
+
       row.appendChild(label);
       row.appendChild(status);
       list.appendChild(row);
     }
+
     section.appendChild(h);
     section.appendChild(list);
     return section;
   }
+
   _buildGrid(rows) {
     const grid = document.createElement("div");
     grid.className = "shadow-recon-grid";
+
     for (const [key, value] of rows) {
       const k = document.createElement("div");
       k.className = "shadow-recon-key";
       k.textContent = String(key);
+
       const v = document.createElement("div");
       v.className = "shadow-recon-value";
       v.textContent = String(value);
+
       grid.appendChild(k);
       grid.appendChild(v);
     }
+
     return grid;
   }
+
   // ---- Counts / Stores -------------------------------------------------
+
   getServerCount() {
-    var _a, _b, _c, _d, _e;
     try {
-      if (typeof ((_a = this._GuildStore) == null ? void 0 : _a.getGuildCount) === "function") return this._GuildStore.getGuildCount();
-      const guilds = (_c = (_b = this._GuildStore) == null ? void 0 : _b.getGuilds) == null ? void 0 : _c.call(_b);
+      if (typeof this._GuildStore?.getGuildCount === "function") return this._GuildStore.getGuildCount();
+      const guilds = this._GuildStore?.getGuilds?.();
       if (guilds && typeof guilds === "object") return Object.keys(guilds).length;
-      const flattened = (_e = (_d = this._sortedGuildStore) == null ? void 0 : _d.getFlattenedGuildIds) == null ? void 0 : _e.call(_d);
+      const flattened = this._sortedGuildStore?.getFlattenedGuildIds?.();
       if (Array.isArray(flattened)) return flattened.length;
-    } catch (_) {
-    }
+    } catch (_) {}
     return 0;
   }
+
   _countGuildChannels(guildId) {
-    var _a, _b;
     try {
-      const grouped = (_b = (_a = this._GuildChannelStore) == null ? void 0 : _a.getChannels) == null ? void 0 : _b.call(_a, guildId);
+      const grouped = this._GuildChannelStore?.getChannels?.(guildId);
       if (!grouped || typeof grouped !== "object") return 0;
       let count = 0;
       for (const bucket of Object.values(grouped)) {
         if (!Array.isArray(bucket)) continue;
         for (const entry of bucket) {
-          if (entry == null ? void 0 : entry.channel) count++;
+          if (entry?.channel) count++;
         }
       }
       return count;
@@ -1195,34 +1399,33 @@ module.exports = class ShadowRecon {
       return 0;
     }
   }
+
   _countGuildEmojis(guildId, guild) {
-    var _a, _b, _c;
     try {
-      const guildEmojis = (_c = (_b = (_a = this._EmojiStore) == null ? void 0 : _a.getGuilds) == null ? void 0 : _b.call(_a)) == null ? void 0 : _c[guildId];
+      const guildEmojis = this._EmojiStore?.getGuilds?.()?.[guildId];
       if (Array.isArray(guildEmojis)) return guildEmojis.length;
-    } catch (_) {
-    }
-    return Array.isArray(guild == null ? void 0 : guild.emojis) ? guild.emojis.length : 0;
+    } catch (_) {}
+    return Array.isArray(guild?.emojis) ? guild.emojis.length : 0;
   }
+
   _countGuildStickers(guildId, guild) {
-    var _a, _b;
     try {
-      const stickers = (_b = (_a = this._StickersStore) == null ? void 0 : _a.getGuildStickers) == null ? void 0 : _b.call(_a, guildId);
+      const stickers = this._StickersStore?.getGuildStickers?.(guildId);
       if (Array.isArray(stickers)) return stickers.length;
-    } catch (_) {
-    }
-    return Array.isArray(guild == null ? void 0 : guild.stickers) ? guild.stickers.length : 0;
+    } catch (_) {}
+    return Array.isArray(guild?.stickers) ? guild.stickers.length : 0;
   }
+
   _countGuildSoundboard(guildId) {
-    var _a, _b;
     try {
-      const sounds = (_b = (_a = this._SoundboardStore) == null ? void 0 : _a.getGuildSounds) == null ? void 0 : _b.call(_a, guildId);
+      const sounds = this._SoundboardStore?.getGuildSounds?.(guildId);
       if (Array.isArray(sounds)) return sounds.length;
-    } catch (_) {
-    }
+    } catch (_) {}
     return 0;
   }
+
   // ---- Utility ---------------------------------------------------------
+
   _safeDateFromSnowflake(id) {
     const num = this._toBigInt(id);
     if (num === 0n) return "Unknown";
@@ -1231,42 +1434,44 @@ module.exports = class ShadowRecon {
     if (!Number.isFinite(ts) || ts <= 0) return "Unknown";
     return new Date(ts).toLocaleString();
   }
+
   _toBigInt(value) {
     if (typeof value === "bigint") return value;
     if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
     if (typeof value === "string" && value.trim().length > 0) {
-      try {
-        return BigInt(value);
-      } catch (_) {
-        return 0n;
-      }
+      try { return BigInt(value); } catch (_) { return 0n; }
     }
     return 0n;
   }
+
   _formatNumber(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return "0";
     return Math.trunc(n).toLocaleString();
   }
+
   _capitalize(text) {
     const str = String(text || "");
     if (!str) return "Unknown";
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
+
   _humanizePermissionKey(key) {
-    return String(key).toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+    return String(key)
+      .toLowerCase()
+      .split("_")
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
   }
+
   // ---- Settings Panel --------------------------------------------------
+
   getSettingsPanel() {
-    var _a, _b;
     const React = BdApi.React;
     const ce = React.createElement;
-    const makeToggle = (label, key, note) => ce(
-      "div",
-      { style: rowStyle },
-      ce(
-        "div",
-        null,
+
+    const makeToggle = (label, key, note) => ce("div", { style: rowStyle },
+      ce("div", null,
         ce("div", { style: labelStyle }, label),
         note ? ce("div", { style: noteStyle }, note) : null
       ),
@@ -1278,36 +1483,38 @@ module.exports = class ShadowRecon {
           this.saveSettings();
           this.refreshAllVisuals();
         },
-        style: { accentColor: "#4b7bec" }
+        style: { accentColor: "#4b7bec" },
       })
     );
-    const currentGuildId = (_b = (_a = this._SelectedGuildStore) == null ? void 0 : _a.getGuildId) == null ? void 0 : _b.call(_a);
+
+    const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
     const markedTargets = this._getShadowDeploymentMap().size;
+
     const panelStyle = {
       padding: "16px",
       background: "#111827",
       color: "#d1d5db",
       borderRadius: "10px",
-      border: "1px solid rgba(75, 123, 236, 0.35)"
+      border: "1px solid rgba(75, 123, 236, 0.35)",
     };
+
     const rowStyle = {
       display: "flex",
       justifyContent: "space-between",
       alignItems: "center",
       gap: "12px",
       padding: "10px 0",
-      borderBottom: "1px solid rgba(148, 163, 184, 0.2)"
+      borderBottom: "1px solid rgba(148, 163, 184, 0.2)",
     };
+
     const labelStyle = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
     const noteStyle = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
     const statStyle = { color: "#93c5fd", fontWeight: "700" };
-    return ce(
-      "div",
-      { style: panelStyle },
+
+    return ce("div", { style: panelStyle },
       ce("h3", { style: { marginTop: 0, color: "#60a5fa" } }, "Shadow Recon Control"),
-      ce(
-        "div",
-        { style: { marginBottom: "12px", color: "#9ca3af", fontSize: "12px" } },
+
+      ce("div", { style: { marginBottom: "12px", color: "#9ca3af", fontSize: "12px" } },
         ce("span", null, "Guilds: "),
         ce("span", { style: statStyle }, this._formatNumber(this.getServerCount())),
         ce("span", null, " | Marked Guilds: "),
@@ -1315,24 +1522,24 @@ module.exports = class ShadowRecon {
         ce("span", null, " | Marked Targets: "),
         ce("span", { style: statStyle }, this._formatNumber(markedTargets))
       ),
+
       makeToggle("Lore Lock (recon guild for full dossier)", "loreLockedRecon", "When enabled, unrecon guild dossiers only show a limited briefing."),
       makeToggle("Server Counter Widget", "showServerCounterWidget", "Adds total guild / marked intel at top of guild bar."),
       makeToggle("Guild Hover Intel Hint", "showGuildHoverIntel", "Adds recon hint text on guild icon hover elements."),
       makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without recon mark; detailed staff dossier unlocks when guild is recon-marked."),
       makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds platform/connections intel action for ShadowSenses targets."),
-      ce(
-        "div",
-        { style: { display: "flex", gap: "8px", marginTop: "14px" } },
+
+      ce("div", { style: { display: "flex", gap: "8px", marginTop: "14px" } },
         ce("button", {
           className: "shadow-recon-button",
-          onClick: () => this._toggleCurrentGuildMarkWithToast()
+          onClick: () => this._toggleCurrentGuildMarkWithToast(),
         }, currentGuildId && this.isGuildMarked(currentGuildId) ? "Unrecon Current Guild" : "Recon Current Guild"),
         ce("button", {
           className: "shadow-recon-button",
           onClick: () => {
             if (currentGuildId) this.openGuildDossier(currentGuildId);
             else this._toast("Select a guild first", "warning");
-          }
+          },
         }, "Open Current Guild Dossier"),
         ce("button", {
           className: "shadow-recon-button",
@@ -1341,12 +1548,14 @@ module.exports = class ShadowRecon {
             this.saveMarkedGuilds();
             this.refreshAllVisuals();
             this._toast("Shadow Recon guild marks cleared", "info");
-          }
+          },
         }, "Clear Recon Guilds")
       )
     );
   }
+
   // ---- CSS -------------------------------------------------------------
+
   injectCSS() {
     BdApi.DOM.addStyle(STYLE_ID, `
 #${WIDGET_ID}.shadow-recon-widget {

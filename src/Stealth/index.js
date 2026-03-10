@@ -1,29 +1,23 @@
 /**
- * @name Stealth
- * @description Total concealment: suppress typing, force invisible, suppress idle detection, hide activities, erase telemetry, and neutralize tracking.
- * @version 2.1.1
- * @author matthewthompson
+ * TABLE OF CONTENTS
+ * 1) Bootstrap + Constants
+ * 2) Lifecycle + Settings
+ * 3) Dispatcher + Flux Wiring
+ * 4) Patch Installation
+ * 5) Status Enforcement
+ * 6) Warning/Diagnostics
+ * 7) Settings UI + Styles
  */
 
-// src/Stealth/index.js
-var _bdLoad = (f) => {
-  try {
-    const m = { exports: {} };
-    new Function("module", "exports", require("fs").readFileSync(require("path").join(BdApi.Plugins.folder, f), "utf8"))(m, m.exports);
-    return typeof m.exports === "function" || Object.keys(m.exports).length ? m.exports : null;
-  } catch (e) {
-    return null;
-  }
-};
-var _PluginUtils;
-try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
-} catch (_) {
-  _PluginUtils = null;
-}
-var STEALTH_PLUGIN_ID = "Stealth";
-var STEALTH_STYLE_ID = "stealth-plugin-css";
-var DEFAULT_SETTINGS = {
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
+const STEALTH_PLUGIN_ID = "Stealth";
+const STEALTH_STYLE_ID = "stealth-plugin-css";
+
+const DEFAULT_SETTINGS = {
   enabled: true,
   suppressTyping: true,
   invisibleStatus: true,
@@ -35,62 +29,67 @@ var DEFAULT_SETTINGS = {
   suppressReadReceipts: true,
   restoreStatusOnStop: true,
   showToasts: true,
-  debugMode: false
+  debugMode: false,
 };
+
 module.exports = class Stealth {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
+
     this._originalStatus = null;
     this._forcedInvisible = false;
     this._statusSetters = [];
     this._processMonitorPatched = false;
+
     this._Dispatcher = null;
     this._dispatcherPollTimer = null;
-    this._fluxHandlers = /* @__PURE__ */ new Map();
+    this._fluxHandlers = new Map();
+
     this._stores = {
       user: null,
-      presence: null
+      presence: null,
     };
+
     this._patchMetrics = {
       typing: 0,
       activities: 0,
       telemetry: 0,
       silent: 0,
       process: 0,
-      readReceipts: 0
+      readReceipts: 0,
     };
+
     this._suppressEventLog = {
       typing: 0,
       activities: 0,
       telemetry: 0,
       idle: 0,
       silent: 0,
-      readReceipts: 0
+      readReceipts: 0,
     };
-    this._warningTimestamps = /* @__PURE__ */ new Map();
+
+    this._warningTimestamps = new Map();
     this._protoUtils = null;
   }
+
   _toast(message, type = "info", timeout = null) {
-    var _a;
     if (!this.settings.showToasts) return;
-    (_a = this._toastImpl) == null ? void 0 : _a.call(this, message, type, timeout);
+    this._toastImpl?.(message, type, timeout);
   }
+
   // ── Lifecycle + Settings ───────────────────────────────────────────────
   start() {
-    var _a;
-    this._toastImpl = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "stealth")) || ((message, type = "info", timeout = null) => {
-      const p = (() => {
-        var _a2;
-        try {
-          const plugin = BdApi.Plugins.get("SoloLevelingToasts");
-          return ((_a2 = plugin == null ? void 0 : plugin.instance) == null ? void 0 : _a2.toastEngineVersion) >= 2 ? plugin.instance : null;
-        } catch (_) {
-          return null;
-        }
-      })();
-      if (p) p.showToast(message, type, timeout, { callerId: "stealth" });
-      else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
-    });
+    this._toastImpl = _PluginUtils?.createToastHelper?.("stealth")
+      || ((message, type = "info", timeout = null) => {
+        const p = (() => {
+          try {
+            const plugin = BdApi.Plugins.get("SoloLevelingToasts");
+            return plugin?.instance?.toastEngineVersion >= 2 ? plugin.instance : null;
+          } catch (_) { return null; }
+        })();
+        if (p) p.showToast(message, type, timeout, { callerId: "stealth" });
+        else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      });
     this.loadSettings();
     this.injectCSS();
     this._initStores();
@@ -102,12 +101,15 @@ module.exports = class Stealth {
       telemetry: 0,
       silent: 0,
       process: 0,
-      readReceipts: 0
+      readReceipts: 0,
     };
+
     this._installPatches();
     this._syncStatusPolicy();
+
     this._toast("Stealth engaged", "success");
   }
+
   stop() {
     this._unsubscribeFluxEvents();
     if (this._dispatcherPollTimer) {
@@ -116,21 +118,24 @@ module.exports = class Stealth {
     }
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
+
     if (this.settings.restoreStatusOnStop) {
       this._restoreOriginalStatus();
     }
+
     BdApi.Patcher.unpatchAll(STEALTH_PLUGIN_ID);
     BdApi.DOM.removeStyle(STEALTH_STYLE_ID);
   }
+
   loadSettings() {
     try {
-      if (typeof (_PluginUtils == null ? void 0 : _PluginUtils.loadSettings) === "function") {
+      if (typeof _PluginUtils?.loadSettings === "function") {
         this.settings = _PluginUtils.loadSettings(STEALTH_PLUGIN_ID, DEFAULT_SETTINGS);
       } else {
         const saved = BdApi.Data.load(STEALTH_PLUGIN_ID, "settings");
         this.settings = {
           ...DEFAULT_SETTINGS,
-          ...saved && typeof saved === "object" ? saved : {}
+          ...(saved && typeof saved === "object" ? saved : {}),
         };
       }
     } catch (error) {
@@ -138,9 +143,10 @@ module.exports = class Stealth {
       this.settings = { ...DEFAULT_SETTINGS };
     }
   }
+
   saveSettings() {
     try {
-      if (typeof (_PluginUtils == null ? void 0 : _PluginUtils.saveSettings) === "function") {
+      if (typeof _PluginUtils?.saveSettings === "function") {
         _PluginUtils.saveSettings(STEALTH_PLUGIN_ID, this.settings);
       } else {
         BdApi.Data.save(STEALTH_PLUGIN_ID, "settings", this.settings);
@@ -149,27 +155,32 @@ module.exports = class Stealth {
       this._logWarning("SETTINGS", "Failed to persist settings", error, "settings-save");
     }
   }
+
   // ── Store + Flux Dispatcher Wiring ─────────────────────────────────────
   _initStores() {
     try {
       this._stores.user = BdApi.Webpack.getStore("UserStore");
+
       this._stores.presence = BdApi.Webpack.getStore("PresenceStore");
     } catch (error) {
       this._logWarning("WEBPACK", "Failed to initialize User/Presence stores", error, "stores-init");
     }
   }
+
   _initDispatcher() {
-    var _a;
-    this._Dispatcher = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a.call(_PluginUtils)) || null;
+    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+
     if (this._Dispatcher) {
       this._subscribeFluxEvents();
       return;
     }
+
+    // Poll for late-loading Dispatcher (same pattern as ShadowSenses)
     let attempt = 0;
     this._dispatcherPollTimer = setInterval(() => {
-      var _a2;
       attempt++;
-      this._Dispatcher = ((_a2 = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a2.call(_PluginUtils)) || null;
+      this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+
       if (this._Dispatcher) {
         clearInterval(this._dispatcherPollTimer);
         this._dispatcherPollTimer = null;
@@ -183,41 +194,50 @@ module.exports = class Stealth {
       }
     }, 500);
   }
+
   _subscribeFluxEvents() {
     if (!this._Dispatcher) return;
+
     const events = {
       PRESENCE_UPDATES: () => {
         if (!this.settings.enabled || !this.settings.invisibleStatus) return;
         this._ensureInvisibleStatus();
       },
+
       IDLE: () => {
         if (!this.settings.enabled || !this.settings.suppressIdle) return;
         this._recordSuppressed("idle");
         this._ensureInvisibleStatus();
       },
+
       AFK: () => {
         if (!this.settings.enabled || !this.settings.suppressIdle) return;
         this._recordSuppressed("idle");
         this._ensureInvisibleStatus();
       },
+
       TRACK: () => {
         if (!this.settings.enabled || !this.settings.suppressTelemetry) return;
         this._recordSuppressed("telemetry");
       },
+
       CONNECTION_OPEN: () => {
         if (this.settings.enabled && this.settings.suppressTelemetry) {
           this._disableSentryAndTelemetry();
         }
         if (this.settings.enabled && this.settings.invisibleStatus) {
-          setTimeout(() => this._ensureInvisibleStatus(), 1e3);
+          setTimeout(() => this._ensureInvisibleStatus(), 1000);
         }
       },
+
       // Fires when user changes status via Discord's UI status picker
       USER_SETTINGS_PROTO_UPDATE: () => {
         if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+        // Small delay so Discord applies the setting, then we override
         setTimeout(() => this._ensureInvisibleStatus(), 300);
-      }
+      },
     };
+
     for (const [eventName, handler] of Object.entries(events)) {
       try {
         this._Dispatcher.subscribe(eventName, handler);
@@ -227,8 +247,10 @@ module.exports = class Stealth {
       }
     }
   }
+
   _unsubscribeFluxEvents() {
     if (!this._Dispatcher) return;
+
     for (const [eventName, handler] of this._fluxHandlers.entries()) {
       try {
         this._Dispatcher.unsubscribe(eventName, handler);
@@ -238,6 +260,7 @@ module.exports = class Stealth {
     }
     this._fluxHandlers.clear();
   }
+
   // ── Patch Installation ─────────────────────────────────────────────────
   _installPatches() {
     this._patchTypingIndicators();
@@ -248,10 +271,15 @@ module.exports = class Stealth {
     this._initProtoUtils();
     this._patchProtoStatusUpdate();
   }
+
   _patchTypingIndicators() {
     let patched = 0;
+
+    // Primary patch path from InvisibleTyping's approach: patch TypingModule.startTyping directly.
     try {
-      const typingModule = BdApi.Webpack.getByKeys("startTyping", "stopTyping") || BdApi.Webpack.getByKeys("startTyping");
+      const typingModule =
+        BdApi.Webpack.getByKeys("startTyping", "stopTyping") ||
+        BdApi.Webpack.getByKeys("startTyping");
       if (typingModule && typeof typingModule.startTyping === "function") {
         BdApi.Patcher.instead(
           STEALTH_PLUGIN_ID,
@@ -260,7 +288,7 @@ module.exports = class Stealth {
           (ctx, args, original) => {
             if (this.settings.enabled && this.settings.suppressTyping) {
               this._recordSuppressed("typing");
-              return void 0;
+              return undefined;
             }
             return original.apply(ctx, args);
           }
@@ -274,7 +302,7 @@ module.exports = class Stealth {
           "stopTyping",
           (ctx, args, original) => {
             if (this.settings.enabled && this.settings.suppressTyping) {
-              return void 0;
+              return undefined;
             }
             return original.apply(ctx, args);
           }
@@ -284,29 +312,34 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("TYPING", "Direct startTyping/stopTyping patch failed", error, "typing-direct");
     }
+
     const fnNames = [
       "sendTyping",
       "sendTypingStart",
       "triggerTyping",
       "startTypingNow",
-      "stopTyping"
+      "stopTyping",
     ];
+
     const keyCombos = [
       ["startTyping", "stopTyping"],
       ["sendTyping", "stopTyping"],
       ["startTyping"],
-      ["sendTyping"]
+      ["sendTyping"],
     ];
+
     patched += this._patchFunctions({
       fnNames,
       keyCombos,
       shouldBlock: () => this.settings.enabled && this.settings.suppressTyping,
       onBlocked: () => this._recordSuppressed("typing"),
       tag: "typing",
-      blockedReturnValue: void 0
+      blockedReturnValue: undefined,
     });
+
     this._patchMetrics.typing = patched;
   }
+
   _patchActivityUpdates() {
     const fnNames = [
       "setActivity",
@@ -315,30 +348,35 @@ module.exports = class Stealth {
       "setRichPresence",
       "setGame",
       "setPlayingStatus",
-      "setNowPlaying"
+      "setNowPlaying",
     ];
+
     const keyCombos = [
       ["setActivity"],
       ["setLocalActivity"],
       ["setCustomStatus"],
       ["setRichPresence"],
-      ["setGame"]
+      ["setGame"],
     ];
+
     const patched = this._patchFunctions({
       fnNames,
       keyCombos,
       shouldBlock: () => this.settings.enabled && this.settings.suppressActivities,
       onBlocked: () => this._recordSuppressed("activities"),
       tag: "activities",
-      blockedReturnValue: void 0
+      blockedReturnValue: undefined,
     });
+
     this._patchMetrics.activities = patched;
   }
+
   _patchTelemetry() {
     let patched = 0;
+
     try {
       const analytics = BdApi.Webpack.getByKeys("AnalyticEventConfigs");
-      if ((analytics == null ? void 0 : analytics.default) && typeof analytics.default.track === "function") {
+      if (analytics?.default && typeof analytics.default.track === "function") {
         BdApi.Patcher.instead(
           STEALTH_PLUGIN_ID,
           analytics.default,
@@ -346,7 +384,7 @@ module.exports = class Stealth {
           (ctx, args, original) => {
             if (this.settings.enabled && this.settings.suppressTelemetry) {
               this._recordSuppressed("telemetry");
-              return void 0;
+              return undefined;
             }
             return original.apply(ctx, args);
           }
@@ -356,17 +394,25 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("TELEMETRY", "Failed to patch analytics tracker", error, "telemetry-analytics");
     }
+
     try {
-      const nativeModule = BdApi.Webpack.getByKeys("getDiscordUtils", "ensureModule") || BdApi.Webpack.getByKeys("ensureModule");
+      const nativeModule =
+        BdApi.Webpack.getByKeys("getDiscordUtils", "ensureModule") ||
+        BdApi.Webpack.getByKeys("ensureModule");
       if (nativeModule && typeof nativeModule.ensureModule === "function") {
         BdApi.Patcher.instead(
           STEALTH_PLUGIN_ID,
           nativeModule,
           "ensureModule",
           (ctx, args, original) => {
-            const moduleName = args == null ? void 0 : args[0];
-            if (this.settings.enabled && this.settings.disableProcessMonitor && typeof moduleName === "string" && moduleName.includes("discord_rpc")) {
-              return void 0;
+            const moduleName = args?.[0];
+            if (
+              this.settings.enabled &&
+              this.settings.disableProcessMonitor &&
+              typeof moduleName === "string" &&
+              moduleName.includes("discord_rpc")
+            ) {
+              return undefined;
             }
             return original.apply(ctx, args);
           }
@@ -376,9 +422,11 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("TELEMETRY", "Failed to patch native ensureModule", error, "telemetry-native");
     }
+
     this._patchMetrics.telemetry = patched;
     this._applyStealthHardening();
   }
+
   _patchAutoSilentMessages() {
     let patched = 0;
     try {
@@ -386,8 +434,9 @@ module.exports = class Stealth {
       if (messageActions && typeof messageActions.sendMessage === "function") {
         BdApi.Patcher.before(STEALTH_PLUGIN_ID, messageActions, "sendMessage", (_ctx, args) => {
           if (!this.settings.enabled || !this.settings.autoSilentMessages) return;
-          const message = args == null ? void 0 : args[1];
+          const message = args?.[1];
           if (!message || typeof message.content !== "string") return;
+
           const content = message.content.trimStart();
           if (!content || content.startsWith("@silent") || content.startsWith("/")) return;
           message.content = `@silent ${message.content}`;
@@ -398,26 +447,36 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("SILENT", "Failed to patch sendMessage for @silent mode", error, "silent-patch");
     }
+
     this._patchMetrics.silent = patched;
   }
+
   _patchReadReceipts() {
     let patched = 0;
+
+    // Strategy 1: Patch ack/bulkAck on the unread-tracking module
+    // Discord calls these when you view a channel to tell the server you've read messages.
     const ackFnNames = ["ack", "bulkAck", "ackChannel"];
     const ackKeyCombos = [
       ["ack", "bulkAck"],
       ["ack", "ackChannel"],
-      ["ack"]
+      ["ack"],
     ];
+
     patched += this._patchFunctions({
       fnNames: ackFnNames,
       keyCombos: ackKeyCombos,
       shouldBlock: () => this.settings.enabled && this.settings.suppressReadReceipts,
       onBlocked: () => this._recordSuppressed("readReceipts"),
       tag: "readReceipts",
-      blockedReturnValue: Promise.resolve()
+      blockedReturnValue: Promise.resolve(),
     });
+
+    // Strategy 2: Patch the HTTP-level unread ack endpoint
+    // Some Discord versions call a lower-level module with "markRead" or "ackMessages".
     try {
-      const markReadModule = BdApi.Webpack.getByKeys("markRead") || BdApi.Webpack.getByKeys("ackMessages");
+      const markReadModule = BdApi.Webpack.getByKeys("markRead") ||
+        BdApi.Webpack.getByKeys("ackMessages");
       if (markReadModule) {
         for (const fn of ["markRead", "ackMessages"]) {
           if (typeof markReadModule[fn] === "function") {
@@ -440,32 +499,36 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("READ_RECEIPTS", "Failed to patch markRead/ackMessages", error, "ack-mark-read");
     }
+
     this._patchMetrics.readReceipts = patched;
   }
+
   _applyStealthHardening() {
     if (!this.settings.enabled) return;
     if (this.settings.suppressTelemetry) this._disableSentryAndTelemetry();
     if (this.settings.disableProcessMonitor) this._disableProcessMonitor();
   }
+
   _disableSentryAndTelemetry() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
     try {
-      (_d = (_a = window == null ? void 0 : window.__SENTRY__) == null ? void 0 : _a.globalEventProcessors) == null ? void 0 : _d.splice(
+      window?.__SENTRY__?.globalEventProcessors?.splice(
         0,
-        ((_c = (_b = window == null ? void 0 : window.__SENTRY__) == null ? void 0 : _b.globalEventProcessors) == null ? void 0 : _c.length) || 0
+        window?.__SENTRY__?.globalEventProcessors?.length || 0
       );
-      (_g = (_f = (_e = window == null ? void 0 : window.__SENTRY__) == null ? void 0 : _e.logger) == null ? void 0 : _f.disable) == null ? void 0 : _g.call(_f);
-      const sentryHub = (_i = (_h = window == null ? void 0 : window.DiscordSentry) == null ? void 0 : _h.getCurrentHub) == null ? void 0 : _i.call(_h);
+      window?.__SENTRY__?.logger?.disable?.();
+
+      const sentryHub = window?.DiscordSentry?.getCurrentHub?.();
       if (sentryHub) {
-        (_l = (_k = (_j = sentryHub.getClient) == null ? void 0 : _j.call(sentryHub)) == null ? void 0 : _k.close) == null ? void 0 : _l.call(_k, 0);
-        const scope = (_m = sentryHub.getScope) == null ? void 0 : _m.call(sentryHub);
-        (_n = scope == null ? void 0 : scope.clear) == null ? void 0 : _n.call(scope);
-        (_o = scope == null ? void 0 : scope.setFingerprint) == null ? void 0 : _o.call(scope, null);
-        (_p = sentryHub.setUser) == null ? void 0 : _p.call(sentryHub, null);
-        (_q = sentryHub.setTags) == null ? void 0 : _q.call(sentryHub, {});
-        (_r = sentryHub.setExtras) == null ? void 0 : _r.call(sentryHub, {});
-        (_s = sentryHub.endSession) == null ? void 0 : _s.call(sentryHub);
+        sentryHub.getClient?.()?.close?.(0);
+        const scope = sentryHub.getScope?.();
+        scope?.clear?.();
+        scope?.setFingerprint?.(null);
+        sentryHub.setUser?.(null);
+        sentryHub.setTags?.({});
+        sentryHub.setExtras?.({});
+        sentryHub.endSession?.();
       }
+
       for (const key in console) {
         if (!Object.prototype.hasOwnProperty.call(console, key)) continue;
         const current = console[key];
@@ -477,46 +540,49 @@ module.exports = class Stealth {
       this._logWarning("TELEMETRY", "Failed while disabling Sentry hooks", error, "telemetry-sentry");
     }
   }
+
   _disableProcessMonitor() {
-    var _a, _b;
     let patched = 0;
     try {
       const settingsManager = BdApi.Webpack.getModule(
-        (m) => (m == null ? void 0 : m.updateAsync) && (m == null ? void 0 : m.type) === 1,
+        (m) => m?.updateAsync && m?.type === 1,
         { searchExports: true }
       );
       const boolSetting = BdApi.Webpack.getModule(
-        (m) => {
-          var _a2;
-          return (_a2 = m == null ? void 0 : m.typeName) == null ? void 0 : _a2.includes("Bool");
-        },
+        (m) => m?.typeName?.includes("Bool"),
         { searchExports: true }
       );
-      settingsManager == null ? void 0 : settingsManager.updateAsync(
+      settingsManager?.updateAsync(
         "status",
         (settings) => {
-          settings.showCurrentGame = (boolSetting == null ? void 0 : boolSetting.create) ? boolSetting.create({ value: false }) : false;
+          settings.showCurrentGame = boolSetting?.create
+            ? boolSetting.create({ value: false })
+            : false;
         },
         0
       );
     } catch (error) {
       this._logWarning("PROCESS", "Failed to force disable current-game visibility", error, "process-status");
     }
+
     try {
       const nativeModule = BdApi.Webpack.getByKeys("getDiscordUtils");
-      const discordUtils = (_a = nativeModule == null ? void 0 : nativeModule.getDiscordUtils) == null ? void 0 : _a.call(nativeModule);
+      const discordUtils = nativeModule?.getDiscordUtils?.();
       if (!discordUtils) {
         this._patchMetrics.process = Math.max(this._patchMetrics.process, patched);
         return;
       }
-      (_b = discordUtils.setObservedGamesCallback) == null ? void 0 : _b.call(discordUtils, [], () => {
-      });
-      if (typeof discordUtils.setObservedGamesCallback === "function" && !this._processMonitorPatched) {
+
+      discordUtils.setObservedGamesCallback?.([], () => {});
+      if (
+        typeof discordUtils.setObservedGamesCallback === "function" &&
+        !this._processMonitorPatched
+      ) {
         BdApi.Patcher.instead(
           STEALTH_PLUGIN_ID,
           discordUtils,
           "setObservedGamesCallback",
-          () => void 0
+          () => undefined
         );
         this._processMonitorPatched = true;
         patched += 1;
@@ -524,19 +590,24 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("PROCESS", "Failed to neutralize observed-games callback", error, "process-observe");
     }
+
     this._patchMetrics.process = Math.max(this._patchMetrics.process, patched);
   }
+
   _patchFunctions({ fnNames, keyCombos, shouldBlock, onBlocked, tag, blockedReturnValue }) {
     const modules = this._collectModules(fnNames, keyCombos);
     let patchedCount = 0;
+
     modules.forEach((mod) => {
       fnNames.forEach((fn) => {
         if (!mod || typeof mod[fn] !== "function") return;
+
         BdApi.Patcher.instead(STEALTH_PLUGIN_ID, mod, fn, (ctx, args, original) => {
           if (shouldBlock()) {
             onBlocked();
             return blockedReturnValue;
           }
+
           try {
             return original.apply(ctx, args);
           } catch (error) {
@@ -544,18 +615,23 @@ module.exports = class Stealth {
             return blockedReturnValue;
           }
         });
+
         patchedCount += 1;
       });
     });
+
     return patchedCount;
   }
+
   _collectModules(fnNames, keyCombos) {
     const modules = [];
+
     const add = (m) => {
       if (m && (typeof m === "object" || typeof m === "function")) {
         modules.push(m);
       }
     };
+
     keyCombos.forEach((keys) => {
       try {
         if (Array.isArray(keys) && keys.length) {
@@ -570,6 +646,7 @@ module.exports = class Stealth {
         );
       }
     });
+
     try {
       add(
         BdApi.Webpack.getModule(
@@ -579,22 +656,28 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("WEBPACK", "Fallback module scan failed", error, "collect-fallback-scan");
     }
+
     return this._dedupeModules(modules);
   }
+
   _dedupeModules(modules) {
     const unique = [];
-    const seen = /* @__PURE__ */ new Set();
+    const seen = new Set();
+
     modules.forEach((mod) => {
       if (!mod) return;
       if (seen.has(mod)) return;
       seen.add(mod);
       unique.push(mod);
     });
+
     return unique;
   }
+
   // ── Status Policy + Proto Integration ─────────────────────────────────
   _syncStatusPolicy() {
     const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
+
     if (!shouldForceInvisible) {
       if (this._forcedInvisible) {
         this._restoreOriginalStatus();
@@ -602,17 +685,23 @@ module.exports = class Stealth {
       }
       return;
     }
+
+    // Event-driven: proto patch intercepts at source, flux listener is safety net.
+    // No polling needed — _patchProtoStatusUpdate() and USER_SETTINGS_PROTO_UPDATE handle it.
     const forced = this._ensureInvisibleStatus();
     if (!forced && this.settings.showToasts) {
       this._toast("Stealth: could not force Invisible status", "warning");
     }
   }
+
   _resolveStatusSetters() {
     const candidates = [];
-    const add = (module2, fnName) => {
-      if (!module2 || typeof module2[fnName] !== "function") return;
-      candidates.push({ module: module2, fnName });
+
+    const add = (module, fnName) => {
+      if (!module || typeof module[fnName] !== "function") return;
+      candidates.push({ module, fnName });
     };
+
     const addByKeys = (...keys) => {
       try {
         const mod = BdApi.Webpack.getByKeys(...keys);
@@ -627,10 +716,12 @@ module.exports = class Stealth {
         );
       }
     };
+
     addByKeys("setStatus", "getStatus");
     addByKeys("setStatus");
     addByKeys("updateStatus");
     addByKeys("setPresence");
+
     try {
       const mod = BdApi.Webpack.getModule(
         (m) => m && typeof m.setStatus === "function"
@@ -639,78 +730,91 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("STATUS", "Fallback setStatus module scan failed", error, "status-fallback-scan");
     }
+
     const unique = [];
-    const seen = /* @__PURE__ */ new WeakMap();
+    const seen = new WeakMap();
+
     candidates.forEach((entry) => {
-      const { module: module2, fnName } = entry;
-      if (!seen.has(module2)) {
-        seen.set(module2, /* @__PURE__ */ new Set());
+      const { module, fnName } = entry;
+      if (!seen.has(module)) {
+        seen.set(module, new Set());
       }
-      const fnSet = seen.get(module2);
+      const fnSet = seen.get(module);
       if (fnSet.has(fnName)) return;
       fnSet.add(fnName);
       unique.push(entry);
     });
+
     return unique;
   }
+
   /** Find Discord's PreloadedUserSettings proto module.
    *  This is the REAL status-change mechanism in modern Discord —
    *  updateAsync("status", cb) is what the UI status picker calls. */
   _initProtoUtils() {
-    var _a;
     try {
+      // Collect ALL proto settings objects with updateAsync (searchExports needed — not top-level)
       const allProtos = [];
       BdApi.Webpack.getModule((exp) => {
         try {
           if (typeof exp.updateAsync === "function") allProtos.push(exp);
-        } catch (e) {
-        }
+        } catch (e) { /* skip */ }
         return false;
       }, { searchExports: true });
+
+      // Pick PreloadedUserSettings by typeName
       for (const p of allProtos) {
         try {
-          if (String(((_a = p.ProtoClass) == null ? void 0 : _a.typeName) || "").includes("PreloadedUserSettings")) {
+          if (String(p.ProtoClass?.typeName || "").includes("PreloadedUserSettings")) {
             this._protoUtils = p;
             if (this.settings.debugMode) console.log("[Stealth] Proto settings acquired (PreloadedUserSettings)");
             return;
           }
-        } catch (e) {
-        }
+        } catch (e) { /* skip */ }
       }
-      if (this.settings.debugMode) console.warn("[Stealth] All strategies failed \u2014 no proto with 'status' field found");
+
+      if (this.settings.debugMode) console.warn("[Stealth] All strategies failed — no proto with 'status' field found");
     } catch (err) {
       this._logWarning("STATUS", "Failed to find PreloadedUserSettings proto module", err, "proto-init");
     }
   }
+
   /** Patch updateAsync so ANY status change via the proto system
    *  (including Discord's own UI status picker) gets forced to invisible.
    *  Proto status enum: 0=unset, 1=online, 2=idle, 3=dnd, 4=invisible */
   _patchProtoStatusUpdate() {
     if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") {
-      this._logWarning("STATUS", "Proto utils unavailable \u2014 cannot intercept proto status changes", null, "proto-patch-skip");
+      this._logWarning("STATUS", "Proto utils unavailable — cannot intercept proto status changes", null, "proto-patch-skip");
       return;
     }
+
     BdApi.Patcher.before(STEALTH_PLUGIN_ID, this._protoUtils, "updateAsync", (_ctx, args) => {
       if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+
+      // args[0] = setting group key ("status", "appearance", etc.)
+      // args[1] = callback that mutates the proto settings
       if (args[0] === "status" && typeof args[1] === "function") {
         const originalCallback = args[1];
         args[1] = (data) => {
           originalCallback(data);
-          if (data == null ? void 0 : data.status) {
+          // Force invisible after the original callback sets whatever it wants
+          if (data?.status) {
             data.status.value = "invisible";
           }
         };
       }
     });
   }
+
   /** Direct proto call to set status to invisible — used by _ensureInvisibleStatus
    *  as primary method, with legacy setStatus as fallback. */
   _setStatusViaProto(statusString) {
     if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") return false;
+
     try {
       this._protoUtils.updateAsync("status", (data) => {
-        if (data == null ? void 0 : data.status) {
-          data.status.value = statusString;
+        if (data?.status) {
+          data.status.value = statusString; // "invisible", "online", "idle", "dnd"
         }
       }, 0);
       return true;
@@ -719,73 +823,93 @@ module.exports = class Stealth {
       return false;
     }
   }
+
   _ensureInvisibleStatus() {
     const current = this._getCurrentStatus();
+
     if (current && current !== "invisible" && !this._originalStatus) {
       this._originalStatus = current;
     }
+
     if (current === "invisible") {
       this._forcedInvisible = true;
       return true;
     }
+
+    // Try proto method first (Discord's actual status system)
     if (this._setStatusViaProto("invisible")) {
       this._forcedInvisible = true;
       return true;
     }
+
+    // Fallback to legacy setStatus
     const updated = this._setStatus("invisible");
     if (updated) {
       this._forcedInvisible = true;
     }
+
     return updated;
   }
+
   _setStatus(status) {
     if (!status) return false;
     if (!Array.isArray(this._statusSetters) || this._statusSetters.length === 0) {
       this._statusSetters = this._resolveStatusSetters();
     }
+
     let lastError = null;
     for (const entry of this._statusSetters) {
-      const { module: module2, fnName } = entry;
+      const { module, fnName } = entry;
       try {
         if (fnName === "setPresence") {
           try {
-            module2[fnName].call(module2, { status });
+            module[fnName].call(module, { status });
           } catch (presenceError) {
             this._logWarning("STATUS", `setPresence({status}) failed, trying plain string`, presenceError, "status-presence-obj");
-            module2[fnName].call(module2, status);
+            module[fnName].call(module, status);
           }
           return true;
         }
+
         if (fnName === "updateStatus") {
-          module2[fnName].call(module2, status);
+          module[fnName].call(module, status);
           return true;
         }
-        module2[fnName].call(module2, status);
+
+        module[fnName].call(module, status);
         return true;
       } catch (error) {
         lastError = error;
       }
     }
+
     if (lastError) {
       this._logWarning("STATUS", "All status setter candidates failed", lastError, "status-all-setters-failed");
     }
+
     return false;
   }
+
   _restoreOriginalStatus() {
     if (!this._originalStatus) return;
+
+    // Proto uses string values directly: "online", "idle", "dnd", "invisible"
     if (this._setStatusViaProto(this._originalStatus)) {
       this._originalStatus = null;
       return;
     }
+
+    // Fallback to legacy
     this._setStatus(this._originalStatus);
     this._originalStatus = null;
   }
+
   _getCurrentStatus() {
-    var _a, _b, _c;
     try {
-      const user = (_b = (_a = this._stores.user) == null ? void 0 : _a.getCurrentUser) == null ? void 0 : _b.call(_a);
-      const userId = user == null ? void 0 : user.id;
-      if (userId && ((_c = this._stores.presence) == null ? void 0 : _c.getStatus)) {
+      const user = this._stores.user?.getCurrentUser?.();
+      const userId = user?.id;
+
+      if (userId && this._stores.presence?.getStatus) {
         const status = this._stores.presence.getStatus(userId);
         if (typeof status === "string") {
           return status.toLowerCase();
@@ -794,28 +918,32 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("STATUS", "Failed reading current presence status", error, "status-read");
     }
+
     return null;
   }
+
   // ── Diagnostics / Warning Throttle ────────────────────────────────────
   _trimWarningTimestamps(now, targetSize = 192) {
     if (this._warningTimestamps.size <= 256) return;
-    const staleBefore = now - 5 * 60 * 1e3;
+    const staleBefore = now - 5 * 60 * 1000;
     for (const [mapKey, timestamp] of this._warningTimestamps) {
       if (timestamp < staleBefore) this._warningTimestamps.delete(mapKey);
       if (this._warningTimestamps.size <= targetSize) return;
     }
     while (this._warningTimestamps.size > targetSize) {
       const oldestKey = this._warningTimestamps.keys().next().value;
-      if (oldestKey === void 0) break;
+      if (oldestKey === undefined) break;
       this._warningTimestamps.delete(oldestKey);
     }
   }
+
   _shouldThrottleWarning(key, now, throttleMs) {
     const lastTs = this._warningTimestamps.get(key) || 0;
     if (now - lastTs < throttleMs) return true;
     this._warningTimestamps.set(key, now);
     return false;
   }
+
   _printWarning(scope, message, error) {
     const prefix = `[${STEALTH_PLUGIN_ID}][${scope}] ${message}`;
     if (error) {
@@ -824,23 +952,30 @@ module.exports = class Stealth {
     }
     console.warn(prefix);
   }
+
   _logWarning(scope, message, error = null, throttleKey = null) {
     const key = throttleKey || `${scope}:${message}`;
     const now = Date.now();
-    const throttleMs = 15e3;
+    const throttleMs = 15000;
     this._trimWarningTimestamps(now);
     if (this._shouldThrottleWarning(key, now, throttleMs)) return;
     this._printWarning(scope, message, error);
   }
+
   _recordSuppressed(kind) {
     const now = Date.now();
     const last = this._suppressEventLog[kind] || 0;
-    if (now - last < 3e3) return;
+
+    // Throttle logs/toasts for suppressed events.
+    if (now - last < 3000) return;
+
     this._suppressEventLog[kind] = now;
   }
+
   _isStatusPolicySetting(key) {
     return key === "enabled" || key === "invisibleStatus";
   }
+
   _handleStatusPolicySettingChange(key) {
     this._syncStatusPolicy();
     this._applyStealthHardening();
@@ -850,57 +985,69 @@ module.exports = class Stealth {
       this.settings.enabled ? "success" : "info"
     );
   }
+
   _shouldReapplyHardeningForSetting(key) {
     return (key === "suppressTelemetry" || key === "disableProcessMonitor") && this.settings.enabled;
   }
+
   _setSetting(key, value) {
     this.settings[key] = value;
     this.saveSettings();
+
     if (this._isStatusPolicySetting(key)) {
       this._handleStatusPolicySettingChange(key);
       return;
     }
+
     if (key === "showToasts") return;
     if (this._shouldReapplyHardeningForSetting(key)) {
       this._applyStealthHardening();
       return;
     }
+
     if (key === "restoreStatusOnStop" && !this.settings.restoreStatusOnStop) {
       this._originalStatus = null;
       return;
     }
   }
+
   // ── Settings UI ────────────────────────────────────────────────────────
   getSettingsPanel() {
     const React = BdApi.React;
     const self = this;
+
     const rowStyle = {
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
       gap: "12px",
       padding: "10px 0",
-      borderBottom: "1px solid rgba(255,255,255,0.06)"
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
     };
+
     const labelWrapStyle = {
       display: "flex",
       flexDirection: "column",
       gap: "2px",
-      flex: 1
+      flex: 1,
     };
+
     const titleStyle = {
       color: "#e9d5ff",
       fontFamily: "'Orbitron', sans-serif",
       fontWeight: 700,
       fontSize: "13px",
-      letterSpacing: "0.04em"
+      letterSpacing: "0.04em",
     };
+
     const descStyle = {
       color: "rgba(220, 220, 230, 0.72)",
       fontSize: "12px",
-      lineHeight: 1.3
+      lineHeight: 1.3,
     };
+
     const checkStyle = { accentColor: "#8a2be2", width: "16px", height: "16px" };
+
     const Header = () => React.createElement(
       "div",
       {
@@ -909,8 +1056,8 @@ module.exports = class Stealth {
           border: "1px solid rgba(138,43,226,0.4)",
           borderRadius: "10px",
           marginBottom: "14px",
-          background: "linear-gradient(135deg, rgba(32, 15, 52, 0.7), rgba(12, 8, 20, 0.8))"
-        }
+          background: "linear-gradient(135deg, rgba(32, 15, 52, 0.7), rgba(12, 8, 20, 0.8))",
+        },
       },
       React.createElement(
         "div",
@@ -920,8 +1067,8 @@ module.exports = class Stealth {
             fontFamily: "'Orbitron', sans-serif",
             fontSize: "14px",
             fontWeight: 700,
-            marginBottom: "6px"
-          }
+            marginBottom: "6px",
+          },
         },
         "Shadow Monarch Stealth"
       ),
@@ -931,11 +1078,14 @@ module.exports = class Stealth {
         "Total concealment: hide typing, force Invisible, suppress idle detection, silence messages, erase telemetry footprints, and sever process monitoring."
       )
     );
+
     const SettingRow = ({ settingKey, title, description }) => {
       const [checked, setChecked] = React.useState(Boolean(self.settings[settingKey]));
+
       React.useEffect(() => {
         setChecked(Boolean(self.settings[settingKey]));
       }, [settingKey]);
+
       return React.createElement(
         "div",
         { style: rowStyle },
@@ -953,10 +1103,11 @@ module.exports = class Stealth {
             const value = Boolean(e.target.checked);
             setChecked(value);
             self._setSetting(settingKey, value);
-          }
+          },
         })
       );
     };
+
     const Metrics = () => React.createElement(
       "div",
       {
@@ -968,11 +1119,12 @@ module.exports = class Stealth {
           border: "1px solid rgba(138,43,226,0.25)",
           color: "rgba(226,232,240,0.82)",
           fontSize: "12px",
-          lineHeight: 1.4
-        }
+          lineHeight: 1.4,
+        },
       },
       `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}, readReceipts ${self._patchMetrics.readReceipts}`
     );
+
     const Panel = () => React.createElement(
       "div",
       {
@@ -983,69 +1135,71 @@ module.exports = class Stealth {
           background: "rgba(8, 8, 14, 0.92)",
           border: "1px solid rgba(138,43,226,0.35)",
           boxShadow: "0 0 24px rgba(138,43,226,0.18)",
-          color: "#d4d4dc"
-        }
+          color: "#d4d4dc",
+        },
       },
       React.createElement(Header),
       React.createElement(SettingRow, {
         settingKey: "enabled",
         title: "Master Stealth",
-        description: "Global toggle for all stealth suppression rules."
+        description: "Global toggle for all stealth suppression rules.",
       }),
       React.createElement(SettingRow, {
         settingKey: "suppressTyping",
         title: "Conceal Typing",
-        description: "Blocks outbound typing indicators so others do not see when you are typing."
+        description: "Blocks outbound typing indicators so others do not see when you are typing.",
       }),
       React.createElement(SettingRow, {
         settingKey: "invisibleStatus",
         title: "Force Invisible Status",
-        description: "Automatically keeps your presence status set to Invisible."
+        description: "Automatically keeps your presence status set to Invisible.",
       }),
       React.createElement(SettingRow, {
         settingKey: "suppressActivities",
         title: "Hide Activity Updates",
-        description: "Suppresses outbound activity updates (custom status / game activity module calls)."
+        description: "Suppresses outbound activity updates (custom status / game activity module calls).",
       }),
       React.createElement(SettingRow, {
         settingKey: "suppressTelemetry",
         title: "Erase Tracking Footprints",
-        description: "Blocks analytics tracking and disables Sentry telemetry hooks where possible."
+        description: "Blocks analytics tracking and disables Sentry telemetry hooks where possible.",
       }),
       React.createElement(SettingRow, {
         settingKey: "disableProcessMonitor",
         title: "Sever Process Monitor",
-        description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring."
+        description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring.",
       }),
       React.createElement(SettingRow, {
         settingKey: "suppressIdle",
         title: "Suppress Idle Detection",
-        description: "Blocks idle/AFK state transitions that can leak presence information."
+        description: "Blocks idle/AFK state transitions that can leak presence information.",
       }),
       React.createElement(SettingRow, {
         settingKey: "autoSilentMessages",
         title: "Silent Whisper (@silent)",
-        description: "Prefixes normal text messages with @silent automatically (slash commands are skipped)."
+        description: "Prefixes normal text messages with @silent automatically (slash commands are skipped).",
       }),
       React.createElement(SettingRow, {
         settingKey: "suppressReadReceipts",
         title: "Block Read Receipts",
-        description: "Blocks outbound read acknowledgments \u2014 channels/DMs never mark as read for other users."
+        description: "Blocks outbound read acknowledgments — channels/DMs never mark as read for other users.",
       }),
       React.createElement(SettingRow, {
         settingKey: "restoreStatusOnStop",
         title: "Restore Previous Status",
-        description: "When disabled/stopped, revert to your pre-stealth status if captured."
+        description: "When disabled/stopped, revert to your pre-stealth status if captured.",
       }),
       React.createElement(SettingRow, {
         settingKey: "showToasts",
         title: "Show Toasts",
-        description: "Display stealth on/off and warning toasts."
+        description: "Display stealth on/off and warning toasts.",
       }),
       React.createElement(Metrics)
     );
+
     return React.createElement(Panel);
   }
+
   injectCSS() {
     BdApi.DOM.addStyle(
       STEALTH_STYLE_ID,

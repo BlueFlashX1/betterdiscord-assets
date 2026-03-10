@@ -1,52 +1,74 @@
 /**
- * @name HSLDockAutoHide
- * @description Auto-hide/show bottom horizontal server dock on hover/near-bottom cursor, with dynamic layout shift. Includes user panel dock mover.
- * @version 4.0.1
- * @author Solo Leveling Theme Dev, BlueFlashX1
+ * ============================================================================
+ * REACT PATCHER ARCHITECTURE (v4.0.0)
+ * ============================================================================
+ *
+ * Injects via MainContent.Z React patcher (same proven target as ChatNavArrows,
+ * SoloLevelingStats, LevelProgressBar, ShadowArmy).  A <DockAutoHideController>
+ * functional component manages a DockEngine instance via useRef.  The engine
+ * holds ALL imperative state (mouse tracking, timers, typing detection) — no
+ * useState to avoid re-renders on mouse events.
+ *
+ * React effects handle:
+ *   - Engine mount/unmount (event listeners, intervals)
+ *   - DOM element discovery on every React render (instant recovery)
+ *
+ * Previous approach (v3.0.1): 850ms polling via safeTick() to re-discover
+ * dock and user panel elements.  Now the React patcher fires instantly on
+ * channel navigation / Discord re-renders, eliminating the stale-reference
+ * window.  safeTick() is retained at reduced scope for alert rail, geometry,
+ * and typing lock enforcement.
+ *
+ * TABLE OF CONTENTS
+ * 1) Loader + Selector Constants
+ * 2) DockEngine (imperative state machine)
+ * 3) HSLDockAutoHide (plugin lifecycle)
+ * 4) React patcher + fallback mount
+ * 5) Static CSS
  */
 
-// src/HSLDockAutoHide/index.js
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 function _bdLoad(fileName) {
   if (!fileName) return null;
   try {
-    const fs = require("fs");
-    const path = require("path");
+    const fs = require('fs');
+    const path = require('path');
     const fullPath = path.join(BdApi.Plugins.folder, fileName);
-    const source = fs.readFileSync(fullPath, "utf8");
+    const source = fs.readFileSync(fullPath, 'utf8');
     const moduleObj = { exports: {} };
     const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
     );
     const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
     const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {
-  }
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
   return null;
 }
-var _PluginUtils;
-try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
-} catch (_) {
-  _PluginUtils = null;
-}
-var DOCK_SELECTORS = [
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
+// ─── Selector Configuration ─────────────────────────────────────────────────
+// Centralized for easy updating when Discord changes class names.
+
+const DOCK_SELECTORS = [
   "nav[aria-label='Servers sidebar']",
   "nav[aria-label='Servers']",
   "nav[class*='guilds_']",
-  "[class*='guilds_'][class*='wrapper_']"
+  "[class*='guilds_'][class*='wrapper_']",
 ];
-var PANEL_SELECTORS = [
+
+const PANEL_SELECTORS = [
   "section[aria-label='User status and settings']",
-  "section[class*='panels_'] > section"
+  "section[class*='panels_'] > section",
 ];
-var COMPOSER_CONTAINER_SELECTORS = [
+
+const COMPOSER_CONTAINER_SELECTORS = [
   "form[class*='form_']",
   "div[class*='channelBottomBarArea_']",
   "div[class*='channelTextArea_']",
@@ -56,9 +78,10 @@ var COMPOSER_CONTAINER_SELECTORS = [
   "div[class*='slateContainer_']",
   "div[class*='slateTextArea_']",
   "div[class*='editor_']",
-  "div[class*='markup_']"
+  "div[class*='markup_']",
 ].join(", ");
-var COMPOSER_EDITABLE_SELECTORS = [
+
+const COMPOSER_EDITABLE_SELECTORS = [
   "textarea",
   "input[type='text']",
   "input[type='search']",
@@ -66,31 +89,41 @@ var COMPOSER_EDITABLE_SELECTORS = [
   "[role='textbox']",
   "[contenteditable='']",
   "[contenteditable='true']",
-  "[contenteditable='plaintext-only']"
+  "[contenteditable='plaintext-only']",
 ].join(", ");
-var ALERT_SELECTORS = [
+
+const ALERT_SELECTORS = [
   "[class*='listItem'] [class*='mentionsBadge']",
   "[class*='listItem'] [aria-label*='mention' i]",
   "[class*='pill'] [class*='mentionsBadge']",
   "[class*='pill'] [aria-label*='mention' i]",
   "[class*='numberBadge']",
-  "[class*='mentionsBadge']"
+  "[class*='mentionsBadge']",
 ];
-var DockEngine = class {
+
+// ─── DockEngine — Imperative State Machine ──────────────────────────────────
+// A plain JS class that holds ALL dock interaction state and logic.
+// Created once per mount by the React component.  NOT a React component itself.
+
+class DockEngine {
   constructor() {
     this.version = "4.0.0";
     this.stateTarget = document.body;
     this.root = document.documentElement;
+
+    // ── Config ──
     this.peekPx = 8;
     this.revealZonePx = 85;
     this.hideDelayMs = 220;
     this.revealHoldMs = 900;
     this.revealConfirmMs = 140;
-    this.focusReentryGuardMs = 1e3;
+    this.focusReentryGuardMs = 1000;
     this.composerHideSuppressMs = 1200;
     this.startupLockMs = 6500;
     this.typingLockMs = 2600;
     this.railHeightPx = 9;
+
+    // ── Dynamic state ──
     this.lockOpenUntil = Date.now() + this.startupLockMs;
     this.revealHoldUntil = 0;
     this.suppressOpenUntil = 0;
@@ -102,6 +135,8 @@ var DockEngine = class {
     this.lastMouseY = -1;
     this.lastMouseMoveAt = 0;
     this.hasMouseMoved = false;
+
+    // ── DOM references ──
     this.dock = null;
     this.dockMoveTarget = null;
     this.dockBaseTop = null;
@@ -116,9 +151,13 @@ var DockEngine = class {
     this._onPanelLeave = null;
     this._lastDockHeight = null;
     this._origPanelsHeight = document.body.style.getPropertyValue("--custom-app-panels-height") || null;
+
+    // ── Timers ──
     this.hideTimer = null;
     this.revealTimer = null;
     this.syncInterval = null;
+
+    // ── Debug ──
     this.tickCount = 0;
     this.debugEnabled = false;
     this.debugConsole = false;
@@ -129,6 +168,8 @@ var DockEngine = class {
     this.debugLastNearBottom = null;
     this.debugFilePath = null;
     this.fs = null;
+
+    // ── Bind event handlers ──
     this.onMouseMove = this.onMouseMove.bind(this);
     this.onDockEnter = this.onDockEnter.bind(this);
     this.onDockLeave = this.onDockLeave.bind(this);
@@ -141,17 +182,25 @@ var DockEngine = class {
     this.onComposerFocusIn = this.onComposerFocusIn.bind(this);
     this.safeTick = this.safeTick.bind(this);
   }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
+
   mount() {
     this.initDebugFileSink();
     this.installDebugApi();
     this.debug("mount:init", { version: this.version }, true);
+
+    // Body state
     document.body.style.setProperty("--custom-app-panels-height", "0px");
     document.body.style.removeProperty("--sl-userpanel-width");
     this.stateTarget.classList.add("sl-dock-autohide", "sl-dock-hidden");
     this.stateTarget.classList.remove("sl-dock-visible");
     this.stateTarget.style.setProperty("--sl-dock-peek", `${this.peekPx}px`);
+
+    // Alert rail
     this.createRail();
+
+    // Global event listeners
     document.addEventListener("mousemove", this.onMouseMove, { passive: true });
     document.addEventListener("beforeinput", this.onComposerInput, { capture: true, passive: true });
     document.addEventListener("input", this.onComposerInput, { capture: true, passive: true });
@@ -163,16 +212,22 @@ var DockEngine = class {
     window.addEventListener("blur", this.onWindowBlur, { passive: true });
     window.addEventListener("focus", this.onWindowFocus, { passive: true });
     document.addEventListener("visibilitychange", this.onVisibilityChange, { passive: true });
+
+    // Initial sync + tick
     this.syncDock();
     this.safeTick();
     this.syncInterval = setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden) return; // PERF: Skip when window not visible
       this.safeTick();
-    }, 1500);
+    }, 1500); // 1.5s (was 850ms) — dock state rarely changes
+
     this.debug("mount:ready", { syncIntervalMs: 1500 }, true);
   }
+
   unmount() {
     this.debug("unmount:begin", {}, true);
+
+    // Remove global listeners
     document.removeEventListener("mousemove", this.onMouseMove);
     document.removeEventListener("beforeinput", this.onComposerInput, true);
     document.removeEventListener("input", this.onComposerInput, true);
@@ -184,24 +239,31 @@ var DockEngine = class {
     window.removeEventListener("blur", this.onWindowBlur);
     window.removeEventListener("focus", this.onWindowFocus);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
+
+    // Timers
     this.clearHideTimer();
     this.clearRevealTimer("unmount");
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-    }
+    if (this.syncInterval) { clearInterval(this.syncInterval); this.syncInterval = null; }
+
+    // Dock events
     this.unbindDockEvents();
     if (this.dockMoveTarget) {
       this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
       this.dockMoveTarget.style.removeProperty("translate");
     }
+
+    // Body state
     if (this.stateTarget) {
       this.stateTarget.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
       this.stateTarget.style.removeProperty("--sl-dock-height");
       this.stateTarget.style.removeProperty("--sl-dock-peek");
     }
+
+    // Rail
     this.removeRail();
     this.stopRailFollow();
+
+    // User panel
     this.unbindUserPanelHover();
     if (this.userPanel) {
       this.userPanel.classList.remove("sl-userpanel-docked");
@@ -213,7 +275,11 @@ var DockEngine = class {
     } else {
       document.body.style.removeProperty("--custom-app-panels-height");
     }
+
+    // Debug
     this.removeDebugApi();
+
+    // Null references
     this.dock = null;
     this.dockMoveTarget = null;
     this.userPanel = null;
@@ -221,14 +287,17 @@ var DockEngine = class {
     this.root = null;
     this.stateTarget = null;
   }
+
   // ── Dock Discovery (called by React effect + safeTick) ────────────────────
+
   syncDock() {
     const nextDock = this.findActiveDock();
     if (nextDock === this.dock) return;
     this.debug("dock:change", {
       prev: this.describeDock(this.dock),
-      next: this.describeDock(nextDock)
+      next: this.describeDock(nextDock),
     }, true);
+
     this.unbindDockEvents();
     if (this.dockMoveTarget) this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
     this.dock = nextDock;
@@ -236,6 +305,7 @@ var DockEngine = class {
     this.dockBaseTop = null;
     this.dockBaseLeft = null;
     this.pointerOverDock = false;
+
     if (!this.dock) return;
     if (this.dockMoveTarget) this.dockMoveTarget.classList.add("sl-hsl-dock-target");
     this.mountRailToDock();
@@ -250,47 +320,56 @@ var DockEngine = class {
     this.dock.addEventListener("mouseleave", this.onDockLeave);
     this.debug("dock:bound-events", { dock: this.describeDock(this.dock) });
   }
+
   findActiveDock() {
     const selectorStr = DOCK_SELECTORS.join(", ");
     const docks = Array.from(document.querySelectorAll(selectorStr));
     if (!docks.length) return null;
+
+    // PERF: Batch-read all rects first (single layout pass), then filter in JS
     const measured = [];
     for (const dock of docks) {
       measured.push({ dock, rect: dock.getBoundingClientRect() });
     }
+
     let best = null;
     let bestScore = -Infinity;
     for (const { dock, rect } of measured) {
       if (rect.width < 120 || rect.height < 24) continue;
+      // Only call getComputedStyle on size-qualified candidates (expensive)
       const style = getComputedStyle(dock);
       if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
       const score = rect.width + rect.top * 2;
-      if (score > bestScore) {
-        best = dock;
-        bestScore = score;
-      }
+      if (score > bestScore) { best = dock; bestScore = score; }
     }
+
     const chosen = best || docks[0];
     this.debug("dock:find", { count: docks.length, chosen: this.describeDock(chosen) });
     return chosen;
   }
+
   unbindDockEvents() {
     if (!this.dock) return;
     this.dock.removeEventListener("mouseenter", this.onDockEnter);
     this.dock.removeEventListener("mouseleave", this.onDockLeave);
   }
+
   ensureDockTargetClass() {
     if (!this.dockMoveTarget) return;
     if (!this.dockMoveTarget.classList.contains("sl-hsl-dock-target")) {
       this.dockMoveTarget.classList.add("sl-hsl-dock-target");
     }
   }
+
   // ── User Panel (called by React effect + safeTick) ────────────────────────
+
   trySetupUserPanel() {
     const selectorStr = PANEL_SELECTORS.join(", ");
     const panel = document.querySelector(selectorStr);
     const dock = this.dock;
+
     if (!panel || !dock) return;
+
     if (this.isUserPanelPositioned && panel === this.userPanel) {
       if (!panel.classList.contains("sl-userpanel-docked")) {
         panel.classList.add("sl-userpanel-docked");
@@ -298,21 +377,25 @@ var DockEngine = class {
       if (!this._panelHoverContainer) this.bindUserPanelHover(panel);
       return;
     }
+
     if (this.userPanel && this.userPanel !== panel) {
       this.userPanel.classList.remove("sl-userpanel-docked");
       this.userPanel.style.removeProperty("right");
       this.userPanel.style.removeProperty("left");
     }
+
     this.userPanel = panel;
     panel.classList.add("sl-userpanel-docked");
     this.isUserPanelPositioned = true;
     this.bindUserPanelHover(panel);
     this.debug("userpanel:setup", { found: true }, true);
   }
+
   bindUserPanelHover(panel) {
     this.unbindUserPanelHover();
     const container = panel.querySelector("div[class^='container_']");
     if (!container) return;
+
     this._onPanelEnter = () => {
       if (Date.now() < this.typingLockUntil) return;
       this.pointerOverDock = true;
@@ -325,11 +408,13 @@ var DockEngine = class {
       this.pointerOverDock = false;
       this.scheduleHide(this.hideDelayMs);
     };
+
     container.addEventListener("mouseenter", this._onPanelEnter);
     container.addEventListener("mouseleave", this._onPanelLeave);
     this._panelHoverContainer = container;
     this.debug("userpanel:hover-bridge-bound", {}, true);
   }
+
   unbindUserPanelHover() {
     if (this._panelHoverContainer) {
       if (this._onPanelEnter) this._panelHoverContainer.removeEventListener("mouseenter", this._onPanelEnter);
@@ -339,18 +424,25 @@ var DockEngine = class {
     this._onPanelEnter = null;
     this._onPanelLeave = null;
   }
+
   // ── safeTick — Reduced Scope ──────────────────────────────────────────────
   // Discovery (syncDock, trySetupUserPanel) is now handled by React effects.
   // Tick focuses on: typing enforcement, pointer refresh, alerts, rail, height.
+
   safeTick() {
     try {
       this.tickCount += 1;
       this.debug("tick:begin", { tick: this.tickCount });
+
       if (this.stateTarget && !this.stateTarget.classList.contains("sl-dock-autohide")) {
         this.stateTarget.classList.add("sl-dock-autohide");
       }
+
+      // Still call syncDock + trySetupUserPanel as safety net (reduced urgency)
       this.syncDock();
       this.trySetupUserPanel();
+
+      // Typing lock enforcement
       if (Date.now() < this.typingLockUntil) {
         this.stateTarget.classList.add("sl-dock-composer-lock");
         if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
@@ -362,6 +454,7 @@ var DockEngine = class {
       } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
         this.stateTarget.classList.remove("sl-dock-composer-lock");
       }
+
       this.ensureDockTargetClass();
       this.mountRailToDock();
       this.refreshPointerState();
@@ -371,37 +464,23 @@ var DockEngine = class {
       this.updateDockHeightVar();
       this.updateAlertState();
       this.updateRailGeometry();
+
       this.debug("tick:end", { tick: this.tickCount });
     } catch (err) {
       this.debug("tick:error", { error: String(err) }, true);
     }
   }
+
   // ── Show / Hide State Machine ─────────────────────────────────────────────
+
   showDock(trigger = "unknown") {
-    if (!this.stateTarget) {
-      this.debug("dock:show-blocked", { reason: "no-root" }, true);
-      return;
-    }
-    if (!this.hasMouseMoved) {
-      this.debug("dock:show-blocked", { reason: "no-mouse-move" }, true);
-      return;
-    }
-    if (Date.now() < this.lockOpenUntil) {
-      this.debug("dock:show-blocked", { reason: "startup-lock" }, true);
-      return;
-    }
-    if (this.isOpenSuppressed()) {
-      this.debug("dock:show-blocked", { reason: "focus-guard" }, true);
-      return;
-    }
-    if (Date.now() < this.typingLockUntil) {
-      this.debug("dock:show-blocked", { reason: "typing-active" }, true);
-      return;
-    }
-    if (this.stateTarget.classList.contains("sl-dock-visible")) {
-      this.debug("dock:show-noop", { reason: "already-visible" });
-      return;
-    }
+    if (!this.stateTarget) { this.debug("dock:show-blocked", { reason: "no-root" }, true); return; }
+    if (!this.hasMouseMoved) { this.debug("dock:show-blocked", { reason: "no-mouse-move" }, true); return; }
+    if (Date.now() < this.lockOpenUntil) { this.debug("dock:show-blocked", { reason: "startup-lock" }, true); return; }
+    if (this.isOpenSuppressed()) { this.debug("dock:show-blocked", { reason: "focus-guard" }, true); return; }
+    if (Date.now() < this.typingLockUntil) { this.debug("dock:show-blocked", { reason: "typing-active" }, true); return; }
+    if (this.stateTarget.classList.contains("sl-dock-visible")) { this.debug("dock:show-noop", { reason: "already-visible" }); return; }
+
     this.clearHideTimer();
     this.stateTarget.classList.remove("sl-dock-composer-lock");
     this.stateTarget.classList.add("sl-dock-visible");
@@ -411,25 +490,19 @@ var DockEngine = class {
     this.applyDockStateInline();
     this.startRailFollow(620);
   }
+
   hideDock() {
-    if (!this.stateTarget) {
-      this.debug("dock:hide-blocked", { reason: "no-root" }, true);
-      return;
-    }
-    if (this.shouldKeepDockOpen()) {
-      this.debug("dock:hide-blocked", { reason: "keep-open" }, true);
-      return;
-    }
-    if (this.stateTarget.classList.contains("sl-dock-hidden")) {
-      this.applyDockStateInline();
-      return;
-    }
+    if (!this.stateTarget) { this.debug("dock:hide-blocked", { reason: "no-root" }, true); return; }
+    if (this.shouldKeepDockOpen()) { this.debug("dock:hide-blocked", { reason: "keep-open" }, true); return; }
+    if (this.stateTarget.classList.contains("sl-dock-hidden")) { this.applyDockStateInline(); return; }
+
     this.stateTarget.classList.add("sl-dock-hidden");
     this.stateTarget.classList.remove("sl-dock-visible");
     this.debug("dock:hide-applied", {}, true);
     this.applyDockStateInline();
     this.startRailFollow(620);
   }
+
   applyDockStateInline() {
     if (!this.stateTarget || !this.dockMoveTarget) return;
     const typingActive = Date.now() < this.typingLockUntil;
@@ -441,30 +514,33 @@ var DockEngine = class {
       this.dockMoveTarget.style.removeProperty("translate");
     }
   }
+
   shouldKeepDockOpen() {
     if (Date.now() < this.typingLockUntil) return false;
     return this.pointerOverDock || Date.now() < this.revealHoldUntil;
   }
+
   isOpenSuppressed() {
     if (Date.now() < this.suppressOpenUntil) return true;
     if (document.visibilityState !== "visible") return true;
     if (typeof document.hasFocus === "function" && !document.hasFocus()) return true;
     return false;
   }
+
   // ── Timer Management ──────────────────────────────────────────────────────
+
   scheduleHide(delayMs) {
-    if (this.shouldKeepDockOpen()) {
-      this.clearHideTimer();
-      return;
-    }
+    if (this.shouldKeepDockOpen()) { this.clearHideTimer(); return; }
     this.clearHideTimer();
     this.hideTimer = setTimeout(() => this.hideDock(), delayMs);
   }
+
   clearHideTimer() {
     if (!this.hideTimer) return;
     clearTimeout(this.hideTimer);
     this.hideTimer = null;
   }
+
   scheduleRevealShow(reason) {
     if (this.revealTimer) return;
     if (Date.now() < this.typingLockUntil) return;
@@ -473,12 +549,15 @@ var DockEngine = class {
       this.showDock("reveal-zone-hover");
     }, this.revealConfirmMs);
   }
+
   clearRevealTimer(reason) {
     if (!this.revealTimer) return;
     clearTimeout(this.revealTimer);
     this.revealTimer = null;
   }
+
   // ── Enforcement ───────────────────────────────────────────────────────────
+
   enforceAutoHideState() {
     if (!this.stateTarget) return;
     const visible = this.stateTarget.classList.contains("sl-dock-visible");
@@ -490,6 +569,7 @@ var DockEngine = class {
       return;
     }
   }
+
   enforceStartupLock() {
     if (!this.root) return;
     if (Date.now() >= this.lockOpenUntil) return;
@@ -499,19 +579,21 @@ var DockEngine = class {
     this.lastMouseY = -1;
     this.hideDock();
   }
+
   refreshPointerState() {
-    if (!this.dock) {
-      this.pointerOverDock = false;
-      return;
-    }
-    if (Date.now() < this.typingLockUntil) {
-      this.pointerOverDock = false;
-      return;
-    }
-    this.pointerOverDock = this.hasMouseMoved && this.isCursorInsideDockRect() && this.isPointerOnDockHitTarget();
+    if (!this.dock) { this.pointerOverDock = false; return; }
+    if (Date.now() < this.typingLockUntil) { this.pointerOverDock = false; return; }
+    this.pointerOverDock = (
+      this.hasMouseMoved &&
+      this.isCursorInsideDockRect() &&
+      this.isPointerOnDockHitTarget()
+    );
   }
+
   // ── Event Handlers ────────────────────────────────────────────────────────
+
   onMouseMove(event) {
+    // PERF: Always capture coords (cheap), but coalesce heavy work to 1x per RAF
     this.hasMouseMoved = true;
     this.lastMouseX = event.clientX;
     this.lastMouseY = event.clientY;
@@ -522,33 +604,36 @@ var DockEngine = class {
       this._processMouseMove();
     });
   }
+
   _processMouseMove() {
-    var _a, _b;
     if (Date.now() < this.lockOpenUntil) return;
     this.lastMouseMoveAt = Date.now();
+
     if (Date.now() < this.typingLockUntil) {
       this.clearRevealTimer("typing-active-move");
       this.clearHideTimer();
       return;
     }
+
     if (this.requireRevealReset) {
       this.requireRevealReset = false;
       this.revealCandidateAt = 0;
     }
+
     const nearBottom = this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
-    const hidden = Boolean((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden"));
+    const hidden = Boolean(this.stateTarget?.classList?.contains("sl-dock-hidden"));
     const shouldReveal = hidden && nearBottom && !this.pointerOverDock && !this.isOpenSuppressed() && this.isRecentMouseMove(1200);
+
     if (shouldReveal) {
       this.scheduleRevealShow("reveal-zone-hover");
     } else {
       this.clearRevealTimer("reveal-zone-exit");
     }
-    if (this.shouldKeepDockOpen()) {
-      this.clearHideTimer();
-      return;
-    }
+
+    if (this.shouldKeepDockOpen()) { this.clearHideTimer(); return; }
     this.scheduleHide(this.hideDelayMs);
   }
+
   onDockEnter() {
     if (Date.now() < this.lockOpenUntil) return;
     if (Date.now() < this.typingLockUntil) return;
@@ -557,22 +642,26 @@ var DockEngine = class {
     const insideDockRect = this.isCursorInsideDockRect();
     const hitOnDock = this.isPointerOnDockHitTarget();
     if (!recentMove || !insideDockRect || !hitOnDock) return;
+
     this.pointerOverDock = true;
     this.revealHoldUntil = 0;
     this.clearRevealTimer("dock-enter");
     this.showDock("dock-enter");
   }
+
   onDockLeave() {
     this.pointerOverDock = false;
     this.clearRevealTimer("dock-leave");
     this.scheduleHide(this.hideDelayMs);
   }
+
   onResize() {
     this.dockBaseTop = null;
     this.dockBaseLeft = null;
     this.startRailFollow(700);
     this.safeTick();
   }
+
   onWindowBlur() {
     this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
     this.requireRevealReset = true;
@@ -584,6 +673,7 @@ var DockEngine = class {
     this.clearRevealTimer("blur");
     this.hideDock();
   }
+
   onWindowFocus() {
     this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
     this.requireRevealReset = true;
@@ -594,6 +684,7 @@ var DockEngine = class {
     this.revealHoldUntil = 0;
     this.clearRevealTimer("focus");
   }
+
   onVisibilityChange() {
     if (document.visibilityState === "visible") {
       this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
@@ -606,13 +697,20 @@ var DockEngine = class {
       this.clearRevealTimer("visibility-visible");
     }
   }
+
   // ── Typing Detection ──────────────────────────────────────────────────────
+
   touchTypingLock(source, target) {
-    const active = target instanceof Element ? target : document.activeElement instanceof Element ? document.activeElement : null;
+    const active = target instanceof Element
+      ? target
+      : (document.activeElement instanceof Element ? document.activeElement : null);
     if (!this.isElementInMessageComposer(active)) return;
     const now = Date.now();
     const nextLock = now + this.typingLockMs;
     if (nextLock > this.typingLockUntil) this.typingLockUntil = nextLock;
+    // PERF: beforeinput + input + keydown all fire per keystroke (3-5x).
+    // Timestamp update above is cheap, but DOM work below is expensive.
+    // Throttle DOM manipulation to once per frame (~16ms).
     if (this._lastTypingLockDOM && now - this._lastTypingLockDOM < 16) return;
     this._lastTypingLockDOM = now;
     this.clearRevealTimer("typing-lock");
@@ -630,9 +728,9 @@ var DockEngine = class {
       this.applyDockStateInline();
     }
   }
-  onComposerInput(event) {
-    this.touchTypingLock("input", (event == null ? void 0 : event.target) || null);
-  }
+
+  onComposerInput(event) { this.touchTypingLock("input", event?.target || null); }
+
   onComposerKeyDown(event) {
     if (!event) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -641,6 +739,7 @@ var DockEngine = class {
     if (!isTypingKey) return;
     this.touchTypingLock("keydown", event.target || null);
   }
+
   onComposerFocusIn(event) {
     if (!event || !event.target) return;
     const el = event.target instanceof Element ? event.target : null;
@@ -649,15 +748,20 @@ var DockEngine = class {
     this.clearRevealTimer("composer-focus");
     this.requireRevealReset = true;
   }
+
   isElementInMessageComposer(el) {
     if (!el || !(el instanceof Element)) return false;
+    // PERF: Cache result — same element reference always gives same answer.
+    // Avoids closest() with 10 selectors walking up DOM 3-5x per keystroke.
     if (el === this._cachedComposerEl) return this._cachedComposerResult;
     const result = Boolean(el.closest(COMPOSER_CONTAINER_SELECTORS));
     this._cachedComposerEl = el;
     this._cachedComposerResult = result;
     return result;
   }
+
   // ── Cursor Geometry ───────────────────────────────────────────────────────
+
   isCursorInRevealStrip(x = this.lastMouseX, y = this.lastMouseY) {
     if (typeof x !== "number" || typeof y !== "number") return false;
     if (x < 0 || y < 0) return false;
@@ -670,6 +774,7 @@ var DockEngine = class {
     const zoneBottom = Math.min(window.innerHeight, rect.bottom + 2);
     return y >= zoneTop && y <= zoneBottom;
   }
+
   isCursorInsideDockRect(x = this.lastMouseX, y = this.lastMouseY) {
     if (!this.dock || !this.dock.getBoundingClientRect) return false;
     if (typeof x !== "number" || typeof y !== "number") return false;
@@ -677,11 +782,13 @@ var DockEngine = class {
     const rect = this.dock.getBoundingClientRect();
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
+
   isCursorNearBottom() {
     return this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
   }
+
   isPointerOnDockHitTarget(x = this.lastMouseX, y = this.lastMouseY) {
-    if (!this.dock || !(document == null ? void 0 : document.elementFromPoint)) return false;
+    if (!this.dock || !document?.elementFromPoint) return false;
     if (typeof x !== "number" || typeof y !== "number") return false;
     if (x < 0 || y < 0) return false;
     const hit = document.elementFromPoint(x, y);
@@ -690,11 +797,14 @@ var DockEngine = class {
     if (this.userPanel && (hit === this.userPanel || this.userPanel.contains(hit))) return true;
     return false;
   }
+
   isRecentMouseMove(maxAgeMs = 500) {
     if (!this.lastMouseMoveAt) return false;
     return Date.now() - this.lastMouseMoveAt <= maxAgeMs;
   }
+
   // ── Dock Height ───────────────────────────────────────────────────────────
+
   updateDockHeightVar() {
     if (!this.stateTarget || !this.dock) return;
     const rect = this.dock.getBoundingClientRect();
@@ -705,58 +815,53 @@ var DockEngine = class {
       this.stateTarget.style.setProperty("--sl-dock-height", next);
     }
   }
+
   // ── Alert Rail ────────────────────────────────────────────────────────────
+
   createRail() {
     if (this.rail) return;
     const rail = document.createElement("div");
     rail.id = "sl-hsl-alert-rail";
     rail.style.cssText = [
-      "position: fixed",
-      "left: 0px",
-      "top: 0px",
-      "width: 0px",
-      `height: ${this.railHeightPx}px`,
-      "pointer-events: none",
-      "opacity: 0",
-      "z-index: 40",
+      "position: fixed", "left: 0px", "top: 0px", "width: 0px",
+      `height: ${this.railHeightPx}px`, "pointer-events: none", "opacity: 0", "z-index: 40",
       "background: linear-gradient(90deg, rgba(138,43,226,0.96), rgba(167,139,250,0.96))",
       "box-shadow: 0 0 18px rgba(138,43,226,0.68), 0 0 34px rgba(138,43,226,0.42)",
       "transform: none",
-      "transition: opacity 180ms ease, top 120ms cubic-bezier(0.2, 0.75, 0.25, 1)"
+      "transition: opacity 180ms ease, top 120ms cubic-bezier(0.2, 0.75, 0.25, 1)",
     ].join(";");
     this.rail = rail;
   }
+
   mountRailToDock() {
     if (!this.rail) return;
     if (this.rail.parentElement !== document.body) document.body.appendChild(this.rail);
   }
+
   removeRail() {
     if (!this.rail) return;
     this.rail.remove();
     this.rail = null;
   }
+
   startRailFollow(durationMs = 520) {
     this.stopRailFollow();
     const startedAt = performance.now();
     const step = (now) => {
       this.updateRailGeometry();
-      if (!this.rail || !this.root) {
-        this.railFollowFrame = null;
-        return;
-      }
-      if (now - startedAt >= durationMs) {
-        this.railFollowFrame = null;
-        return;
-      }
+      if (!this.rail || !this.root) { this.railFollowFrame = null; return; }
+      if (now - startedAt >= durationMs) { this.railFollowFrame = null; return; }
       this.railFollowFrame = requestAnimationFrame(step);
     };
     this.railFollowFrame = requestAnimationFrame(step);
   }
+
   stopRailFollow() {
     if (!this.railFollowFrame) return;
     cancelAnimationFrame(this.railFollowFrame);
     this.railFollowFrame = null;
   }
+
   updateAlertState() {
     if (!this.dock) {
       this.railVisible = false;
@@ -775,18 +880,16 @@ var DockEngine = class {
     if (this.rail) this.rail.style.opacity = hasAlert ? "1" : "0";
     if (changed) this.startRailFollow(700);
   }
+
   updateRailGeometry() {
-    var _a, _b;
     if (!this.rail || !this.dock) return;
     const target = this.dockMoveTarget || this.dock;
     const rect = target.getBoundingClientRect();
-    if (rect.width <= 1 || rect.height <= 1) {
-      this.rail.style.opacity = "0";
-      return;
-    }
+    if (rect.width <= 1 || rect.height <= 1) { this.rail.style.opacity = "0"; return; }
     let left = Math.round(rect.left);
     let top = Math.round(rect.top - this.railHeightPx);
-    if ((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-visible")) top += 5;
+    // Nudge rail down 2px when dock is visible so it doesn't overlap content above
+    if (this.stateTarget?.classList?.contains("sl-dock-visible")) top += 5;
     if (left < 0) left = 0;
     const maxTop = window.innerHeight - this.railHeightPx;
     if (top < 0) top = 0;
@@ -798,6 +901,7 @@ var DockEngine = class {
     this.rail.style.top = `${top}px`;
     this.rail.style.width = `${width}px`;
   }
+
   _isAlertNodeUsable(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.getAttribute("aria-hidden") === "true") return false;
@@ -808,13 +912,15 @@ var DockEngine = class {
       return false;
     }
   }
+
   _getAlertNodeTextData(el) {
     return {
       className: String(el.className || "").toLowerCase(),
       label: String(el.getAttribute("aria-label") || "").toLowerCase(),
-      text: String(el.textContent || "").trim().toLowerCase()
+      text: String(el.textContent || "").trim().toLowerCase(),
     };
   }
+
   _isMentionLabelActive(label) {
     if (!label) return false;
     if (label.includes("no mention") || label.includes("no mentions")) return false;
@@ -822,20 +928,24 @@ var DockEngine = class {
     const amount = label.match(/\d+/);
     return amount ? Number(amount[0]) > 0 : true;
   }
+
   _isBadgeClassActive(className, text) {
     if (!className.includes("mentionsbadge") && !className.includes("numberbadge")) return false;
     return /^\d+$/.test(text) ? Number(text) > 0 : true;
   }
+
   isAlertNodeActive(el) {
     if (!this._isAlertNodeUsable(el)) return false;
     const { className, label, text } = this._getAlertNodeTextData(el);
     if (this._isMentionLabelActive(label)) return true;
     return this._isBadgeClassActive(className, text);
   }
+
   // ── Debug Infrastructure ──────────────────────────────────────────────────
+
   debug(event, data = {}, includeState = false) {
     if (!this.debugEnabled) return;
-    const entry = { seq: ++this.debugSeq, at: (/* @__PURE__ */ new Date()).toISOString(), event, ...this.sanitizeDebugData(data) };
+    const entry = { seq: ++this.debugSeq, at: new Date().toISOString(), event, ...this.sanitizeDebugData(data) };
     if (includeState) entry.state = this.snapshotState();
     this.debugBuffer.push(entry);
     if (this.debugBuffer.length > this.debugMaxEntries) this.debugBuffer.shift();
@@ -848,26 +958,17 @@ var DockEngine = class {
       }
     }
   }
+
   installDebugApi() {
     try {
       const engine = this;
       const handle = {
         version: this.version,
         getLogs: () => engine.debugBuffer.slice(),
-        dump: () => {
-          const logs = engine.debugBuffer.slice();
-          console.group("[HSLDockAutoHide] Debug dump");
-          console.table(logs);
-          console.groupEnd();
-          return logs;
-        },
+        dump: () => { const logs = engine.debugBuffer.slice(); console.group("[HSLDockAutoHide] Debug dump"); console.table(logs); console.groupEnd(); return logs; },
         state: () => engine.snapshotState(),
         filePath: () => engine.debugFilePath,
-        clear: () => {
-          engine.debugBuffer.length = 0;
-          engine.debugSeq = 0;
-          return true;
-        }
+        clear: () => { engine.debugBuffer.length = 0; engine.debugSeq = 0; return true; },
       };
       try {
         window.__HSLDockAutoHideDebug = handle;
@@ -883,6 +984,7 @@ var DockEngine = class {
       this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API", error);
     }
   }
+
   removeDebugApi() {
     try {
       delete window.__HSLDockAutoHideDebug;
@@ -895,6 +997,7 @@ var DockEngine = class {
       this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from globalThis", error);
     }
   }
+
   initDebugFileSink() {
     if (!this.debugFileEnabled) return;
     try {
@@ -903,7 +1006,7 @@ var DockEngine = class {
       const os = require("os");
       const dir = path.join(os.homedir(), "Library", "Application Support", "BetterDiscord", "logs", "HSLDockAutoHide");
       fs.mkdirSync(dir, { recursive: true });
-      const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       this.debugFilePath = path.join(dir, `dock-autohide-${stamp}.jsonl`);
       this.fs = fs;
     } catch (error) {
@@ -912,6 +1015,7 @@ var DockEngine = class {
       this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to initialize debug file sink", error);
     }
   }
+
   writeDebugEntry(entry) {
     if (!this.debugFileEnabled || !this.fs || !this.debugFilePath) return;
     try {
@@ -920,8 +1024,8 @@ var DockEngine = class {
       this.debugEnabled && console.warn("[HSLDockAutoHide] Failed writing debug entry to file", error);
     }
   }
+
   snapshotState() {
-    var _a, _b, _c, _d;
     return {
       lockRemainingMs: Math.max(0, this.lockOpenUntil - Date.now()),
       hasMouseMoved: this.hasMouseMoved,
@@ -929,163 +1033,185 @@ var DockEngine = class {
       lastMouseY: this.lastMouseY,
       pointerOverDock: this.pointerOverDock,
       nearBottom: this.isCursorNearBottom(),
-      rootHiddenClass: Boolean((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden")),
-      rootVisibleClass: Boolean((_d = (_c = this.stateTarget) == null ? void 0 : _c.classList) == null ? void 0 : _d.contains("sl-dock-visible")),
+      rootHiddenClass: Boolean(this.stateTarget?.classList?.contains("sl-dock-hidden")),
+      rootVisibleClass: Boolean(this.stateTarget?.classList?.contains("sl-dock-visible")),
       dock: this.describeDock(this.dock),
       dockTarget: this.describeDock(this.dockMoveTarget),
       railVisible: this.railVisible,
       railMounted: Boolean(this.rail && this.rail.parentElement),
       hideTimerActive: Boolean(this.hideTimer),
-      tickCount: this.tickCount
+      tickCount: this.tickCount,
     };
   }
+
   sanitizeDebugData(data) {
     const out = {};
     if (!data || typeof data !== "object") return out;
     for (const [k, v] of Object.entries(data)) out[k] = this.sanitizeDebugValue(v);
     return out;
   }
+
   sanitizeDebugValue(value) {
     if (value == null) return value;
     if (value instanceof Element) return this.describeDock(value);
     if (Array.isArray(value)) return value.map((v) => this.sanitizeDebugValue(v));
-    if (typeof value === "object") {
-      const obj = {};
-      for (const [k, v] of Object.entries(value)) obj[k] = this.sanitizeDebugValue(v);
-      return obj;
-    }
+    if (typeof value === "object") { const obj = {}; for (const [k, v] of Object.entries(value)) obj[k] = this.sanitizeDebugValue(v); return obj; }
     if (typeof value === "function") return "[Function]";
     return value;
   }
+
   describeDock(el) {
-    var _a;
     if (!el) return null;
     const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
     return {
       tag: String(el.tagName || "").toLowerCase(),
       id: el.id || null,
       className: typeof el.className === "string" ? el.className : null,
-      ariaLabel: ((_a = el.getAttribute) == null ? void 0 : _a.call(el, "aria-label")) || null,
-      rect: rect ? { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null
+      ariaLabel: el.getAttribute?.("aria-label") || null,
+      rect: rect ? { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null,
     };
   }
-};
+}
+
+// ─── Plugin Class ───────────────────────────────────────────────────────────
+
 module.exports = class HSLDockAutoHide {
   constructor() {
-    this._patcherId = "HSLDockAutoHide";
+    this._patcherId = 'HSLDockAutoHide';
     this._isStopped = false;
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
-    this._warnedKeys = /* @__PURE__ */ new Set();
+    this._warnedKeys = new Set();
     this._toastImpl = null;
   }
+
   _warnOnce(key, message, error = null) {
     if (this._warnedKeys.has(key)) return;
     this._warnedKeys.add(key);
     if (error) console.warn(`[HSLDockAutoHide] ${message}`, error);
     else console.warn(`[HSLDockAutoHide] ${message}`);
   }
+
   _toast(message, type = "info", timeout = null) {
-    var _a;
-    (_a = this._toastImpl) == null ? void 0 : _a.call(this, message, type, timeout);
+    this._toastImpl?.(message, type, timeout);
   }
+
+
+
   start() {
-    var _a;
-    this._toastImpl = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "hSLDockAutoHide")) || ((message, type = "info", timeout = null) => {
-      const p = (() => {
-        var _a2;
-        try {
-          const plugin = BdApi.Plugins.get("SoloLevelingToasts");
-          return ((_a2 = plugin == null ? void 0 : plugin.instance) == null ? void 0 : _a2.toastEngineVersion) >= 2 ? plugin.instance : null;
-        } catch (_) {
-          return null;
-        }
-      })();
-      if (p) p.showToast(message, type, timeout, { callerId: "hSLDockAutoHide" });
-      else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
-    });
+    this._toastImpl = _PluginUtils?.createToastHelper?.("hSLDockAutoHide")
+      || ((message, type = "info", timeout = null) => {
+        const p = (() => {
+          try {
+            const plugin = BdApi.Plugins.get("SoloLevelingToasts");
+            return plugin?.instance?.toastEngineVersion >= 2 ? plugin.instance : null;
+          } catch (_) { return null; }
+        })();
+        if (p) p.showToast(message, type, timeout, { callerId: "hSLDockAutoHide" });
+        else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      });
     this._isStopped = false;
     this._engineMounted = false;
     this._fallbackEngine = null;
-    BdApi.DOM.addStyle("HSLDockAutoHide", this.getCSS());
+    BdApi.DOM.addStyle('HSLDockAutoHide', this.getCSS());
     this._installReactPatcher();
+
+    // Fallback: if React patcher does not mount within 3s, mount engine directly
     this._fallbackTimer = setTimeout(() => {
       this._fallbackTimer = null;
       if (!this._isStopped && !this._engineMounted) {
-        this._warnOnce("react-fallback-timeout", "React patcher did not mount \u2014 using direct DOM fallback");
+        this._warnOnce("react-fallback-timeout", 'React patcher did not mount — using direct DOM fallback');
         const engine = new DockEngine();
         this._fallbackEngine = engine;
         this._engineMounted = true;
         engine.mount();
       }
-    }, 3e3);
+    }, 3000);
+
     this._toast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", "success", 2200);
   }
+
   stop() {
-    var _a;
     this._isStopped = true;
+    // Clear fallback timer
     if (this._fallbackTimer) {
       clearTimeout(this._fallbackTimer);
       this._fallbackTimer = null;
     }
+    // Unmount fallback engine if active
     if (this._fallbackEngine) {
       this._fallbackEngine.unmount();
       this._fallbackEngine = null;
     }
     this._engineMounted = false;
     BdApi.Patcher.unpatchAll(this._patcherId);
-    BdApi.DOM.removeStyle("HSLDockAutoHide");
+    BdApi.DOM.removeStyle('HSLDockAutoHide');
+    // Cleanup any residual state left if React component already unmounted
     document.body.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
     document.body.style.removeProperty("--sl-dock-height");
     document.body.style.removeProperty("--sl-dock-peek");
     document.body.style.removeProperty("--custom-app-panels-height");
-    document.querySelectorAll(".sl-hsl-dock-target").forEach((el) => el.classList.remove("sl-hsl-dock-target"));
-    document.querySelectorAll(".sl-userpanel-docked").forEach((el) => el.classList.remove("sl-userpanel-docked"));
-    (_a = document.getElementById("sl-hsl-alert-rail")) == null ? void 0 : _a.remove();
-    this._toast("HSLDockAutoHide stopped", "info", 2e3);
+    document.querySelectorAll(".sl-hsl-dock-target").forEach(el => el.classList.remove("sl-hsl-dock-target"));
+    document.querySelectorAll(".sl-userpanel-docked").forEach(el => el.classList.remove("sl-userpanel-docked"));
+    document.getElementById("sl-hsl-alert-rail")?.remove();
+    this._toast("HSLDockAutoHide stopped", "info", 2000);
   }
+
   // ── React Patcher — MainContent.Z ─────────────────────────────────────────
+
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+      ReactUtils = _bdLoad('BetterDiscordReactUtils.js');
     } catch (_) {
       ReactUtils = null;
     }
-    if (!(ReactUtils == null ? void 0 : ReactUtils.patchReactMainContent) || !(ReactUtils == null ? void 0 : ReactUtils.injectReactComponent)) {
-      this._warnOnce("react-utils-missing", "BetterDiscordReactUtils unavailable; relying on direct DOM fallback");
+
+    if (!ReactUtils?.patchReactMainContent || !ReactUtils?.injectReactComponent) {
+      this._warnOnce("react-utils-missing", 'BetterDiscordReactUtils unavailable; relying on direct DOM fallback');
       return;
     }
+
     const pluginInstance = this;
     const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
       const component = React.createElement(pluginInstance._DockController, {
-        key: "sl-dock-autohide",
-        pluginInstance
+        key: 'sl-dock-autohide',
+        pluginInstance,
       });
-      ReactUtils.injectReactComponent(appNode, "sl-dock-autohide-root", component, returnValue);
+      ReactUtils.injectReactComponent(appNode, 'sl-dock-autohide-root', component, returnValue);
     });
+
     if (!ok) {
-      this._warnOnce("maincontent-patch-missing", "MainContent React patch unavailable; relying on direct DOM fallback");
+      this._warnOnce("maincontent-patch-missing", 'MainContent React patch unavailable; relying on direct DOM fallback');
     }
   }
+
   // ── DockAutoHideController — React Functional Component ───────────────────
+
   get _DockController() {
     if (this.__DockControllerCached) return this.__DockControllerCached;
+
     this.__DockControllerCached = ({ pluginInstance }) => {
       const React = BdApi.React;
       const engineRef = React.useRef(null);
+
+      // Mount: create engine, attach listeners, start tick
       React.useEffect(() => {
         if (pluginInstance._isStopped) return;
+
+        // Signal that React mount succeeded — cancel fallback
         pluginInstance._engineMounted = true;
         if (pluginInstance._fallbackTimer) {
           clearTimeout(pluginInstance._fallbackTimer);
           pluginInstance._fallbackTimer = null;
         }
+        // If fallback engine already started, unmount it
         if (pluginInstance._fallbackEngine) {
           pluginInstance._fallbackEngine.unmount();
           pluginInstance._fallbackEngine = null;
         }
+
         const engine = new DockEngine();
         engineRef.current = engine;
         engine.mount();
@@ -1094,16 +1220,22 @@ module.exports = class HSLDockAutoHide {
           engineRef.current = null;
         };
       }, []);
+
+      // Re-discover DOM elements on every React render (instant recovery)
       React.useEffect(() => {
         if (!engineRef.current || pluginInstance._isStopped) return;
         engineRef.current.syncDock();
         engineRef.current.trySetupUserPanel();
-      });
-      return null;
+      }); // No deps = runs on every render
+
+      return null; // No visible output
     };
+
     return this.__DockControllerCached;
   }
+
   // ── CSS ───────────────────────────────────────────────────────────────────
+
   getCSS() {
     return `
       body.sl-dock-autohide {
@@ -1139,7 +1271,7 @@ module.exports = class HSLDockAutoHide {
         margin-bottom: var(--sl-dock-peek) !important;
       }
 
-      /* \u2500\u2500 User Panel Dock Mover \u2500\u2500 */
+      /* ── User Panel Dock Mover ── */
       section[aria-label="User status and settings"].sl-userpanel-docked {
         position: fixed !important;
         right: 0 !important;
@@ -1268,7 +1400,7 @@ module.exports = class HSLDockAutoHide {
 
       /* Collapse the sidebar panels wrapper so the fixed-position panel
          does not leave a gap.  The section itself is position:fixed and
-         escapes the wrapper's overflow clipping \u2014 do NOT collapse the
+         escapes the wrapper's overflow clipping — do NOT collapse the
          section directly or its height:0 will make the fixed panel invisible. */
       div[class^="panels_"]:has(section[aria-label="User status and settings"].sl-userpanel-docked) {
         height: 0 !important;

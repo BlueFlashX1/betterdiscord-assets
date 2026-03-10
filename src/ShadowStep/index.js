@@ -1,30 +1,29 @@
 /**
- * @name ShadowStep
- * @description Bookmark channels as Shadow Anchors and teleport to them instantly with a shadow transition. Solo Leveling themed.
- * @version 1.0.1
- * @author BlueFlashX1
- * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ * TABLE OF CONTENTS
+ * 1) Bootstrap + Constants
+ * 2) React Components (AnchorCard/AnchorPanel)
+ * 3) Plugin Lifecycle + Webpack
+ * 4) Settings + Anchor CRUD
+ * 5) Navigation + Transition
+ * 6) Hotkey + Panel Mount
+ * 7) Styles + Settings Panel UI
+ * 8) Diagnostics + Shared Portal Core
  */
 
-// src/ShadowStep/index.js
-var _bdLoad = (f) => {
-  try {
-    const m = { exports: {} };
-    new Function("module", "exports", require("fs").readFileSync(require("path").join(BdApi.Plugins.folder, f), "utf8"))(m, m.exports);
-    return typeof m.exports === "function" || Object.keys(m.exports).length ? m.exports : null;
-  } catch (e) {
-    return null;
-  }
-};
-var PLUGIN_NAME = "ShadowStep";
-var PLUGIN_VERSION = "1.0.1";
-var STYLE_ID = "shadow-step-css";
-var PANEL_CONTAINER_ID = "ss-panel-root";
-var TRANSITION_ID = "ss-transition-overlay";
-var BASE_MAX_ANCHORS = 10;
-var AGI_BONUS_DIVISOR = 20;
-var STATS_CACHE_TTL = 5e3;
-var DEFAULT_SETTINGS = {
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
+// ─── Constants ──────────────────────────────────────────────────────────────
+const PLUGIN_NAME = "ShadowStep";
+const PLUGIN_VERSION = "1.0.1";
+const STYLE_ID = "shadow-step-css";
+const PANEL_CONTAINER_ID = "ss-panel-root";
+const TRANSITION_ID = "ss-transition-overlay";
+const BASE_MAX_ANCHORS = 10;
+const AGI_BONUS_DIVISOR = 20; // 1 extra slot per 20 AGI
+const STATS_CACHE_TTL = 5000;
+
+const DEFAULT_SETTINGS = {
   anchors: [],
   hotkey: "Ctrl+Shift+S",
   animationEnabled: true,
@@ -32,144 +31,133 @@ var DEFAULT_SETTINGS = {
   animationDuration: 550,
   maxAnchors: BASE_MAX_ANCHORS,
   sortBy: "manual",
-  debugMode: false
+  debugMode: false,
 };
-var _PluginUtils;
-try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
-} catch (_) {
-  _PluginUtils = null;
-}
-var _SLUtils;
-try {
-  _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
-} catch (_) {
-  _SLUtils = window.SoloLevelingUtils || null;
-}
-var _TransitionCleanupUtils;
-try {
-  _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js");
-} catch (_) {
-  _TransitionCleanupUtils = null;
-}
-var { isEditableTarget, matchesHotkey } = _PluginUtils || {
-  isEditableTarget: (t) => {
-    var _a, _b;
-    if (!t) return false;
-    const tag = ((_b = (_a = t.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "";
-    return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable;
-  },
-  matchesHotkey: () => false
+
+// ─── Hotkey Utilities (from BetterDiscordPluginUtils) ────────────────────────
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
+let _SLUtils;
+try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
+
+let _TransitionCleanupUtils;
+try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
+
+const { isEditableTarget, matchesHotkey } = _PluginUtils || {
+  isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
+  matchesHotkey: () => false,
 };
-var _ttl = (_PluginUtils == null ? void 0 : _PluginUtils.createTTLCache) || ((ms) => {
-  let v, t = 0;
-  return { get: () => Date.now() - t < ms ? v : null, set: (x) => {
-    v = x;
-    t = Date.now();
-  }, invalidate: () => {
-    v = null;
-    t = 0;
-  } };
-});
+const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
+
+// ─── React Components ───────────────────────────────────────────────────────
+
 function buildComponents(pluginRef) {
   const React = BdApi.React;
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
   const ce = React.createElement;
+
+  // ── AnchorCard ──────────────────────────────────────────────
   function AnchorCard({ anchor, onTeleport, onRemove, onRename }) {
     const [editing, setEditing] = useState(false);
     const [editValue, setEditValue] = useState(anchor.name);
     const inputRef = useRef(null);
+
     useEffect(() => {
       if (editing && inputRef.current) inputRef.current.focus();
     }, [editing]);
+
     const handleDoubleClick = useCallback((e) => {
       e.stopPropagation();
       setEditValue(anchor.name);
       setEditing(true);
     }, [anchor.name]);
+
     const commitRename = useCallback(() => {
       const trimmed = editValue.trim();
       if (trimmed && trimmed !== anchor.name) onRename(anchor.id, trimmed);
       setEditing(false);
     }, [editValue, anchor.id, anchor.name, onRename]);
+
     const handleKeyDown = useCallback((e) => {
       if (e.key === "Enter") commitRename();
       if (e.key === "Escape") setEditing(false);
     }, [commitRename]);
+
     const guildInitial = (anchor.guildName || "?")[0].toUpperCase();
-    return ce(
-      "div",
-      {
-        className: "ss-anchor-card",
-        onClick: () => onTeleport(anchor.id),
-        title: `${anchor.guildName} > #${anchor.channelName}
-Uses: ${anchor.useCount}`
-      },
+
+    return ce("div", {
+      className: "ss-anchor-card",
+      onClick: () => onTeleport(anchor.id),
+      title: `${anchor.guildName} > #${anchor.channelName}\nUses: ${anchor.useCount}`,
+    },
       // Guild icon (letter fallback)
       ce("div", { className: "ss-anchor-icon" }, guildInitial),
+
       // Channel info
-      ce(
-        "div",
-        { className: "ss-anchor-info" },
-        editing ? ce("input", {
-          ref: inputRef,
-          className: "ss-anchor-rename-input",
-          value: editValue,
-          onChange: (e) => setEditValue(e.target.value),
-          onKeyDown: handleKeyDown,
-          onBlur: commitRename,
-          onClick: (e) => e.stopPropagation()
-        }) : ce("span", {
-          className: "ss-anchor-name",
-          onDoubleClick: handleDoubleClick
-        }, anchor.name || anchor.channelName),
+      ce("div", { className: "ss-anchor-info" },
+        editing
+          ? ce("input", {
+              ref: inputRef,
+              className: "ss-anchor-rename-input",
+              value: editValue,
+              onChange: (e) => setEditValue(e.target.value),
+              onKeyDown: handleKeyDown,
+              onBlur: commitRename,
+              onClick: (e) => e.stopPropagation(),
+            })
+          : ce("span", {
+              className: "ss-anchor-name",
+              onDoubleClick: handleDoubleClick,
+            }, anchor.name || anchor.channelName),
         ce("span", { className: "ss-anchor-server" }, anchor.guildName || "DM")
       ),
+
       // Remove button
       ce("button", {
         className: "ss-anchor-remove",
-        onClick: (e) => {
-          e.stopPropagation();
-          onRemove(anchor.id);
-        },
-        title: "Uproot Anchor"
-      }, "\xD7")
+        onClick: (e) => { e.stopPropagation(); onRemove(anchor.id); },
+        title: "Uproot Anchor",
+      }, "\u00D7")
     );
   }
+
+  // ── AnchorPanel ─────────────────────────────────────────────
   function AnchorPanel({ onClose }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState(pluginRef.settings.sortBy);
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const searchRef = useRef(null);
+
+    // Bridge for imperative refresh
     useEffect(() => {
       pluginRef._panelForceUpdate = forceUpdate;
-      return () => {
-        pluginRef._panelForceUpdate = null;
-      };
+      return () => { pluginRef._panelForceUpdate = null; };
     }, [forceUpdate]);
+
+    // Focus search on mount
     useEffect(() => {
-      setTimeout(() => {
-        var _a;
-        return (_a = searchRef.current) == null ? void 0 : _a.focus();
-      }, 50);
+      setTimeout(() => searchRef.current?.focus(), 50);
     }, []);
+
+    // Escape handler
     useEffect(() => {
       const handler = (e) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          e.preventDefault();
-          onClose();
-        }
+        if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); onClose(); }
       };
       document.addEventListener("keydown", handler, true);
       return () => document.removeEventListener("keydown", handler, true);
     }, [onClose]);
+
+    // Filter + sort
     const anchors = useMemo(() => {
-      let list = [...pluginRef.settings.anchors || []];
+      let list = [...(pluginRef.settings.anchors || [])];
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        list = list.filter(
-          (a) => (a.name || "").toLowerCase().includes(q) || (a.channelName || "").toLowerCase().includes(q) || (a.guildName || "").toLowerCase().includes(q)
+        list = list.filter((a) =>
+          (a.name || "").toLowerCase().includes(q) ||
+          (a.channelName || "").toLowerCase().includes(q) ||
+          (a.guildName || "").toLowerCase().includes(q)
         );
       }
       switch (sortBy) {
@@ -182,68 +170,70 @@ Uses: ${anchor.useCount}`
         case "server":
           list.sort((a, b) => (a.guildName || "").localeCompare(b.guildName || ""));
           break;
-        default:
+        default: // manual — sortOrder
           list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       }
       return list;
     }, [searchQuery, sortBy, pluginRef.settings.anchors]);
+
     const groupedAnchors = useMemo(() => {
-      const groups = /* @__PURE__ */ new Map();
+      const groups = new Map();
       for (const anchor of anchors) {
         const groupKey = anchor.guildId ? `guild:${anchor.guildId}` : `dm:${anchor.guildName || "DM"}`;
         if (!groups.has(groupKey)) {
           groups.set(groupKey, {
             key: groupKey,
             guildName: anchor.guildName || "DM",
-            anchors: []
+            anchors: [],
           });
         }
         groups.get(groupKey).anchors.push(anchor);
       }
       return Array.from(groups.values());
     }, [anchors]);
+
     const handleTeleport = useCallback((anchorId) => {
       pluginRef.teleportTo(anchorId);
       onClose();
     }, [onClose]);
+
     const handleRemove = useCallback((anchorId) => {
       pluginRef.removeAnchor(anchorId);
       forceUpdate();
     }, [forceUpdate]);
+
     const handleRename = useCallback((anchorId, newName) => {
       pluginRef.renameAnchor(anchorId, newName);
       forceUpdate();
     }, [forceUpdate]);
+
     const handleSortChange = useCallback((newSort) => {
       setSortBy(newSort);
       pluginRef.settings.sortBy = newSort;
       pluginRef.saveSettings();
     }, []);
+
     const maxAnchors = pluginRef.getMaxAnchors();
     const currentCount = (pluginRef.settings.anchors || []).length;
     const agiBonus = maxAnchors - pluginRef.settings.maxAnchors;
-    return ce(
-      "div",
-      {
-        className: "ss-panel-overlay",
-        onClick: onClose
+
+    return ce("div", {
+      className: "ss-panel-overlay",
+      onClick: onClose,
+    },
+      ce("div", {
+        className: "ss-panel-container",
+        onClick: (e) => e.stopPropagation(),
       },
-      ce(
-        "div",
-        {
-          className: "ss-panel-container",
-          onClick: (e) => e.stopPropagation()
-        },
         // Header
-        ce(
-          "div",
-          { className: "ss-panel-header" },
+        ce("div", { className: "ss-panel-header" },
           ce("h2", { className: "ss-panel-title" }, "Shadow Step"),
           ce("button", {
             className: "ss-panel-close",
-            onClick: onClose
-          }, "\xD7")
+            onClick: onClose,
+          }, "\u00D7")
         ),
+
         // Search
         ce("input", {
           ref: searchRef,
@@ -251,52 +241,47 @@ Uses: ${anchor.useCount}`
           type: "text",
           placeholder: "Search anchors...",
           value: searchQuery,
-          onChange: (e) => setSearchQuery(e.target.value)
+          onChange: (e) => setSearchQuery(e.target.value),
         }),
+
         // Sort controls
-        ce(
-          "div",
-          { className: "ss-panel-sort" },
-          ["manual", "recent", "name", "server"].map(
-            (s) => ce("button", {
+        ce("div", { className: "ss-panel-sort" },
+          ["manual", "recent", "name", "server"].map((s) =>
+            ce("button", {
               key: s,
               className: `ss-sort-btn ${sortBy === s ? "ss-sort-active" : ""}`,
-              onClick: () => handleSortChange(s)
+              onClick: () => handleSortChange(s),
             }, s.charAt(0).toUpperCase() + s.slice(1))
           )
         ),
+
         // Anchor list
-        ce(
-          "div",
-          { className: "ss-panel-list" },
-          anchors.length === 0 ? ce(
-            "div",
-            { className: "ss-panel-empty" },
-            searchQuery ? "No anchors match your search" : "No Shadow Anchors planted. Right-click a channel to plant one."
-          ) : groupedAnchors.map(
-            (group) => ce(
-              "div",
-              { key: group.key, className: "ss-anchor-group" },
-              ce("div", { className: "ss-anchor-group-header" }, group.guildName || "DM"),
-              group.anchors.map(
-                (anchor) => ce(AnchorCard, {
-                  key: anchor.id,
-                  anchor,
-                  onTeleport: handleTeleport,
-                  onRemove: handleRemove,
-                  onRename: handleRename
-                })
+        ce("div", { className: "ss-panel-list" },
+          anchors.length === 0
+            ? ce("div", { className: "ss-panel-empty" },
+                searchQuery
+                  ? "No anchors match your search"
+                  : "No Shadow Anchors planted. Right-click a channel to plant one."
               )
-            )
-          )
+            : groupedAnchors.map((group) =>
+                ce("div", { key: group.key, className: "ss-anchor-group" },
+                  ce("div", { className: "ss-anchor-group-header" }, group.guildName || "DM"),
+                  group.anchors.map((anchor) =>
+                    ce(AnchorCard, {
+                      key: anchor.id,
+                      anchor,
+                      onTeleport: handleTeleport,
+                      onRemove: handleRemove,
+                      onRename: handleRename,
+                    })
+                  )
+                )
+              )
         ),
+
         // Footer
-        ce(
-          "div",
-          { className: "ss-panel-footer" },
-          ce(
-            "span",
-            null,
+        ce("div", { className: "ss-panel-footer" },
+          ce("span", null,
             `${currentCount} / ${maxAnchors} anchors`,
             agiBonus > 0 ? ` (+${agiBonus} AGI)` : ""
           ),
@@ -305,8 +290,12 @@ Uses: ${anchor.useCount}`
       )
     );
   }
+
   return { AnchorCard, AnchorPanel };
 }
+
+// ─── Plugin Class ───────────────────────────────────────────────────────────
+
 module.exports = class ShadowStep {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
@@ -318,7 +307,7 @@ module.exports = class ShadowStep {
     this._transitionCleanupTimeout = null;
     this._transitionRunId = 0;
     this._transitionStopCanvas = null;
-    this._navigateRetryTimers = /* @__PURE__ */ new Set();
+    this._navigateRetryTimers = new Set();
     this._navigateRequestId = 0;
     this._channelFadeToken = 0;
     this._channelFadeResetTimer = null;
@@ -331,10 +320,11 @@ module.exports = class ShadowStep {
     this._statsCache = _ttl(STATS_CACHE_TTL);
     this._settingsSaveTimer = null;
   }
+
   // ── Lifecycle ───────────────────────────────────────────────
+
   start() {
-    var _a;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowStep")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("shadowStep") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this.loadSettings();
     this.initWebpack();
     this._components = buildComponents(this);
@@ -344,10 +334,13 @@ module.exports = class ShadowStep {
     this._pruneStaleAnchors();
     this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadows ready`, "info");
   }
+
   stop() {
-    var _a, _b, _c;
     try {
+      // 1. Close panel
       this.closePanel();
+
+      // 2. Unpatch context menu
       if (this._unpatchContextMenu) {
         try {
           this._unpatchContextMenu();
@@ -356,11 +349,23 @@ module.exports = class ShadowStep {
         }
         this._unpatchContextMenu = null;
       }
+
+      // 3. Unregister hotkey
       this._unregisterHotkey();
-      (_a = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.cancelPendingTransition) == null ? void 0 : _a.call(_TransitionCleanupUtils, this);
-      (_b = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.clearNavigateRetries) == null ? void 0 : _b.call(_TransitionCleanupUtils, this);
-      (_c = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.cancelChannelViewFade) == null ? void 0 : _c.call(_TransitionCleanupUtils, this);
+
+      // 4. Stop and remove any active transition
+      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+
+      // 5. Clear any queued navigation retries
+      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+
+      // 6. Clear channel view fade state
+      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+
+      // 7. Remove CSS
       this.removeCSS();
+
+      // 8. Clear refs
       this._components = null;
       this._NavigationUtils = null;
       this._ChannelStore = null;
@@ -373,37 +378,45 @@ module.exports = class ShadowStep {
     }
     this._toast(`${PLUGIN_NAME} \u2014 Anchors dormant`, "info");
   }
+
   // ── Webpack ─────────────────────────────────────────────────
+
   initWebpack() {
     const { Webpack } = BdApi;
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
-    this._NavigationUtils = Webpack.getByKeys("transitionTo", "back", "forward") || Webpack.getModule((m) => m.transitionTo && m.back && m.forward);
+    this._NavigationUtils =
+      Webpack.getByKeys("transitionTo", "back", "forward") ||
+      Webpack.getModule((m) => m.transitionTo && m.back && m.forward);
     this.debugLog("Webpack", "Modules acquired", {
       ChannelStore: !!this._ChannelStore,
       GuildStore: !!this._GuildStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
-      NavigationUtils: !!this._NavigationUtils
+      NavigationUtils: !!this._NavigationUtils,
     });
   }
+
   // ── Settings ────────────────────────────────────────────────
+
   loadSettings() {
     try {
-      if (typeof (_PluginUtils == null ? void 0 : _PluginUtils.loadSettings) === "function") {
+      if (typeof _PluginUtils?.loadSettings === "function") {
         this.settings = _PluginUtils.loadSettings(PLUGIN_NAME, DEFAULT_SETTINGS);
       } else {
         const saved = BdApi.Data.load(PLUGIN_NAME, "settings") || {};
         this.settings = { ...DEFAULT_SETTINGS, ...saved };
       }
+      // Ensure anchors is always an array
       if (!Array.isArray(this.settings.anchors)) this.settings.anchors = [];
     } catch (_) {
       this.settings = { ...DEFAULT_SETTINGS };
     }
   }
+
   saveSettings() {
     try {
-      if (typeof (_PluginUtils == null ? void 0 : _PluginUtils.saveSettings) === "function") {
+      if (typeof _PluginUtils?.saveSettings === "function") {
         _PluginUtils.saveSettings(PLUGIN_NAME, this.settings);
       } else {
         BdApi.Data.save(PLUGIN_NAME, "settings", this.settings);
@@ -412,6 +425,7 @@ module.exports = class ShadowStep {
       this.debugError("Settings", "Failed to save:", err);
     }
   }
+
   scheduleSaveSettings(delayMs = 180) {
     if (this._settingsSaveTimer) clearTimeout(this._settingsSaveTimer);
     this._settingsSaveTimer = setTimeout(() => {
@@ -419,30 +433,31 @@ module.exports = class ShadowStep {
       this.saveSettings();
     }, delayMs);
   }
+
   _flushScheduledSettingsSave() {
     if (!this._settingsSaveTimer) return;
     clearTimeout(this._settingsSaveTimer);
     this._settingsSaveTimer = null;
     this.saveSettings();
   }
+
   // ── Context Menu ────────────────────────────────────────────
+
   patchContextMenu() {
     try {
       if (this._unpatchContextMenu) {
-        try {
-          this._unpatchContextMenu();
-        } catch (_) {
-        }
+        try { this._unpatchContextMenu(); } catch (_) {}
         this._unpatchContextMenu = null;
       }
       this._unpatchContextMenu = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
-        var _a;
         if (!props || !props.channel) return;
         const channel = props.channel;
         const channelId = channel.id;
         const guildId = channel.guild_id || null;
+
         const isAnchored = this.hasAnchor(channelId);
         const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
+
         let menuItem;
         if (isAnchored) {
           menuItem = BdApi.ContextMenu.buildItem({
@@ -455,22 +470,25 @@ module.exports = class ShadowStep {
                 this.removeAnchor(anchor.id);
                 this._toast(`Uprooted anchor: #${anchor.channelName}`, "info");
               }
-            }
+            },
           });
         } else {
           const atMax = this.settings.anchors.length >= this.getMaxAnchors();
           menuItem = BdApi.ContextMenu.buildItem({
             type: "text",
-            label: atMax ? `Shadow Anchor (${this.settings.anchors.length}/${this.getMaxAnchors()})` : "Plant Shadow Anchor",
+            label: atMax
+              ? `Shadow Anchor (${this.settings.anchors.length}/${this.getMaxAnchors()})`
+              : "Plant Shadow Anchor",
             id: "shadow-step-add",
             disabled: atMax,
             action: () => {
               if (atMax) return;
               this.addAnchor(channelId, guildId);
-            }
+            },
           });
         }
-        const children = (_a = tree == null ? void 0 : tree.props) == null ? void 0 : _a.children;
+
+        const children = tree?.props?.children;
         if (Array.isArray(children)) {
           children.push(separator, menuItem);
         }
@@ -480,9 +498,10 @@ module.exports = class ShadowStep {
       this.debugError("ContextMenu", "Failed to patch:", err);
     }
   }
+
   // ── Anchor CRUD ─────────────────────────────────────────────
+
   addAnchor(channelId, guildId) {
-    var _a, _b;
     if (this.hasAnchor(channelId)) {
       this._toast("Channel already anchored", "warning");
       return;
@@ -491,35 +510,39 @@ module.exports = class ShadowStep {
       this._toast(`Max anchors reached (${this.getMaxAnchors()})`, "warning");
       return;
     }
-    const channel = (_a = this._ChannelStore) == null ? void 0 : _a.getChannel(channelId);
-    const guild = guildId ? (_b = this._GuildStore) == null ? void 0 : _b.getGuild(guildId) : null;
+
+    const channel = this._ChannelStore?.getChannel(channelId);
+    const guild = guildId ? this._GuildStore?.getGuild(guildId) : null;
+
     const anchor = {
       id: `sa_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      name: (channel == null ? void 0 : channel.name) || "unknown",
+      name: channel?.name || "unknown",
       guildId: guildId || null,
       channelId,
-      guildName: (guild == null ? void 0 : guild.name) || (guildId ? "Unknown Server" : "DM"),
-      channelName: (channel == null ? void 0 : channel.name) || "unknown",
+      guildName: guild?.name || (guildId ? "Unknown Server" : "DM"),
+      channelName: channel?.name || "unknown",
       createdAt: Date.now(),
       lastUsed: null,
       useCount: 0,
-      sortOrder: this.settings.anchors.length
+      sortOrder: this.settings.anchors.length,
     };
+
     this.settings.anchors.push(anchor);
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
     this._toast(`Shadow Anchor planted: #${anchor.channelName}`, "success");
     this.debugLog("Anchor", "Added:", anchor.name, anchor.channelId);
   }
+
   removeAnchor(anchorId) {
     this.settings.anchors = this.settings.anchors.filter((a) => a.id !== anchorId);
-    this.settings.anchors.forEach((a, i) => {
-      a.sortOrder = i;
-    });
+    // Re-index sortOrder
+    this.settings.anchors.forEach((a, i) => { a.sortOrder = i; });
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
     this.debugLog("Anchor", "Removed:", anchorId);
   }
+
   renameAnchor(anchorId, newName) {
     const anchor = this.settings.anchors.find((a) => a.id === anchorId);
     if (anchor) {
@@ -528,14 +551,17 @@ module.exports = class ShadowStep {
       this.debugLog("Anchor", "Renamed:", anchorId, "->", newName);
     }
   }
+
   hasAnchor(channelId) {
     return this.settings.anchors.some((a) => a.channelId === channelId);
   }
+
   getMaxAnchors() {
     const base = this.settings.maxAnchors || BASE_MAX_ANCHORS;
     const agi = this._getAgiStat();
     return base + Math.floor(agi / AGI_BONUS_DIVISOR);
   }
+
   _pruneStaleAnchors() {
     if (!this._ChannelStore) return;
     const before = this.settings.anchors.length;
@@ -545,68 +571,86 @@ module.exports = class ShadowStep {
     });
     const pruned = before - this.settings.anchors.length;
     if (pruned > 0) {
-      this.settings.anchors.forEach((a, i) => {
-        a.sortOrder = i;
-      });
+      this.settings.anchors.forEach((a, i) => { a.sortOrder = i; });
       this.saveSettings();
       this.debugLog("Prune", `Removed ${pruned} stale anchors`);
     }
   }
+
   // ── Stats Integration ───────────────────────────────────────
+
   _getAgiStat() {
-    var _a, _b, _c;
     const cached = this._statsCache.get();
-    if (cached && BdApi.Plugins.isEnabled("SoloLevelingStats")) {
+    if (cached && BdApi.Plugins.isEnabled('SoloLevelingStats')) {
       return cached.agility || 0;
     }
     try {
       const soloPlugin = BdApi.Plugins.get("SoloLevelingStats");
-      if (!(soloPlugin == null ? void 0 : soloPlugin.instance)) return 0;
-      const stats = ((_b = (_a = soloPlugin.instance).getTotalEffectiveStats) == null ? void 0 : _b.call(_a)) || ((_c = soloPlugin.instance.settings) == null ? void 0 : _c.stats) || {};
+      if (!soloPlugin?.instance) return 0;
+      const stats =
+        soloPlugin.instance.getTotalEffectiveStats?.() ||
+        soloPlugin.instance.settings?.stats ||
+        {};
       this._statsCache.set(stats);
       return stats.agility || 0;
     } catch (_) {
       return 0;
     }
   }
+
   // ── Navigation ──────────────────────────────────────────────
+
   teleportTo(anchorId) {
-    var _a, _b, _c;
     const anchor = this.settings.anchors.find((a) => a.id === anchorId);
     if (!anchor) {
       this._toast("Anchor not found", "error");
       return;
     }
-    const channelExists = (_a = this._ChannelStore) == null ? void 0 : _a.getChannel(anchor.channelId);
+
+    const channelExists = this._ChannelStore?.getChannel(anchor.channelId);
     if (!channelExists) {
       this.removeAnchor(anchor.id);
       this._toast("Anchor is stale and was removed", "warning");
       this.debugLog("Teleport", "Blocked stale anchor", anchor.id, anchor.channelId);
       return;
     }
-    const path = anchor.guildId ? `/channels/${anchor.guildId}/${anchor.channelId}` : `/channels/@me/${anchor.channelId}`;
+
+    const path = anchor.guildId
+      ? `/channels/${anchor.guildId}/${anchor.channelId}`
+      : `/channels/@me/${anchor.channelId}`;
+
+    // Close panel first
     this.closePanel();
+
+    // Update usage stats
     anchor.lastUsed = Date.now();
     anchor.useCount = (anchor.useCount || 0) + 1;
     this.saveSettings();
+
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       _ensureShadowPortalCoreApplied(this.constructor);
     }
+
+    // Fail-safe: never crash teleport if shared core failed to load.
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       this.debugError("Teleport", "Shared portal core missing; using direct navigation fallback");
-      if ((_b = this._NavigationUtils) == null ? void 0 : _b.transitionTo) {
+      if (this._NavigationUtils?.transitionTo) {
         this._NavigationUtils.transitionTo(path);
-      } else if ((_c = window.history) == null ? void 0 : _c.pushState) {
+      } else if (window.history?.pushState) {
         window.history.pushState({}, "", path);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
       this._toast(`Shadow Step \u2192 #${anchor.channelName}`, "warning");
       return;
     }
+
+    // Play transition then navigate
     const _ssT0 = performance.now();
-    const _ssDiag = this.settings.debugMode ? (phase) => console.log(`%c[PortalDiag:ShadowStep]%c ${phase} %c@ ${Math.round(performance.now() - _ssT0)}ms`, "color:#f59e0b;font-weight:bold", "color:#e2e8f0", "color:#94a3b8") : () => {
-    };
-    _ssDiag(`TELEPORT_START \u2192 ${anchor.name} (${path})`);
+    const _ssDiag = this.settings.debugMode
+      ? (phase) => console.log(`%c[PortalDiag:ShadowStep]%c ${phase} %c@ ${Math.round(performance.now() - _ssT0)}ms`, "color:#f59e0b;font-weight:bold", "color:#e2e8f0", "color:#94a3b8")
+      : () => {};
+    _ssDiag(`TELEPORT_START → ${anchor.name} (${path})`);
+
     this.playTransition(() => {
       _ssDiag("NAV_CALLBACK_ENTERED (playTransition fired callback)");
       const fadeToken = this._beginChannelViewFadeOut();
@@ -614,7 +658,7 @@ module.exports = class ShadowStep {
       this._navigate(path, {
         anchorId: anchor.id,
         anchorName: anchor.name,
-        channelId: anchor.channelId
+        channelId: anchor.channelId,
       }, {
         onConfirmed: () => {
           _ssDiag("NAVIGATE_CONFIRMED (Discord switched)");
@@ -625,19 +669,22 @@ module.exports = class ShadowStep {
           _ssDiag("NAVIGATE_FAILED");
           this._finishChannelViewFade(fadeToken, false);
           _ssDiag("CHANNEL_FADE_IN_STARTED (failure)");
-        }
+        },
       });
     }, path);
+
     this._toast(`Shadow Step \u2192 #${anchor.channelName}`, "success");
     this.debugLog("Teleport", anchor.name, path);
   }
+
   // ── Hotkey ──────────────────────────────────────────────────
+
   _registerHotkey() {
-    var _a, _b;
-    const isMac = ((_a = navigator.platform) == null ? void 0 : _a.startsWith("Mac")) || ((_b = navigator.userAgent) == null ? void 0 : _b.includes("Mac"));
+    const isMac = navigator.platform?.startsWith("Mac") || navigator.userAgent?.includes("Mac");
     this._hotkeyHandler = (e) => {
       if (!this.settings.hotkey) return;
       if (isEditableTarget(e.target)) return;
+      // On macOS, also match Cmd (metaKey) when hotkey specifies Ctrl
       const directMatch = matchesHotkey(e, this.settings.hotkey);
       const macAlias = isMac && e.metaKey && !e.ctrlKey && matchesHotkey(
         { key: e.key, ctrlKey: true, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: false },
@@ -652,13 +699,16 @@ module.exports = class ShadowStep {
     document.addEventListener("keydown", this._hotkeyHandler);
     this.debugLog("Hotkey", `Registered: ${this.settings.hotkey} (macOS Cmd alias: ${isMac})`);
   }
+
   _unregisterHotkey() {
     if (this._hotkeyHandler) {
       document.removeEventListener("keydown", this._hotkeyHandler);
       this._hotkeyHandler = null;
     }
   }
+
   // ── Panel ───────────────────────────────────────────────────
+
   togglePanel() {
     if (this._panelOpen) {
       this.closePanel();
@@ -666,38 +716,44 @@ module.exports = class ShadowStep {
       this.openPanel();
     }
   }
+
   openPanel() {
-    var _a;
     if (this._panelOpen) return;
+
     const container = document.createElement("div");
     container.id = PANEL_CONTAINER_ID;
     document.body.appendChild(container);
-    const createRoot = (_a = BdApi.ReactDOM) == null ? void 0 : _a.createRoot;
+
+    const createRoot = BdApi.ReactDOM?.createRoot;
     if (createRoot) {
       const root = createRoot(container);
       root.render(
         BdApi.React.createElement(this._components.AnchorPanel, {
-          onClose: () => this.closePanel()
+          onClose: () => this.closePanel(),
         })
       );
       this._panelReactRoot = root;
     } else {
+      // React 17 fallback
       BdApi.ReactDOM.render(
         BdApi.React.createElement(this._components.AnchorPanel, {
-          onClose: () => this.closePanel()
+          onClose: () => this.closePanel(),
         }),
         container
       );
       this._panelReactRoot = "legacy";
     }
+
     this._panelOpen = true;
     this.debugLog("Panel", "Opened");
   }
+
   closePanel() {
     if (!this._panelOpen) return;
+
     if (this._panelReactRoot === "legacy") {
-      const container2 = document.getElementById(PANEL_CONTAINER_ID);
-      if (container2) BdApi.ReactDOM.unmountComponentAtNode(container2);
+      const container = document.getElementById(PANEL_CONTAINER_ID);
+      if (container) BdApi.ReactDOM.unmountComponentAtNode(container);
     } else if (this._panelReactRoot) {
       try {
         this._panelReactRoot.unmount();
@@ -706,13 +762,17 @@ module.exports = class ShadowStep {
       }
     }
     this._panelReactRoot = null;
+
     const container = document.getElementById(PANEL_CONTAINER_ID);
     if (container) container.remove();
+
     this._panelOpen = false;
     this._panelForceUpdate = null;
     this.debugLog("Panel", "Closed");
   }
+
   // ── CSS ─────────────────────────────────────────────────────
+
   injectCSS() {
     try {
       BdApi.DOM.addStyle(STYLE_ID, this.buildCSS());
@@ -729,6 +789,7 @@ module.exports = class ShadowStep {
       }
     }
   }
+
   removeCSS() {
     try {
       BdApi.DOM.removeStyle(STYLE_ID);
@@ -741,13 +802,14 @@ module.exports = class ShadowStep {
       }
     }
   }
+
   buildCSS() {
     return `
-/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-   ShadowStep v${PLUGIN_VERSION} \u2014 Shadow Anchor Teleportation
-   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+/* ═══════════════════════════════════════════════════════════════
+   ShadowStep v${PLUGIN_VERSION} — Shadow Anchor Teleportation
+   ═══════════════════════════════════════════════════════════════ */
 
-/* \u2500\u2500 Transition Animation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Transition Animation ────────────────────────────────────── */
 
 @keyframes ss-mist-css-overlay {
   0% { opacity: 0; }
@@ -934,7 +996,7 @@ module.exports = class ShadowStep {
   display: none;
 }
 
-/* \u2500\u2500 Panel Overlay \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Panel Overlay ───────────────────────────────────────────── */
 
 .ss-panel-overlay {
   position: fixed;
@@ -964,7 +1026,7 @@ module.exports = class ShadowStep {
   overflow: hidden;
 }
 
-/* \u2500\u2500 Panel Header \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Panel Header ────────────────────────────────────────────── */
 
 .ss-panel-header {
   display: flex;
@@ -995,7 +1057,7 @@ module.exports = class ShadowStep {
 }
 .ss-panel-close:hover { color: #fff; background: rgba(138, 43, 226, 0.2); }
 
-/* \u2500\u2500 Search \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Search ──────────────────────────────────────────────────── */
 
 .ss-panel-search {
   margin: 10px 16px 6px;
@@ -1013,7 +1075,7 @@ module.exports = class ShadowStep {
 }
 .ss-panel-search::placeholder { color: #666; }
 
-/* \u2500\u2500 Sort Controls \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Sort Controls ───────────────────────────────────────────── */
 
 .ss-panel-sort {
   display: flex;
@@ -1038,7 +1100,7 @@ module.exports = class ShadowStep {
   background: rgba(138, 43, 226, 0.08);
 }
 
-/* \u2500\u2500 Anchor List \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Anchor List ─────────────────────────────────────────────── */
 
 .ss-panel-list {
   flex: 1;
@@ -1082,7 +1144,7 @@ module.exports = class ShadowStep {
   padding: 6px 10px 4px;
 }
 
-/* \u2500\u2500 Anchor Card \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Anchor Card ─────────────────────────────────────────────── */
 
 .ss-anchor-card {
   display: flex;
@@ -1169,7 +1231,7 @@ module.exports = class ShadowStep {
   background: rgba(231, 76, 60, 0.1);
 }
 
-/* \u2500\u2500 Panel Footer \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* ── Panel Footer ────────────────────────────────────────────── */
 
 .ss-panel-footer {
   display: flex;
@@ -1184,10 +1246,13 @@ module.exports = class ShadowStep {
 .ss-panel-hint { color: #555; }
 `;
   }
+
   // ── Settings Panel ──────────────────────────────────────────
+
   getSettingsPanel() {
     const React = BdApi.React;
     const self = this;
+
     const SettingsPanel = () => {
       const [hotkey, setHotkey] = React.useState(self.settings.hotkey);
       const [animEnabled, setAnimEnabled] = React.useState(self.settings.animationEnabled);
@@ -1195,201 +1260,174 @@ module.exports = class ShadowStep {
       const [animDuration, setAnimDuration] = React.useState(self.settings.animationDuration);
       const [maxAnchors, setMaxAnchors] = React.useState(self.settings.maxAnchors);
       const [debug, setDebug] = React.useState(self.settings.debugMode);
+
       const agiStat = self._getAgiStat();
       const effectiveMax = (maxAnchors || BASE_MAX_ANCHORS) + Math.floor(agiStat / AGI_BONUS_DIVISOR);
       const anchorCount = (self.settings.anchors || []).length;
+
       const rowStyle = {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 0",
-        borderBottom: "1px solid rgba(255,255,255,0.05)"
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)",
       };
       const labelStyle = { color: "#ccc", fontSize: "13px" };
       const inputStyle = {
-        background: "rgba(0,0,0,0.3)",
-        border: "1px solid rgba(138,43,226,0.3)",
-        borderRadius: "6px",
-        color: "#ddd",
-        padding: "4px 8px",
-        fontSize: "13px",
-        outline: "none",
-        width: "120px",
-        textAlign: "center"
+        background: "rgba(0,0,0,0.3)", border: "1px solid rgba(138,43,226,0.3)",
+        borderRadius: "6px", color: "#ddd", padding: "4px 8px", fontSize: "13px",
+        outline: "none", width: "120px", textAlign: "center",
       };
       const checkStyle = { accentColor: "#8a2be2" };
-      return React.createElement(
-        "div",
-        {
-          style: { padding: "16px", background: "#1e1e2e", borderRadius: "8px", color: "#ccc" }
-        },
+
+      return React.createElement("div", {
+        style: { padding: "16px", background: "#1e1e2e", borderRadius: "8px", color: "#ccc" },
+      },
         React.createElement("h3", {
-          style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px", fontFamily: "'Orbitron', sans-serif" }
+          style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px", fontFamily: "'Orbitron', sans-serif" },
         }, "Shadow Step Settings"),
+
         // Statistics
-        React.createElement(
-          "div",
-          {
-            style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }
+        React.createElement("div", {
+          style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" },
+        },
+          React.createElement("div", {
+            style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center" },
           },
-          React.createElement(
-            "div",
-            {
-              style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center" }
-            },
             React.createElement("div", { style: { color: "#8a2be2", fontSize: "18px", fontWeight: "700" } }, anchorCount),
             React.createElement("div", { style: { color: "#999", fontSize: "11px" } }, "Active Anchors")
           ),
-          React.createElement(
-            "div",
-            {
-              style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center" }
-            },
+          React.createElement("div", {
+            style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center" },
+          },
             React.createElement("div", { style: { color: "#8a2be2", fontSize: "18px", fontWeight: "700" } }, effectiveMax),
-            React.createElement(
-              "div",
-              { style: { color: "#999", fontSize: "11px" } },
-              `Max Slots${agiStat > 0 ? ` (+${Math.floor(agiStat / AGI_BONUS_DIVISOR)} AGI)` : ""}`
-            )
+            React.createElement("div", { style: { color: "#999", fontSize: "11px" } },
+              `Max Slots${agiStat > 0 ? ` (+${Math.floor(agiStat / AGI_BONUS_DIVISOR)} AGI)` : ""}`)
           )
         ),
+
         // Hotkey
-        React.createElement(
-          "div",
-          { style: rowStyle },
+        React.createElement("div", { style: rowStyle },
           React.createElement("span", { style: labelStyle }, "Hotkey"),
           React.createElement("input", {
-            style: inputStyle,
-            value: hotkey,
+            style: inputStyle, value: hotkey,
             onChange: (e) => {
               setHotkey(e.target.value);
               self.settings.hotkey = e.target.value;
               self._unregisterHotkey();
               self._registerHotkey();
               self.scheduleSaveSettings();
-            }
+            },
           })
         ),
+
         // Animation enabled
-        React.createElement(
-          "div",
-          { style: rowStyle },
+        React.createElement("div", { style: rowStyle },
           React.createElement("span", { style: labelStyle }, "Shadow Transition"),
           React.createElement("input", {
-            type: "checkbox",
-            checked: animEnabled,
-            style: checkStyle,
+            type: "checkbox", checked: animEnabled, style: checkStyle,
             onChange: (e) => {
               setAnimEnabled(e.target.checked);
               self.settings.animationEnabled = e.target.checked;
               self.scheduleSaveSettings();
-            }
+            },
           })
         ),
+
         // Respect reduced-motion preference
-        React.createElement(
-          "div",
-          { style: rowStyle },
+        React.createElement("div", { style: rowStyle },
           React.createElement("span", { style: labelStyle }, "Respect Reduced Motion"),
           React.createElement("input", {
-            type: "checkbox",
-            checked: respectReducedMotion,
-            style: checkStyle,
+            type: "checkbox", checked: respectReducedMotion, style: checkStyle,
             onChange: (e) => {
               setRespectReducedMotion(e.target.checked);
               self.settings.respectReducedMotion = e.target.checked;
               self.scheduleSaveSettings();
-            }
+            },
           })
         ),
+
         // Animation duration
-        React.createElement(
-          "div",
-          { style: rowStyle },
+        React.createElement("div", { style: rowStyle },
           React.createElement("span", { style: labelStyle }, `Animation (${animDuration}ms + mist hold)`),
           React.createElement("input", {
-            type: "range",
-            min: 300,
-            max: 1400,
-            step: 50,
-            value: animDuration,
+            type: "range", min: 300, max: 1400, step: 50, value: animDuration,
             style: { accentColor: "#8a2be2", width: "120px" },
             onChange: (e) => {
               const val = parseInt(e.target.value);
               setAnimDuration(val);
               self.settings.animationDuration = val;
               self.scheduleSaveSettings();
-            }
+            },
           })
         ),
+
         // Max anchors
-        React.createElement(
-          "div",
-          { style: rowStyle },
+        React.createElement("div", { style: rowStyle },
           React.createElement("span", { style: labelStyle }, "Base Max Anchors"),
           React.createElement("input", {
-            type: "number",
-            min: 3,
-            max: 50,
-            value: maxAnchors,
+            type: "number", min: 3, max: 50, value: maxAnchors,
             style: { ...inputStyle, width: "60px" },
             onChange: (e) => {
               const val = Math.max(3, Math.min(50, parseInt(e.target.value) || BASE_MAX_ANCHORS));
               setMaxAnchors(val);
               self.settings.maxAnchors = val;
               self.scheduleSaveSettings();
-            }
+            },
           })
         ),
+
         // Debug mode
-        React.createElement(
-          "div",
-          { style: { ...rowStyle, borderBottom: "none" } },
+        React.createElement("div", { style: { ...rowStyle, borderBottom: "none" } },
           React.createElement("span", { style: labelStyle }, "Debug Mode"),
           React.createElement("input", {
-            type: "checkbox",
-            checked: debug,
-            style: checkStyle,
+            type: "checkbox", checked: debug, style: checkStyle,
             onChange: (e) => {
               setDebug(e.target.checked);
               self.settings.debugMode = e.target.checked;
               self.scheduleSaveSettings();
-            }
+            },
           })
         )
       );
     };
+
     return React.createElement(SettingsPanel);
   }
+
   // ── Debug ───────────────────────────────────────────────────
+
   debugLog(tag, ...args) {
     if (this.settings.debugMode) {
       console.log(`%c[${PLUGIN_NAME}]%c [${tag}]`, "color: #8a2be2; font-weight: bold", "color: #999", ...args);
     }
   }
+
   debugError(tag, ...args) {
     console.error(`[${PLUGIN_NAME}] [${tag}]`, ...args);
   }
 };
-var _loadShadowPortalCore = () => {
-  var _a;
-  if (typeof (_SLUtils == null ? void 0 : _SLUtils.loadShadowPortalCore) === "function") {
+
+const _loadShadowPortalCore = () => {
+  if (typeof _SLUtils?.loadShadowPortalCore === "function") {
     const mod = _SLUtils.loadShadowPortalCore();
-    if (mod == null ? void 0 : mod.applyPortalCoreToClass) return mod;
+    if (mod?.applyPortalCoreToClass) return mod;
   }
-  return typeof window !== "undefined" && ((_a = window.ShadowPortalCore) == null ? void 0 : _a.applyPortalCoreToClass) ? window.ShadowPortalCore : null;
+  return typeof window !== "undefined" && window.ShadowPortalCore?.applyPortalCoreToClass
+    ? window.ShadowPortalCore
+    : null;
 };
-var SHADOW_PORTAL_CONFIG = {
+
+const SHADOW_PORTAL_CONFIG = {
   transitionId: TRANSITION_ID,
   navigationFailureToast: "Shadow Step failed to switch channel",
-  contextLabelKeys: ["anchorName", "label", "name"]
+  contextLabelKeys: ["anchorName", "label", "name"],
 };
-var _ensureShadowPortalCoreApplied = (PluginClass = module.exports) => {
+
+const _ensureShadowPortalCoreApplied = (PluginClass = module.exports) => {
   const core = _loadShadowPortalCore();
-  if (!(core == null ? void 0 : core.applyPortalCoreToClass)) return false;
+  if (!core?.applyPortalCoreToClass) return false;
   core.applyPortalCoreToClass(PluginClass, SHADOW_PORTAL_CONFIG);
   return true;
 };
+
 if (!_ensureShadowPortalCoreApplied(module.exports)) {
   console.warn(`[${PLUGIN_NAME}] Shared portal core unavailable. Navigation/transition patch will not be shared.`);
 }
