@@ -2232,13 +2232,19 @@ module.exports = class Dungeons {
   }
 
   async stop() {
-    // Set plugin stopped state
     this.started = false;
     this.removeDelegatedUiHandlers();
 
+    this._stopRuntimePipelines();
+    this._clearStopCachesAndState();
+    this._cleanupUiAndStyleStateOnStop();
+    this._cleanupTrackedResourcesOnStop();
+    await this._flushPendingMobWritesOnStop();
+  }
+
+  _stopRuntimePipelines() {
     // Stop HP/Mana regeneration
     this.stopRegeneration();
-
 
     if (this._recalculateManaTimeout) {
       clearTimeout(this._recalculateManaTimeout);
@@ -2272,13 +2278,14 @@ module.exports = class Dungeons {
       this._bossBarLayoutFrame = null;
     }
 
-
     // Stop HP bar restoration
     this.stopHPBarRestoration();
 
     // Stop window visibility tracking
     this.stopVisibilityTracking();
+  }
 
+  _clearStopCachesAndState() {
     // Clear all caches
     if (this._cache) {
       this._cache.pluginInstances = {};
@@ -2303,26 +2310,17 @@ module.exports = class Dungeons {
       this._mobCapWarningShown = {};
     }
 
-    // Clear all caches
     this.invalidateShadowCountCache();
     this.invalidateShadowsCache();
-    if (this._shadowStatsCache) {
-      this._shadowStatsCache.clear();
-    }
+    if (this._shadowStatsCache) this._shadowStatsCache.clear();
     // Boss stats rolled fresh per instance (no cache to clear)
     if (this._personalityCache) this._personalityCache.clear();
     if (this._memberWidthCache) this._memberWidthCache.clear();
     if (this._containerCache) this._containerCache.clear();
     if (this._mobSpawnQueue) this._mobSpawnQueue.clear();
-    if (this.cache) {
-      this.cache.clear();
-    }
-    if (this.extractionEvents) {
-      this.extractionEvents.clear();
-    }
-    if (this._mobGenerationCache) {
-      this._mobGenerationCache.clear();
-    }
+    if (this.cache) this.cache.clear();
+    if (this.extractionEvents) this.extractionEvents.clear();
+    if (this._mobGenerationCache) this._mobGenerationCache.clear();
 
     // Remove plugin toggle event listeners
     if (this._pluginToggleHandler) {
@@ -2344,34 +2342,17 @@ module.exports = class Dungeons {
       this._shadowExtractedListener = null;
     }
 
-    // Clear dead shadows tracking
-    if (this.deadShadows) {
-      this.deadShadows.clear();
-    }
-    if (this._roleCombatStates) {
-      this._roleCombatStates.clear();
-    }
-    // Clear defeated bosses tracking
-    if (this.defeatedBosses) {
-      this.defeatedBosses.clear();
-    }
-    // Clear shadow allocations cache
-    if (this.shadowAllocations) {
-      this.shadowAllocations.clear();
-    }
-    if (this._pendingDungeonMobXPByBatch) {
-      this._pendingDungeonMobXPByBatch.clear();
-    }
-    if (this._pendingDungeonMobKillsByBatch) {
-      this._pendingDungeonMobKillsByBatch.clear();
-    }
-    if (this._deployRebalanceInFlight) {
-      this._deployRebalanceInFlight.clear();
-    }
-    if (this._mobContributionMissLogState) {
-      this._mobContributionMissLogState.clear();
-    }
-    this.allocationCache = null; // Clear allocation cache
+    // Clear combat/deployment tracking state
+    if (this.deadShadows) this.deadShadows.clear();
+    if (this._roleCombatStates) this._roleCombatStates.clear();
+    if (this.defeatedBosses) this.defeatedBosses.clear();
+    if (this.shadowAllocations) this.shadowAllocations.clear();
+    if (this._pendingDungeonMobXPByBatch) this._pendingDungeonMobXPByBatch.clear();
+    if (this._pendingDungeonMobKillsByBatch) this._pendingDungeonMobKillsByBatch.clear();
+    if (this._deployRebalanceInFlight) this._deployRebalanceInFlight.clear();
+    if (this._mobContributionMissLogState) this._mobContributionMissLogState.clear();
+
+    this.allocationCache = null;
     this.allocationCacheTime = null;
     this._allocationSortedShadowsCache = null;
     this._allocationSortedShadowsCacheTime = null;
@@ -2385,23 +2366,17 @@ module.exports = class Dungeons {
     this._allocationShadowSetDirty = true;
     this._restoringDungeons = false; // Allow restore on next start()
 
-    // Clear last attack time trackers
     if (this._lastShadowAttackTime) this._lastShadowAttackTime.clear();
     if (this._lastBossAttackTime) this._lastBossAttackTime.clear();
     if (this._lastMobAttackTime) this._lastMobAttackTime.clear();
 
-    // Clear debounced dungeon save timers
     if (this._dungeonSaveTimers) {
       this._dungeonSaveTimers.forEach((timerId) => clearTimeout(timerId));
       this._dungeonSaveTimers.clear();
     }
 
     // Corpse pile persists on dungeon objects in IDB — intentionally NOT cleared on stop.
-
-    // Clear guild channel cache
     if (this._guildChannelCache) this._guildChannelCache.clear();
-
-    // Clear processed message IDs
     if (this.processedMessageIds) this.processedMessageIds.clear();
 
     // Clear saveSettings debounce timer (flush happens below via saveSettings(true))
@@ -2417,14 +2392,11 @@ module.exports = class Dungeons {
     });
     this.hiddenComments.clear();
 
-
     this.stopChannelWatcher?.();
     this.currentChannelKey = null;
 
     // Clear HP bar update queue
-    if (this._hpBarUpdateQueue) {
-      this._hpBarUpdateQueue.clear();
-    }
+    if (this._hpBarUpdateQueue) this._hpBarUpdateQueue.clear();
     if (this._hpBarUpdateTimer) {
       this._timeouts.delete(this._hpBarUpdateTimer);
       clearTimeout(this._hpBarUpdateTimer);
@@ -2432,13 +2404,17 @@ module.exports = class Dungeons {
     }
     this._hpBarUpdateScheduled = false;
     this._lastHPBarUpdate = {};
+  }
 
+  _cleanupUiAndStyleStateOnStop() {
     // Remove injected CSS (cleanup all tracked styles)
     this.cleanupAllCSS();
 
     // Flush pending debounced save immediately on shutdown
     this.saveSettings(true);
+  }
 
+  _cleanupTrackedResourcesOnStop() {
     // CENTRALIZED CLEANUP: Remove all tracked resources to prevent memory leaks
     // Remove all event listeners (handles both Set<handler> and {target,event,handler,capture} shapes)
     this._listeners.forEach((value, key) => {
@@ -2477,14 +2453,15 @@ module.exports = class Dungeons {
       this._onStatsChangedUnsubscribe = null;
     }
     // _restoreLocalAgentLogs removed (Sprint 3) — window.fetch no longer monkey-patched
+  }
 
+  async _flushPendingMobWritesOnStop() {
     // Flush any pending mob writes before fully stopping
-    if (this.mobBossStorageManager?.flushAll) {
-      try {
-        await this.mobBossStorageManager.flushAll('plugin-stop');
-      } catch (error) {
-        this.errorLog('Failed to flush pending mobs on stop', error);
-      }
+    if (!this.mobBossStorageManager?.flushAll) return;
+    try {
+      await this.mobBossStorageManager.flushAll('plugin-stop');
+    } catch (error) {
+      this.errorLog('Failed to flush pending mobs on stop', error);
     }
   }
 

@@ -1053,8 +1053,7 @@ module.exports = class ShadowExchange {
         return this.getFallbackShadow();
       }
 
-      const assignedIds = this.getMarkedShadowIds();
-      const available = allShadows.filter((s) => s?.id && !assignedIds.has(s.id));
+      const available = allShadows.filter((s) => s?.id && !this.isShadowMarked(s.id));
 
       if (available.length === 0) {
         return this.getFallbackShadow();
@@ -1117,8 +1116,7 @@ module.exports = class ShadowExchange {
     try {
       // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
       const all = saInstance.getShadowSnapshot?.() || await saInstance.getAllShadows();
-      const assignedIds = this.getMarkedShadowIds();
-      return all.filter((s) => s?.id && !assignedIds.has(s.id)).length;
+      return all.filter((s) => s?.id && !this.isShadowMarked(s.id)).length;
     } catch (_) {
       return 0;
     }

@@ -369,7 +369,7 @@ class SensesEngine {
     this._handlePresenceUpdate = null;
     this._handleTypingStart = null;
     this._handleRelationshipChange = null;
-    this._subscribedEventHandlers = new Map(); // eventName -> handler
+    this._subscribedEventHandlers = new Map(); // eventName -> Set<handler>
     this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
     this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
     this._burstMap = new Map();  // "authorId:channelId" -> { guildId, feedIndex, timestamp }
@@ -492,11 +492,13 @@ class SensesEngine {
   unsubscribe() {
     const Dispatcher = this._plugin._Dispatcher;
     if (!Dispatcher) return;
-    for (const [eventName, handler] of this._subscribedEventHandlers.entries()) {
-      try {
-        Dispatcher.unsubscribe(eventName, handler);
-      } catch (err) {
-        this._plugin.debugError("SensesEngine", `Failed to unsubscribe ${eventName}`, err);
+    for (const [eventName, handlers] of this._subscribedEventHandlers.entries()) {
+      for (const handler of handlers) {
+        try {
+          Dispatcher.unsubscribe(eventName, handler);
+        } catch (err) {
+          this._plugin.debugError("SensesEngine", `Failed to unsubscribe ${eventName}`, err);
+        }
       }
     }
     this._subscribedEventHandlers.clear();
@@ -534,13 +536,18 @@ class SensesEngine {
   _subscribeEvent(eventName, handler) {
     const Dispatcher = this._plugin._Dispatcher;
     if (!Dispatcher || !eventName || typeof handler !== "function") return false;
-    if (this._subscribedEventHandlers.has(eventName)) {
-      this._plugin.debugLog("SensesEngine", `Duplicate subscribe blocked for ${eventName}`);
+    const existing = this._subscribedEventHandlers.get(eventName);
+    if (existing?.has(handler)) {
+      this._plugin.debugLog("SensesEngine", `Duplicate subscribe ignored for ${eventName}`);
       return true;
     }
     try {
       Dispatcher.subscribe(eventName, handler);
-      this._subscribedEventHandlers.set(eventName, handler);
+      if (existing) {
+        existing.add(handler);
+      } else {
+        this._subscribedEventHandlers.set(eventName, new Set([handler]));
+      }
       return true;
     } catch (err) {
       this._plugin.debugError("SensesEngine", `Failed to subscribe ${eventName}`, err);
@@ -1599,8 +1606,10 @@ class SensesEngine {
     // Unsubscribe from FluxDispatcher FIRST to prevent dangling subscriptions
     const Dispatcher = this._plugin._Dispatcher;
     if (Dispatcher && this._subscribedEventHandlers?.size > 0) {
-      for (const [eventName, handler] of this._subscribedEventHandlers.entries()) {
-        try { Dispatcher.unsubscribe(eventName, handler); } catch (_) {}
+      for (const [eventName, handlers] of this._subscribedEventHandlers.entries()) {
+        for (const handler of handlers) {
+          try { Dispatcher.unsubscribe(eventName, handler); } catch (_) {}
+        }
       }
       this._subscribedEventHandlers.clear();
     }

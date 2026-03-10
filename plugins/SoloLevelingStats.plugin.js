@@ -9944,7 +9944,7 @@ module.exports = class SoloLevelingStats {
    * - Primary: 'Friend or Foe BB' (Solo Leveling theme font)
    * - Fallback: 'Orbitron', 'Segoe UI', sans-serif
    */
-  getChatUiCssText() {
+  _getChatUiCssRawText() {
     return `
       /* ============================================================================
          SOLO LEVELING STATS - THEME CSS
@@ -11399,6 +11399,39 @@ module.exports = class SoloLevelingStats {
     `;
   }
 
+  getChatUiCssSections() {
+    const css = this._getChatUiCssRawText();
+    const sectionMarker = "/* ============================================================================\n         SECTION ";
+    const chunks = css.split(sectionMarker);
+    if (chunks.length <= 1) {
+      return [{ key: "full", title: "Full CSS", css: css.trim() }];
+    }
+
+    const sections = [];
+    const preamble = chunks[0].trim();
+    if (preamble) {
+      sections.push({ key: "preamble", title: "Preamble", css: preamble });
+    }
+
+    for (const chunk of chunks.slice(1)) {
+      const restored = `${sectionMarker}${chunk}`.trim();
+      const titleLine = chunk.split("\n", 1)[0]?.trim() || "";
+      const match = titleLine.match(/^(\d+):\s*(.+)$/);
+      const index = match?.[1] || "x";
+      const title = match?.[2] || "Untitled";
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      sections.push({ key: `section-${index}-${slug || "part"}`, title: `Section ${index}: ${title}`, css: restored });
+    }
+
+    return sections;
+  }
+
+  getChatUiCssText() {
+    return this.getChatUiCssSections()
+      .map((section) => section.css)
+      .join("\n\n");
+  }
+
   injectChatUICSS() {
     if (document.getElementById('sls-chat-ui-styles')) return;
 
@@ -11440,8 +11473,7 @@ module.exports = class SoloLevelingStats {
       'debugMode',
       'Debug Mode',
       'Show detailed console logs for troubleshooting (constructor, save, load, periodic backups)',
-      this.settings.debugMode || false,
-      null
+      this.settings.debugMode || false
     );
     container.appendChild(debugToggle);
 
@@ -11612,7 +11644,7 @@ module.exports = class SoloLevelingStats {
 
   // FUNCTIONAL TOGGLE CREATOR (NO IF-ELSE!)
   // Creates a styled toggle switch with label and description
-  createToggle(settingKey, label, description, defaultValue, _onChangeUnused) {
+  createToggle(settingKey, label, description, defaultValue) {
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
       margin-bottom: 20px;

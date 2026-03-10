@@ -49,6 +49,15 @@ export function updateCSSVars(ctx) {
  */
 export function buildCSS(ctx) {
   const m = ctx._modules || {};
+  const buildCollapsedPushRule = (selectors) => `${selectors.join(",\n")} {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+  transition: width var(--ra-transition-speed) ease,
+              min-width var(--ra-transition-speed) ease,
+              max-width var(--ra-transition-speed) ease;
+}`;
 
   // Build panel selectors — prefer Webpack class, fall back to wildcard
   const sidebarSel = m.sidebar?.sidebarList
@@ -96,45 +105,13 @@ export function buildCSS(ctx) {
 
 /* ── Core Panel Push ────────────────────────────────────────────── */
 
-${sidebarPush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(sidebarPush)}
 
-${membersPush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(membersPush)}
 
-${profilePush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(profilePush)}
 
-${searchPush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(searchPush)}
 
 /* ── Members Column Surface (transparent) ──────────────────────── */
 

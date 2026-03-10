@@ -132,15 +132,8 @@ export function getStableSelectorSet(el) {
   const tag = el.tagName.toLowerCase();
   const selectors = [];
 
-  // aria-label and role
-  const ariaLabel = el.getAttribute("aria-label");
-  ariaLabel && ariaLabel.length <= 80 && selectors.push(`${tag}[aria-label="${ariaLabel}"]`);
-  const role = el.getAttribute("role");
-  role && selectors.push(`${tag}[role="${role}"]`);
-
-  // data-testid
-  const dataTestId = el.getAttribute("data-testid");
-  dataTestId && selectors.push(`${tag}[data-testid="${dataTestId}"]`);
+  // Reuse shared attribute extraction to avoid duplicate DOM reads/formatting logic.
+  getAttributeSelectorCandidates(el).forEach((candidate) => selectors.push(candidate));
 
   // id
   if (el.id) selectors.push(`#${CSS.escape(el.id)}`);

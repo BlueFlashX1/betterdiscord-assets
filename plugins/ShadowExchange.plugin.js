@@ -991,8 +991,7 @@ module.exports = class ShadowExchange {
       if (!Array.isArray(allShadows) || allShadows.length === 0) {
         return this.getFallbackShadow();
       }
-      const assignedIds = this.getMarkedShadowIds();
-      const available = allShadows.filter((s) => (s == null ? void 0 : s.id) && !assignedIds.has(s.id));
+      const available = allShadows.filter((s) => (s == null ? void 0 : s.id) && !this.isShadowMarked(s.id));
       if (available.length === 0) {
         return this.getFallbackShadow();
       }
@@ -1048,8 +1047,7 @@ module.exports = class ShadowExchange {
     }
     try {
       const all = ((_a2 = saInstance.getShadowSnapshot) == null ? void 0 : _a2.call(saInstance)) || await saInstance.getAllShadows();
-      const assignedIds = this.getMarkedShadowIds();
-      return all.filter((s) => (s == null ? void 0 : s.id) && !assignedIds.has(s.id)).length;
+      return all.filter((s) => (s == null ? void 0 : s.id) && !this.isShadowMarked(s.id)).length;
     } catch (_) {
       return 0;
     }

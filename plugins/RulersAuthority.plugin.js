@@ -1017,6 +1017,15 @@ function updateCSSVars(ctx) {
 function buildCSS(ctx) {
   var _a2, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
   const m = ctx._modules || {};
+  const buildCollapsedPushRule = (selectors) => `${selectors.join(",\n")} {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+  transition: width var(--ra-transition-speed) ease,
+              min-width var(--ra-transition-speed) ease,
+              max-width var(--ra-transition-speed) ease;
+}`;
   const sidebarSel = ((_a2 = m.sidebar) == null ? void 0 : _a2.sidebarList) ? `.${m.sidebar.sidebarList}` : SIDEBAR_CSS_SAFE.join(", ");
   const membersSel = ((_b = m.members) == null ? void 0 : _b.membersWrap) ? `.${m.members.membersWrap}` : MEMBERS_FALLBACKS.join(", ");
   const profileSel = ((_c = m.panel) == null ? void 0 : _c.outer) ? `.${m.panel.outer}` : PROFILE_FALLBACKS.join(", ");
@@ -1043,45 +1052,13 @@ function buildCSS(ctx) {
 
 /* \u2500\u2500 Core Panel Push \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 
-${sidebarPush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(sidebarPush)}
 
-${membersPush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(membersPush)}
 
-${profilePush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(profilePush)}
 
-${searchPush.join(",\n")} {
-  width: 0 !important;
-  min-width: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  transition: width var(--ra-transition-speed) ease,
-              min-width var(--ra-transition-speed) ease,
-              max-width var(--ra-transition-speed) ease;
-}
+${buildCollapsedPushRule(searchPush)}
 
 /* \u2500\u2500 Members Column Surface (transparent) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 

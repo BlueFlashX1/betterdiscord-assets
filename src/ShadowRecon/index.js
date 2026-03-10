@@ -5,14 +5,12 @@ const PLUGIN_NAME = "ShadowRecon";
 const PLUGIN_VERSION = "1.0.5";
 const STYLE_ID = "shadow-recon-css";
 const WIDGET_ID = "shadow-recon-widget";
-const MEMBER_BANNER_ID = "shadow-recon-member-banner";
 const MODAL_ID = "shadow-recon-modal-root";
 const SNOWFLAKE_RE = /\d{16,20}/;
 
 const DEFAULT_SETTINGS = {
   loreLockedRecon: true,
   showServerCounterWidget: true,
-  showMemberCounterBanner: false, // deprecated: member-list banner removed by request
   showGuildHoverIntel: true,
   showStaffIntelInContextMenu: true,
   showMarkedTargetIntelInContext: true,
@@ -131,7 +129,6 @@ module.exports = class ShadowRecon {
       this.patchUserContextMenu();
 
       this.injectServerCounterWidget();
-      this.removeMemberCounterBanner();
       this.refreshGuildIconHints();
       this.startRefreshLoops();
       this.setupObserver();
@@ -150,7 +147,6 @@ module.exports = class ShadowRecon {
     this.stopRefreshLoops();
     this.teardownObserver();
     this.removeServerCounterWidget();
-    this.removeMemberCounterBanner();
     this.clearGuildIconHints();
     this.closeModal();
     BdApi.DOM.removeStyle(STYLE_ID);
@@ -565,7 +561,6 @@ module.exports = class ShadowRecon {
 
   refreshAllVisuals() {
     this.updateServerCounterWidget();
-    this.removeMemberCounterBanner();
     this.refreshGuildIconHints();
   }
 
@@ -721,13 +716,6 @@ module.exports = class ShadowRecon {
     }
     this._widgetClickHandler = null;
     this._widgetContextHandler = null;
-  }
-
-  // ---- Member Counter Banner ------------------------------------------
-
-  removeMemberCounterBanner() {
-    const banner = document.getElementById(MEMBER_BANNER_ID);
-    if (banner) banner.remove();
   }
 
   _safeNonNegativeInt(value) {

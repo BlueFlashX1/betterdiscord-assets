@@ -606,12 +606,7 @@ function getStableSelectorSet(el) {
   if (!el || !(el instanceof Element)) return [];
   const tag = el.tagName.toLowerCase();
   const selectors = [];
-  const ariaLabel = el.getAttribute("aria-label");
-  ariaLabel && ariaLabel.length <= 80 && selectors.push(`${tag}[aria-label="${ariaLabel}"]`);
-  const role = el.getAttribute("role");
-  role && selectors.push(`${tag}[role="${role}"]`);
-  const dataTestId = el.getAttribute("data-testid");
-  dataTestId && selectors.push(`${tag}[data-testid="${dataTestId}"]`);
+  getAttributeSelectorCandidates(el).forEach((candidate) => selectors.push(candidate));
   if (el.id) selectors.push(`#${CSS.escape(el.id)}`);
   getSemanticClassSelectors(el).forEach((s) => selectors.push(`${tag}${s}`));
   if (tag === "html") {
