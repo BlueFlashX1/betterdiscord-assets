@@ -109,6 +109,26 @@ const RAW_BONUS_RULES = [
   ['perception', 'perceptionPercent', 'PER'],
 ];
 
+const SORT_VALUE_PICKERS = {
+  xpBonus: (bonus) => bonus?.xp || 0,
+  critBonus: (bonus) => bonus?.critChance || 0,
+  strBonus: (bonus) => bonus?.strengthPercent || 0,
+  agiBonus: (bonus) => bonus?.agilityPercent || 0,
+  intBonus: (bonus) => bonus?.intelligencePercent || 0,
+  vitBonus: (bonus) => bonus?.vitalityPercent || 0,
+  perBonus: (bonus) => bonus?.perceptionPercent || bonus?.perception || 0,
+};
+
+const SORT_LABELS = {
+  xpBonus: 'XP Gain',
+  critBonus: 'Crit Chance',
+  strBonus: 'Strength %',
+  agiBonus: 'Agility %',
+  intBonus: 'Intelligence %',
+  vitBonus: 'Vitality %',
+  perBonus: 'Perception %',
+};
+
 // ============================================================================
 // REACT COMPONENT FACTORY (v2.0.0 — replaces innerHTML modal rendering)
 // ============================================================================
@@ -159,11 +179,12 @@ function buildTitleComponents(pluginInstance) {
 
     const soloData = pluginInstance.getSoloLevelingData();
     const isTitleAllowed = (t) => !pluginInstance._unwantedTitles.has(t);
-    const titlesKey = (soloData?.titles || []).join('\x00');
-    const titles = React.useMemo(() => {
-      const raw = (soloData?.titles || []).filter(isTitleAllowed);
-      return pluginInstance.getSortedTitles({ titles: raw, sortBy });
-    }, [titlesKey, sortBy]);
+    const rawTitles = soloData?.titles || [];
+    const titlesLen = rawTitles.length;
+    const { sorted: titles, bonusMap } = React.useMemo(() => {
+      const filtered = rawTitles.filter(isTitleAllowed);
+      return pluginInstance.getSortedTitles({ titles: filtered, sortBy });
+    }, [titlesLen, sortBy]);
 
     const activeTitle = soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
 
@@ -189,7 +210,7 @@ function buildTitleComponents(pluginInstance) {
     // Active title section
     let activeTitleSection;
     if (activeTitle) {
-      const bonus = pluginInstance.getTitleBonus(activeTitle);
+      const bonus = bonusMap[activeTitle] ?? pluginInstance.getTitleBonus(activeTitle);
       const buffs = pluginInstance.formatTitleBonusLines(bonus);
       activeTitleSection = ce('div', { className: 'tm-active-title' },
         ce('div', { className: 'tm-active-label' }, 'Active Title:'),
@@ -217,7 +238,7 @@ function buildTitleComponents(pluginInstance) {
           key: title,
           title,
           isActive: title === activeTitle,
-          bonus: pluginInstance.getTitleBonus(title),
+          bonus: bonusMap[title] ?? pluginInstance.getTitleBonus(title),
           onEquip: handleEquip,
         }))
       );
@@ -335,8 +356,7 @@ module.exports = class SoloLevelingTitleManager {
       achievementDefinitions: null, // Cache achievement definitions (large array)
       achievementDefinitionsTime: 0,
       achievementDefinitionsTTL: 2000, // 2s - definitions are static but expensive to fetch
-      titleBonuses: {}, // Cache title bonuses by title name
-      titleBonusesTime: {},
+      titleBonuses: new Map(), // Cache title bonuses by title name (Map preserves insertion order for O(1) eviction)
       titleBonusesTTL: 5000, // 5s - title bonuses are static
     };
 
@@ -591,19 +611,12 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   _cacheTitleBonusResult(titleName, result, now = Date.now()) {
-    // Evict oldest entries if cache exceeds 50 titles
-    const keys = Object.keys(this._cache.titleBonuses);
-    if (keys.length >= 50) {
-      let oldestKey = keys[0], oldestTime = this._cache.titleBonusesTime[keys[0]] || 0;
-      for (let i = 1; i < keys.length; i++) {
-        const t = this._cache.titleBonusesTime[keys[i]] || 0;
-        if (t < oldestTime) { oldestTime = t; oldestKey = keys[i]; }
-      }
-      delete this._cache.titleBonuses[oldestKey];
-      delete this._cache.titleBonusesTime[oldestKey];
+    // Evict oldest entry if cache exceeds 50 titles (Map preserves insertion order → O(1))
+    if (this._cache.titleBonuses.size >= 50) {
+      const oldest = this._cache.titleBonuses.keys().next().value;
+      this._cache.titleBonuses.delete(oldest);
     }
-    this._cache.titleBonuses[titleName] = result;
-    this._cache.titleBonusesTime[titleName] = now;
+    this._cache.titleBonuses.set(titleName, { result, time: now });
     return result;
   }
 
@@ -615,14 +628,11 @@ module.exports = class SoloLevelingTitleManager {
   getTitleBonus(titleName) {
     if (!titleName) return null;
 
-    // Check cache first
+    // Check cache first (Map-based: entry = { result, time })
     const now = Date.now();
-    if (
-      this._cache.titleBonuses[titleName] &&
-      this._cache.titleBonusesTime[titleName] &&
-      now - this._cache.titleBonusesTime[titleName] < this._cache.titleBonusesTTL
-    ) {
-      return this._cache.titleBonuses[titleName];
+    const cached = this._cache.titleBonuses.get(titleName);
+    if (cached && now - cached.time < this._cache.titleBonusesTTL) {
+      return cached.result;
     }
 
     try {
@@ -682,16 +692,7 @@ module.exports = class SoloLevelingTitleManager {
    * @returns {string} - Human-readable label
    */
   getSortLabel(sortBy) {
-    const labels = {
-      xpBonus: 'XP Gain',
-      critBonus: 'Crit Chance',
-      strBonus: 'Strength %',
-      agiBonus: 'Agility %',
-      intBonus: 'Intelligence %',
-      vitBonus: 'Vitality %',
-      perBonus: 'Perception %',
-    };
-    return labels[sortBy] || 'XP Gain';
+    return SORT_LABELS[sortBy] || 'XP Gain';
   }
 
   /**
@@ -703,23 +704,18 @@ module.exports = class SoloLevelingTitleManager {
    * @returns {string[]} sorted titles (same array instance)
    */
   getSortedTitles({ titles, sortBy }) {
-    const sortValuePickers = {
-      xpBonus: (bonus) => bonus?.xp || 0,
-      critBonus: (bonus) => bonus?.critChance || 0,
-      strBonus: (bonus) => bonus?.strengthPercent || 0,
-      agiBonus: (bonus) => bonus?.agilityPercent || 0,
-      intBonus: (bonus) => bonus?.intelligencePercent || 0,
-      vitBonus: (bonus) => bonus?.vitalityPercent || 0,
-      perBonus: (bonus) => bonus?.perceptionPercent || bonus?.perception || 0,
-    };
-    const pickSortValue = sortValuePickers[sortBy] || sortValuePickers.xpBonus;
+    const pickSortValue = SORT_VALUE_PICKERS[sortBy] || SORT_VALUE_PICKERS.xpBonus;
 
-    const sortValues = titles.reduce((acc, title) => {
-      acc[title] = pickSortValue(this.getTitleBonus(title));
-      return acc;
-    }, {});
+    const bonusMap = {};
+    const sortValues = {};
+    for (const title of titles) {
+      const bonus = this.getTitleBonus(title);
+      bonusMap[title] = bonus;
+      sortValues[title] = pickSortValue(bonus);
+    }
 
-    return titles.sort((a, b) => (sortValues[b] || 0) - (sortValues[a] || 0));
+    titles.sort((a, b) => (sortValues[b] || 0) - (sortValues[a] || 0));
+    return { sorted: titles, bonusMap };
   }
 
 
@@ -1543,31 +1539,9 @@ module.exports = class SoloLevelingTitleManager {
    * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
    */
   setupWindowFocusWatcher() {
-    // Bind handlers to instance (same pattern as AutoIdleOnAFK)
-    this._boundHandleBlur = this._handleWindowBlur.bind(this);
-    this._boundHandleFocus = this._handleWindowFocus.bind(this);
-
-    // Listen for window blur events (Discord window loses focus)
-    window.addEventListener('blur', this._boundHandleBlur);
-
-    // Listen for window focus events (Discord window gains focus - user returns)
-    window.addEventListener('focus', this._boundHandleFocus);
-
-    // Also listen for visibility changes (tab switching within browser)
-    document.addEventListener(
-      'visibilitychange',
-      (this._boundHandleVisibilityChange = () => {
-        if (this._isStopped || document.hidden) return;
-        // React patcher handles button persistence — no manual re-creation needed.
-      })
-    );
-
-    // Store cleanup function
-    this._windowFocusCleanup = () => {
-      window.removeEventListener('blur', this._boundHandleBlur);
-      window.removeEventListener('focus', this._boundHandleFocus);
-      document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
-    };
+    // All blur/focus/visibilitychange handlers were no-ops (React patcher handles
+    // button persistence natively). Removed to eliminate 3 permanent global listeners.
+    this._windowFocusCleanup = null;
   }
 
   // NOTE: startPeriodicButtonCheck() and stopPeriodicButtonCheck() removed in v1.3.0.

@@ -87,6 +87,25 @@ try {
 } catch (_) {
   _PluginUtils = null;
 }
+var _humanizedPermCache = {};
+var PANEL_STYLE = {
+  padding: "16px",
+  background: "#111827",
+  color: "#d1d5db",
+  borderRadius: "10px",
+  border: "1px solid rgba(75, 123, 236, 0.35)"
+};
+var ROW_STYLE = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "12px",
+  padding: "10px 0",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.2)"
+};
+var LABEL_STYLE = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
+var NOTE_STYLE = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
+var STAT_STYLE = { color: "#93c5fd", fontWeight: "700" };
 module.exports = class ShadowRecon {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
@@ -98,8 +117,11 @@ module.exports = class ShadowRecon {
     this._refreshInterval = null;
     this._visualRefreshTimeout = null;
     this._modalEl = null;
-    this._shadowCache = { timestamp: 0, map: /* @__PURE__ */ new Map() };
+    this._shadowCache = { timestamp: 0, map: /* @__PURE__ */ new Map(), diskFallbackDone: false };
     this._permissionBitsCache = null;
+    this._allPermsBitsCache = void 0;
+    this._onlineCountMethod = null;
+    this._guildsTargetCache = null;
     this._guildHintCache = /* @__PURE__ */ new Map();
     this._guildNavOrientationCache = { target: null, measuredAt: 0, horizontal: false };
     this._guildNavOrientationCacheTTL = 1200;
@@ -237,13 +259,21 @@ module.exports = class ShadowRecon {
   _getShadowDeploymentMap() {
     var _a, _b;
     const now = Date.now();
-    if (now - this._shadowCache.timestamp < 3e3) return this._shadowCache.map;
+    if (now - this._shadowCache.timestamp < 5e3) return this._shadowCache.map;
     const nextMap = /* @__PURE__ */ new Map();
     try {
       const plugin = BdApi.Plugins.get("ShadowSenses");
       const instance = (plugin == null ? void 0 : plugin.instance) || plugin;
       const live = (_b = (_a = instance == null ? void 0 : instance.deploymentManager) == null ? void 0 : _a.getDeployments) == null ? void 0 : _b.call(_a);
-      const deployments = Array.isArray(live) ? live : BdApi.Data.load("ShadowSenses", "deployments") || [];
+      let deployments;
+      if (Array.isArray(live)) {
+        deployments = live;
+      } else if (!this._shadowCache.diskFallbackDone) {
+        deployments = BdApi.Data.load("ShadowSenses", "deployments") || [];
+        this._shadowCache.diskFallbackDone = true;
+      } else {
+        deployments = [];
+      }
       for (const dep of deployments) {
         const userId = String((dep == null ? void 0 : dep.targetUserId) || "");
         if (!userId) continue;
@@ -252,7 +282,8 @@ module.exports = class ShadowRecon {
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed loading ShadowSenses deployments`, err);
     }
-    this._shadowCache = { timestamp: now, map: nextMap };
+    this._shadowCache.timestamp = now;
+    this._shadowCache.map = nextMap;
     return nextMap;
   }
   _isMarkedTarget(userId) {
@@ -342,8 +373,8 @@ module.exports = class ShadowRecon {
         try {
           const user = props == null ? void 0 : props.user;
           if (!(user == null ? void 0 : user.id)) return;
-          const currentGuildId = (_b = (_a = this._SelectedGuildStore) == null ? void 0 : _a.getGuildId) == null ? void 0 : _b.call(_a);
-          const items = this._buildUserContextReconItems(user.id, currentGuildId);
+          const currentGuildId2 = (_b = (_a = this._SelectedGuildStore) == null ? void 0 : _a.getGuildId) == null ? void 0 : _b.call(_a);
+          const items = this._buildUserContextReconItems(user.id, currentGuildId2);
           if (items.length > 0) this._appendContextItems(tree, items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] user-context patch error`, err);
@@ -353,11 +384,11 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed to patch user-context`, err);
     }
   }
-  _buildStaffContextItems(userId, currentGuildId) {
+  _buildStaffContextItems(userId, currentGuildId2) {
     if (!this.settings.showStaffIntelInContextMenu) return [];
-    const staff = this.getStaffIntel(userId, currentGuildId);
+    const staff = this.getStaffIntel(userId, currentGuildId2);
     if (!staff) return [];
-    const detailedUnlocked = this.isDetailedStaffIntelUnlocked(currentGuildId);
+    const detailedUnlocked = this.isDetailedStaffIntelUnlocked(currentGuildId2);
     return [
       BdApi.ContextMenu.buildItem({
         type: "text",
@@ -367,12 +398,12 @@ module.exports = class ShadowRecon {
       BdApi.ContextMenu.buildItem({
         type: "text",
         label: detailedUnlocked ? "Shadow Recon: Open Staff Dossier" : "Shadow Recon: Staff Dossier (recon guild)",
-        action: detailedUnlocked ? () => this.openStaffIntelModal(userId, currentGuildId) : void 0,
+        action: detailedUnlocked ? () => this.openStaffIntelModal(userId, currentGuildId2) : void 0,
         disabled: !detailedUnlocked
       })
     ];
   }
-  _buildMarkedTargetContextItems(userId, currentGuildId) {
+  _buildMarkedTargetContextItems(userId, currentGuildId2) {
     if (!this.settings.showMarkedTargetIntelInContext) return [];
     if (!this._isMarkedTarget(userId)) return [];
     const deployment = this._getShadowDeploymentMap().get(String(userId));
@@ -380,14 +411,14 @@ module.exports = class ShadowRecon {
       BdApi.ContextMenu.buildItem({
         type: "text",
         label: `Shadow Recon: Target Intel${(deployment == null ? void 0 : deployment.shadowRank) ? ` [${deployment.shadowRank}]` : ""}`,
-        action: () => this.openUserIntelModal(userId, currentGuildId)
+        action: () => this.openUserIntelModal(userId, currentGuildId2)
       })
     ];
   }
-  _buildUserContextReconItems(userId, currentGuildId) {
+  _buildUserContextReconItems(userId, currentGuildId2) {
     return [
-      ...this._buildStaffContextItems(userId, currentGuildId),
-      ...this._buildMarkedTargetContextItems(userId, currentGuildId)
+      ...this._buildStaffContextItems(userId, currentGuildId2),
+      ...this._buildMarkedTargetContextItems(userId, currentGuildId2)
     ];
   }
   unpatchContextMenus() {
@@ -517,7 +548,12 @@ module.exports = class ShadowRecon {
   }
   // ---- Server Counter Widget ------------------------------------------
   _getGuildsTarget() {
-    return document.querySelector('[data-list-id="guildsnav"]') || document.querySelector('[class*="guilds_"] [class*="scroller_"]') || document.querySelector('[class*="guilds_"]');
+    if (this._guildsTargetCache && this._guildsTargetCache.isConnected) {
+      return this._guildsTargetCache;
+    }
+    const target = document.querySelector('[data-list-id="guildsnav"]') || document.querySelector('[class*="guilds_"] [class*="scroller_"]') || document.querySelector('[class*="guilds_"]');
+    this._guildsTargetCache = target;
+    return target;
   }
   _isHorizontalGuildNav(target) {
     if (!target || typeof window === "undefined" || typeof window.getComputedStyle !== "function") return false;
@@ -641,6 +677,17 @@ module.exports = class ShadowRecon {
   _readOnlineCountFromStore(guildId) {
     const countStore = this._GuildMemberCountStore;
     if (!countStore || typeof countStore !== "object") return null;
+    if (this._onlineCountMethod) {
+      try {
+        const result = this._onlineCountMethod.call(countStore, guildId);
+        const direct = this._safeNonNegativeInt(result);
+        if (direct !== null) return direct;
+        const nested = this._readOnlineCountFromObject(result);
+        if (nested !== null) return nested;
+      } catch (_) {
+        this._onlineCountMethod = null;
+      }
+    }
     const storeMethods = [
       "getOnlineCount",
       "getOnlineMemberCount",
@@ -655,9 +702,15 @@ module.exports = class ShadowRecon {
       try {
         const result = fn.call(countStore, guildId);
         const direct = this._safeNonNegativeInt(result);
-        if (direct !== null) return direct;
+        if (direct !== null) {
+          this._onlineCountMethod = fn;
+          return direct;
+        }
         const nested = this._readOnlineCountFromObject(result);
-        if (nested !== null) return nested;
+        if (nested !== null) {
+          this._onlineCountMethod = fn;
+          return nested;
+        }
       } catch (_) {
       }
     }
@@ -1069,11 +1122,13 @@ module.exports = class ShadowRecon {
     return bits;
   }
   _allPermissionBits() {
+    if (this._allPermsBitsCache !== void 0) return this._allPermsBitsCache;
     const map = this._getPermissionBitsMap();
     let all = 0n;
     for (const bit of Object.values(map)) {
       if (typeof bit === "bigint") all |= bit;
     }
+    this._allPermsBitsCache = all;
     return all;
   }
   _getPermissionBitsMap() {
@@ -1271,21 +1326,23 @@ module.exports = class ShadowRecon {
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
   _humanizePermissionKey(key) {
-    return String(key).toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+    if (_humanizedPermCache[key]) return _humanizedPermCache[key];
+    const result = String(key).toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+    _humanizedPermCache[key] = result;
+    return result;
   }
   // ---- Settings Panel --------------------------------------------------
   getSettingsPanel() {
-    var _a, _b;
     const React = BdApi.React;
     const ce = React.createElement;
     const makeToggle = (label, key, note) => ce(
       "div",
-      { style: rowStyle },
+      { style: ROW_STYLE },
       ce(
         "div",
         null,
-        ce("div", { style: labelStyle }, label),
-        note ? ce("div", { style: noteStyle }, note) : null
+        ce("div", { style: LABEL_STYLE }, label),
+        note ? ce("div", { style: NOTE_STYLE }, note) : null
       ),
       ce("input", {
         type: "checkbox",
@@ -1298,39 +1355,20 @@ module.exports = class ShadowRecon {
         style: { accentColor: "#4b7bec" }
       })
     );
-    const currentGuildId = (_b = (_a = this._SelectedGuildStore) == null ? void 0 : _a.getGuildId) == null ? void 0 : _b.call(_a);
     const markedTargets = this._getShadowDeploymentMap().size;
-    const panelStyle = {
-      padding: "16px",
-      background: "#111827",
-      color: "#d1d5db",
-      borderRadius: "10px",
-      border: "1px solid rgba(75, 123, 236, 0.35)"
-    };
-    const rowStyle = {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: "12px",
-      padding: "10px 0",
-      borderBottom: "1px solid rgba(148, 163, 184, 0.2)"
-    };
-    const labelStyle = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
-    const noteStyle = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
-    const statStyle = { color: "#93c5fd", fontWeight: "700" };
     return ce(
       "div",
-      { style: panelStyle },
+      { style: PANEL_STYLE },
       ce("h3", { style: { marginTop: 0, color: "#60a5fa" } }, "Shadow Recon Control"),
       ce(
         "div",
         { style: { marginBottom: "12px", color: "#9ca3af", fontSize: "12px" } },
         ce("span", null, "Guilds: "),
-        ce("span", { style: statStyle }, this._formatNumber(this.getServerCount())),
+        ce("span", { style: STAT_STYLE }, this._formatNumber(this.getServerCount())),
         ce("span", null, " | Marked Guilds: "),
-        ce("span", { style: statStyle }, this._formatNumber(this._markedGuildIds.size)),
+        ce("span", { style: STAT_STYLE }, this._formatNumber(this._markedGuildIds.size)),
         ce("span", null, " | Marked Targets: "),
-        ce("span", { style: statStyle }, this._formatNumber(markedTargets))
+        ce("span", { style: STAT_STYLE }, this._formatNumber(markedTargets))
       ),
       makeToggle("Lore Lock (recon guild for full dossier)", "loreLockedRecon", "When enabled, unrecon guild dossiers only show a limited briefing."),
       makeToggle("Server Counter Widget", "showServerCounterWidget", "Adds total guild / marked intel at top of guild bar."),

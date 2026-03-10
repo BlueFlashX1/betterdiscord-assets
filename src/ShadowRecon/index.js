@@ -71,6 +71,27 @@ try { _ReactUtils = _bdLoad("BetterDiscordReactUtils.js"); } catch (_) { _ReactU
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
+const _humanizedPermCache = {}; // permission key → "Manage Channels" etc. (fixed set, never evicted)
+
+const PANEL_STYLE = {
+  padding: "16px",
+  background: "#111827",
+  color: "#d1d5db",
+  borderRadius: "10px",
+  border: "1px solid rgba(75, 123, 236, 0.35)",
+};
+const ROW_STYLE = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: "12px",
+  padding: "10px 0",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.2)",
+};
+const LABEL_STYLE = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
+const NOTE_STYLE = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
+const STAT_STYLE = { color: "#93c5fd", fontWeight: "700" };
+
 module.exports = class ShadowRecon {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
@@ -86,8 +107,11 @@ module.exports = class ShadowRecon {
 
     this._modalEl = null;
 
-    this._shadowCache = { timestamp: 0, map: new Map() };
+    this._shadowCache = { timestamp: 0, map: new Map(), diskFallbackDone: false };
     this._permissionBitsCache = null;
+    this._allPermsBitsCache = undefined;
+    this._onlineCountMethod = null; // cached working store method for online count
+    this._guildsTargetCache = null; // cached DOM element for guild nav
     this._guildHintCache = new Map(); // guildId -> { memberCount, online, marked, title }
     this._guildNavOrientationCache = { target: null, measuredAt: 0, horizontal: false };
     this._guildNavOrientationCacheTTL = 1200;
@@ -254,16 +278,22 @@ module.exports = class ShadowRecon {
 
   _getShadowDeploymentMap() {
     const now = Date.now();
-    if (now - this._shadowCache.timestamp < 3000) return this._shadowCache.map;
+    if (now - this._shadowCache.timestamp < 5000) return this._shadowCache.map;
 
     const nextMap = new Map();
     try {
       const plugin = BdApi.Plugins.get("ShadowSenses");
       const instance = plugin?.instance || plugin;
       const live = instance?.deploymentManager?.getDeployments?.();
-      const deployments = Array.isArray(live)
-        ? live
-        : (BdApi.Data.load("ShadowSenses", "deployments") || []);
+      let deployments;
+      if (Array.isArray(live)) {
+        deployments = live;
+      } else if (!this._shadowCache.diskFallbackDone) {
+        deployments = BdApi.Data.load("ShadowSenses", "deployments") || [];
+        this._shadowCache.diskFallbackDone = true;
+      } else {
+        deployments = [];
+      }
 
       for (const dep of deployments) {
         const userId = String(dep?.targetUserId || "");
@@ -274,7 +304,8 @@ module.exports = class ShadowRecon {
       console.error(`[${PLUGIN_NAME}] Failed loading ShadowSenses deployments`, err);
     }
 
-    this._shadowCache = { timestamp: now, map: nextMap };
+    this._shadowCache.timestamp = now;
+    this._shadowCache.map = nextMap;
     return nextMap;
   }
 
@@ -572,11 +603,15 @@ module.exports = class ShadowRecon {
   // ---- Server Counter Widget ------------------------------------------
 
   _getGuildsTarget() {
-    return (
+    if (this._guildsTargetCache && this._guildsTargetCache.isConnected) {
+      return this._guildsTargetCache;
+    }
+    const target =
       document.querySelector('[data-list-id="guildsnav"]') ||
       document.querySelector('[class*="guilds_"] [class*="scroller_"]') ||
-      document.querySelector('[class*="guilds_"]')
-    );
+      document.querySelector('[class*="guilds_"]');
+    this._guildsTargetCache = target;
+    return target;
   }
 
   _isHorizontalGuildNav(target) {
@@ -721,6 +756,17 @@ module.exports = class ShadowRecon {
     const countStore = this._GuildMemberCountStore;
     if (!countStore || typeof countStore !== "object") return null;
 
+    // Fast path: use cached working method
+    if (this._onlineCountMethod) {
+      try {
+        const result = this._onlineCountMethod.call(countStore, guildId);
+        const direct = this._safeNonNegativeInt(result);
+        if (direct !== null) return direct;
+        const nested = this._readOnlineCountFromObject(result);
+        if (nested !== null) return nested;
+      } catch (_) { this._onlineCountMethod = null; }
+    }
+
     const storeMethods = [
       "getOnlineCount",
       "getOnlineMemberCount",
@@ -735,9 +781,9 @@ module.exports = class ShadowRecon {
       try {
         const result = fn.call(countStore, guildId);
         const direct = this._safeNonNegativeInt(result);
-        if (direct !== null) return direct;
+        if (direct !== null) { this._onlineCountMethod = fn; return direct; }
         const nested = this._readOnlineCountFromObject(result);
-        if (nested !== null) return nested;
+        if (nested !== null) { this._onlineCountMethod = fn; return nested; }
       } catch (_) {}
     }
     return null;
@@ -1241,11 +1287,13 @@ module.exports = class ShadowRecon {
   }
 
   _allPermissionBits() {
+    if (this._allPermsBitsCache !== undefined) return this._allPermsBitsCache;
     const map = this._getPermissionBitsMap();
     let all = 0n;
     for (const bit of Object.values(map)) {
       if (typeof bit === "bigint") all |= bit;
     }
+    this._allPermsBitsCache = all;
     return all;
   }
 
@@ -1475,11 +1523,14 @@ module.exports = class ShadowRecon {
   }
 
   _humanizePermissionKey(key) {
-    return String(key)
+    if (_humanizedPermCache[key]) return _humanizedPermCache[key];
+    const result = String(key)
       .toLowerCase()
       .split("_")
       .map(part => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ");
+    _humanizedPermCache[key] = result;
+    return result;
   }
 
   // ---- Settings Panel --------------------------------------------------
@@ -1488,10 +1539,10 @@ module.exports = class ShadowRecon {
     const React = BdApi.React;
     const ce = React.createElement;
 
-    const makeToggle = (label, key, note) => ce("div", { style: rowStyle },
+    const makeToggle = (label, key, note) => ce("div", { style: ROW_STYLE },
       ce("div", null,
-        ce("div", { style: labelStyle }, label),
-        note ? ce("div", { style: noteStyle }, note) : null
+        ce("div", { style: LABEL_STYLE }, label),
+        note ? ce("div", { style: NOTE_STYLE }, note) : null
       ),
       ce("input", {
         type: "checkbox",
@@ -1505,40 +1556,18 @@ module.exports = class ShadowRecon {
       })
     );
 
-    const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
     const markedTargets = this._getShadowDeploymentMap().size;
 
-    const panelStyle = {
-      padding: "16px",
-      background: "#111827",
-      color: "#d1d5db",
-      borderRadius: "10px",
-      border: "1px solid rgba(75, 123, 236, 0.35)",
-    };
-
-    const rowStyle = {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      gap: "12px",
-      padding: "10px 0",
-      borderBottom: "1px solid rgba(148, 163, 184, 0.2)",
-    };
-
-    const labelStyle = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
-    const noteStyle = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
-    const statStyle = { color: "#93c5fd", fontWeight: "700" };
-
-    return ce("div", { style: panelStyle },
+    return ce("div", { style: PANEL_STYLE },
       ce("h3", { style: { marginTop: 0, color: "#60a5fa" } }, "Shadow Recon Control"),
 
       ce("div", { style: { marginBottom: "12px", color: "#9ca3af", fontSize: "12px" } },
         ce("span", null, "Guilds: "),
-        ce("span", { style: statStyle }, this._formatNumber(this.getServerCount())),
+        ce("span", { style: STAT_STYLE }, this._formatNumber(this.getServerCount())),
         ce("span", null, " | Marked Guilds: "),
-        ce("span", { style: statStyle }, this._formatNumber(this._markedGuildIds.size)),
+        ce("span", { style: STAT_STYLE }, this._formatNumber(this._markedGuildIds.size)),
         ce("span", null, " | Marked Targets: "),
-        ce("span", { style: statStyle }, this._formatNumber(markedTargets))
+        ce("span", { style: STAT_STYLE }, this._formatNumber(markedTargets))
       ),
 
       makeToggle("Lore Lock (recon guild for full dossier)", "loreLockedRecon", "When enabled, unrecon guild dossiers only show a limited briefing."),

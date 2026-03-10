@@ -981,8 +981,9 @@ module.exports = class Stealth {
     const key = throttleKey || `${scope}:${message}`;
     const now = Date.now();
     const throttleMs = 15000;
-    this._trimWarningTimestamps(now);
     if (this._shouldThrottleWarning(key, now, throttleMs)) return;
+    // Trim only after a warning passes through AND map is large
+    if (this._warningTimestamps.size > 256) this._trimWarningTimestamps(now);
     this._printWarning(scope, message, error);
   }
 
