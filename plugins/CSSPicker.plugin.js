@@ -1163,37 +1163,29 @@ module.exports = class CSSPicker {
         </label>
       </div>
     `;
-    panel.querySelector("#css-picker-start").addEventListener("click", () => {
-      this.activatePickMode();
-    });
-    panel.querySelector("#css-picker-stop").addEventListener("click", () => {
-      this.deactivatePickMode();
-    });
     const update = (next) => {
       const merged = { ...loadSettings(), ...next };
       saveSettings(merged);
       this.settings = merged;
       this._toast("CSS Picker settings saved", "success", 2e3);
     };
-    panel.querySelector("#css-picker-toast-computed").addEventListener("change", (e) => {
-      update({ toastIncludeComputed: !!e.target.checked });
+    const settingsActions = {
+      "css-picker-start": () => this.activatePickMode(),
+      "css-picker-stop": () => this.deactivatePickMode(),
+      "css-picker-toast-computed": (e) => update({ toastIncludeComputed: !!e.target.checked }),
+      "css-picker-toast-rules": (e) => update({ toastIncludeRules: !!e.target.checked }),
+      "css-picker-toast-rule-count": (e) => update({ toastRuleCount: Math.max(0, Math.min(6, Number(e.target.value || 0))) }),
+      "css-picker-toast-timeout": (e) => update({ toastTimeoutMs: Math.max(1500, Math.min(2e4, Number(e.target.value || 5500))) }),
+      "css-picker-hotkey-enabled": (e) => update({ hotkeyEnabled: !!e.target.checked }),
+      "css-picker-hotkey": (e) => update({ hotkey: String(e.target.value || "").trim() || DEFAULT_SETTINGS.hotkey })
+    };
+    panel.addEventListener("click", (e) => {
+      const handler = settingsActions[e.target.id];
+      if (handler) handler(e);
     });
-    panel.querySelector("#css-picker-toast-rules").addEventListener("change", (e) => {
-      update({ toastIncludeRules: !!e.target.checked });
-    });
-    panel.querySelector("#css-picker-toast-rule-count").addEventListener("change", (e) => {
-      const value = Math.max(0, Math.min(6, Number(e.target.value || 0)));
-      update({ toastRuleCount: value });
-    });
-    panel.querySelector("#css-picker-toast-timeout").addEventListener("change", (e) => {
-      const value = Math.max(1500, Math.min(2e4, Number(e.target.value || 5500)));
-      update({ toastTimeoutMs: value });
-    });
-    panel.querySelector("#css-picker-hotkey-enabled").addEventListener("change", (e) => {
-      update({ hotkeyEnabled: !!e.target.checked });
-    });
-    panel.querySelector("#css-picker-hotkey").addEventListener("change", (e) => {
-      update({ hotkey: String(e.target.value || "").trim() || DEFAULT_SETTINGS.hotkey });
+    panel.addEventListener("change", (e) => {
+      const handler = settingsActions[e.target.id];
+      if (handler) handler(e);
     });
     return panel;
   }
