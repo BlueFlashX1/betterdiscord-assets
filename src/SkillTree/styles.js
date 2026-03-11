@@ -139,30 +139,30 @@ const SKILL_TREE_CSS = `
 
       .skilltree-reset-btn {
         padding: 10px 20px;
-        background: linear-gradient(135deg, #cc2222 0%, #aa1818 100%);
-        border: 2px solid var(--danger-color, #ff4444);
+        background: linear-gradient(135deg, #6b21a8 0%, #4c1d95 100%);
+        border: 2px solid rgba(168, 85, 247, 0.85);
         border-radius: 2px;
-        color: white;
+        color: #f5f3ff;
         font-size: 14px;
         font-weight: bold;
         cursor: pointer;
         outline: none;
         transition: all 0.3s ease;
-        box-shadow: 0 0 15px rgba(255, 68, 68, 0.3);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.35);
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
 
       .skilltree-reset-btn:hover {
-        background: linear-gradient(135deg, rgba(255, 68, 68, 1) 0%, rgba(220, 38, 38, 1) 100%);
-        border-color: rgba(255, 100, 100, 1);
-        box-shadow: 0 0 25px rgba(255, 68, 68, 0.6);
+        background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        border-color: rgba(196, 181, 253, 0.95);
+        box-shadow: 0 0 25px rgba(138, 43, 226, 0.6);
         transform: translateY(-2px);
       }
 
       .skilltree-reset-btn:active {
         transform: translateY(0);
-        box-shadow: 0 0 15px rgba(255, 68, 68, 0.4);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.45);
         backdrop-filter: blur(10px);
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
       }
@@ -288,21 +288,23 @@ const SKILL_TREE_CSS = `
         position: absolute;
         top: 15px;
         right: 15px;
-        background: linear-gradient(135deg, #ff4444 0%, #cc2222 100%);
-        color: white;
-        border: none;
+        background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+        color: #f5f3ff;
+        border: 1px solid rgba(196, 181, 253, 0.75);
         border-radius: 2px;
         padding: 8px 12px;
         cursor: pointer;
         font-size: 18px;
         font-weight: 700;
-        box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
+        box-shadow: 0 4px 15px rgba(138, 43, 226, 0.42);
         transition: all 0.2s;
         z-index: 10;
       }
       .skilltree-close-btn:hover {
-        transform: scale(1.1) rotate(90deg);
-        box-shadow: 0 6px 20px rgba(255, 68, 68, 0.6);
+        transform: none;
+        background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        border-color: rgba(221, 214, 254, 0.95);
+        box-shadow: 0 6px 20px rgba(138, 43, 226, 0.6);
       }
 
       /* Tier Section */
