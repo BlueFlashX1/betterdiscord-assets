@@ -120,7 +120,7 @@ function normalizeHoverDelays(settings) {
   if (settings.hoverRevealDelayMs === 120 || settings.hoverRevealDelayMs === 500) {
     settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
   }
-  if (settings.hoverHideDelayMs === 300 || settings.hoverHideDelayMs === 1000) {
+  if (settings.hoverHideDelayMs === 0 || settings.hoverHideDelayMs === 300 || settings.hoverHideDelayMs === 1000) {
     settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
   }
   if (!Number.isFinite(settings.hoverRevealDelayMs) || settings.hoverRevealDelayMs < 0) {
@@ -131,8 +131,8 @@ function normalizeHoverDelays(settings) {
   }
   // Keep delayed auto-show for all hover reveals.
   settings.hoverRevealDelayMs = Math.max(DEFAULT_SETTINGS.hoverRevealDelayMs, settings.hoverRevealDelayMs);
-  // Hide must be immediate for all hover reveals.
-  settings.hoverHideDelayMs = 0;
+  // Keep a fixed 500ms hide delay for all hover reveals.
+  settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
 }
 
 function sanitizeLoadedSettings(saved, deepMerge) {

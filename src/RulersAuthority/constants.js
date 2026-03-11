@@ -94,7 +94,7 @@ export const DEFAULT_SETTINGS = {
   // Hover config
   hoverFudgePx: 15,
   hoverRevealDelayMs: 1000,
-  hoverHideDelayMs: 0,
+  hoverHideDelayMs: 500,
 
   // Per-guild micro state
   guilds: {},

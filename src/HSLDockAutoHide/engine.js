@@ -105,7 +105,7 @@ class DockEngine {
     // ── Config ──
     this.peekPx = 8;
     this.revealZonePx = 85;
-    this.hideDelayMs = 0;
+    this.hideDelayMs = 500;
     this.revealHoldMs = 0;
     this.revealConfirmMs = 1000;
     this.focusReentryGuardMs = 1000;
@@ -632,7 +632,7 @@ class DockEngine {
     }
 
     // Keep pointer-over state fresh per mouse event (safeTick refresh can be stale
-    // during fast movements, which caused false immediate hides with hideDelay=0).
+    // during fast movements, which can otherwise cause premature hides).
     const cursorOnDock =
       this.isCursorInsideDockRect(this.lastMouseX, this.lastMouseY) &&
       this.isPointerOnDockHitTarget(this.lastMouseX, this.lastMouseY);
