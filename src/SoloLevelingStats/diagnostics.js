@@ -69,8 +69,9 @@ module.exports = {
   },
 
   debugConsole(prefix, message, data = {}) {
-    const log = () => console.log(`${prefix}`, message, data);
     // Safe check: Only log if settings exist AND debugMode is explicitly true
-    return this.settings?.debugMode === true && log();
+    if (this.settings?.debugMode === true) {
+      console.log(`${prefix}`, message, data);
+    }
   }
 };

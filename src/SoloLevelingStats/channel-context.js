@@ -121,6 +121,9 @@ module.exports = {
   getCurrentChannelInfo() {
     try {
       const url = window.location.href;
+      if (this._channelInfoCacheUrl === url && this._channelInfoCache) {
+        return this._channelInfoCache;
+      }
       // Reduced verbosity - only log if verbose mode enabled (frequent operation)
       this.debugLog('GET_CHANNEL_INFO', 'Getting channel info', { url });
   
@@ -136,7 +139,7 @@ module.exports = {
           threadId,
           type: 'thread',
         });
-        return {
+        const info = {
           channelId: `thread_${serverId}_${parentChannelId}_${threadId}`,
           channelType: 'thread',
           serverId,
@@ -144,6 +147,9 @@ module.exports = {
           rawChannelId: threadId,
           parentChannelId,
         };
+        this._channelInfoCacheUrl = url;
+        this._channelInfoCache = info;
+        return info;
       }
   
       // Pattern 1: Server channel - /channels/{serverId}/{channelId}
@@ -157,13 +163,16 @@ module.exports = {
           channelId,
           type: 'server',
         });
-        return {
+        const info = {
           channelId: `server_${serverId}_${channelId}`, // Unique ID for server channels
           channelType: 'server',
           serverId,
           isDM: false,
           rawChannelId: channelId,
         };
+        this._channelInfoCacheUrl = url;
+        this._channelInfoCache = info;
+        return info;
       }
   
       // Pattern 2: Direct Message (DM) - /@me/{channelId}
@@ -175,13 +184,16 @@ module.exports = {
           channelId,
           type: 'dm',
         });
-        return {
+        const info = {
           channelId: `dm_${channelId}`, // Unique ID for DMs
           channelType: 'dm',
           serverId: null,
           isDM: true,
           rawChannelId: channelId,
         };
+        this._channelInfoCacheUrl = url;
+        this._channelInfoCache = info;
+        return info;
       }
   
       // Pattern 3: Group DM - /channels/@me/{groupId}
@@ -193,13 +205,16 @@ module.exports = {
           groupId,
           type: 'group_dm',
         });
-        return {
+        const info = {
           channelId: `group_dm_${groupId}`,
           channelType: 'group_dm',
           serverId: null,
           isDM: true,
           rawChannelId: groupId,
         };
+        this._channelInfoCacheUrl = url;
+        this._channelInfoCache = info;
+        return info;
       }
   
       // Pattern 4: Fallback - use full URL as ID (for unknown patterns)
@@ -207,17 +222,22 @@ module.exports = {
         url,
         type: 'unknown',
       });
-      return {
+      const info = {
         channelId: `unknown_${this.hashString(url)}`,
         channelType: 'unknown',
         serverId: null,
         isDM: false,
         rawChannelId: url,
       };
+      this._channelInfoCacheUrl = url;
+      this._channelInfoCache = info;
+      return info;
     } catch (error) {
       this.debugError('GET_CHANNEL_INFO', error, {
         currentUrl: window.location.href,
       });
+      this._channelInfoCacheUrl = null;
+      this._channelInfoCache = null;
       return null;
     }
   },
@@ -341,6 +361,9 @@ module.exports = {
   },
 
   getMessageInputElement() {
+    const cachedInput = this._messageInputElCache;
+    if (cachedInput?.isConnected) return cachedInput;
+
     // Cache selector list to avoid allocations on repeated lookups
     if (!this._messageInputSelectors) {
       this._messageInputSelectors = [
@@ -359,16 +382,21 @@ module.exports = {
   
     for (const selector of this._messageInputSelectors) {
       const el = document.querySelector(selector);
-      if (el) return el;
+      if (el) {
+        this._messageInputElCache = el;
+        return el;
+      }
     }
   
     // Also try to find by role attribute
     const roleInput = document.querySelector('[role="textbox"]');
     if (roleInput && roleInput.contentEditable === 'true') {
       this.debugLog('FIND_INPUT', 'Found input by role="textbox"');
+      this._messageInputElCache = roleInput;
       return roleInput;
     }
   
+    this._messageInputElCache = null;
     return null;
   },
 

@@ -168,12 +168,12 @@ module.exports = class UserPanelDockMover {
       }
       return;
     }
+    this._pollSlowed = false;
 
     if (this.panel && this.panel !== panel) {
       this.panel.classList.remove("sl-userpanel-docked");
       this.panel.style.removeProperty("right");
       this.panel.style.removeProperty("left");
-      this._pollSlowed = false;
     }
 
     this.panel = panel;

@@ -110,6 +110,9 @@ module.exports = class SkillTree {
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("skillTree") || createToast();
     if (!this._isStopped) this.stop();
+    // Restart-safe: clear any stale delayed retries before re-initializing watchers.
+    this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this._retryTimeouts.clear();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 

@@ -195,9 +195,6 @@ module.exports = {
         },
       });
   
-      // Save immediately — stat allocation is player-visible progress
-      this.saveSettings(true);
-  
       this.debugLog(
         'ALLOCATE_STAT',
         `${statName.charAt(0).toUpperCase() + statName.slice(1)} stat point allocated with buff`,
@@ -242,9 +239,6 @@ module.exports = {
       },
     });
   
-    // Save immediately — stat allocation is player-visible progress
-    this.saveSettings(true);
-  
     // Debug log
     this.debugLog('ALLOCATE_STAT', 'Stat point allocated successfully', {
       statName,
@@ -266,7 +260,6 @@ module.exports = {
   
       const messagesSent = this.settings.activity?.messagesSent || 0;
       const level = this.settings.level || 1;
-      const _charactersTyped = this.settings.activity?.charactersTyped || 0;
   
       // Calculate expected natural stat growth based on activity.
       // Retroactive grant is intentionally conservative to avoid stat inflation on older saves.
@@ -283,7 +276,7 @@ module.exports = {
       const totalGrowth = messageBasedGrowth + levelBasedGrowth;
   
       if (totalGrowth > 0) {
-        const statNames = this.STAT_KEYS;
+        const statNames = this.getStatKeys();
         let statsAdded = 0;
   
         // Distribute growth evenly across all stats
@@ -291,7 +284,6 @@ module.exports = {
         const remainder = totalGrowth % statNames.length;
   
         statNames.forEach((statName, index) => {
-          const _currentStat = this.settings.stats[statName] || 0;
           // Add base growth per stat
           let growthToAdd = growthPerStat;
           // Add remainder to first stats
@@ -332,7 +324,7 @@ module.exports = {
 
   processNaturalStatGrowth() {
     try {
-      const statNames = this.STAT_KEYS;
+      const statNames = this.getStatKeys();
       let statsGrown = [];
   
       // Get user level and rank for bonus growth
@@ -405,9 +397,6 @@ module.exports = {
             statsGrown,
           },
         });
-  
-        // Debounced save — natural growth happens per-message so we coalesce
-        this.saveSettings();
       }
     } catch (error) {
       this.debugError('NATURAL_STAT_GROWTH', error);

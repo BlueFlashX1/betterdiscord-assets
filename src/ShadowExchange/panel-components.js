@@ -251,11 +251,6 @@ function createWaypointPanel(React, pluginInstance, WaypointCard) {
       return () => document.removeEventListener("keydown", handler, true);
     }, [onClose]);
 
-    React.useEffect(() => {
-      const timer = setTimeout(() => pluginInstance.saveSettings(), 500);
-      return () => clearTimeout(timer);
-    }, []);
-
     const waypointRevision = getWaypointListRevision(pluginInstance.settings.waypoints);
     const waypoints = React.useMemo(
       () => getFilteredSortedWaypoints(pluginInstance.settings.waypoints, searchQuery, sortBy),

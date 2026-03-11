@@ -155,8 +155,6 @@ module.exports = class SoloLevelingTitleManager {
     this._modalForceUpdate = null;
     this._components = null;
 
-    // Track all retry timeouts for proper cleanup
-    this._retryTimeouts = new Set();
     this._isStopped = false;
 
     // Settings panel binding (delegated) references for cleanup
@@ -256,13 +254,6 @@ module.exports = class SoloLevelingTitleManager {
       return;
     }
     console.warn(message);
-  }
-
-  _clearTrackedTimeout(timeoutId) {
-    if (typeof timeoutId !== 'number') return false;
-    clearTimeout(timeoutId);
-    this._retryTimeouts.delete(timeoutId);
-    return true;
   }
 
   /**
@@ -542,6 +533,8 @@ module.exports = class SoloLevelingTitleManager {
    */
 
   start() {
+    // Restart-safe: clear stale UI/style/registrations before re-initializing.
+    this.stop();
     this._toast = _PluginUtils?.createToastHelper?.("titleManager") || createToast();
     this._warnedMessages.clear();
     // Reset stopped flag to allow watchers to recreate
@@ -586,10 +579,6 @@ module.exports = class SoloLevelingTitleManager {
       this.closeTitleModal();
       this.detachTitleManagerSettingsPanelHandlers();
       this.removeCSS();
-
-      // Clear all tracked retry timeouts
-      this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
-      this._retryTimeouts.clear();
     } finally {
       // No periodic check interval to clear — React patcher handles persistence.
 
@@ -607,6 +596,8 @@ module.exports = class SoloLevelingTitleManager {
       this._cache.achievementDefinitions = null;
       this._cache.achievementDefinitionsTime = 0;
       this._cache.titleBonuses = new Map();
+      this._components = null;
+      this._toast = null;
     }
 
     this.debugLog('STOP', 'Plugin stopped');
@@ -619,7 +610,7 @@ module.exports = class SoloLevelingTitleManager {
     try {
       const saved = BdApi.Data.load('TitleManager', 'settings');
       // FUNCTIONAL: Short-circuit merge with deep copy (no if-else)
-      saved && (this.settings = structuredClone({ ...this.defaultSettings, ...saved }));
+      saved && typeof saved === 'object' && (this.settings = structuredClone({ ...this.defaultSettings, ...saved }));
     } catch (error) {
       this.debugError('SETTINGS', 'Error loading settings', error);
     }
@@ -783,6 +774,12 @@ module.exports = class SoloLevelingTitleManager {
       return;
     }
 
+    if (!this._components?.TitleModal) {
+      this.warnOnce('components-missing', '[TitleManager] Modal components unavailable — cannot open modal');
+      this._toast?.('Title modal unavailable in current Discord runtime', 'error', 2500);
+      return;
+    }
+
     const createRoot = this._getCreateRoot();
     if (!createRoot) {
       this.warnOnce('create-root-missing', '[TitleManager] createRoot unavailable — cannot open modal');
@@ -807,7 +804,11 @@ module.exports = class SoloLevelingTitleManager {
 
   closeTitleModal() {
     if (this._modalReactRoot) {
-      this._modalReactRoot.unmount();
+      try {
+        this._modalReactRoot.unmount();
+      } catch (error) {
+        this.warnOnce('modal-unmount-failed', '[TitleManager] Failed to unmount modal root', error);
+      }
       this._modalReactRoot = null;
     }
     if (this._modalContainer) {

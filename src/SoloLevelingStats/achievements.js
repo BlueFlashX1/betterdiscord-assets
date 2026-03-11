@@ -1,3 +1,5 @@
+const C = require('./constants');
+
 module.exports = {
   checkAchievements() {
     const achievements = this.getAchievementDefinitions();
@@ -271,22 +273,7 @@ module.exports = {
         this.settings.achievements.activeTitle = null;
         this.saveSettings(true);
       }
-      const result = {
-        xp: 0,
-        critChance: 0,
-        // Old format (raw numbers) - for backward compatibility
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        perception: 0,
-        // New format (percentages) - primary format
-        strengthPercent: 0,
-        agilityPercent: 0,
-        intelligencePercent: 0,
-        vitalityPercent: 0,
-        perceptionPercent: 0,
-      };
+      const result = { ...C.DEFAULT_TITLE_BONUS };
       // Cache the result
       this._cache.activeTitleBonus = result;
       this._cache.activeTitleBonusKey = null;
@@ -299,27 +286,28 @@ module.exports = {
       (a) => a.title === this.settings.achievements.activeTitle
     );
   
-    const bonus = achievement?.titleBonus || { xp: 0 };
+    const bonus = achievement?.titleBonus || C.DEFAULT_TITLE_BONUS;
     // Return the raw titleBonus object directly (same as TitleManager)
     // This ensures both plugins see the exact same data structure
     // The display code handles both old format (raw) and new format (percentages)
     const result = {
+      ...C.DEFAULT_TITLE_BONUS,
       ...bonus,
       // Ensure defaults for common properties to avoid undefined issues
-      xp: bonus.xp || 0,
-      critChance: bonus.critChance || 0,
+      xp: this.normalizeNumber(bonus.xp, 0),
+      critChance: this.normalizeNumber(bonus.critChance, 0),
       // Old format (raw numbers) - for backward compatibility
-      strength: bonus.strength || 0,
-      agility: bonus.agility || 0,
-      intelligence: bonus.intelligence || 0,
-      vitality: bonus.vitality || 0,
-      perception: bonus.perception || 0,
+      strength: this.normalizeNumber(bonus.strength, 0),
+      agility: this.normalizeNumber(bonus.agility, 0),
+      intelligence: this.normalizeNumber(bonus.intelligence, 0),
+      vitality: this.normalizeNumber(bonus.vitality, 0),
+      perception: this.normalizeNumber(bonus.perception, 0),
       // New format (percentages) - primary format
-      strengthPercent: bonus.strengthPercent || 0,
-      agilityPercent: bonus.agilityPercent || 0,
-      intelligencePercent: bonus.intelligencePercent || 0,
-      vitalityPercent: bonus.vitalityPercent || 0,
-      perceptionPercent: bonus.perceptionPercent || 0,
+      strengthPercent: this.normalizeNumber(bonus.strengthPercent, 0),
+      agilityPercent: this.normalizeNumber(bonus.agilityPercent, 0),
+      intelligencePercent: this.normalizeNumber(bonus.intelligencePercent, 0),
+      vitalityPercent: this.normalizeNumber(bonus.vitalityPercent, 0),
+      perceptionPercent: this.normalizeNumber(bonus.perceptionPercent, 0),
     };
   
     this._cache.activeTitleBonus = result;

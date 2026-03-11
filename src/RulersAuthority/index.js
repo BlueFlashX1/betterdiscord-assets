@@ -232,6 +232,7 @@ module.exports = class RulersAuthority {
       this._toast("Ruler's Authority \u2014 Active", "info");
     } catch (err) {
       this.debugError("Lifecycle", "Error during start:", err);
+      try { this.stop({ silent: true }); } catch (_) {}
       this._toast("Ruler's Authority \u2014 Failed to start", "error");
     }
   }
@@ -357,6 +358,7 @@ module.exports = class RulersAuthority {
     this._statsCache.invalidate();
     this._modules = null;
     this._resolvedSelectors = {};
+    this._panelElCache = null;
     this._dragging = null;
     this._dragPanel = null;
   }

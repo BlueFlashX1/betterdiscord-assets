@@ -132,7 +132,7 @@ module.exports = class HSLWheelBridge {
   // 2) PLUGIN LIFECYCLE
   // =========================================================================
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("hSLWheelBridge") || createToast();
+    this._toast = _PluginUtils?.createToastHelper?.("HSLWheelBridge") || createToast();
     this._cleanupRuntime();
     this._isStopped = false;
     this._engineMounted = false;

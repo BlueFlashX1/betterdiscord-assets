@@ -259,7 +259,11 @@ function applyGuildHintTitle(plugin, node, guildId, guild, stats) {
 }
 
 function refreshGuildIconHints(plugin, snowflakeRegex) {
-  if (!plugin.settings.showGuildHoverIntel) return;
+  if (!plugin.settings.showGuildHoverIntel) {
+    plugin._guildHintCache.clear();
+    clearGuildIconHints();
+    return;
+  }
   const nodes = getGuildHintNodes(plugin);
   for (const node of nodes) {
     const raw = node.getAttribute("data-list-item-id") || "";

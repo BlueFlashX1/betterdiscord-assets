@@ -262,9 +262,9 @@ module.exports = {
   getTotalEffectiveStats() {
     // Check cache first
     const now = Date.now();
-    // Cache key from stat values + active title (O(1) vs JSON.stringify O(n))
-    const s = this.settings.stats || {};
-    const cacheKey = `${s.strength || 0}_${s.agility || 0}_${s.intelligence || 0}_${s.vitality || 0}_${s.perception || 0}_${this.settings.achievements?.activeTitle || ''}`;
+    const statKeys = this.getStatKeys();
+    const normalizedStatsForKey = this.normalizeStatBlock(this.settings.stats, 0);
+    const cacheKey = `${statKeys.map((key) => normalizedStatsForKey[key]).join('_')}_${this.settings.achievements?.activeTitle || ''}`;
   
     if (
       this._cache.totalEffectiveStats &&
@@ -278,32 +278,20 @@ module.exports = {
     // CRITICAL: Ensure stats object exists and has all required properties
     // If stats are missing or reset, initialize with defaults to prevent all-zero stats
     if (!this.settings.stats || typeof this.settings.stats !== 'object') {
-      this.settings.stats = {
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        perception: 0,
-      };
+      this.settings.stats = this.createEmptyStatBlock();
       this.saveSettings(); // Save initialized stats
       this.debugLog('STATS', 'Stats object was missing, initialized with defaults');
     }
   
     // Ensure all stat properties exist (migration safety)
-    const baseStats = {
-      strength: this.settings.stats.strength || 0,
-      agility: this.settings.stats.agility || 0,
-      intelligence: this.settings.stats.intelligence || 0,
-      vitality: this.settings.stats.vitality || 0,
-      perception: this.settings.stats.perception ?? 0,
-    };
+    const baseStats = this.normalizeStatBlock(this.settings.stats, 0);
   
     const titleBonus = this.getActiveTitleBonus();
     const shadowBuffs = this.getEffectiveShadowArmyBuffs();
   
     // Apply title + shadow bonuses multiplicatively per stat using shared helper
-    const result = {};
-    for (const key of this.STAT_KEYS) {
+    const result = this.createEmptyStatBlock();
+    for (const key of statKeys) {
       const { titlePercent, shadowPercent } = this.getBuffPercents(key, titleBonus, shadowBuffs);
       const withTitle = Math.round(baseStats[key] * (1 + titlePercent));
       result[key] = Math.round(withTitle * (1 + shadowPercent));

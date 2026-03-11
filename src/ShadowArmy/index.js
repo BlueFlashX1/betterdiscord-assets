@@ -115,7 +115,7 @@ const ShadowArmy = class ShadowArmy {
     // ============================================================================
     this._retryTimeouts = new Set();
     this._memberListSetupRetryTimeout = null;
-    this._isStopped = false;
+    this._isStopped = true;
     this._widgetDirty = true;
     this._widgetRefreshTimer = null;
     this._widgetRefreshInFlight = false;
@@ -156,6 +156,9 @@ const ShadowArmy = class ShadowArmy {
   // ============================================================================
 
   async start() {
+    if (!this._isStopped) {
+      this.stop();
+    }
     this._toast = _PluginUtils?.createToastHelper?.("shadowArmy") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this._isStopped = false;
     // SNAPSHOT CACHE: Instance-level (NOT in this.settings — must not be persisted to disk)
@@ -530,6 +533,7 @@ Object.assign(
   ShadowArmy.prototype,
   require('./watchers'),
   require('./extraction'),
+  require('./extraction-queue'),
   require('./combat-stats'),
   require('./army-stats'),
   require('./progression'),

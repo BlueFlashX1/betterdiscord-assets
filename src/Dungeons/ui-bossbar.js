@@ -1,0 +1,639 @@
+module.exports = {
+  _getCurrentChannelKeyFast() {
+    if (typeof this.currentChannelKey === 'string' && this.currentChannelKey.includes('_')) {
+      return this.currentChannelKey;
+    }
+
+    const currentChannelInfo = this.getChannelInfo() || this.getChannelInfoFromLocation();
+    if (!currentChannelInfo?.channelId) return null;
+
+    const channelKey = `${currentChannelInfo.guildId}_${currentChannelInfo.channelId}`;
+    this.currentChannelKey = channelKey;
+    return channelKey;
+  },
+
+  updateBossHPBar(channelKey) {
+    try {
+      // PERFORMANCE: Skip expensive DOM updates when window is hidden
+      if (!this.isWindowVisible()) {
+        return; // Don't update UI when window is not visible
+      }
+
+      // Ensure boss HP bar CSS is present before any render/recreate work.
+      this.ensureBossHpBarCssInjected?.();
+
+      // Do not render when user/settings layers are open to prevent overlap
+      if (this.isSettingsLayerOpen()) {
+        this.removeBossHPBar(channelKey);
+        this.showChannelHeaderComments(channelKey);
+        return;
+      }
+
+      const dungeon = this.activeDungeons.get(channelKey);
+      if (!dungeon || dungeon.boss.hp <= 0 || dungeon.completed || dungeon.failed || dungeon._completing) {
+        this.removeBossHPBar(channelKey);
+        this._bossBarCache?.delete?.(channelKey);
+        this.showChannelHeaderComments(channelKey);
+        return;
+      }
+
+      // Use watcher-tracked key first (fallback to store/location lookup) to avoid repeated store/DOM reads.
+      const currentChannelKey = this._getCurrentChannelKeyFast();
+      if (!currentChannelKey) {
+        // Retry after delay
+        this.queueHPBarUpdate(channelKey);
+        return;
+      }
+
+      const isCurrentChannel = currentChannelKey === channelKey;
+
+      if (!isCurrentChannel) {
+        // Not the current channel, remove HP bar if it exists (if already created)
+        const existingBar = this.bossHPBars.get(channelKey);
+        if (existingBar) {
+          this.removeBossHPBar(channelKey);
+          this._bossBarCache?.delete?.(channelKey);
+          this.showChannelHeaderComments(channelKey);
+        }
+        return;
+      }
+
+      // PERF: Sync HP/Mana from stats plugin only for the VISIBLE dungeon.
+      // Moved here from before channel guard — saves 9 wasted calls per tick
+      // for background dungeons that don't need fresh stats for rendering.
+      this.syncHPAndManaFromStats();
+
+      // Force recreate boss HP bar when returning to dungeon channel
+      // This ensures it shows correctly after guild/channel switches and console opens
+      const existingBar = this.bossHPBars.get(channelKey);
+      if (existingBar) {
+        // React re-render guard: use .isConnected (more robust than document.body.contains)
+        const barConnected = existingBar.isConnected;
+        const container = existingBar.closest('.dungeon-boss-hp-container');
+        const containerConnected = container && container.isConnected;
+
+        if (!barConnected || !containerConnected) {
+          // Bar or container removed from DOM (likely React re-render) - force recreate
+          this.bossHPBars.delete(channelKey);
+          this._bossBarCache?.delete?.(channelKey);
+          // Also clean up any orphaned containers
+          if (container && !containerConnected) {
+            try {
+              container.remove();
+            } catch (e) {
+              // Ignore errors
+            }
+          }
+        }
+      }
+
+      // Hide comments in channel header to make room
+      this.hideChannelHeaderComments(channelKey);
+
+      const hpPercent = (dungeon.boss.hp / dungeon.boss.maxHp) * 100;
+      let hpBar = this.bossHPBars.get(channelKey);
+
+      if (!hpBar) {
+        hpBar = this._createBossHPBarInPreferredContainer(channelKey);
+
+        // If still no HP bar, retry after delay
+        if (!hpBar) {
+          this.queueHPBarUpdate(channelKey);
+          return;
+        }
+      } else {
+        // HP bar exists - verify it's in the correct container and still in DOM
+        const container = hpBar.closest('.dungeon-boss-hp-container');
+        if (!container || !container.isConnected) {
+          // Container missing or removed (likely React re-render) - recreate
+          this.bossHPBars.delete(channelKey);
+          this._bossBarCache?.delete?.(channelKey);
+          hpBar = this._createBossHPBarInPreferredContainer(channelKey);
+        }
+      }
+
+      // REAL-TIME: Get fresh mob counts (throttled cleanup)
+      const now = Date.now();
+      let aliveMobs = 0;
+      const totalMobs = dungeon.mobs?.targetCount || 0;
+      const _killedMobs = dungeon.mobs?.killed || 0; // Used in display calculation
+
+      const lastCleanup = this._mobCleanupCache.get(channelKey);
+      const shouldCleanup = !lastCleanup || now - lastCleanup.time > 500;
+      if (shouldCleanup) {
+        // Single-pass filter + count (was two separate .filter() passes)
+        if (dungeon.mobs?.activeMobs) {
+          const alive = [];
+          for (let i = 0; i < dungeon.mobs.activeMobs.length; i++) {
+            const m = dungeon.mobs.activeMobs[i];
+            if (m && m.hp > 0) alive.push(m);
+          }
+          dungeon.mobs.activeMobs = alive;
+          aliveMobs = alive.length;
+        }
+        this._mobCleanupCache.set(channelKey, { time: now, alive: aliveMobs });
+      } else {
+        aliveMobs = lastCleanup.alive || 0;
+      }
+
+      // REAL-TIME: Get current boss HP (ensure it's up-to-date)
+      const currentBossHP = dungeon.boss?.hp || 0;
+      const currentBossMaxHP = dungeon.boss?.maxHp || 0;
+
+      // Boss bar diffing: structural vs numeric split.
+      // Structural fields (buttons, badge, name, type) require full innerHTML rebuild.
+      // Numeric fields (HP, mobs) update via targeted textContent (no DOM destruction).
+      // PERF: ~99% of ticks hit the fast-path since structural fields rarely change during combat.
+      const hpFloor = Math.floor(currentBossHP);
+      const maxHpFloor = Math.floor(currentBossMaxHP);
+      const hpPctRound = Math.floor(hpPercent * 10) / 10;
+      const prev = this._bossBarCache.get(channelKey);
+      const structuralUnchanged = prev &&
+        prev.part === dungeon.userParticipating && prev.dep === dungeon.shadowsDeployed &&
+        prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name;
+
+      if (hpBar && structuralUnchanged) {
+        // Fast path: update numeric values via targeted textContent (no innerHTML rebuild)
+        const hpCont = hpBar.closest('.dungeon-boss-hp-container');
+        if (hpCont) {
+          hpCont.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
+          hpCont.setAttribute('data-hp-percent', hpPercent);
+        }
+        const textEl = hpBar.querySelector('.hp-bar-text');
+        if (textEl) textEl.textContent = `${Math.floor(hpPercent)}%`;
+        // Boss HP + mob count text updates (avoids full innerHTML rebuild for numeric changes)
+        const hpCurrentEl = hpBar.querySelector('.boss-hp-current');
+        if (hpCurrentEl) hpCurrentEl.textContent = Math.floor(currentBossHP).toLocaleString();
+        const hpMaxEl = hpBar.querySelector('.boss-hp-max');
+        if (hpMaxEl) hpMaxEl.textContent = currentBossMaxHP.toLocaleString();
+        const mobAliveEl = hpBar.querySelector('.mob-alive');
+        if (mobAliveEl) mobAliveEl.textContent = aliveMobs.toLocaleString();
+        const mobTotalEl = hpBar.querySelector('.mob-total');
+        if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
+        // Update cache with current numeric values
+        this._bossBarCache.set(channelKey, {
+          hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
+          alive: aliveMobs, total: totalMobs,
+          part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
+          type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+        });
+        this.scheduleBossBarLayout(hpBar.parentElement);
+        return;
+      }
+
+      this._bossBarCache.set(channelKey, {
+        hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
+        alive: aliveMobs, total: totalMobs,
+        part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
+        type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+      });
+      // Preserve HP state + CSS var for recovery after React re-render
+      const hpContainer = hpBar?.closest('.dungeon-boss-hp-container');
+      if (hpContainer) {
+        hpContainer.setAttribute('data-hp-percent', hpPercent);
+        hpContainer.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
+      }
+
+      // Participation indicator — 3 states: WAITING (no deploy), DEPLOYED (shadows fighting), FIGHTING (user joined)
+      const participationBadge = !dungeon.shadowsDeployed
+        ? '<span class="boss-bar-badge-waiting">WAITING</span>'
+        : dungeon.userParticipating
+          ? '<span class="boss-bar-badge-fighting">FIGHTING</span>'
+          : '<span class="boss-bar-badge-deployed">DEPLOYED</span>';
+
+      // DEPLOY SHADOWS button / DEPLOYED indicator
+      const deployButtonHTML = !dungeon.shadowsDeployed
+        ? `<button class="dungeon-deploy-btn" data-channel-key="${channelKey}">DEPLOY SHADOWS</button>`
+        : `<button class="dungeon-recall-btn" data-channel-key="${channelKey}">RECALL SHADOWS</button>`;
+
+      // JOIN button (show if user hasn't joined yet — can join before or after deploy)
+      const joinButtonHTML = !dungeon.userParticipating
+        ? `<button class="dungeon-join-btn" data-channel-key="${channelKey}">JOIN</button>`
+        : '';
+
+      // LEAVE button (only show if user IS participating)
+      const leaveButtonHTML = dungeon.userParticipating
+        ? `<button class="dungeon-leave-btn" data-channel-key="${channelKey}">LEAVE</button>`
+        : '';
+
+      // Multi-line layout to show all info without truncation
+      hpBar.innerHTML = `
+      <div class="boss-bar-layout">
+        <div class="boss-bar-header">
+          <div class="boss-bar-info">
+            <div class="boss-bar-name">
+              ${participationBadge} | ${dungeon.name} [${dungeon.rank}]
+            </div>
+            ${deployButtonHTML}
+            ${joinButtonHTML}
+            ${leaveButtonHTML}
+          </div>
+          <div class="boss-bar-type">
+            ${dungeon.type}
+          </div>
+        </div>
+
+        <div class="boss-bar-stats">
+          <div>
+            <span class="boss-bar-stat-label">Boss:</span>
+            <span class="boss-hp-current">${Math.floor(
+              currentBossHP
+            ).toLocaleString()}</span>
+            <span class="boss-bar-stat-separator">/</span>
+            <span class="boss-hp-max">${currentBossMaxHP.toLocaleString()}</span>
+          </div>
+          <div>
+            <span class="boss-bar-stat-label">Mobs:</span>
+            <span class="mob-alive">${aliveMobs.toLocaleString()}</span>
+            <span class="boss-bar-stat-separator">/</span>
+            <span class="mob-total">${totalMobs.toLocaleString()}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hp-bar-container">
+        <div class="hp-bar-fill"></div>
+        <div class="hp-bar-text">${Math.floor(hpPercent)}%</div>
+      </div>
+    `;
+
+      // Re-apply layout in case member list visibility changed
+      this.scheduleBossBarLayout(hpBar.parentElement);
+
+      // JOIN/LEAVE buttons are handled via delegated click handler (prevents per-rerender listeners).
+    } catch (error) {
+      this.errorLog('CRITICAL', 'Error updating boss HP bar', { channelKey, error });
+      // Don't throw - just log and continue
+    }
+  },
+
+  findChannelHeader() {
+    // PERFORMANCE: Cache container detection results (2s TTL) to avoid repeated DOM queries
+    const cacheKey = 'channelHeader';
+    const now = Date.now();
+    const cached = this._containerCache.get(cacheKey);
+    if (cached && now - cached.timestamp < 2000) {
+      // PERF-8: isConnected is faster than document.body.contains (avoids tree walk)
+      if (cached.value?.isConnected) {
+        return cached.value;
+      }
+    }
+
+    // Strategy 1: Use aria-label (most stable)
+    let header =
+      document.querySelector('section[aria-label="Channel header"]') ||
+      document.querySelector('section[aria-label*="Channel header"]');
+
+    // Strategy 2: Use semantic class fragments
+    if (!header) {
+      header =
+        document.querySelector('[class*="title"][class*="container"]') ||
+        document.querySelector('[class*="channelHeader"]');
+    }
+
+    // Cache result
+    if (header) {
+      this._containerCache.set(cacheKey, { value: header, timestamp: now });
+    }
+
+    return header;
+  },
+
+  findChannelContainer() {
+    // PERFORMANCE: Cache container detection results (2s TTL) to avoid repeated DOM queries
+    const cacheKey = 'channelContainer';
+    const now = Date.now();
+    const cached = this._containerCache.get(cacheKey);
+    if (cached && now - cached.timestamp < 2000) {
+      // PERF-8: isConnected is faster than document.body.contains (avoids tree walk)
+      if (cached.value?.isConnected) {
+        return cached.value;
+      }
+    }
+
+    // Strategy 1: Look for main chat container by aria-label
+    let container =
+      document.querySelector('main[aria-label*="Chat"]') ||
+      document.querySelector('[class*="chat"][class*="container"]') ||
+      document.querySelector('[class*="chatContainer"]');
+
+    // Strategy 2: Find by structure - look for message list container
+    if (!container) {
+      const messageList =
+        document.querySelector('[class*="messageList"]') ||
+        document.querySelector('[class*="messages"]');
+      if (messageList) {
+        container = messageList.closest('[class*="container"]') || messageList.parentElement;
+      }
+    }
+
+    // Strategy 3: Find by channel content area
+    if (!container) {
+      container =
+        document.querySelector('[class*="channel"] [class*="content"]') ||
+        document.querySelector('[class*="chat"] [class*="content"]');
+    }
+
+    // Cache result
+    if (container) {
+      this._containerCache.set(cacheKey, { value: container, timestamp: now });
+    }
+
+    return container;
+  },
+
+  createBossHPBarInContainer(container, channelKey) {
+    if (!container) {
+      this.errorLog('Cannot create boss HP bar: container is null', { channelKey });
+      return;
+    }
+
+    // Verify container is still in DOM before proceeding (isConnected is more robust)
+    if (!container.isConnected) {
+      this.debugLog('HP_BAR_CREATE', 'Container not in DOM, will retry', { channelKey });
+      this.queueHPBarUpdate(channelKey);
+      return;
+    }
+
+    try {
+      // Ensure boss HP bar CSS exists (Discord/BD can swap layers and styles may be removed).
+      this.ensureBossHpBarCssInjected?.();
+
+      // PERF: Targeted cleanup — only query containers for this channel (was querying ALL containers)
+      document.querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`).forEach((el) => {
+        try {
+          const hasBar = el.querySelector('.dungeon-boss-hp-bar');
+          // Remove if empty or not in DOM (orphaned)
+          if (!hasBar || !el.isConnected) {
+            el.remove();
+          }
+        } catch {
+          // Ignore errors during cleanup
+        }
+      });
+
+      // Look for existing container for this specific channel
+      let bossHpContainer = container.querySelector(
+        '.dungeon-boss-hp-container[data-channel-key="' + channelKey + '"]'
+      );
+
+      // If found existing container for different channel, remove it first
+      const otherContainers = container.querySelectorAll('.dungeon-boss-hp-container');
+      otherContainers.forEach((el) => {
+        const elChannelKey = el.getAttribute('data-channel-key');
+        if (elChannelKey && elChannelKey !== channelKey) {
+          // Remove container for different channel
+          try {
+            el.remove();
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      });
+
+      if (!bossHpContainer) {
+        // Create container
+        bossHpContainer = document.createElement('div');
+        bossHpContainer.className = 'dungeon-boss-hp-container';
+        bossHpContainer.setAttribute('data-channel-key', channelKey);
+        bossHpContainer.style.zIndex = '99';
+        // Set initial HP percent from dungeon data
+        const dungeon = this.activeDungeons?.get(channelKey);
+        const initHpPercent = dungeon?.boss ? (dungeon.boss.hp / dungeon.boss.maxHp) * 100 : 100;
+        bossHpContainer.style.setProperty('--boss-hp-percent', `${initHpPercent}%`);
+
+        // Verify container is still in DOM before inserting
+        if (!container.isConnected) {
+          this.debugLog('HP_BAR_CREATE', 'Container removed from DOM during creation, will retry', {
+            channelKey,
+          });
+          this.queueHPBarUpdate(channelKey);
+          return;
+        }
+
+        // Insert at the top of container (before first child) for channel header
+        if (container.firstChild) {
+          container.insertBefore(bossHpContainer, container.firstChild);
+        } else {
+          container.appendChild(bossHpContainer);
+        }
+      } else {
+        // Clear existing content
+        bossHpContainer.innerHTML = '';
+      }
+
+      // Create HP bar element
+      const hpBar = document.createElement('div');
+      hpBar.className = 'dungeon-boss-hp-bar';
+      hpBar.setAttribute('data-dungeon-boss-hp-bar', channelKey);
+
+      // Add HP bar to container
+      bossHpContainer.appendChild(hpBar);
+
+      // Adjust layout based on member list visibility/width
+      this.scheduleBossBarLayout(bossHpContainer);
+
+      this.bossHPBars.set(channelKey, hpBar);
+    } catch (error) {
+      this.errorLog('CRITICAL', 'Error creating boss HP bar in container', { channelKey, error });
+      // Don't throw - just log and continue
+    }
+  },
+
+  hideChannelHeaderComments(channelKey) {
+    if (this.hiddenComments.has(channelKey)) return; // Already hidden
+
+    // Find comment-related elements in channel header
+    const channelHeader = this.findChannelHeader();
+    if (!channelHeader) return;
+
+    // Look for comment buttons/elements using multiple strategies
+    const allButtons = channelHeader.querySelectorAll('button[class*="button"]');
+    const commentElements = [];
+
+    allButtons.forEach((button) => {
+      const ariaLabel = (button.getAttribute('aria-label') || '').toLowerCase();
+      const className = (button.className || '').toLowerCase();
+      const textContent = (button.textContent || '').toLowerCase();
+
+      // Check if it's a comment/thread related button
+      const isCommentButton =
+        ariaLabel.includes('comment') ||
+        ariaLabel.includes('thread') ||
+        ariaLabel.includes('reply') ||
+        className.includes('comment') ||
+        className.includes('thread') ||
+        className.includes('reply') ||
+        textContent.includes('comment') ||
+        textContent.includes('thread');
+
+      // Also check for buttons with SVG icons that might be comment buttons
+      const hasIcon = button.querySelector('svg');
+      const isInToolbar = button.closest('[class*="toolbar"]');
+
+      if (isCommentButton || (hasIcon && isInToolbar && ariaLabel)) {
+        commentElements.push(button);
+      }
+    });
+
+    // Comment/thread/reply elements are now hidden via CSS rule on
+    // .dungeon-boss-hp-container ~ [class*="toolbar"] selectors.
+    // No JS DOM manipulation needed — CSS handles it and survives re-renders.
+
+    // Still track via aria-label-based buttons for showChannelHeaderComments restore
+    if (commentElements.length > 0) {
+      this.hiddenComments.set(channelKey, commentElements.map((el) => ({
+        element: el,
+        originalDisplay: el.style.display || '',
+        originalVisibility: el.style.visibility || '',
+      })));
+    }
+  },
+
+  showChannelHeaderComments(channelKey) {
+    const hidden = this.hiddenComments.get(channelKey);
+    if (!hidden) return;
+
+    hidden.forEach(({ element, originalDisplay, originalVisibility }) => {
+      if (element && element.parentNode) {
+        element.style.display = originalDisplay || '';
+        if (originalVisibility) {
+          element.style.visibility = originalVisibility;
+        }
+      }
+    });
+
+    this.hiddenComments.delete(channelKey);
+  },
+
+  removeBossHPBar(channelKey) {
+    const hpBar = this.bossHPBars.get(channelKey);
+    if (hpBar?.parentNode) {
+      const container = hpBar.parentNode;
+      hpBar.parentNode.removeChild(hpBar);
+
+      // If container is now empty, remove it too
+      if (
+        container.classList.contains('dungeon-boss-hp-container') &&
+        container.children.length === 0
+      ) {
+        container.parentNode?.removeChild(container);
+      }
+    }
+    this.bossHPBars.delete(channelKey);
+    // Clear cached payload so next render fully rebuilds the bar (prevents desync after removal)
+    this._bossBarCache?.delete?.(channelKey);
+    // Restore comments when boss HP bar is removed
+    this.showChannelHeaderComments(channelKey);
+  },
+
+  removeAllBossHPBars() {
+    this.bossHPBars.forEach((hpBar) => {
+      if (hpBar?.parentNode) {
+        const container = hpBar.parentNode;
+        hpBar.parentNode.removeChild(hpBar);
+
+        // If container is now empty, remove it too
+        if (
+          container.classList.contains('dungeon-boss-hp-container') &&
+          container.children.length === 0
+        ) {
+          container.parentNode?.removeChild(container);
+        }
+      }
+    });
+    this.bossHPBars.clear();
+    this._bossBarCache?.clear?.();
+    this._ariseButtonRefs?.clear?.();
+
+    // Also remove any orphaned containers
+    document.querySelectorAll('.dungeon-boss-hp-container').forEach((container) => {
+      if (container.children.length === 0) {
+        container.remove();
+      }
+    });
+  },
+
+  isElementVisible(el) {
+    if (!el) return false;
+    const style = getComputedStyle(el);
+    return (
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      el.offsetWidth > 0 &&
+      el.offsetHeight > 0
+    );
+  },
+
+  isSettingsLayerOpen() {
+    const now = Date.now();
+    const cached = this._settingsLayerOpenCache;
+    if (cached && now - cached.ts < 250) return cached.value;
+
+    const value = Boolean(
+      document.querySelector("nav[aria-label*='Settings' i]") ||
+        document.querySelector("[class*='standardSidebarView']") ||
+        document.querySelector("[class*='userSettings']") ||
+        document.querySelector("[class*='settingsContainer']")
+    );
+    this._settingsLayerOpenCache = { value, ts: now };
+    return value;
+  },
+
+  adjustBossBarLayout(container) {
+    if (!container) return;
+
+    // Member list detection: adjust width/margin so bar doesn't sit under member list
+    // Cache member list width briefly to avoid repeated reflows
+    const memberWrap =
+      document.querySelector("aside[aria-label*='Members' i]") ||
+      document.querySelector("[class*='membersWrap']") ||
+      document.querySelector("[class*='membersWrap-']");
+    const memberVisible = this.isElementVisible(memberWrap);
+
+    let memberWidth = 0;
+    const cacheKey = 'memberWidth';
+    const now = Date.now();
+    const cached = this._memberWidthCache.get(cacheKey);
+    if (cached && now - cached.timestamp < 400) {
+      memberWidth = cached.width;
+    } else if (memberVisible && memberWrap) {
+      memberWidth = memberWrap.getBoundingClientRect().width || memberWrap.offsetWidth || 0;
+      this._memberWidthCache.set(cacheKey, { width: memberWidth, timestamp: now });
+    }
+
+    if (memberVisible && memberWidth > 0) {
+      container.style.maxWidth = `calc(100% - ${memberWidth}px)`;
+      container.style.marginRight = `${memberWidth}px`;
+      container.style.alignSelf = 'flex-start';
+    } else {
+      container.style.maxWidth = '100%';
+      container.style.marginRight = '0';
+      container.style.alignSelf = 'stretch';
+    }
+  },
+
+  scheduleBossBarLayout(container) {
+    if (!container) return;
+
+    // PERFORMANCE: Throttle layout adjustments to 100-150ms to reduce layout thrash
+    const containerId = container.getAttribute('data-channel-key') || 'default';
+    const now = Date.now();
+    const lastLayout = this._bossBarLayoutThrottle.get(containerId) || 0;
+    const throttleDelay = 120; // 120ms throttle (between 100-150ms)
+
+    if (now - lastLayout < throttleDelay) {
+      // Skip this layout adjustment - too soon
+      return;
+    }
+
+    if (this._bossBarLayoutFrame) {
+      cancelAnimationFrame(this._bossBarLayoutFrame);
+    }
+    this._bossBarLayoutFrame = requestAnimationFrame(() => {
+      this.adjustBossBarLayout(container);
+      this._bossBarLayoutThrottle.set(containerId, Date.now());
+      this._bossBarLayoutFrame = null;
+    });
+  }
+};

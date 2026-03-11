@@ -173,7 +173,7 @@ const CriticalHit = class CriticalHit {
     this._cacheMaxAge = 5000; // 5 seconds cache validity
 
     // Lifecycle safety (stop-safe scheduling + cleanup)
-    this._isStopped = false;
+    this._isStopped = true;
     this._trackedTimeouts = new Set();
     this._trackedIntervals = new Set();
     this._trackedRafIds = new Set();
@@ -344,6 +344,9 @@ const CriticalHit = class CriticalHit {
     this._pluginUtils = _PluginUtils;
     this._reactUtils = _ReactUtils;
     try {
+      if (!this._isStopped) {
+        this.stop();
+      }
       this._isStopped = false;
 
       // Defensive: clear any leftover scheduled work (in case BD reuses instance)
@@ -673,6 +676,7 @@ Object.assign(CriticalHit.prototype,
   require('./dom-helpers'),
   require('./crit-engine'),
   require('./history'),
+  require('./history-maintenance'),
   require('./animation'),
   require('./styling'),
   require('./settings-panel'),

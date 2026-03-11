@@ -294,6 +294,14 @@ Object.assign(
 module.exports = class ShadowSenses {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
+    this._stopped = true;
+    this._dispatcherRetryTimer = null;
+    this._widgetReinjectTimeout = null;
+    this._unpatchContextMenu = null;
+    this._layoutBusUnsub = null;
+    this.sensesEngine = null;
+    this.deploymentManager = null;
+    this._components = null;
     this._transitionNavTimeout = null;
     this._transitionCleanupTimeout = null;
     this._transitionRunId = 0;
@@ -306,6 +314,9 @@ module.exports = class ShadowSenses {
 
   start() {
     try {
+      if (!this._stopped) {
+        this.stop(false);
+      }
       this._debugMode = BdApi.Data.load(PLUGIN_NAME, "debugMode") ?? false;
       if (this._debugMode) {
         console.log(`[${PLUGIN_NAME}] Starting v${PLUGIN_VERSION}...`);
@@ -365,7 +376,7 @@ module.exports = class ShadowSenses {
     }
   }
 
-  stop() {
+  stop(showToast = true) {
     try {
       // 0. Mark stopped + clear Dispatcher retry timer if still pending
       this._stopped = true;
@@ -424,7 +435,7 @@ module.exports = class ShadowSenses {
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
-    this._toast(`${PLUGIN_NAME} \u2014 Shadows recalled`);
+    if (showToast) this._toast(`${PLUGIN_NAME} \u2014 Shadows recalled`);
   }
 
   _toast(message, type = "info", timeout = null) {

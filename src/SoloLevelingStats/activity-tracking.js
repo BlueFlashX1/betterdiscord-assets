@@ -1,5 +1,7 @@
 module.exports = {
   startActivityTracking() {
+    if (this.activityTracker) return;
+
     // Track time active
     this.activityTracker = setInterval(() => {
       const now = Date.now();
@@ -21,21 +23,13 @@ module.exports = {
     }, 60000); // Check every minute
   
     // Track mouse/keyboard activity (throttled — was firing hundreds of times/sec on mousemove)
-    this._activityTimeout = null;
     this._lastActivityReset = 0;
     const resetActivityTimeout = () => {
       const now = Date.now();
       // Throttle: only process once per 2 seconds (mousemove fires 100s/sec)
       if (now - this._lastActivityReset < 2000) return;
       this._lastActivityReset = now;
-  
-      if (this._activityTimeout) {
-        clearTimeout(this._activityTimeout);
-      }
       this.settings.activity.lastActiveTime = now;
-      this._activityTimeout = setTimeout(() => {
-        // User inactive
-      }, 300000); // 5 minutes
     };
   
     // Store handlers for cleanup
@@ -144,6 +138,8 @@ module.exports = {
               newUrl: url,
             });
             state.lastUrl = url;
+            this._channelInfoCacheUrl = null;
+            this._channelInfoCache = null;
             state.lastChannelId = this.handleChannelChange(state.lastChannelId);
           }
         });
@@ -159,17 +155,21 @@ module.exports = {
             newUrl: currentUrl,
           });
           state.lastUrl = currentUrl;
+          this._channelInfoCacheUrl = null;
+          this._channelInfoCache = null;
           state.lastChannelId = this.handleChannelChange(state.lastChannelId);
         }
       }, 3000); // PERF: 3s fallback poll (NavigationBus handles most navigation)
   
       this._channelTrackingState = state;
+      this._channelTrackingHooks = true;
   
       this.debugLog('START_CHANNEL_TRACKING', 'Channel tracking started successfully', {
         methods: ['NavigationBus', 'polling'],
         pollInterval: '3000ms',
       });
     } catch (error) {
+      this._channelTrackingHooks = null;
       this.debugError('START_CHANNEL_TRACKING', error);
     }
   }

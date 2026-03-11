@@ -4,16 +4,24 @@ module.exports = {
     if (!quest || quest.completed) {
       return;
     }
-  
+
+    const previousProgress = Number(quest.progress || 0);
     quest.progress += amount;
     // Cap progress at target to prevent exceeding
     if (quest.progress > quest.target) {
       quest.progress = quest.target;
     }
-  
+
     if (quest.progress >= quest.target) {
       quest.completed = true;
       this.completeQuest(questId);
+      return;
+    }
+
+    // Persist non-completion quest progress changes with debounced save.
+    // Completion path performs its own immediate save in completeQuest().
+    if (quest.progress !== previousProgress) {
+      this.saveSettings();
     }
   },
 
@@ -177,10 +185,12 @@ module.exports = {
         }
         // Fast fade-out animation (0.2s)
         celebration.style.animation = 'quest-celebration-fade-out 0.2s ease-out forwards';
-        setTimeout(() => {
+        celebration._removeTimeout = setTimeout(() => {
+          celebration._removeTimeout = null;
           if (celebration && celebration.parentNode) {
             celebration.remove();
           }
+          this._questCelebrations?.delete?.(celebration);
         }, 200);
       };
   
@@ -387,7 +397,8 @@ module.exports = {
   
       container.appendChild(particle);
   
-      setTimeout(() => {
+      particle._removeTimeout = setTimeout(() => {
+        particle._removeTimeout = null;
         particle.remove();
       }, 2000);
     }

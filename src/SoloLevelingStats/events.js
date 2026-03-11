@@ -15,12 +15,12 @@ module.exports = {
   },
 
   emit(eventName, data = {}) {
-    if (!this.eventListeners[eventName]) {
-      return;
-    }
-  
-    // Call all listeners
-    this.eventListeners[eventName].forEach((callback) => {
+    const listeners = Array.isArray(this.eventListeners[eventName])
+      ? this.eventListeners[eventName].slice()
+      : [];
+
+    // Call all local listeners first (snapshot protects against mid-emit unsubscribe mutations).
+    listeners.forEach((callback) => {
       try {
         callback(data);
       } catch (error) {

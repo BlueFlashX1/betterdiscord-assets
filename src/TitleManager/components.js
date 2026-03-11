@@ -42,11 +42,10 @@ function buildTitleComponents(BdApi, pluginInstance) {
     const soloData = pluginInstance.getSoloLevelingData();
     const isTitleAllowed = (t) => !pluginInstance._unwantedTitles.has(t);
     const rawTitles = soloData?.titles || [];
-    const titlesLen = rawTitles.length;
     const { sorted: titles, bonusMap } = React.useMemo(() => {
       const filtered = rawTitles.filter(isTitleAllowed);
       return pluginInstance.getSortedTitles({ titles: filtered, sortBy });
-    }, [titlesLen, sortBy]);
+    }, [rawTitles, sortBy]);
 
     const activeTitle = soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
 

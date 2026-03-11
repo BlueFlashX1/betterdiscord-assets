@@ -91,7 +91,7 @@ module.exports = {
         return { applied: false, reason: 'backup_failed', backupKey, error };
       }
   
-      const statKeys = this.STAT_KEYS || ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const statKeys = this.getStatKeys();
       const previousState = {
         stats: { ...this.settings.stats },
         userHP: this.settings.userHP,
@@ -105,14 +105,12 @@ module.exports = {
       };
   
       try {
-        const statSum = statKeys.reduce((sum, key) => sum + (Number(this.settings.stats[key]) || 0), 0);
-        const averageStat = statSum / statKeys.length;
+        const statSum = this.sumStatBlock(this.settings.stats);
+        const averageStat = statSum / Math.max(1, statKeys.length);
         const dampener = this.calculateRankPromotionDampener(averageStat);
         const perStatDelta = Math.max(1, Math.round(deltaBase * dampener));
   
-        statKeys.forEach((key) => {
-          this.settings.stats[key] = (Number(this.settings.stats[key]) || 0) + perStatDelta;
-        });
+        this.addToAllStats(perStatDelta, this.settings.stats);
   
         this.settings._rankBonusBackfillV2Applied = true;
         this.settings._rankBonusBackfillV2AppliedAt = Date.now();
@@ -192,12 +190,10 @@ module.exports = {
   
         this.settings.level = newLevel;
         this.settings.xp = levelInfo.xp;
-        const _statPointsBefore = this.settings.unallocatedStatPoints;
         // Balanced stat point curve (front-loaded early, tapered late).
         // Prevents runaway high-level stat inflation while preserving progression.
         const statPointsPerLevel = this.getStatPointsForLevel(newLevel);
         this.settings.unallocatedStatPoints += levelsGained * statPointsPerLevel;
-        const _statPointsAfter = this.settings.unallocatedStatPoints;
   
         // #region agent log
         // #endregion
@@ -212,11 +208,9 @@ module.exports = {
         // Process natural stat growth for each level gained (handles skipped levels)
         // This ensures stats grow naturally even when multiple levels are gained at once
         try {
-          const _statsBefore = { ...this.settings.stats };
           Array.from({ length: levelsGained }).forEach(() => {
             this.processNaturalStatGrowth();
           });
-          const _statsAfter = { ...this.settings.stats };
   
           // #region agent log
           // #endregion
@@ -268,7 +262,6 @@ module.exports = {
               const {
                 oldLevel: finalOldLevel,
                 newLevel: finalNewLevel,
-                levelsGained: _finalLevelsGained,
               } = this.pendingLevelUp;
               // #region agent log
               // #endregion
@@ -309,6 +302,8 @@ module.exports = {
       } else {
         // Update current XP
         this.settings.xp = levelInfo.xp;
+        // Persist XP synchronization when no level-up occurs.
+        this.saveSettings();
         // Emit XP changed event (level didn't change but XP did)
         this.emitXPChanged();
         // Update chat UI
@@ -374,22 +369,14 @@ module.exports = {
         const rankPromotionBonuses = this.getRankPromotionBonusTable();
   
         const baseBonus = rankPromotionBonuses[nextRank] || 0;
-        const statSum =
-          (this.settings.stats.strength || 0) +
-          (this.settings.stats.agility || 0) +
-          (this.settings.stats.intelligence || 0) +
-          (this.settings.stats.vitality || 0) +
-          (this.settings.stats.perception || 0);
-        const averageStat = statSum / 5;
+        const statKeys = this.getStatKeys();
+        const statSum = this.sumStatBlock(this.settings.stats);
+        const averageStat = statSum / Math.max(1, statKeys.length);
         const dampener = this.calculateRankPromotionDampener(averageStat);
         const bonus = Math.max(1, Math.round(baseBonus * dampener));
         if (bonus > 0) {
           // Apply bonus to all stats
-          this.settings.stats.strength = (this.settings.stats.strength || 0) + bonus;
-          this.settings.stats.agility = (this.settings.stats.agility || 0) + bonus;
-          this.settings.stats.intelligence = (this.settings.stats.intelligence || 0) + bonus;
-          this.settings.stats.vitality = (this.settings.stats.vitality || 0) + bonus;
-          this.settings.stats.perception = (this.settings.stats.perception || 0) + bonus;
+          this.addToAllStats(bonus, this.settings.stats);
   
           // Recalculate HP/Mana after stat bonus (vitality/intelligence increased)
           const vitality = this.settings.stats.vitality || 0;

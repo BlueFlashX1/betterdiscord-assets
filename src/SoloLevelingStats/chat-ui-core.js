@@ -243,27 +243,7 @@ module.exports = {
   
       // Keep the strip composer-anchored. Top-level React injection can place it away from
       // the message box in certain Discord layouts, so we intentionally use DOM insertion.
-      const useReactTreeInjection = false;
-      if (useReactTreeInjection && this.tryReactInjection()) {
-        // React injection successful — components handle their own state + events
-        this.debugLog('CREATE_CHAT_UI', 'React injection succeeded, waiting for DOM mount');
-        setTimeout(() => {
-          const uiPanel = document.getElementById('sls-chat-ui');
-          if (uiPanel) {
-            this.chatUIPanel = uiPanel;
-            this.debugLog('CREATE_CHAT_UI', 'Panel mounted in DOM via React injection');
-            this.ensureChatUIUpdateInterval(true);
-            this.ensureHeaderStatsButton();
-          } else {
-            this.debugLog('CREATE_CHAT_UI', 'Panel NOT in DOM 100ms after React injection — patcher may not have fired yet');
-          }
-        }, 100);
-        this._isCreatingUI = false;
-        return; // React injection successful, skip DOM fallback
-      }
-  
-      // Fallback to DOM injection if React injection fails
-      this.debugLog('CREATE_CHAT_UI', 'React injection failed, using DOM fallback');
+      this.debugLog('CREATE_CHAT_UI', 'Using DOM injection path');
   
       // Function to actually create the UI
       const tryCreateUI = () => {
@@ -471,7 +451,7 @@ module.exports = {
     this._lastChatUIUpdateAt = 0;
   
     // Remove injected CSS so it doesn't persist after disable
-    document.getElementById('sls-chat-ui-styles')?.remove();
+    document.getElementById(this._constants?.CHAT_UI_STYLE_ID || 'sls-chat-ui-styles')?.remove();
   },
 
   updateChatUI() {

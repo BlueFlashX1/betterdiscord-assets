@@ -1,4 +1,26 @@
 module.exports = {
   PLUGIN_NAME: 'SoloLevelingStats',
   CHAT_UI_STYLE_ID: 'sls-chat-ui-styles',
+  STAT_KEYS: Object.freeze(['strength', 'agility', 'intelligence', 'vitality', 'perception']),
+  EMPTY_STAT_BLOCK: Object.freeze({
+    strength: 0,
+    agility: 0,
+    intelligence: 0,
+    vitality: 0,
+    perception: 0,
+  }),
+  DEFAULT_TITLE_BONUS: Object.freeze({
+    xp: 0,
+    critChance: 0,
+    strength: 0,
+    agility: 0,
+    intelligence: 0,
+    vitality: 0,
+    perception: 0,
+    strengthPercent: 0,
+    agilityPercent: 0,
+    intelligencePercent: 0,
+    vitalityPercent: 0,
+    perceptionPercent: 0,
+  }),
 };

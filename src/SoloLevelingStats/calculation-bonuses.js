@@ -238,7 +238,7 @@ module.exports = {
   },
 
   getRapidSendDecayMultiplier(deltaMs) {
-    if (!isFinite(deltaMs)) return 1.0;
+    if (!Number.isFinite(deltaMs)) return 1.0;
     if (deltaMs < 700) return 0.18;
     if (deltaMs < 1200) return 0.35;
     if (deltaMs < 2000) return 0.55;
@@ -289,7 +289,7 @@ module.exports = {
       rapidMultiplier,
       repeatMultiplier,
       repeatCount,
-      deltaMs: isFinite(deltaMs) ? deltaMs : null,
+      deltaMs: Number.isFinite(deltaMs) ? deltaMs : null,
       source: messageContext?.source || 'unknown',
     };
   },

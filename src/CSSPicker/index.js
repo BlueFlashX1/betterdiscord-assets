@@ -244,7 +244,7 @@ module.exports = class CSSPicker {
       try { this.stop(); } catch (_) {}
     }
     this._toast =
-      _PluginUtils?.createToastHelper?.("cSSPicker") || createToast();
+      _PluginUtils?.createToastHelper?.("cssPicker") || createToast();
     this.isActive = false;
     this.lastHoverElement = null;
 
@@ -260,6 +260,7 @@ module.exports = class CSSPicker {
     this.hoverRafId = null;
     this.pendingHoverPoint = null;
     this._launcherClickHandler = null;
+    this._captureInProgress = false;
 
     this.injectLauncher();
 
@@ -288,6 +289,7 @@ module.exports = class CSSPicker {
     if (this.onGlobalHotkeyDown)
       document.removeEventListener("keydown", this.onGlobalHotkeyDown, true);
     this.onGlobalHotkeyDown = null;
+    this._captureInProgress = false;
   }
 
   getSettingsPanel() {
@@ -371,7 +373,7 @@ module.exports = class CSSPicker {
     `;
 
     const update = (next) => {
-      const merged = { ...loadSettings(), ...next };
+      const merged = { ...(this.settings || settings), ...next };
       saveSettings(merged);
       this.settings = merged;
       this._toast("CSS Picker settings saved", "success", 2000);
@@ -485,14 +487,21 @@ module.exports = class CSSPicker {
     this.onClick = async (event) => {
       if (!this.isActive) return;
       if (event.target?.closest?.("#css-picker-launcher")) return;
-      const capture = await captureElementAtPoint(event.clientX, event.clientY);
-      if (!capture.ok) {
-        this._toast(capture.error || "Failed to capture element", "error");
+      event.preventDefault();
+      event.stopPropagation();
+      if (this._captureInProgress) return;
+      this._captureInProgress = true;
+      try {
+        const capture = await captureElementAtPoint(event.clientX, event.clientY);
+        if (!capture.ok) {
+          this._toast(capture.error || "Failed to capture element", "error");
+          return;
+        }
+        this._toast(capture.message, capture.toastType, capture.toastTimeoutMs);
+      } finally {
+        this._captureInProgress = false;
         this.deactivatePickMode();
-        return;
       }
-      this._toast(capture.message, capture.toastType, capture.toastTimeoutMs);
-      this.deactivatePickMode();
     };
 
     this.onKeyDown = (event) => {
@@ -538,6 +547,7 @@ module.exports = class CSSPicker {
     this.onClick = null;
     this.onKeyDown = null;
     this.pendingHoverPoint = null;
+    this._captureInProgress = false;
     this.hoverRafId && cancelAnimationFrame(this.hoverRafId);
     this.hoverRafId = null;
 

@@ -3,45 +3,56 @@ module.exports = {
     if (!this.fileBackupPath) return null;
     try {
       const fs = require('fs');
-  
-      // Helper to read and score a file
-      const getCandidate = (path) => {
+
+      const getCandidate = (path, source) => {
         try {
           if (!fs.existsSync(path)) return null;
           const raw = fs.readFileSync(path, 'utf8');
           const data = JSON.parse(raw);
-  
-          // Score quality: Level * 1000 + Stat Sum
-          const stats = data.stats || {};
-          const statSum = (Number(stats.strength) || 0) + (Number(stats.agility) || 0) +
-            (Number(stats.intelligence) || 0) + (Number(stats.vitality) || 0) + (Number(stats.perception) || 0);
-          const quality = (Number(data.level) || 0) * 1000 + statSum + (Number(data.totalXP || data.xp) || 0) * 0.01;
-  
-          return { data, quality, path };
+
+          let quality = 0;
+          try {
+            quality = this._getSettingsCandidateQuality(data);
+          } catch (_) {
+            quality = 0;
+          }
+          const stat = fs.statSync(path);
+          const ts = Date.parse(data?._metadata?.lastSave || '') || stat.mtimeMs || 0;
+
+          return {
+            source,
+            data,
+            quality: Number.isFinite(quality) ? quality : 0,
+            ts: Number.isFinite(ts) ? ts : 0,
+            path,
+          };
         } catch (e) {
           return null;
         }
       };
-  
-      // Scan all backup slots: main, .bak1, .bak2, .bak3, .bak4, .bak5
+
       const candidates = [];
-      const paths = [this.fileBackupPath];
-      for (let i = 1; i <= 5; i++) paths.push(`${this.fileBackupPath}.bak${i}`);
-  
-      paths.forEach(p => {
-        const c = getCandidate(p);
-        if (c) candidates.push(c);
-      });
-  
-      if (candidates.length === 0) return null;
-  
-      // Sort by quality descending
-      candidates.sort((a, b) => b.quality - a.quality);
-  
-      if (candidates.length > 1) {
-        this.debugLog('READ_FILE_BACKUP', `Found ${candidates.length} backups. Best: ${candidates[0].path} (Q:${candidates[0].quality})`);
+      const mainCandidate = getCandidate(this.fileBackupPath, 'file');
+      if (mainCandidate) candidates.push(mainCandidate);
+      for (let i = 1; i <= 5; i++) {
+        const backupCandidate = getCandidate(`${this.fileBackupPath}.bak${i}`, 'file');
+        if (backupCandidate) candidates.push(backupCandidate);
       }
-  
+
+      if (candidates.length === 0) return null;
+
+      candidates.sort((a, b) => {
+        if (b.quality !== a.quality) return b.quality - a.quality;
+        return b.ts - a.ts;
+      });
+
+      if (candidates.length > 1) {
+        this.debugLog(
+          'READ_FILE_BACKUP',
+          `Found ${candidates.length} backups. Best: ${candidates[0].path} (Q:${candidates[0].quality})`
+        );
+      }
+
       return candidates[0].data;
     } catch (error) {
       this.debugError('LOAD_SETTINGS_FILE', error);
@@ -53,34 +64,26 @@ module.exports = {
     if (!this.fileBackupPath) return false;
     try {
       const fs = require('fs');
-  
-      // Rotate backups: .bak4 -> .bak5, .bak3 -> .bak4, ... .json -> .bak1
-      // Keep up to 5 rolling backups
+
       const maxBackups = 5;
       for (let i = maxBackups - 1; i >= 0; i--) {
         const src = i === 0 ? this.fileBackupPath : `${this.fileBackupPath}.bak${i}`;
         const dest = `${this.fileBackupPath}.bak${i + 1}`;
         if (fs.existsSync(src)) {
           try {
-            // Copy manually since fs.copyFileSync might be missing in Electron renderer
             const content = fs.readFileSync(src);
             fs.writeFileSync(dest, content);
           } catch (e) {
-            // Ignore rotation errors (permissions, etc), focus on saving main file
             this.debugError('ROTATE_BACKUP', e);
           }
         }
       }
-  
+
       const jsonStr = JSON.stringify(data, null, 2);
-      // Async write to avoid blocking the UI thread
-      fs.writeFile(this.fileBackupPath, jsonStr, 'utf8', (err) => {
-        if (err) {
-          this.debugError('SAVE_SETTINGS_FILE', err);
-        } else {
-          this.debugLog('SAVE_SETTINGS', 'Saved file backup (rotated)', { path: this.fileBackupPath });
-        }
-      });
+      const tmpPath = `${this.fileBackupPath}.tmp`;
+      fs.writeFileSync(tmpPath, jsonStr, 'utf8');
+      fs.renameSync(tmpPath, this.fileBackupPath);
+      this.debugLog('SAVE_SETTINGS', 'Saved file backup (rotated)', { path: this.fileBackupPath });
       return true;
     } catch (error) {
       this.debugError('SAVE_SETTINGS_FILE', error);

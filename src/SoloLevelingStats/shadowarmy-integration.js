@@ -1,8 +1,9 @@
 module.exports = {
   cacheShadowArmyBuffs(buffs, timestamp = Date.now()) {
-    const normalized = buffs && typeof buffs === 'object'
-      ? { ...this.DEFAULT_SHADOW_BUFFS, ...buffs }
-      : { ...this.DEFAULT_SHADOW_BUFFS };
+    const normalized =
+      buffs && typeof buffs === 'object'
+        ? this.normalizeStatBlock({ ...this.DEFAULT_SHADOW_BUFFS, ...buffs }, 0)
+        : this.createEmptyStatBlock();
     this._cache.shadowArmyBuffs = normalized;
     this._cache.shadowArmyBuffsTime = timestamp;
     return normalized;
@@ -77,12 +78,12 @@ module.exports = {
   
     // Apply Arise multiplier to all shadow buff values
     const multiplier = activeBuffs.shadowBuffMultiplier;
-    return {
-      strength: (baseBuffs.strength || 0) * multiplier,
-      agility: (baseBuffs.agility || 0) * multiplier,
-      intelligence: (baseBuffs.intelligence || 0) * multiplier,
-      vitality: (baseBuffs.vitality || 0) * multiplier,
-      perception: (baseBuffs.perception || 0) * multiplier,
-    };
+    const scaled = this.createEmptyStatBlock();
+    const statKeys = this.getStatKeys();
+    for (let i = 0; i < statKeys.length; i++) {
+      const key = statKeys[i];
+      scaled[key] = this.normalizeNumber(baseBuffs?.[key], 0) * multiplier;
+    }
+    return scaled;
   }
 };

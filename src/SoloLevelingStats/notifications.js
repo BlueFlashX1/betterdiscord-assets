@@ -53,7 +53,6 @@ module.exports = {
     // #region agent log
     // #endregion
   
-    const _levelInfo = this.getCurrentLevel();
     const levelsGained = newLevel - oldLevel;
   
     // Calculate actual stat points gained if not provided
@@ -72,6 +71,8 @@ module.exports = {
     // Ensure HP is fully restored on level up
     this.settings.userMaxHP = currentMaxHP;
     this.settings.userHP = currentMaxHP;
+    // Persist restored HP state in case Discord restarts before the next periodic save.
+    this.saveSettings();
   
     // Build message with correct stats for multiple level ups
     let message = `[SYSTEM] Level up detected. HP fully restored.\n\n`;

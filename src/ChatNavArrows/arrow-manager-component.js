@@ -50,6 +50,7 @@ function useScrollerBinding(React, options) {
 
     let currentScroller = null;
     let scrollHandler = null;
+    let initialRetryTimer = null;
 
     const applyScrollState = (scroller) => {
       if (!scroller.isConnected) {
@@ -115,12 +116,16 @@ function useScrollerBinding(React, options) {
     findAndBind();
     if (!currentScroller) {
       dbg("Initial bind failed — scheduling 150ms retry");
-      setTimeout(findAndBind, 150);
+      initialRetryTimer = setTimeout(findAndBind, 150);
     }
     pollRef.current = setInterval(findAndBind, POLL_INTERVAL_MS);
 
     return () => {
       dbg("useEffect cleanup");
+      if (initialRetryTimer) {
+        clearTimeout(initialRetryTimer);
+        initialRetryTimer = null;
+      }
       if (currentScroller && scrollHandler) {
         currentScroller.removeEventListener("scroll", scrollHandler);
       }

@@ -163,6 +163,7 @@ module.exports = class ShadowRecon {
       this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} - Recon online`, "info");
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed to start`, err);
+      try { this.stop({ silent: true }); } catch (_) {}
       this._toast(`${PLUGIN_NAME} failed to start: ${err.message}`, "error");
     }
   }
@@ -708,7 +709,7 @@ module.exports = class ShadowRecon {
 
     try {
       const connections = await this.getConnectionsIntel(userId, guildId);
-      if (this._stopped || !document.getElementById(MODAL_ID)) return;
+      if (this._stopped || !connectionsSection.isConnected || !document.getElementById(MODAL_ID)) return;
       connectionsSection.innerHTML = "";
       const rows = connections.length
         ? connections.map(c => [c.type, `${c.name}${c.verified ? " (verified)" : ""}`])

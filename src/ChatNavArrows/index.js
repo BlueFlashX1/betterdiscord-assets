@@ -157,6 +157,10 @@ module.exports = class ChatNavArrows {
     const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
       patcherCallCount++;
       pluginInstance._patcherCallbackFired = true;
+      if (pluginInstance._fallbackTimer) {
+        clearTimeout(pluginInstance._fallbackTimer);
+        pluginInstance._fallbackTimer = null;
+      }
       if (pluginInstance._domFallback && patcherCallCount === 1) {
         pluginInstance._debugLog('Patcher callback fired — stopping DOM fallback');
         pluginInstance._stopDomFallback();

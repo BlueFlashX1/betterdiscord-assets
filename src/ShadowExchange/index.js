@@ -178,6 +178,10 @@ module.exports = class ShadowExchange {
       this._toast(`ShadowExchange v${SE_VERSION} active`, "success");
     } catch (err) {
       console.error("[ShadowExchange] start() failed:", err);
+      try {
+        this._teardownRuntime();
+        this._resetRuntimeState();
+      } catch (_) {}
       this._toast("ShadowExchange failed to start", "error");
     }
   }
@@ -362,6 +366,7 @@ module.exports = class ShadowExchange {
     };
 
     this.settings.waypoints.push(waypoint);
+    this._invalidateWaypointCaches();
     this.saveSettings();
     this._triggerPanelRefresh();
 
@@ -375,9 +380,11 @@ module.exports = class ShadowExchange {
   }
 
   loadSettings() {
-    return loadSettings(this, this.defaultSettings, {
+    const result = loadSettings(this, this.defaultSettings, {
       pluginId: SE_PLUGIN_ID,
     });
+    this._invalidateWaypointCaches();
+    return result;
   }
 
   /** Debounced save — batches rapid actions (sort/navigate/mark) into one write */
@@ -402,6 +409,11 @@ module.exports = class ShadowExchange {
 
   debugError(system, ...args) {
     console.error(`[ShadowExchange][${system}]`, ...args);
+  }
+
+  _invalidateWaypointCaches() {
+    this._markedShadowIdsCache = null;
+    this._waypointByLocationCache = null;
   }
 
   // ── Public API (for cross-plugin integration) ─────────────────────────
@@ -463,7 +475,9 @@ module.exports = class ShadowExchange {
       const withPower = available.map((shadow) => {
         let power = 0;
         try {
-          if (typeof saInstance.getShadowEffectiveStats === "function") {
+          if (typeof saInstance.calculateShadowPowerCached === "function") {
+            power = Number(saInstance.calculateShadowPowerCached(shadow)) || 0;
+          } else if (typeof saInstance.getShadowEffectiveStats === "function") {
             const stats = saInstance.getShadowEffectiveStats(shadow);
             power = Object.values(stats).reduce((sum, v) => sum + (Number(v) || 0), 0);
           } else {
@@ -517,6 +531,7 @@ module.exports = class ShadowExchange {
     try {
       // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
       const all = saInstance.getShadowSnapshot?.() || await saInstance.getAllShadows();
+      if (!Array.isArray(all)) return 0;
       return all.filter((s) => s?.id && !this.isShadowMarked(s.id)).length;
     } catch (_) {
       return 0;
@@ -622,6 +637,7 @@ module.exports = class ShadowExchange {
     };
 
     this.settings.waypoints.push(waypoint);
+    this._invalidateWaypointCaches();
     this.saveSettings();
     this._triggerPanelRefresh();
 
@@ -633,6 +649,7 @@ module.exports = class ShadowExchange {
     if (idx === -1) return;
     const wp = this.settings.waypoints[idx];
     this.settings.waypoints.splice(idx, 1);
+    this._invalidateWaypointCaches();
     this.saveSettings();
     this._triggerPanelRefresh();
     this._toast(`${wp.shadowName} recalled from ${wp.label}`, "info");

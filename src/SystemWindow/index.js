@@ -28,7 +28,7 @@ module.exports = class SystemWindow {
     this._throttleTimer = null;
     this._lastScrollerEl = null;
     this._classifyRAF = null;
-    this._classifyVersion = 0;
+    this._classifyVersion = 1;
     this._started = false;
   }
 
@@ -98,6 +98,9 @@ module.exports = class SystemWindow {
         this._currentUserId = currentId;
         document.querySelectorAll('div[role="article"][data-sw-self]')
           .forEach((el) => el.removeAttribute('data-sw-self'));
+        // Force one full re-classify so self-message classes refresh under new account.
+        this._classifyVersion += 1;
+        this._classifyMessages();
       }
     } catch (_) {}
 
@@ -105,6 +108,8 @@ module.exports = class SystemWindow {
     if (!scroller) return;
     if (scroller !== this._lastScrollerEl) {
       this._lastScrollerEl = scroller;
+      // New channel/scroller => force a full pass once, then incremental updates.
+      this._classifyVersion += 1;
       this._observeScroller(scroller);
       this._classifyMessages();
       if (this.settings.debugMode) {
@@ -117,6 +122,7 @@ module.exports = class SystemWindow {
     const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (scroller) {
       this._lastScrollerEl = scroller;
+      this._classifyVersion += 1;
       this._observeScroller(scroller);
       this._classifyMessages();
     } else if (retryCount < 10) {
@@ -238,9 +244,7 @@ module.exports = class SystemWindow {
     const items = scroller.querySelectorAll(':scope > li[class*="messageListItem_"]');
     if (!items.length) return;
 
-    // Bump version — only re-classify groups that contain new/changed items
-    this._classifyVersion = (this._classifyVersion || 0) + 1;
-    const ver = String(this._classifyVersion);
+    const ver = String(this._classifyVersion || 1);
 
     let groupCount = 0;
     let currentGroup = [];
