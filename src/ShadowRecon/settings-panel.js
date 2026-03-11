@@ -57,7 +57,7 @@ function buildSettingsPanel(BdApi, plugin) {
     makeToggle("Server Counter Widget", "showServerCounterWidget", "Adds total guild / marked intel at top of guild bar."),
     makeToggle("Guild Hover Intel Hint", "showGuildHoverIntel", "Adds recon hint text on guild icon hover elements."),
     makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without recon mark; detailed staff dossier unlocks when guild is recon-marked."),
-    makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds platform/connections intel action for ShadowSenses targets."),
+    makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds limited target intel action only when monitored target is present in the same guild."),
 
     ce("div", { style: { display: "flex", gap: "8px", marginTop: "14px" } },
       ce("button", {

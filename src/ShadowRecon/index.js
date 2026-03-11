@@ -339,6 +339,20 @@ module.exports = class ShadowRecon {
     return this._getShadowDeploymentMap().has(String(userId));
   }
 
+  _isUserPresentInGuild(userId, guildId) {
+    if (!userId || !guildId) return false;
+    try {
+      return !!this._GuildMemberStore?.getMember?.(guildId, userId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  _canShowLimitedTargetIntel(userId, guildId) {
+    if (!this._isMarkedTarget(userId)) return false;
+    return this._isUserPresentInGuild(userId, guildId);
+  }
+
   // ---- Context Menus ---------------------------------------------------
 
   _resetContextPatch(unpatchKey) {
@@ -544,63 +558,134 @@ module.exports = class ShadowRecon {
     }
 
     const marked = this.isGuildMarked(guildId);
-    const lockFull = this.settings.loreLockedRecon && !marked;
     const intel = this.getGuildIntel(guildId);
+    const createdTs = this._safeTimestampFromSnowflake(guild.id);
+    const joinedTs = guild?.joinedAt ? new Date(guild.joinedAt).getTime() : 0;
+    const staffSnapshot = this._collectStaffSnapshot(guildId, 20);
 
     const overlay = this._createModal(`Shadow Recon - Guild Dossier`, `${guild.name}${marked ? " [Marked]" : " [Unmarked]"}`);
     const body = overlay.querySelector(".shadow-recon-modal-body");
 
-    body.appendChild(this._buildKeyValueSection("Server Details", [
+    body.appendChild(this._buildKeyValueSection("Guild Baseline", [
       ["Guild ID", guild.id],
       ["Owner", intel.ownerName],
       ["Created", intel.createdAt],
       ["Joined", intel.joinedAt],
-      ["Boost Tier", String(intel.premiumTier)],
-      ["Boost Count", this._formatNumber(intel.premiumSubscriptionCount)],
-      ["Roles", this._formatNumber(intel.roleCount)],
-      ["Channels", this._formatNumber(intel.channelCount)],
-      ["Features", intel.featuresLabel],
+      ["Guild Age", this._formatElapsedSince(createdTs)],
+      ["Your Tenure", this._formatElapsedSince(joinedTs)],
     ]));
 
-    body.appendChild(this._buildKeyValueSection("Server Counter", [
-      ["Total Guilds", this._formatNumber(this.getServerCount())],
-      ["Marked Guilds", this._formatNumber(this._markedGuildIds.size)],
-      ["Marked Targets", this._formatNumber(this._getShadowDeploymentMap().size)],
-    ]));
-
-    body.appendChild(this._buildKeyValueSection("Member Counter", [
+    body.appendChild(this._buildKeyValueSection("Member Snapshot", [
       ["Total Members", this._formatNumber(intel.memberCount)],
       ["Online Members", this._formatNumber(intel.onlineCount)],
     ]));
 
-    if (lockFull) {
-      const notice = document.createElement("div");
-      notice.className = "shadow-recon-notice";
-      notice.textContent = "Guild is not recon-marked. Recon this guild to unlock full Shadow Recon intel (lore lock).";
+    body.appendChild(this._buildPermissionsSection("Your Effective Authority", intel.currentUserPermissionSummary));
 
-      const markBtn = document.createElement("button");
-      markBtn.className = "shadow-recon-button";
-      markBtn.textContent = "Recon Guild Now";
-      markBtn.addEventListener("click", () => {
-        this.toggleGuildMark(guildId);
-        this.closeModal();
-        this.openGuildDossier(guildId);
-      });
+    body.appendChild(this._buildKeyValueSection("Staff Presence Snapshot", [
+      ["Owner", intel.ownerName],
+      ["Loaded Staff Online", this._formatNumber(staffSnapshot.onlineCount)],
+      ["Loaded Staff Total", this._formatNumber(staffSnapshot.totalCount)],
+      ["Scanned Members", `${this._formatNumber(staffSnapshot.scannedCount)}${staffSnapshot.truncated ? "+" : ""}`],
+    ]));
 
-      body.appendChild(notice);
-      body.appendChild(markBtn);
-      return;
+    body.appendChild(this._buildKeyValueSection(
+      "Staff Map (Loaded Cache)",
+      staffSnapshot.rows.length > 0
+        ? staffSnapshot.rows
+        : [["Staff", "No elevated staff members in current cache"]]
+    ));
+
+    if (this.settings.loreLockedRecon && !marked) {
+      body.appendChild(this._buildKeyValueSection("Recon Note", [
+        ["Mode", "Lore lock is enabled. Extended dossiers remain limited until this guild is marked."],
+      ]));
+    }
+  }
+
+  _collectLoadedGuildMembers(guildId, maxScan = 500) {
+    const out = [];
+    const seen = new Set();
+    const sources = [
+      this._GuildMemberStore?.getMembers?.(guildId),
+      this._GuildMemberStore?.getMutableGuildMembers?.(guildId),
+      this._GuildMemberStore?.members?.[guildId],
+      this._GuildMemberStore?.guildMemberMap?.[guildId],
+    ];
+
+    for (const source of sources) {
+      if (!source) continue;
+      const values = Array.isArray(source)
+        ? source
+        : typeof source === "object"
+          ? Object.values(source)
+          : [];
+      for (const member of values) {
+        const userId = String(member?.userId || member?.user_id || member?.id || "").trim();
+        if (!userId || seen.has(userId)) continue;
+        seen.add(userId);
+        out.push({ userId, member });
+        if (out.length >= maxScan) return { members: out, truncated: true };
+      }
     }
 
-    body.appendChild(this._buildPermissionsSection("Your Guild Permissions", intel.currentUserPermissionSummary));
+    return { members: out, truncated: false };
+  }
 
-    body.appendChild(this._buildKeyValueSection("Guild Profile", [
-      ["Description", intel.description || "None"],
-      ["Emoji Count", this._formatNumber(intel.emojiCount)],
-      ["Sticker Count", this._formatNumber(intel.stickerCount)],
-      ["Soundboard Count", this._formatNumber(intel.soundboardCount)],
-      ["Preferred Locale", intel.preferredLocale || "Unknown"],
-    ]));
+  _collectStaffSnapshot(guildId, listLimit = 20) {
+    const { members, truncated } = this._collectLoadedGuildMembers(guildId, 500);
+    const rows = [];
+    let totalCount = 0;
+    let onlineCount = 0;
+
+    for (const { userId, member } of members) {
+      const staff = this.getStaffIntel(userId, guildId);
+      if (!staff) continue;
+      totalCount += 1;
+
+      const statusRaw = String(this._PresenceStore?.getStatus?.(userId) || "offline").toLowerCase();
+      const isOnline = statusRaw !== "offline" && statusRaw !== "invisible";
+      if (isOnline) onlineCount += 1;
+
+      if (rows.length < listLimit) {
+        const user = this._UserStore?.getUser?.(userId);
+        const displayName = user?.globalName || user?.username || member?.nick || userId;
+        rows.push([`${displayName} (${staff.label})`, this._capitalize(statusRaw)]);
+      }
+    }
+
+    return {
+      rows,
+      totalCount,
+      onlineCount,
+      scannedCount: members.length,
+      truncated,
+    };
+  }
+
+  _safeTimestampFromSnowflake(id) {
+    const num = this._toBigInt(id);
+    if (num === 0n) return 0;
+    const discordEpoch = 1420070400000n;
+    const ts = Number((num >> 22n) + discordEpoch);
+    if (!Number.isFinite(ts) || ts <= 0) return 0;
+    return ts;
+  }
+
+  _formatElapsedSince(timestampMs) {
+    const ts = Number(timestampMs);
+    if (!Number.isFinite(ts) || ts <= 0) return "Unknown";
+    const delta = Date.now() - ts;
+    if (!Number.isFinite(delta) || delta < 0) return "Unknown";
+    const minutes = Math.floor(delta / 60000);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d`;
+    const months = Math.floor(days / 30);
+    if (months < 24) return `${months}mo`;
+    return `${Math.floor(months / 12)}y`;
   }
 
   _getGuildOwner(guild) {
@@ -676,6 +761,11 @@ module.exports = class ShadowRecon {
   // ---- Target Intel Modal ---------------------------------------------
 
   async openUserIntelModal(userId, guildId) {
+    if (!this._canShowLimitedTargetIntel(userId, guildId)) {
+      this._toast("Target intel is limited to monitored users present in this guild", "warning");
+      return;
+    }
+
     const user = this._UserStore?.getUser?.(userId);
     const deployment = this._getShadowDeploymentMap().get(String(userId));
 
@@ -687,39 +777,21 @@ module.exports = class ShadowRecon {
     const body = overlay.querySelector(".shadow-recon-modal-body");
     const platformData = this.getPlatformIntel(userId);
     const staff = this.getStaffIntel(userId, guildId);
-    const detailedStaffUnlocked = this.isDetailedStaffIntelUnlocked(guildId);
 
-    body.appendChild(this._buildKeyValueSection("Platform Indicators", platformData.length
+    body.appendChild(this._buildKeyValueSection("Presence Snapshot", platformData.length
       ? platformData.map(p => [p.platform, p.status])
       : [["Intel", "No platform statuses reported"]]
     ));
 
     body.appendChild(this._buildKeyValueSection(
-      "Staff Intel",
+      "Guild Role Snapshot",
       staff
         ? [
             ["Rank", staff.label],
-            ["Capabilities", detailedStaffUnlocked ? (staff.capabilities.join(", ") || "None") : "Locked - recon guild for full staff dossier"],
+            ["Capabilities", staff.capabilities.join(", ") || "None"],
           ]
         : [["Rank", "No elevated staff permissions detected"]]
     ));
-
-    const connectionsSection = this._buildKeyValueSection("Connections", [["Status", "Fetching profile intel..."]]);
-    body.appendChild(connectionsSection);
-
-    try {
-      const connections = await this.getConnectionsIntel(userId, guildId);
-      if (this._stopped || !connectionsSection.isConnected || !document.getElementById(MODAL_ID)) return;
-      connectionsSection.innerHTML = "";
-      const rows = connections.length
-        ? connections.map(c => [c.type, `${c.name}${c.verified ? " (verified)" : ""}`])
-        : [["Status", "No public connections returned for this target"]];
-      connectionsSection.appendChild(this._buildGrid(rows));
-    } catch (err) {
-      connectionsSection.innerHTML = "";
-      connectionsSection.appendChild(this._buildGrid([["Error", "Failed to load connection intel"]]));
-      console.error(`[${PLUGIN_NAME}] Failed fetching target connections`, err);
-    }
   }
 
   getPlatformIntel(userId) {

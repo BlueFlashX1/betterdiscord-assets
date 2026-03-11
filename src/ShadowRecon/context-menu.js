@@ -25,13 +25,13 @@ function buildStaffContextItems(plugin, BdApi, userId, currentGuildId) {
 
 function buildMarkedTargetContextItems(plugin, BdApi, userId, currentGuildId) {
   if (!plugin.settings.showMarkedTargetIntelInContext) return [];
-  if (!plugin._isMarkedTarget(userId)) return [];
+  if (!plugin._canShowLimitedTargetIntel(userId, currentGuildId)) return [];
 
   const deployment = plugin._getShadowDeploymentMap().get(String(userId));
   return [
     BdApi.ContextMenu.buildItem({
       type: "text",
-      label: `Shadow Recon: Target Intel${deployment?.shadowRank ? ` [${deployment.shadowRank}]` : ""}`,
+      label: `Shadow Recon: Target Intel (Same Guild)${deployment?.shadowRank ? ` [${deployment.shadowRank}]` : ""}`,
       action: () => plugin.openUserIntelModal(userId, currentGuildId),
     }),
   ];
