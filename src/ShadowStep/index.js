@@ -11,6 +11,8 @@
  */
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+let _EmbeddedShadowPortalCore;
+try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const PLUGIN_NAME = "ShadowStep";
@@ -618,6 +620,11 @@ module.exports = class ShadowStep {
 };
 
 const _loadShadowPortalCore = () => {
+  // Primary path: bundled src module (esbuild-resolved) so runtime does not
+  // depend on external plugin-folder loading.
+  if (_EmbeddedShadowPortalCore?.applyPortalCoreToClass) {
+    return _EmbeddedShadowPortalCore;
+  }
   if (typeof _SLUtils?.loadShadowPortalCore === "function") {
     const mod = _SLUtils.loadShadowPortalCore();
     if (mod?.applyPortalCoreToClass) return mod;

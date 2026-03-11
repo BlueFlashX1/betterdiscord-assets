@@ -16,6 +16,8 @@ const SensesEngineEvents = require("./senses-engine-events");
 const SensesEngineUtils = require("./senses-engine-utils");
 const { _TransitionCleanupUtils } = require("./shared-utils");
 const { createToast } = require("../shared/toast");
+let _EmbeddedShadowPortalCore;
+try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 const _fallbackToast = createToast();
 
 // ─── SensesEngine ──────────────────────────────────────────────────────────
@@ -682,6 +684,11 @@ const _tryLoadShadowPortalCoreViaFactory = (path, fs, candidate) => {
 };
 
 const _loadShadowPortalCore = () => {
+  // Primary path: bundled src module (esbuild-resolved) so runtime does not
+  // depend on external plugin-folder loading.
+  if (_EmbeddedShadowPortalCore?.applyPortalCoreToClass) {
+    return _EmbeddedShadowPortalCore;
+  }
   try {
     const path = require("path");
     const fs = require("fs");
