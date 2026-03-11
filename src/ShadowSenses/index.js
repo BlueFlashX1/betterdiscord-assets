@@ -46,12 +46,16 @@ class SensesEngine {
     //   1. First activity after restart → "user is active" toast
     //   2. Return from AFK (1-3h silence) → "back from AFK" toast
     this._userLastActivity = new Map();  // authorId → { timestamp, notifiedActive }
+    this._sessionActivityNotified = new Set(); // authorId -> first-session activity toast emitted
+    this._activitySeededFromHistory = false;
+    this._activityIndexDirty = false;
     this._USER_ACTIVITY_MAX = 1000; // LRU cap — evict oldest when exceeded
     this._AFK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours — sweet spot for real AFK detection
     this._subscribeTime = 0; // Set when subscribe() fires — used to defer early toasts
     this._statusByUserId = new Map(); // userId -> normalized status
     this._relationshipFriendIds = new Set();
     this._typingToastCooldown = new Map(); // userId:channelId -> timestamp
+    this._invisibleToastCooldown = new Map(); // userId:channelId -> timestamp
     this._deferredStatusToastTimers = new Set(); // startup-deferred status toast timers
     this._deferredUtilityToastTimers = new Set(); // deferred non-status toasts (startup grace)
 
@@ -70,6 +74,35 @@ class SensesEngine {
       this._guildFeeds = BdApi.Data.load(PLUGIN_NAME, "guildFeeds") || {};
     }
     this._totalDetections = BdApi.Data.load(PLUGIN_NAME, "totalDetections") || 0;
+    const persistedActivityIndex = BdApi.Data.load(PLUGIN_NAME, "userLastActivityIndex");
+    if (persistedActivityIndex && typeof persistedActivityIndex === "object") {
+      for (const [userId, savedValue] of Object.entries(persistedActivityIndex)) {
+        const timestamp = Number(
+          savedValue && typeof savedValue === "object"
+            ? (savedValue.t ?? savedValue.timestamp)
+            : savedValue
+        ) || 0;
+        const isFallback = !!(
+          savedValue &&
+          typeof savedValue === "object" &&
+          (savedValue.f || savedValue.isFallback)
+        );
+        const normalizedUserId = String(userId || "");
+        if (!normalizedUserId || timestamp <= 0) continue;
+        this._userLastActivity.set(normalizedUserId, {
+          timestamp,
+          notifiedActive: false,
+          isFallback,
+        });
+      }
+      if (this._userLastActivity.size > this._USER_ACTIVITY_MAX) {
+        const trimmed = Array.from(this._userLastActivity.entries())
+          .sort((a, b) => (b[1]?.timestamp || 0) - (a[1]?.timestamp || 0))
+          .slice(0, this._USER_ACTIVITY_MAX);
+        this._userLastActivity = new Map(trimmed);
+        this._activityIndexDirty = true;
+      }
+    }
 
     // Count existing entries for lastSeenCount (mark all persisted as "seen")
     // and initialize _totalFeedEntries from persisted data
@@ -82,7 +115,7 @@ class SensesEngine {
     this._purgeOldEntries();
     // Keep history chat-only: status/typing/relationship events are toast-only intel
     this._purgeUtilityEntries();
-    if (this._dirty) this._flushToDisk();
+    if (this._dirty || this._activityIndexDirty) this._flushToDisk();
 
     this._plugin.debugLog("SensesEngine", "Loaded persisted feeds", {
       guilds: Object.keys(this._guildFeeds).length,
@@ -139,6 +172,7 @@ class SensesEngine {
     }
     this._subscribeTime = Date.now();
     this._seedTrackedStatuses();
+    this._seedUserActivityFromFeeds();
     this._snapshotFriendRelationships();
 
     // Start debounced flush interval (30s)
@@ -185,13 +219,17 @@ class SensesEngine {
       clearInterval(this._purgeInterval);
       this._purgeInterval = null;
     }
-    if (this._dirty) {
+    if (this._dirty || this._activityIndexDirty) {
       this._flushToDisk();
     }
 
     this._typingToastCooldown.clear();
+    this._invisibleToastCooldown.clear();
     this._statusByUserId.clear();
     this._relationshipFriendIds.clear();
+    this._sessionActivityNotified.clear();
+    this._activitySeededFromHistory = false;
+    this._activityIndexDirty = false;
     for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
     this._deferredStatusToastTimers.clear();
     for (const timer of this._deferredUtilityToastTimers) clearTimeout(timer);
@@ -265,7 +303,12 @@ class SensesEngine {
     this._feedVersion = 0;
     this._statusByUserId = new Map();
     this._typingToastCooldown = new Map();
+    this._invisibleToastCooldown = new Map();
     this._relationshipFriendIds = new Set();
+    this._userLastActivity = new Map();
+    this._sessionActivityNotified = new Set();
+    this._activitySeededFromHistory = false;
+    this._activityIndexDirty = false;
     this._deferredStatusToastTimers = new Set();
     this._deferredUtilityToastTimers = new Set();
   }

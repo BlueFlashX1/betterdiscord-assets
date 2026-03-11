@@ -103,7 +103,12 @@ export function applyHoverRevealState(ctx, options) {
   } = options;
   const revealKey = `_${name}RevealTimer`;
   const hideKey = `_${name}HideTimer`;
+  const hoverEnterAtKey = `_${name}HoverEnterAt`;
   const className = `ra-${name}-hover-reveal`;
+  const revealDelayMs = Number(revealDelay);
+  const hideDelayMs = Number(hideDelay);
+  const normalizedRevealDelay = Number.isFinite(revealDelayMs) ? Math.max(0, revealDelayMs) : 0;
+  const normalizedHideDelay = Number.isFinite(hideDelayMs) ? Math.max(0, hideDelayMs) : 0;
 
   const checkActive = isActive || (() => document.body.classList.contains(className));
   const applyActive = setActive || ((revealed) => {
@@ -117,20 +122,50 @@ export function applyHoverRevealState(ctx, options) {
   if (inZone) {
     clearTimeout(ctx[hideKey]);
     ctx[hideKey] = null;
-    if (!ctx[revealKey] && !checkActive()) {
+    if (checkActive()) {
+      ctx[hoverEnterAtKey] = null;
+      return;
+    }
+
+    const now = Date.now();
+    if (!Number.isFinite(ctx[hoverEnterAtKey]) || ctx[hoverEnterAtKey] <= 0) {
+      ctx[hoverEnterAtKey] = now;
+    }
+    const enteredAt = Number(ctx[hoverEnterAtKey]) || now;
+    const elapsed = now - enteredAt;
+    const remaining = normalizedRevealDelay - elapsed;
+
+    if (remaining <= 0) {
+      clearTimeout(ctx[revealKey]);
+      ctx[revealKey] = null;
+      ctx[hoverEnterAtKey] = null;
+      applyActive(true);
+      return;
+    }
+
+    if (!ctx[revealKey]) {
       ctx[revealKey] = setTimeout(() => {
         ctx[revealKey] = null;
-        applyActive(true);
-      }, revealDelay);
+        const since = Date.now() - (Number(ctx[hoverEnterAtKey]) || 0);
+        if (since >= normalizedRevealDelay && !checkActive()) {
+          ctx[hoverEnterAtKey] = null;
+          applyActive(true);
+        }
+      }, remaining);
     }
   } else {
     clearTimeout(ctx[revealKey]);
     ctx[revealKey] = null;
+    ctx[hoverEnterAtKey] = null;
     if (!ctx[hideKey] && checkActive()) {
+      if (normalizedHideDelay <= 0) {
+        applyActive(false);
+        return;
+      }
       ctx[hideKey] = setTimeout(() => {
         ctx[hideKey] = null;
         applyActive(false);
-      }, hideDelay);
+      }, normalizedHideDelay);
     }
   }
 }
@@ -158,14 +193,19 @@ function getHoverRuntime(ctx, e) {
     sidebarHoverEnabled || membersHoverEnabled || profileHoverEnabled || channelHoverEnabled;
   if (!anyEnabled) return null;
 
-  const fudge = ctx.settings.hoverFudgePx;
-  const revealDelay = ctx.settings.hoverRevealDelayMs;
+  const fudge = Number(ctx.settings.hoverFudgePx) || 15;
+  const edgeZonePx = Math.max(36, fudge);
+  const revealDelay = Math.max(
+    RA_PANEL_HOVER_REVEAL_MIN_MS,
+    Number(ctx.settings.hoverRevealDelayMs) || 0
+  );
   return {
     event: e,
     fudge,
-    hideDelay: ctx.settings.hoverHideDelayMs,
+    edgeZonePx,
+    hideDelay: Math.max(0, Number(ctx.settings.hoverHideDelayMs) || 0),
     revealDelay,
-    panelRevealDelay: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
+    panelRevealDelay: revealDelay,
     viewportWidth: window.innerWidth,
     sidebarHoverEnabled,
     membersHoverEnabled,
@@ -180,11 +220,14 @@ function handleSidebarHover(ctx, runtime) {
     return;
   }
   const sidebarEl = ctx._findPanelElement("sidebar");
-  const inZone = runtime.event.clientX <= runtime.fudge;
-  const inPanel = sidebarEl ? ctx._isInsideElement(runtime.event, sidebarEl, runtime.fudge) : false;
+  const revealActive = document.body.classList.contains("ra-sidebar-hover-reveal");
+  const inEdgeZone = runtime.event.clientX <= runtime.edgeZonePx;
+  const inPanel = revealActive && sidebarEl
+    ? ctx._isInsideElement(runtime.event, sidebarEl, runtime.fudge)
+    : false;
   applyHoverRevealState(ctx, {
     name: "sidebar",
-    inZone: inZone || inPanel,
+    inZone: inEdgeZone || inPanel,
     revealDelay: runtime.panelRevealDelay,
     hideDelay: runtime.hideDelay,
   });
@@ -197,11 +240,14 @@ function handleMembersHover(ctx, runtime) {
   }
   const membersEl = ctx._findPanelElement("members");
   const distFromRight = runtime.viewportWidth - runtime.event.clientX;
-  const inZone = distFromRight <= runtime.fudge;
-  const inPanel = membersEl ? ctx._isInsideElement(runtime.event, membersEl, runtime.fudge) : false;
+  const revealActive = document.body.classList.contains("ra-members-hover-reveal");
+  const inEdgeZone = distFromRight <= runtime.edgeZonePx;
+  const inPanel = revealActive && membersEl
+    ? ctx._isInsideElement(runtime.event, membersEl, runtime.fudge)
+    : false;
   applyHoverRevealState(ctx, {
     name: "members",
-    inZone: inZone || inPanel,
+    inZone: inEdgeZone || inPanel,
     revealDelay: runtime.panelRevealDelay,
     hideDelay: runtime.hideDelay,
   });
@@ -210,10 +256,13 @@ function handleMembersHover(ctx, runtime) {
 function handleProfileHover(ctx, runtime) {
   if (!(runtime.profileHoverEnabled && ctx.settings.panels.profile.pushed)) return;
   const profileEl = ctx._findPanelElement("profile");
-  const inPanel = profileEl ? ctx._isInsideElement(runtime.event, profileEl, runtime.fudge) : false;
+  const revealActive = document.body.classList.contains("ra-profile-hover-reveal");
+  const inPanel = revealActive && profileEl
+    ? ctx._isInsideElement(runtime.event, profileEl, runtime.fudge)
+    : false;
   const distFromRight = runtime.viewportWidth - runtime.event.clientX;
   const inZone =
-    distFromRight <= runtime.fudge && !document.body.classList.contains("ra-members-hover-reveal");
+    distFromRight <= runtime.edgeZonePx && !document.body.classList.contains("ra-members-hover-reveal");
   applyHoverRevealState(ctx, {
     name: "profile",
     inZone: inZone || inPanel,
@@ -229,12 +278,13 @@ function handleChannelHover(ctx, runtime) {
     return;
   }
   const hoverEl = getChannelHoverElement();
-  const inChannelPanel = hoverEl
+  const inEdgeZone = runtime.event.clientX <= runtime.edgeZonePx;
+  const inChannelPanel = ctx._channelsHoverRevealActive && hoverEl
     ? ctx._isInsideElement(runtime.event, hoverEl, runtime.fudge)
     : false;
   applyHoverRevealState(ctx, {
     name: "channel",
-    inZone: inChannelPanel,
+    inZone: inEdgeZone || inChannelPanel,
     revealDelay: runtime.revealDelay,
     hideDelay: runtime.hideDelay,
     isActive: () => ctx._channelsHoverRevealActive,

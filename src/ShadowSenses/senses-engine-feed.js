@@ -163,10 +163,31 @@ function updateBurstAfterMerge(burst, targetIndex, target, entry) {
   burst.timestamp = entry.timestamp;
 }
 
+function serializeUserLastActivityIndex(userLastActivity, maxEntries) {
+  if (!(userLastActivity instanceof Map) || userLastActivity.size === 0) return {};
+  const sortedEntries = Array.from(userLastActivity.entries())
+    .filter(([userId, data]) => {
+      if (!userId) return false;
+      const timestamp = Number(data?.timestamp) || 0;
+      return timestamp > 0;
+    })
+    .sort((a, b) => (Number(b[1]?.timestamp) || 0) - (Number(a[1]?.timestamp) || 0))
+    .slice(0, Math.max(1, Number(maxEntries) || 1000));
+  const index = {};
+  for (const [userId, data] of sortedEntries) {
+    index[userId] = {
+      t: Number(data?.timestamp) || 0,
+      f: !!data?.isFallback,
+    };
+  }
+  return index;
+}
+
 function flushToDisk() {
   try {
     const dirtyCount = this._dirtyGuilds.size;
-    if (dirtyCount === 0 && !this._dirty) return;
+    const shouldSaveActivityIndex = !!this._activityIndexDirty;
+    if (dirtyCount === 0 && !this._dirty && !shouldSaveActivityIndex) return;
 
     // Save only dirty guilds (O(1 guild) instead of O(all guilds))
     for (const guildId of this._dirtyGuilds) {
@@ -175,12 +196,21 @@ function flushToDisk() {
     // Save guild index for load-time discovery + detection counter
     BdApi.Data.save(PLUGIN_NAME, "feedGuildIds", Object.keys(this._guildFeeds));
     BdApi.Data.save(PLUGIN_NAME, "totalDetections", this._totalDetections);
+    if (shouldSaveActivityIndex) {
+      BdApi.Data.save(
+        PLUGIN_NAME,
+        "userLastActivityIndex",
+        serializeUserLastActivityIndex(this._userLastActivity, this._USER_ACTIVITY_MAX)
+      );
+    }
 
     this._dirtyGuilds.clear();
     this._dirty = false;
+    this._activityIndexDirty = false;
     this._plugin.debugLog("SensesEngine", "Flushed to disk", {
       dirtyGuilds: dirtyCount,
       totalGuilds: Object.keys(this._guildFeeds).length,
+      activityIndexSaved: shouldSaveActivityIndex,
     });
   } catch (err) {
     this._plugin.debugError("SensesEngine", "Failed to flush to disk", err);

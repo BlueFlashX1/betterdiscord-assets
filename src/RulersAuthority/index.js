@@ -117,8 +117,11 @@ function ensurePanelSettingsShape(settings) {
 }
 
 function normalizeHoverDelays(settings) {
-  if (settings.hoverRevealDelayMs === 120) {
+  if (settings.hoverRevealDelayMs === 120 || settings.hoverRevealDelayMs === 500) {
     settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+  }
+  if (settings.hoverHideDelayMs === 300 || settings.hoverHideDelayMs === 1000) {
+    settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
   }
   if (!Number.isFinite(settings.hoverRevealDelayMs) || settings.hoverRevealDelayMs < 0) {
     settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
@@ -126,6 +129,10 @@ function normalizeHoverDelays(settings) {
   if (!Number.isFinite(settings.hoverHideDelayMs) || settings.hoverHideDelayMs < 0) {
     settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
   }
+  // Keep delayed auto-show for all hover reveals.
+  settings.hoverRevealDelayMs = Math.max(DEFAULT_SETTINGS.hoverRevealDelayMs, settings.hoverRevealDelayMs);
+  // Hide must be immediate for all hover reveals.
+  settings.hoverHideDelayMs = 0;
 }
 
 function sanitizeLoadedSettings(saved, deepMerge) {

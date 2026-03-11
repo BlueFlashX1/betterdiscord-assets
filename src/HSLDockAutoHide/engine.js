@@ -105,9 +105,9 @@ class DockEngine {
     // ── Config ──
     this.peekPx = 8;
     this.revealZonePx = 85;
-    this.hideDelayMs = 220;
-    this.revealHoldMs = 900;
-    this.revealConfirmMs = 140;
+    this.hideDelayMs = 0;
+    this.revealHoldMs = 0;
+    this.revealConfirmMs = 1000;
     this.focusReentryGuardMs = 1000;
     this.composerHideSuppressMs = 1200;
     this.startupLockMs = 6500;
@@ -535,7 +535,15 @@ class DockEngine {
   scheduleHide(delayMs) {
     if (this.shouldKeepDockOpen()) { this.clearHideTimer(); return; }
     this.clearHideTimer();
-    this.hideTimer = setTimeout(() => this.hideDock(), delayMs);
+    const ms = Number(delayMs);
+    if (!Number.isFinite(ms) || ms <= 0) {
+      if (!this.shouldKeepDockOpen()) this.hideDock();
+      return;
+    }
+    this.hideTimer = setTimeout(() => {
+      this.hideTimer = null;
+      if (!this.shouldKeepDockOpen()) this.hideDock();
+    }, ms);
   }
 
   clearHideTimer() {
@@ -623,6 +631,13 @@ class DockEngine {
       return;
     }
 
+    // Keep pointer-over state fresh per mouse event (safeTick refresh can be stale
+    // during fast movements, which caused false immediate hides with hideDelay=0).
+    const cursorOnDock =
+      this.isCursorInsideDockRect(this.lastMouseX, this.lastMouseY) &&
+      this.isPointerOnDockHitTarget(this.lastMouseX, this.lastMouseY);
+    this.pointerOverDock = cursorOnDock;
+
     if (this.requireRevealReset) {
       this.requireRevealReset = false;
   
@@ -658,6 +673,13 @@ class DockEngine {
   }
 
   onDockLeave() {
+    // Fast cross-node pointer transitions can emit transient leave events.
+    // If cursor is still on the dock hit area, keep it open.
+    if (this.isCursorInsideDockRect() || this.isPointerOnDockHitTarget()) {
+      this.pointerOverDock = true;
+      this.clearHideTimer();
+      return;
+    }
     this.pointerOverDock = false;
     this.clearRevealTimer("dock-leave");
     this.scheduleHide(this.hideDelayMs);

@@ -152,6 +152,8 @@ plugins/PYTHON_RULES_BYTEROVER.json
 
 # Local workspace bucket (do not track)
 _local/
+.serena/
+logs/
 
 # Plugin files — cannot share plugin code publicly
 plugins/

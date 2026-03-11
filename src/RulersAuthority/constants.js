@@ -13,7 +13,7 @@ export const RA_ICON_REINJECT_DELAY_MS = 140;
 export const RA_STATS_CACHE_TTL = 5000;
 export const RA_OBSERVER_THROTTLE_MS = 200;
 export const RA_RESIZE_MIN_WIDTH = 80;
-export const RA_PANEL_HOVER_REVEAL_MIN_MS = 500;
+export const RA_PANEL_HOVER_REVEAL_MIN_MS = 1000;
 export const RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
 
 // Fallback selectors — used when Webpack module extraction fails.
@@ -93,8 +93,8 @@ export const DEFAULT_SETTINGS = {
 
   // Hover config
   hoverFudgePx: 15,
-  hoverRevealDelayMs: 500,
-  hoverHideDelayMs: 300,
+  hoverRevealDelayMs: 1000,
+  hoverHideDelayMs: 0,
 
   // Per-guild micro state
   guilds: {},

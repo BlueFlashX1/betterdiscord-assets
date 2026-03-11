@@ -100,8 +100,14 @@ function updateServerCounterWidget(plugin, widgetId, target = null) {
   const guildCount = plugin.getServerCount();
   const markedGuildCount = plugin._markedGuildIds.size;
   const markedTargetCount = plugin._getShadowDeploymentMap().size;
+  const compact = (value) => {
+    const n = Number(value) || 0;
+    if (n < 1000) return String(n);
+    if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+    return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}m`;
+  };
   const nextText = horizontal
-    ? `R ${guildCount} / ${markedGuildCount} / ${markedTargetCount}`
+    ? `R${compact(guildCount)}/${compact(markedGuildCount)}/${compact(markedTargetCount)}`
     : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
   if (widget.textContent !== nextText) {
     widget.textContent = nextText;

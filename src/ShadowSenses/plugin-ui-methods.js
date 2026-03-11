@@ -530,7 +530,7 @@ const ShadowSensesUiMethods = {
       },
       "Status, typing, and connection alerts are toast-only and are not saved in Active Feed history. ",
       "Active Feed records chat message detections only. ",
-      "Burst grouping uses a 10s window per author+channel; enable high-priority grouping if you want P3/P4 merged too."
+      "Burst grouping uses a 20s window per author+channel; enable high-priority grouping if you want P3/P4 merged too."
       ),
 
       ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Priority Keywords"),

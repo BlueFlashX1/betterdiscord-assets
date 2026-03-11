@@ -1,9 +1,12 @@
 const {
+  BURST_WINDOW_MS,
   GLOBAL_UTILITY_FEED_ID,
   STARTUP_TOAST_GRACE_MS,
 } = require("./constants");
 
 const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
+const MAX_ACTIVITY_SEED_SCAN_ENTRIES = 6000;
+const LAST_SEEN_FALLBACK_MS = 24 * 60 * 60 * 1000;
 
 function getStartupState(ctx) {
   const now = Date.now();
@@ -154,12 +157,95 @@ function showActivityToast(ctx, options) {
 }
 
 function formatSilenceDuration(silenceMs) {
-  const silenceHours = Math.floor(silenceMs / (60 * 60 * 1000));
-  const silenceMins = Math.floor((silenceMs % (60 * 60 * 1000)) / (60 * 1000));
-  if (silenceHours > 0) {
-    return `${silenceHours}h${silenceMins > 0 ? ` ${silenceMins}m` : ""}`;
+  if (!Number.isFinite(silenceMs) || silenceMs <= 0) return "<1m";
+  const totalMinutes = Math.floor(silenceMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d${hours > 0 ? ` ${hours}h` : ""}`;
+  if (hours > 0) return `${hours}h${minutes > 0 ? ` ${minutes}m` : ""}`;
+  if (minutes > 0) return `${minutes}m`;
+  return "<1m";
+}
+
+function upsertUserLastActivity(ctx, authorId, timestamp, notifiedActive, isFallback = false) {
+  const normalizedUserId = String(authorId || "");
+  const nextTimestamp = Number(timestamp) || 0;
+  if (!normalizedUserId || nextTimestamp <= 0) return;
+
+  const current = ctx._userLastActivity.get(normalizedUserId);
+  if (current && nextTimestamp < (current.timestamp || 0)) return;
+
+  ctx._userLastActivity.set(normalizedUserId, {
+    timestamp: nextTimestamp,
+    notifiedActive: !!notifiedActive,
+    isFallback: !!isFallback,
+  });
+  ctx._activityIndexDirty = true;
+}
+
+function getPendingSeedUserIds(ctx) {
+  const monitoredIds = ctx._plugin.deploymentManager?.getMonitoredUserIds?.();
+  if (!(monitoredIds instanceof Set) || monitoredIds.size === 0) return new Set();
+
+  const pending = new Set();
+  for (const monitoredId of monitoredIds) {
+    const userId = String(monitoredId || "");
+    if (!userId) continue;
+    const cached = ctx._userLastActivity.get(userId);
+    if (!cached || !Number.isFinite(cached.timestamp) || cached.timestamp <= 0) {
+      pending.add(userId);
+    }
   }
-  return `${silenceMins}m`;
+  return pending;
+}
+
+function seedUserActivityFromFeeds() {
+  if (this._activitySeededFromHistory) return;
+  this._activitySeededFromHistory = true;
+  if (!this._guildFeeds || typeof this._guildFeeds !== "object") return;
+
+  const pendingSeedUserIds = getPendingSeedUserIds(this);
+  if (pendingSeedUserIds.size === 0) return;
+
+  let scannedEntries = 0;
+  let scanLimitReached = false;
+  for (const feed of Object.values(this._guildFeeds)) {
+    if (!Array.isArray(feed) || feed.length === 0) continue;
+    for (let index = feed.length - 1; index >= 0; index--) {
+      scannedEntries++;
+      if (scannedEntries > MAX_ACTIVITY_SEED_SCAN_ENTRIES) {
+        scanLimitReached = true;
+        break;
+      }
+      const entry = feed[index];
+      if (!entry || entry.eventType !== "message") continue;
+      const authorId = entry.authorId ? String(entry.authorId) : "";
+      const timestamp = Number(entry.timestamp) || 0;
+      if (!authorId || timestamp <= 0 || !pendingSeedUserIds.has(authorId)) continue;
+      upsertUserLastActivity(this, authorId, timestamp, false);
+      pendingSeedUserIds.delete(authorId);
+      if (pendingSeedUserIds.size === 0) break;
+    }
+    if (scanLimitReached) break;
+    if (pendingSeedUserIds.size === 0) break;
+  }
+
+  if (scanLimitReached && pendingSeedUserIds.size > 0) {
+    this._plugin.debugLog(
+      "SensesEngine",
+      "Activity seed scan capped to avoid startup hitch",
+      { unresolved: pendingSeedUserIds.size, scannedEntries: MAX_ACTIVITY_SEED_SCAN_ENTRIES }
+    );
+  }
+  if (pendingSeedUserIds.size > 0) {
+    const fallbackTimestamp = Date.now() - LAST_SEEN_FALLBACK_MS;
+    for (const unresolvedUserId of pendingSeedUserIds) {
+      upsertUserLastActivity(this, unresolvedUserId, fallbackTimestamp, false, true);
+    }
+  }
+
+  trimUserActivitySeedCache(this);
 }
 
 function pruneUserActivityCache(ctx) {
@@ -167,12 +253,20 @@ function pruneUserActivityCache(ctx) {
   let oldestUserId = null;
   let oldestTs = Infinity;
   for (const [uid, data] of ctx._userLastActivity) {
-    if (data.timestamp < oldestTs) {
+    if ((data?.timestamp || 0) < oldestTs) {
       oldestUserId = uid;
-      oldestTs = data.timestamp;
+      oldestTs = data.timestamp || 0;
     }
   }
   if (oldestUserId) ctx._userLastActivity.delete(oldestUserId);
+}
+
+function trimUserActivitySeedCache(ctx) {
+  if (ctx._userLastActivity.size <= ctx._USER_ACTIVITY_MAX) return;
+  const topRecent = Array.from(ctx._userLastActivity.entries())
+    .sort((a, b) => (b[1]?.timestamp || 0) - (a[1]?.timestamp || 0))
+    .slice(0, ctx._USER_ACTIVITY_MAX);
+  ctx._userLastActivity = new Map(topRecent);
 }
 
 function trackUserActivity(ctx, params) {
@@ -186,8 +280,17 @@ function trackUserActivity(ctx, params) {
     now,
   } = params;
   const lastActivity = ctx._userLastActivity.get(authorId);
+  const alreadyNotifiedThisSession = ctx._sessionActivityNotified.has(authorId);
+  const isFallbackLastSeen = !!lastActivity?.isFallback;
+  const silenceMs = lastActivity ? Math.max(0, now - (lastActivity.timestamp || 0)) : null;
 
-  if (!lastActivity) {
+  if (!alreadyNotifiedThisSession) {
+    const elapsedLabel =
+      isFallbackLastSeen
+        ? "last seen 24h+ ago"
+        : Number.isFinite(silenceMs) && silenceMs > 0
+        ? `last seen ${formatSilenceDuration(silenceMs)} ago`
+        : "first signal this session";
     withStartupDelay(ctx, startupState, () =>
       showActivityToast(ctx, {
         authorId,
@@ -196,17 +299,24 @@ function trackUserActivity(ctx, params) {
         guildName,
         channelName,
         accentColor: "#22c55e",
-        body: `${authorName} is now active`,
-        detail: `${guildName} #${channelName}`,
+        body: `${authorName} is active`,
+        detail: `${elapsedLabel} • ${guildName} #${channelName}`,
         fallbackType: "quest",
-        fallbackBody: `${authorName} is now active`,
+        fallbackBody: `${authorName} is active (${elapsedLabel})`,
       })
     );
-    ctx._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+    ctx._sessionActivityNotified.add(authorId);
+    upsertUserLastActivity(ctx, authorId, now, true, false);
+    pruneUserActivityCache(ctx);
     return;
   }
 
-  const silenceMs = now - lastActivity.timestamp;
+  if (!lastActivity) {
+    upsertUserLastActivity(ctx, authorId, now, true, false);
+    pruneUserActivityCache(ctx);
+    return;
+  }
+
   if (silenceMs >= ctx._AFK_THRESHOLD_MS) {
     const timeStr = formatSilenceDuration(silenceMs);
     withStartupDelay(ctx, startupState, () =>
@@ -225,7 +335,7 @@ function trackUserActivity(ctx, params) {
     );
   }
 
-  ctx._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+  upsertUserLastActivity(ctx, authorId, now, true, false);
   pruneUserActivityCache(ctx);
 }
 
@@ -267,45 +377,64 @@ function showMatchReasonToast(ctx, params) {
     authorId,
     authorName,
     guildName,
+    isInvisible = false,
   } = params;
   const snippet = entry.content ? `: "${entry.content.slice(0, 80)}"` : "";
+  const invisibleSuffix = isInvisible ? " (invisible)" : "";
 
   if (entry.matchReason === "mention") {
     ctx._showMentionToast({
       userId: authorId,
       userName: authorName,
-      label: "@mentioned you",
+      label: `@mentioned you${invisibleSuffix}`,
       detail: `in ${guildName} #${entry.channelName}${snippet}`,
       accent: "#ef4444",
       deployment,
     });
-    return;
+    return "mention";
   }
 
   if (entry.matchReason === "name") {
     ctx._showMentionToast({
       userId: authorId,
       userName: authorName,
-      label: `said "${entry.matchedTerm}"`,
+      label: `said "${entry.matchedTerm}"${invisibleSuffix}`,
       detail: `in ${guildName} #${entry.channelName}${snippet}`,
       accent: "#ec4899",
       deployment,
     });
-    return;
+    return "name";
   }
 
   const keywordTerm = entry.userKeywordMatch || (entry.matchReason === "targetKeyword"
     ? entry.matchedTerm
     : null);
-  if (!keywordTerm) return;
+  if (!keywordTerm) return null;
   ctx._showMentionToast({
     userId: authorId,
     userName: authorName,
-    label: `keyword "${keywordTerm}"`,
+    label: `keyword "${keywordTerm}"${invisibleSuffix}`,
     detail: `in ${guildName} #${entry.channelName}${snippet}`,
     accent: "#34d399",
     deployment,
   });
+  return "keyword";
+}
+
+function pruneInvisibleToastCooldown(ctx, now) {
+  if (ctx._invisibleToastCooldown.size <= 500) return;
+  for (const [key, ts] of ctx._invisibleToastCooldown.entries()) {
+    if (now - ts > BURST_WINDOW_MS * 4) ctx._invisibleToastCooldown.delete(key);
+  }
+}
+
+function shouldSkipInvisibleMessageToast(ctx, entry, now) {
+  const cooldownKey = `${entry.authorId}:${entry.channelId || "unknown"}`;
+  const previous = ctx._invisibleToastCooldown.get(cooldownKey) || 0;
+  if (now - previous < BURST_WINDOW_MS) return true;
+  ctx._invisibleToastCooldown.set(cooldownKey, now);
+  pruneInvisibleToastCooldown(ctx, now);
+  return false;
 }
 
 function applyPresenceToastAndLastSeen(ctx, params) {
@@ -314,11 +443,33 @@ function applyPresenceToastAndLastSeen(ctx, params) {
     guildId,
     guildName,
     isAwayGuild,
-    authorId,
+    userStatus = "offline",
+    isInvisible = false,
+    matchToastType = null,
+    suppressGenericToast = false,
   } = params;
-  const presenceStore = ctx._resolvePresenceStore();
-  const userStatus = presenceStore?.getStatus?.(authorId) || "offline";
-  const isInvisible = userStatus === "offline";
+
+  if (isInvisible && !matchToastType && !shouldSkipInvisibleMessageToast(ctx, entry, entry.timestamp || Date.now())) {
+    const location = `${guildName} #${entry.channelName}`;
+    ctx._showMentionToast({
+      userId: entry.authorId,
+      userName: entry.authorName,
+      label: "sent a message while invisible",
+      detail: `in ${location}`,
+      accent: "#ef4444",
+      deployment: {
+        shadowRank: entry.shadowRank,
+        shadowName: entry.shadowName,
+      },
+    });
+    syncLastSeenCount(ctx, guildId);
+    return;
+  }
+
+  if (suppressGenericToast) {
+    syncLastSeenCount(ctx, guildId);
+    return;
+  }
 
   if (isAwayGuild) {
     ctx._toast(
@@ -330,7 +481,7 @@ function applyPresenceToastAndLastSeen(ctx, params) {
 
   if (isInvisible) {
     ctx._toast(
-      `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} (invisible) in #${entry.channelName}`,
+      `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} (${userStatus}) in #${entry.channelName}`,
       "error"
     );
   }
@@ -536,6 +687,9 @@ function onMessageCreate(payload) {
     const guildName = this._plugin._getGuildName(guildId);
     const isAwayGuild = guildId !== this._currentGuildId;
     const authorName = message.author.username || message.author.global_name || "Unknown";
+    const presenceStore = this._resolvePresenceStore();
+    const userStatus = this._normalizeStatus(presenceStore?.getStatus?.(authorId) || "offline");
+    const isInvisible = userStatus === "offline" || userStatus === "invisible";
 
     const startupState = getStartupState(this);
     trackUserActivity(this, {
@@ -570,19 +724,23 @@ function onMessageCreate(payload) {
       this._registerBurst(guildId, entry);
     }
 
-    showMatchReasonToast(this, {
+    const matchToastType = showMatchReasonToast(this, {
       entry,
       deployment,
       authorId,
       authorName,
       guildName,
+      isInvisible,
     });
     applyPresenceToastAndLastSeen(this, {
       entry,
       guildId,
       guildName,
       isAwayGuild,
-      authorId,
+      userStatus,
+      isInvisible,
+      matchToastType,
+      suppressGenericToast: matchToastType === "mention",
     });
 
     this._sessionMessageCount++;
@@ -610,10 +768,12 @@ module.exports = {
   _onMessageCreate: onMessageCreate,
   _onPresenceUpdate: onPresenceUpdate,
   _onRelationshipChange: onRelationshipChange,
+  _seedUserActivityFromFeeds: seedUserActivityFromFeeds,
   _onTypingStart: onTypingStart,
   onChannelSelect,
   onMessageCreate,
   onPresenceUpdate,
   onRelationshipChange,
+  seedUserActivityFromFeeds,
   onTypingStart,
 };

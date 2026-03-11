@@ -4,15 +4,18 @@ function getShadowReconCss(widgetId, modalId) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin: 6px 8px;
-  padding: 8px 10px;
+  margin: 5px 6px;
+  padding: 6px 8px;
   border: 1px solid rgba(96, 165, 250, 0.45);
   border-radius: 2px;
   background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
   color: #bfdbfe;
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 1.2;
   white-space: nowrap;
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   user-select: none;
   transform-origin: center center;
@@ -21,11 +24,12 @@ function getShadowReconCss(widgetId, modalId) {
 
 #${widgetId}.shadow-recon-widget.shadow-recon-widget--rotated {
   transform: rotate(90deg);
-  margin: 10px -12px;
-  padding: 7px 9px;
+  margin: 8px -10px;
+  padding: 6px 8px;
   border-radius: 2px;
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.2;
+  max-width: 92px;
 }
 
 #${widgetId}.shadow-recon-widget:hover {
