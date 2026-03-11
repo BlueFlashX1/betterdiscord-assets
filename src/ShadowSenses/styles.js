@@ -441,6 +441,125 @@ ${buildPortalTransitionCSS()}
   background: rgba(138, 43, 226, 0.3);
 }
 
+/* ─── Keyword Alerts ───────────────────────────────────────────────────── */
+
+.shadow-senses-keyword-target {
+  background: linear-gradient(180deg, rgba(12, 9, 20, 0.92), rgba(8, 6, 14, 0.95));
+  border: 1px solid rgba(138, 43, 226, 0.35);
+  border-radius: 2px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.06), 0 0 14px rgba(138, 43, 226, 0.12);
+}
+
+.shadow-senses-keyword-target-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.shadow-senses-keyword-count {
+  color: #d3b7ff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border: 1px solid rgba(138, 43, 226, 0.48);
+  border-radius: 2px;
+  background: rgba(138, 43, 226, 0.2);
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(138, 43, 226, 0.45);
+}
+
+.shadow-senses-keyword-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.shadow-senses-keyword-empty {
+  color: #9f8fbd;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.shadow-senses-keyword-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f2e9ff;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(167, 139, 250, 0.55);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(138, 43, 226, 0.34), rgba(80, 28, 146, 0.28));
+  padding: 2px 8px;
+  box-shadow: 0 0 8px rgba(138, 43, 226, 0.24);
+}
+
+.shadow-senses-keyword-chip-remove {
+  border: none;
+  background: transparent;
+  color: #d8b8ff;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  font-size: 14px;
+}
+
+.shadow-senses-keyword-chip-remove:hover {
+  color: #fff;
+}
+
+.shadow-senses-keyword-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 9px;
+}
+
+.shadow-senses-keyword-input {
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 2px;
+  border: 1px solid rgba(138, 43, 226, 0.5);
+  background: rgba(5, 4, 10, 0.9);
+  color: #ede3ff;
+  font-size: 12px;
+  box-sizing: border-box;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(138, 43, 226, 0.14);
+}
+
+.shadow-senses-keyword-input:focus {
+  border-color: rgba(186, 85, 211, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(186, 85, 211, 0.24), 0 0 0 1px rgba(138, 43, 226, 0.24);
+}
+
+.shadow-senses-keyword-input::placeholder {
+  color: #9c8db7;
+}
+
+.shadow-senses-keyword-add-btn {
+  width: auto;
+  padding: 6px 10px;
+}
+
+.shadow-senses-keyword-clear-btn {
+  padding: 6px 10px;
+  background: rgba(138, 43, 226, 0.12);
+  border: 1px solid rgba(186, 85, 211, 0.7);
+  color: #c89cff;
+}
+
+.shadow-senses-keyword-clear-btn:hover {
+  background: rgba(138, 43, 226, 0.28);
+  color: #fff;
+}
+
 /* ─── Footer ────────────────────────────────────────────────────────────── */
 
 .shadow-senses-footer {

@@ -1,6 +1,40 @@
 const { PLUGIN_NAME, RANKS } = require("./constants");
 const { _ttl } = require("./shared-utils");
 
+function normalizeAlertKeywords(rawKeywords) {
+  const source = Array.isArray(rawKeywords)
+    ? rawKeywords
+    : typeof rawKeywords === "string"
+      ? rawKeywords.split(",")
+      : [];
+  const normalized = [];
+  const seen = new Set();
+  for (const value of source) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(trimmed);
+    if (normalized.length >= 30) break;
+  }
+  return normalized;
+}
+
+function normalizeDeploymentRecord(record) {
+  if (!record || typeof record !== "object") return null;
+  const normalizedUserId = String(record.targetUserId || "").trim();
+  const normalizedShadowId = String(record.shadowId || "").trim();
+  if (!normalizedUserId || !normalizedShadowId) return null;
+  return {
+    ...record,
+    targetUserId: normalizedUserId,
+    shadowId: normalizedShadowId,
+    alertKeywords: normalizeAlertKeywords(record.alertKeywords),
+  };
+}
+
 class DeploymentManager {
   constructor(debugLog, debugError) {
     this._debugLog = debugLog;
@@ -14,8 +48,13 @@ class DeploymentManager {
   load() {
     try {
       const saved = BdApi.Data.load(PLUGIN_NAME, "deployments");
-      this._deployments = Array.isArray(saved) ? saved : [];
+      const normalizedDeployments = Array.isArray(saved)
+        ? saved.map(normalizeDeploymentRecord).filter(Boolean)
+        : [];
+      this._deployments = normalizedDeployments;
       this._rebuildSets();
+      // Self-heal persisted shape once if legacy records are found.
+      BdApi.Data.save(PLUGIN_NAME, "deployments", this._deployments);
       this._debugLog("DeploymentManager", "Loaded deployments", { count: this._deployments.length });
     } catch (err) {
       this._debugError("DeploymentManager", "Failed to load deployments", err);
@@ -33,8 +72,8 @@ class DeploymentManager {
   }
 
   _rebuildSets() {
-    this._monitoredUserIds = new Set(this._deployments.map(d => d.targetUserId));
-    this._deployedShadowIds = new Set(this._deployments.map(d => d.shadowId));
+    this._monitoredUserIds = new Set(this._deployments.map((d) => String(d.targetUserId)));
+    this._deployedShadowIds = new Set(this._deployments.map((d) => String(d.shadowId)));
   }
 
   async deploy(shadow, targetUser) {
@@ -48,7 +87,7 @@ class DeploymentManager {
       return false;
     }
 
-    const targetUserId = targetUser.id || targetUser.userId;
+    const targetUserId = String(targetUser.id || targetUser.userId || "").trim();
     if (!targetUserId) {
       this._debugError("DeploymentManager", "No target user ID");
       return false;
@@ -79,6 +118,7 @@ class DeploymentManager {
       targetUserId,
       targetUsername: targetUser.username || targetUser.globalName || "Unknown",
       deployedAt: Date.now(),
+      alertKeywords: [],
     };
 
     this._deployments.push(record);
@@ -102,11 +142,16 @@ class DeploymentManager {
   }
 
   getDeploymentForUser(userId) {
-    return this._deployments.find(d => d.targetUserId === userId) || null;
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return null;
+    return this._deployments.find((d) => String(d.targetUserId) === normalizedUserId) || null;
   }
 
   getDeployments() {
-    return [...this._deployments];
+    return this._deployments.map((deployment) => ({
+      ...deployment,
+      alertKeywords: [...(deployment.alertKeywords || [])],
+    }));
   }
 
   getDeploymentCount() {
@@ -115,6 +160,35 @@ class DeploymentManager {
 
   getMonitoredUserIds() {
     return this._monitoredUserIds;
+  }
+
+  getAlertKeywordsForUser(userId) {
+    const deployment = this.getDeploymentForUser(userId);
+    return deployment?.alertKeywords ? [...deployment.alertKeywords] : [];
+  }
+
+  setAlertKeywordsForUser(userId, keywords) {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return false;
+    const deploymentIndex = this._deployments.findIndex(
+      (entry) => String(entry.targetUserId) === normalizedUserId
+    );
+    if (deploymentIndex < 0) return false;
+
+    const normalizedKeywords = normalizeAlertKeywords(keywords);
+    const currentKeywords = this._deployments[deploymentIndex].alertKeywords || [];
+    const hasSameKeywords =
+      currentKeywords.length === normalizedKeywords.length &&
+      currentKeywords.every((value, idx) => value === normalizedKeywords[idx]);
+    if (hasSameKeywords) return true;
+
+    this._deployments[deploymentIndex].alertKeywords = normalizedKeywords;
+    this._save();
+    this._debugLog("DeploymentManager", "Updated per-target alert keywords", {
+      targetUserId: normalizedUserId,
+      keywordCount: normalizedKeywords.length,
+    });
+    return true;
   }
 
   _getShadowArmyInstance() {
@@ -135,7 +209,9 @@ class DeploymentManager {
       if (!BdApi.Plugins.isEnabled("ShadowExchange")) return new Set();
       const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
       if (typeof exchangePlugin?.instance?.getMarkedShadowIds !== "function") return new Set();
-      return exchangePlugin.instance.getMarkedShadowIds();
+      const marked = exchangePlugin.instance.getMarkedShadowIds();
+      if (!(marked instanceof Set)) return new Set();
+      return new Set(Array.from(marked, (value) => String(value || "").trim()).filter(Boolean));
     } catch (err) {
       this._debugLog("DeploymentManager", "ShadowExchange not available for exclusion", err);
       return new Set();
@@ -143,7 +219,10 @@ class DeploymentManager {
   }
 
   _extractShadowId(shadow) {
-    return shadow?.id || shadow?.extractedData?.id || null;
+    const raw = shadow?.id || shadow?.extractedData?.id || null;
+    if (!raw) return null;
+    const normalized = String(raw).trim();
+    return normalized || null;
   }
 
   _collectShadowIds(source, targetSet) {
@@ -184,7 +263,7 @@ class DeploymentManager {
 
   _buildAvailableShadowList(allShadows, exclusion) {
     return allShadows.filter((shadow) => {
-      const sid = shadow?.id;
+      const sid = String(shadow?.id || "").trim();
       if (!sid) return false;
       if (exclusion.deployedIds.has(sid)) return false;
       if (exclusion.exchangeMarkedIds.has(sid)) return false;
@@ -199,7 +278,7 @@ class DeploymentManager {
 
     const fallback = allShadows
       .filter((shadow) => {
-        const sid = shadow?.id;
+        const sid = String(shadow?.id || "").trim();
         if (!sid) return false;
         if (!exclusion.dungeonAllocatedIds.has(sid)) return false;
         if (exclusion.deployedIds.has(sid)) return false;

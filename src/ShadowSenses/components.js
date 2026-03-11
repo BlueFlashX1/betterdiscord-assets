@@ -23,7 +23,7 @@ function buildComponents(pluginRef) {
   }
 
   function getBorderColor(matchReason, priority) {
-    if (matchReason === "keyword") return KEYWORD_MATCH_COLOR;
+    if (matchReason === "keyword" || matchReason === "targetKeyword") return KEYWORD_MATCH_COLOR;
     if (matchReason === "name") return NAME_MENTION_COLOR;
     return PRIORITY_COLORS[priority] || null;
   }
@@ -41,7 +41,7 @@ function buildComponents(pluginRef) {
   }
 
   function getMatchBadge(entry, priority) {
-    if (entry.matchReason === "keyword") {
+    if (entry.matchReason === "keyword" || entry.matchReason === "targetKeyword") {
       return {
         label: entry.matchedTerm ? `"${entry.matchedTerm}"` : "KW",
         color: "#34d399",
@@ -90,6 +90,62 @@ function buildComponents(pluginRef) {
       return entry.content ? `“${entry.content}”` : "— no text content —";
     }
     return entry.content || "— no details —";
+  }
+
+  function parseKeywordInput(rawValue) {
+    if (typeof rawValue !== "string") return [];
+    const terms = rawValue.split(",").map((value) => value.trim()).filter(Boolean);
+    const deduped = [];
+    const seen = new Set();
+    for (const term of terms) {
+      const key = term.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(term);
+      if (deduped.length >= 30) break;
+    }
+    return deduped;
+  }
+
+  function mergeKeywords(existingKeywords, rawValue) {
+    const merged = [];
+    const seen = new Set();
+    const pushUnique = (values) => {
+      for (const value of values) {
+        const key = value.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(value);
+        if (merged.length >= 30) break;
+      }
+    };
+    pushUnique(parseKeywordInput(Array.isArray(existingKeywords) ? existingKeywords.join(",") : ""));
+    if (merged.length >= 30) return merged;
+    pushUnique(parseKeywordInput(rawValue));
+    return merged;
+  }
+
+  function removeKeyword(existingKeywords, keywordToRemove) {
+    const removeKey = String(keywordToRemove || "").toLowerCase();
+    if (!removeKey) return Array.isArray(existingKeywords) ? [...existingKeywords] : [];
+    const source = Array.isArray(existingKeywords) ? existingKeywords : [];
+    return source.filter((keyword) => keyword.toLowerCase() !== removeKey);
+  }
+
+  function deploymentSortName(deployment) {
+    return String(deployment?.targetUsername || "").toLowerCase();
+  }
+
+  function buildDeploymentSnapshot(deployments) {
+    if (!Array.isArray(deployments) || deployments.length === 0) return "";
+    return deployments
+      .map((deployment) => {
+        const userId = String(deployment.targetUserId || "");
+        const shadowId = String(deployment.shadowId || "");
+        const keywordSig = (deployment.alertKeywords || []).map((keyword) => keyword.toLowerCase()).join("|");
+        return `${shadowId}:${userId}:${keywordSig}`;
+      })
+      .join(";");
   }
 
   function getFirstContentBlock(entry, messageCount) {
@@ -309,6 +365,214 @@ function buildComponents(pluginRef) {
     );
   }
 
+  // ── KeywordAlertsTab ──────────────────────────────────────────────────
+  function KeywordAlertsTab() {
+    const [deployments, setDeployments] = useState([]);
+    const [keywordDrafts, setKeywordDrafts] = useState({});
+    const [keywordsByUser, setKeywordsByUser] = useState({});
+    const snapshotRef = useRef("");
+
+    const readDeployments = useCallback(() => {
+      const source = pluginRef.deploymentManager?.getDeployments?.() || [];
+      return [...source].sort((left, right) => deploymentSortName(left).localeCompare(deploymentSortName(right)));
+    }, []);
+
+    const syncDeployments = useCallback((force = false) => {
+      try {
+        const nextDeployments = readDeployments();
+        const nextSnapshot = buildDeploymentSnapshot(nextDeployments);
+        if (!force && nextSnapshot === snapshotRef.current) return;
+        snapshotRef.current = nextSnapshot;
+        setDeployments(nextDeployments);
+        setKeywordDrafts((previous) => {
+          const next = {};
+          for (const deployment of nextDeployments) {
+            const userId = String(deployment.targetUserId || "");
+            if (!userId) continue;
+            next[userId] = previous[userId] ?? "";
+          }
+          return next;
+        });
+        setKeywordsByUser((previous) => {
+          const next = {};
+          for (const deployment of nextDeployments) {
+            const userId = String(deployment.targetUserId || "");
+            if (!userId) continue;
+            if (Array.isArray(previous[userId])) {
+              next[userId] = previous[userId];
+            } else {
+              next[userId] = parseKeywordInput((deployment.alertKeywords || []).join(","));
+            }
+          }
+          return next;
+        });
+      } catch (error) {
+        pluginRef.debugError("KeywordAlertsTab", "Failed to sync deployments", error);
+      }
+    }, [readDeployments]);
+
+    useEffect(() => {
+      syncDeployments(true);
+      const poll = setInterval(() => {
+        if (document.hidden) return;
+        syncDeployments(false);
+      }, 2000);
+      return () => clearInterval(poll);
+    }, [syncDeployments]);
+
+    const persistKeywords = useCallback((userId, nextKeywords, successMessage) => {
+      const normalizedUserId = String(userId || "");
+      if (!normalizedUserId || !pluginRef.deploymentManager) return false;
+      try {
+        const sanitized = parseKeywordInput((nextKeywords || []).join(","));
+        const didSave = pluginRef.deploymentManager.setAlertKeywordsForUser(normalizedUserId, sanitized);
+        if (!didSave) {
+          pluginRef._toast("Unable to save keyword alerts for this target", "error", 2800);
+          return false;
+        }
+        setKeywordsByUser((previous) => ({ ...previous, [normalizedUserId]: sanitized }));
+        syncDeployments(true);
+        if (successMessage) {
+          pluginRef._toast(successMessage, "success", 1800);
+        }
+        return true;
+      } catch (error) {
+        pluginRef.debugError("KeywordAlertsTab", "Failed to persist keywords", error);
+        pluginRef._toast("Failed to save keyword alerts", "error", 3000);
+        return false;
+      }
+    }, [syncDeployments]);
+
+    const addKeywordsForUser = useCallback((userId) => {
+      const normalizedUserId = String(userId || "");
+      const rawDraft = keywordDrafts[normalizedUserId] || "";
+      if (!rawDraft.trim()) return;
+      const currentKeywords = keywordsByUser[normalizedUserId] || [];
+      const merged = mergeKeywords(currentKeywords, rawDraft);
+      if (merged.length === currentKeywords.length) {
+        setKeywordDrafts((previous) => ({ ...previous, [normalizedUserId]: "" }));
+        pluginRef._toast("No new keywords added", "info", 1500);
+        return;
+      }
+      setKeywordDrafts((previous) => ({ ...previous, [normalizedUserId]: "" }));
+      persistKeywords(
+        normalizedUserId,
+        merged,
+        `Saved ${merged.length} keyword${merged.length === 1 ? "" : "s"}`
+      );
+    }, [keywordDrafts, keywordsByUser, persistKeywords]);
+
+    const removeKeywordForUser = useCallback((userId, keyword) => {
+      const normalizedUserId = String(userId || "");
+      const currentKeywords = keywordsByUser[normalizedUserId] || [];
+      const reduced = removeKeyword(currentKeywords, keyword);
+      persistKeywords(
+        normalizedUserId,
+        reduced,
+        reduced.length > 0
+          ? `Saved ${reduced.length} keyword${reduced.length === 1 ? "" : "s"}`
+          : "Cleared keyword alerts"
+      );
+    }, [keywordsByUser, persistKeywords]);
+
+    const clearKeywordsForUser = useCallback((userId) => {
+      const normalizedUserId = String(userId || "");
+      setKeywordDrafts((previous) => ({ ...previous, [normalizedUserId]: "" }));
+      persistKeywords(normalizedUserId, [], "Cleared keyword alerts");
+    }, [persistKeywords]);
+
+    if (deployments.length === 0) {
+      return ce("div", { className: "shadow-senses-empty" },
+        "No monitored targets yet. Deploy a shadow first, then add per-target keywords."
+      );
+    }
+
+    return ce("div", { style: { padding: "10px 16px", maxHeight: "50vh", overflowY: "auto" } },
+      ce("div", {
+        style: {
+          color: "#aab",
+          fontSize: "12px",
+          lineHeight: 1.45,
+          marginBottom: "12px",
+        },
+      }, "Manage keywords per monitored target. Matching is case-insensitive and uses contains logic (not exact match)."),
+      ce("div", {
+        style: {
+          color: "#8ea2b8",
+          fontSize: "11px",
+          marginBottom: "10px",
+        },
+      }, `${deployments.length} monitored target${deployments.length === 1 ? "" : "s"}`),
+      deployments.map((deployment) => {
+        const userId = String(deployment.targetUserId || "");
+        const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
+        const draftValue = keywordDrafts[userId] ?? "";
+        const userKeywords = keywordsByUser[userId] || [];
+        return ce("div", {
+          key: deployment.shadowId,
+          className: "shadow-senses-keyword-target",
+        },
+          ce("div", { className: "shadow-senses-keyword-target-head" },
+            ce("div", { className: "shadow-senses-deploy-info" },
+              ce("span", { className: "shadow-senses-deploy-rank", style: { color: rankColor } }, `[${deployment.shadowRank}]`),
+              ce("span", null, deployment.shadowName),
+              ce("span", { className: "shadow-senses-deploy-arrow" }, "\u2192"),
+              ce("span", { className: "shadow-senses-deploy-target" }, deployment.targetUsername)
+            ),
+            ce("span", { className: "shadow-senses-keyword-count" },
+              `${userKeywords.length} keyword${userKeywords.length === 1 ? "" : "s"}`
+            )
+          ),
+          ce("div", { className: "shadow-senses-keyword-list" },
+            userKeywords.length === 0
+              ? ce("div", { className: "shadow-senses-keyword-empty" }, "No keywords set yet.")
+              : userKeywords.map((keyword) =>
+                ce("span", {
+                  key: `${userId}:${keyword.toLowerCase()}`,
+                  className: "shadow-senses-keyword-chip",
+                },
+                ce("span", null, keyword),
+                ce("button", {
+                  type: "button",
+                  className: "shadow-senses-keyword-chip-remove",
+                  title: `Remove "${keyword}"`,
+                  onClick: () => removeKeywordForUser(userId, keyword),
+                }, "×")
+                )
+              )
+          ),
+          ce("div", { className: "shadow-senses-keyword-input-row" },
+            ce("input", {
+              type: "text",
+              className: "shadow-senses-keyword-input",
+              value: draftValue,
+              placeholder: "Add keyword (or comma-separated list)",
+              onChange: (event) => {
+                const value = event?.target?.value ?? "";
+                setKeywordDrafts((prev) => ({ ...prev, [userId]: value }));
+              },
+              onKeyDown: (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                addKeywordsForUser(userId);
+              },
+            }),
+            ce("button", {
+              className: "shadow-senses-deploy-btn shadow-senses-keyword-add-btn",
+              onClick: () => addKeywordsForUser(userId),
+              title: "Add keyword(s)",
+            }, "Add"),
+            ce("button", {
+              className: "shadow-senses-recall-btn shadow-senses-keyword-clear-btn",
+              onClick: () => clearKeywordsForUser(userId),
+              title: "Clear all keywords",
+            }, "Clear All")
+          )
+        );
+      })
+    );
+  }
+
   // ── SensesPanel ───────────────────────────────────────────────────────
   function SensesPanel({ onClose }) {
     const [activeTab, setActiveTab] = useState("feed");
@@ -364,11 +628,17 @@ function buildComponents(pluginRef) {
         ce("button", {
           className: `shadow-senses-tab${activeTab === "deployments" ? " active" : ""}`,
           onClick: () => setActiveTab("deployments"),
-        }, "Deployments")
+        }, "Deployments"),
+        ce("button", {
+          className: `shadow-senses-tab${activeTab === "keywords" ? " active" : ""}`,
+          onClick: () => setActiveTab("keywords"),
+        }, "Keyword Alerts")
       ),
       activeTab === "feed"
         ? ce(FeedTab, { onNavigate: handleNavigate })
-        : ce(DeploymentsTab, { onRecall: null, onDeployNew: handleDeployNew }),
+        : activeTab === "deployments"
+          ? ce(DeploymentsTab, { onRecall: null, onDeployNew: handleDeployNew })
+          : ce(KeywordAlertsTab),
       ce("div", { className: "shadow-senses-footer" },
         ce("span", null,
           pluginRef.settings?.showMarkedOnlineCount

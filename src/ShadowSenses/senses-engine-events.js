@@ -268,8 +268,8 @@ function showMatchReasonToast(ctx, params) {
     authorName,
     guildName,
   } = params;
-  if (entry.matchReason !== "mention" && entry.matchReason !== "name") return;
   const snippet = entry.content ? `: "${entry.content.slice(0, 80)}"` : "";
+
   if (entry.matchReason === "mention") {
     ctx._showMentionToast({
       userId: authorId,
@@ -281,12 +281,29 @@ function showMatchReasonToast(ctx, params) {
     });
     return;
   }
+
+  if (entry.matchReason === "name") {
+    ctx._showMentionToast({
+      userId: authorId,
+      userName: authorName,
+      label: `said "${entry.matchedTerm}"`,
+      detail: `in ${guildName} #${entry.channelName}${snippet}`,
+      accent: "#ec4899",
+      deployment,
+    });
+    return;
+  }
+
+  const keywordTerm = entry.userKeywordMatch || (entry.matchReason === "targetKeyword"
+    ? entry.matchedTerm
+    : null);
+  if (!keywordTerm) return;
   ctx._showMentionToast({
     userId: authorId,
     userName: authorName,
-    label: `said "${entry.matchedTerm}"`,
+    label: `keyword "${keywordTerm}"`,
     detail: `in ${guildName} #${entry.channelName}${snippet}`,
-    accent: "#ec4899",
+    accent: "#34d399",
     deployment,
   });
 }
@@ -360,7 +377,22 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
   const previousStatus = hasPriorStatus
     ? ctx._normalizeStatus(ctx._statusByUserId.get(userId))
     : null;
-  const nextStatus = ctx._normalizeStatus(update.status);
+  let nextStatus =
+    typeof update.status === "string" && update.status.trim().length > 0
+      ? ctx._normalizeStatus(update.status)
+      : null;
+  if (!nextStatus) {
+    const presenceStore = ctx._resolvePresenceStore();
+    const liveStatus = presenceStore?.getStatus?.(userId);
+    if (typeof liveStatus === "string" && liveStatus.trim().length > 0) {
+      nextStatus = ctx._normalizeStatus(liveStatus);
+    }
+  }
+  if (!nextStatus) {
+    if (!hasPriorStatus) return false;
+    nextStatus = previousStatus || "offline";
+  }
+
   ctx._statusByUserId.set(userId, nextStatus);
   if (!hasPriorStatus || previousStatus === nextStatus) return false;
 

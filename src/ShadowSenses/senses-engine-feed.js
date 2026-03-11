@@ -61,8 +61,24 @@ function setMatchReason(entry, reason, matchedTerm) {
   if (matchedTerm) entry.matchedTerm = matchedTerm;
 }
 
-function getLowerContent(message) {
-  return typeof message?.content === "string" ? message.content.toLowerCase() : "";
+function getLowerContent(message, entry) {
+  if (typeof message?.content === "string" && message.content.length > 0) {
+    return message.content.toLowerCase();
+  }
+  if (typeof entry?.content === "string" && entry.content.length > 0) {
+    return entry.content.toLowerCase();
+  }
+  return "";
+}
+
+function getPerTargetAlertKeywords(ctx, authorId) {
+  const manager = ctx?._plugin?.deploymentManager;
+  if (!manager) return [];
+  if (typeof manager.getAlertKeywordsForUser === "function") {
+    return manager.getAlertKeywordsForUser(authorId);
+  }
+  const deployment = manager.getDeploymentForUser?.(authorId);
+  return Array.isArray(deployment?.alertKeywords) ? deployment.alertKeywords : [];
 }
 
 function findTermMatch(terms, contentLower) {
@@ -255,7 +271,14 @@ function purgeUtilityEntries() {
 function computePriority(message, guildId, entry) {
   const currentUser = this._plugin._UserStore?.getCurrentUser?.();
   const currentUserId = currentUser?.id;
-  const contentLower = getLowerContent(message);
+  const contentLower = getLowerContent(message, entry);
+  const targetKeyword = findTermMatch(
+    getPerTargetAlertKeywords(this, message?.author?.id || entry?.authorId),
+    contentLower
+  );
+  if (targetKeyword) {
+    entry.userKeywordMatch = targetKeyword;
+  }
 
   if (isDirectMention(message, currentUserId)) {
     setMatchReason(entry, "mention");
@@ -280,6 +303,11 @@ function computePriority(message, guildId, entry) {
 
   if (hasCurrentUserRoleMention(this, guildId, currentUserId, message.mention_roles)) {
     setMatchReason(entry, "role");
+    return PRIORITY.MEDIUM;
+  }
+
+  if (targetKeyword) {
+    setMatchReason(entry, "targetKeyword", targetKeyword);
     return PRIORITY.MEDIUM;
   }
 

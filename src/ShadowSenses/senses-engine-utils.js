@@ -216,9 +216,13 @@ function extractPresenceUpdates(payload) {
   const updates = [];
   const push = (userId, status) => {
     if (!userId) return;
+    const normalizedStatus =
+      typeof status === "string" && status.trim().length > 0
+        ? this._normalizeStatus(status)
+        : null;
     updates.push({
       userId: String(userId),
-      status: this._normalizeStatus(status),
+      status: normalizedStatus,
     });
   };
 
