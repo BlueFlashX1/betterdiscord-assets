@@ -34,11 +34,25 @@ if (!allMode && !pluginName) {
 
 function getPluginPaths(name) {
   const srcDir = path.join(SRC_ROOT, name);
+  const manifestPath = path.join(srcDir, "manifest.json");
+  let outFileName = `${name}.plugin.js`;
+
+  if (fs.existsSync(manifestPath)) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+      if (typeof manifest.outputFile === "string" && manifest.outputFile.trim()) {
+        outFileName = manifest.outputFile.trim();
+      }
+    } catch (error) {
+      console.warn(`[build-plugin] Failed to parse manifest for ${name}: ${error.message}`);
+    }
+  }
+
   return {
     srcDir,
     entryPoint: path.join(srcDir, "index.js"),
-    manifestPath: path.join(srcDir, "manifest.json"),
-    outFile: path.join(ROOT, "plugins", `${name}.plugin.js`)
+    manifestPath,
+    outFile: path.join(ROOT, "plugins", outFileName)
   };
 }
 
@@ -61,7 +75,9 @@ function getMigratedPluginNames() {
 function buildBanner(manifestPath) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const lines = ["/**"];
+  const manifestBuildFields = new Set(["outputFile"]);
   for (const [key, value] of Object.entries(manifest)) {
+    if (manifestBuildFields.has(key)) continue;
     lines.push(` * @${key} ${value}`);
   }
   lines.push(" */");
@@ -97,7 +113,7 @@ async function build(name, exitOnFailure = true) {
 
   try {
     await esbuild.build(getBuildOptions(name));
-    console.log(`Built -> plugins/${name}.plugin.js`);
+    console.log(`Built -> plugins/${path.basename(paths.outFile)}`);
     return true;
   } catch (err) {
     console.error(`Build failed for ${name}:`, err.message);
@@ -121,7 +137,7 @@ async function watch(name) {
       setup(build) {
         build.onEnd(result => {
           if (result.errors.length === 0) {
-            console.log(`[${new Date().toLocaleTimeString()}] Rebuilt -> plugins/${name}.plugin.js`);
+            console.log(`[${new Date().toLocaleTimeString()}] Rebuilt -> plugins/${path.basename(paths.outFile)}`);
           }
         });
       }
