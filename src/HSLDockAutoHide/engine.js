@@ -147,9 +147,12 @@ class DockEngine {
     this.revealTimer = null;
     this.syncInterval = null;
     this._mouseMoveRafId = null;
+    this._mouseMoveRafPending = false;
     this._resizeRafPending = false;
     this._dockHeightDirty = true;
     this._lastTickRefreshAt = 0;
+    this._cachedComposerEl = null;
+    this._cachedComposerResult = false;
 
     // ── Debug ──
     this.tickCount = 0;
@@ -280,6 +283,8 @@ class DockEngine {
     this.isUserPanelPositioned = false;
     this.root = null;
     this.stateTarget = null;
+    this._cachedComposerEl = null;
+    this._cachedComposerResult = false;
   }
 
   // ── Dock Discovery (called by React effect + safeTick) ────────────────────
@@ -789,10 +794,6 @@ class DockEngine {
     if (x < 0 || y < 0) return false;
     const rect = this.dock.getBoundingClientRect();
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-  }
-
-  isCursorNearBottom() {
-    return this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
   }
 
   isPointerOnDockHitTarget(x = this.lastMouseX, y = this.lastMouseY) {

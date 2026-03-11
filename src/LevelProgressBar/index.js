@@ -268,8 +268,11 @@ module.exports = class LevelProgressBar {
     this._runtimeHelperFallbackNotified = false;
     this._debugLogLastByOp = new Map();
     this._suppressedDebugOps = new Set(['GET_SOLO_DATA', 'UPDATE_BAR', 'UPDATE_TEXT']);
+    this._startGeneration = 0;
   }
   async start() {
+    if (!this._isStopped) this.stop();
+    const startGeneration = ++this._startGeneration;
     this._isStopped = false;
     this._deferredQueueTimeout = null;
     this._lastQueuedUpdateTs = 0;
@@ -280,6 +283,7 @@ module.exports = class LevelProgressBar {
     if (this.saveManager) {
       try {
         await this.saveManager.init();
+        if (this._isStopped || startGeneration !== this._startGeneration) return;
         this.debugLog('START', 'UnifiedSaveManager initialized (IndexedDB)');
       } catch (error) {
         this.debugError('START', error);
@@ -287,6 +291,7 @@ module.exports = class LevelProgressBar {
       }
     }
     await this.loadSettings();
+    if (this._isStopped || startGeneration !== this._startGeneration) return;
     this._trace('START', 'Settings loaded', { debugMode: this.settings.debugMode, enabled: this.settings.enabled, position: this.settings.position });
     this.injectCSS();
     this.createProgressBar();
@@ -309,6 +314,7 @@ module.exports = class LevelProgressBar {
     });
   }
   stop() {
+    this._startGeneration += 1;
     this._isStopped = true;
     this._trace('STOP', 'Plugin stopping');
     this.debugLog('STOP', 'Plugin stopping');
@@ -416,7 +422,14 @@ module.exports = class LevelProgressBar {
       return SLUtils.pickNewestSettingsCandidate(candidates, { indexeddb: 3, file: 2, bdapi: 1 });
     }
     if (!Array.isArray(candidates) || candidates.length === 0) return null;
-    return candidates[0];
+    const sourceWeight = { indexeddb: 3, file: 2, bdapi: 1 };
+    const sorted = [...candidates].sort((a, b) => {
+      const tsA = Number.isFinite(a?.ts) ? a.ts : 0;
+      const tsB = Number.isFinite(b?.ts) ? b.ts : 0;
+      if (tsA !== tsB) return tsB - tsA;
+      return (sourceWeight[b?.source] || 0) - (sourceWeight[a?.source] || 0);
+    });
+    return sorted[0] || null;
   }
   async loadSettings() {
     try {
@@ -501,10 +514,15 @@ module.exports = class LevelProgressBar {
     };
     const injectedViaBdApi = addStyleSafely();
     if (!injectedViaBdApi) {
-      const styleElement = document.createElement('style');
-      styleElement.id = STYLE_ID;
-      styleElement.textContent = cssContent;
-      document.head.appendChild(styleElement);
+      const existingStyle = document.getElementById(STYLE_ID);
+      if (existingStyle) {
+        existingStyle.textContent = cssContent;
+      } else {
+        const styleElement = document.createElement('style');
+        styleElement.id = STYLE_ID;
+        styleElement.textContent = cssContent;
+        document.head.appendChild(styleElement);
+      }
     }
     this.debugLog(
       'INJECT_CSS',

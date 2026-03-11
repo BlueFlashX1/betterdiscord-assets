@@ -65,7 +65,7 @@ function buildComponents(BdApi, pluginRef) {
   function AnchorPanel({ onClose }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [sortBy, setSortBy] = useState(pluginRef.settings.sortBy);
-    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+    const [panelRevision, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const searchRef = useRef(null);
 
     useEffect(() => {
@@ -74,7 +74,8 @@ function buildComponents(BdApi, pluginRef) {
     }, [forceUpdate]);
 
     useEffect(() => {
-      setTimeout(() => searchRef.current?.focus(), 50);
+      const focusTimer = setTimeout(() => searchRef.current?.focus(), 50);
+      return () => clearTimeout(focusTimer);
     }, []);
 
     useEffect(() => {
@@ -109,7 +110,7 @@ function buildComponents(BdApi, pluginRef) {
           list.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       }
       return list;
-    }, [searchQuery, sortBy, pluginRef.settings.anchors]);
+    }, [searchQuery, sortBy, panelRevision, pluginRef.settings.anchors]);
 
     const groupedAnchors = useMemo(() => {
       const groups = new Map();
@@ -133,8 +134,7 @@ function buildComponents(BdApi, pluginRef) {
 
     const handleRemove = useCallback((anchorId) => {
       pluginRef.removeAnchor(anchorId);
-      forceUpdate();
-    }, [forceUpdate]);
+    }, []);
 
     const handleRename = useCallback((anchorId, newName) => {
       pluginRef.renameAnchor(anchorId, newName);
@@ -144,7 +144,7 @@ function buildComponents(BdApi, pluginRef) {
     const handleSortChange = useCallback((newSort) => {
       setSortBy(newSort);
       pluginRef.settings.sortBy = newSort;
-      pluginRef.saveSettings();
+      pluginRef.scheduleSaveSettings();
     }, []);
 
     const maxAnchors = pluginRef.getMaxAnchors();

@@ -50,6 +50,7 @@ module.exports = class SoloLevelingToasts {
     // Lifecycle management
     this._isStopped = false;
     this._hookRetryId = null;
+    this._hookRetryCount = 0;
     this._trackedTimeouts = new Set();
 
     // Settings panel lifecycle
@@ -190,7 +191,10 @@ module.exports = class SoloLevelingToasts {
   // ==========================================================================
 
   start() {
+    // Restart-safe: clear any stale hooks/timers/container/styles before re-initializing.
+    this.stop();
     this._isStopped = false;
+    this._hookRetryCount = 0;
     this.loadSettings();
     this.initializeWebpackModules();
     this.injectCSS();
@@ -206,6 +210,7 @@ module.exports = class SoloLevelingToasts {
       this._clearTrackedTimeout(this._hookRetryId);
       this._hookRetryId = null;
     }
+    this._hookRetryCount = 0;
     this._clearTrackedTimeouts();
 
     this.unhookIntoSoloLeveling();
@@ -260,10 +265,15 @@ module.exports = class SoloLevelingToasts {
     })();
 
     if (!injectedViaBdApi) {
-      const style = document.createElement("style");
-      style.id = styleId;
-      style.textContent = STYLES;
-      document.head.appendChild(style);
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle) {
+        existingStyle.textContent = STYLES;
+      } else {
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = STYLES;
+        document.head.appendChild(style);
+      }
     }
 
     // Apply dynamic durations as CSS custom properties on <html> so
@@ -656,7 +666,7 @@ module.exports = class SoloLevelingToasts {
   }
 
   removeToast(toast, fast = false) {
-    if (!toast || !toast.parentElement) {
+    if (!toast) {
       this.debugLog("REMOVE_TOAST", "Toast already removed or invalid", {
         toastExists: !!toast,
         hasParent: !!toast?.parentElement,
@@ -669,7 +679,8 @@ module.exports = class SoloLevelingToasts {
       fast,
     });
 
-    toast.remove();
+    this._clearToastFadeTimeout(toast);
+    if (toast.parentElement) toast.remove();
     const index = this.activeToasts.indexOf(toast);
     if (index > -1) {
       this.activeToasts.splice(index, 1);
@@ -868,6 +879,10 @@ module.exports = class SoloLevelingToasts {
 
   _scheduleSoloHookRetry(message, data = null) {
     this.debugLog("HOOK_RETRY", message, data);
+    if (this._hookRetryId) {
+      this._clearTrackedTimeout(this._hookRetryId);
+      this._hookRetryId = null;
+    }
     this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
   }
 

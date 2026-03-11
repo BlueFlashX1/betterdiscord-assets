@@ -17,7 +17,7 @@ const { version: PLUGIN_VERSION } = require("./manifest.json");
 module.exports = class HSLDockAutoHide {
   constructor() {
     this._patcherId = "HSLDockAutoHide";
-    this._isStopped = false;
+    this._isStopped = true;
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
@@ -30,6 +30,8 @@ module.exports = class HSLDockAutoHide {
   }
 
   start() {
+    // Restart-safe: clear stale patchers/engines/timers without user-facing stop toast.
+    this.stop(false);
     this._toastImpl = _PluginUtils?.createToastHelper?.("HSLDockAutoHide")
       || ((message, type = "info", timeout = null) => {
         const p = (() => {
@@ -61,7 +63,7 @@ module.exports = class HSLDockAutoHide {
     this._toast(`HSLDockAutoHide v${PLUGIN_VERSION} active (+ UserPanel)`, "success", 2200);
   }
 
-  stop() {
+  stop(showToast = true) {
     this._isStopped = true;
     if (this._fallbackTimer) {
       clearTimeout(this._fallbackTimer);
@@ -81,7 +83,7 @@ module.exports = class HSLDockAutoHide {
     document.querySelectorAll(".sl-hsl-dock-target").forEach((el) => el.classList.remove("sl-hsl-dock-target"));
     document.querySelectorAll(".sl-userpanel-docked").forEach((el) => el.classList.remove("sl-userpanel-docked"));
     document.getElementById("sl-hsl-alert-rail")?.remove();
-    this._toast("HSLDockAutoHide stopped", "info", 2000);
+    if (showToast) this._toast("HSLDockAutoHide stopped", "info", 2000);
   }
 
   _installReactPatcher() {

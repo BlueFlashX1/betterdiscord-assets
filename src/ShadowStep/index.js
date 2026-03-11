@@ -83,6 +83,7 @@ module.exports = class ShadowStep {
   // ── Lifecycle ───────────────────────────────────────────────
 
   start() {
+    this.stop(false);
     this._toast = _PluginUtils?.createToastHelper?.("shadowStep") || createToast();
     this.loadSettings();
     this.initWebpack();
@@ -458,6 +459,7 @@ module.exports = class ShadowStep {
   // ── Hotkey ──────────────────────────────────────────────────
 
   _registerHotkey() {
+    this._unregisterHotkey();
     const isMac = navigator.platform?.startsWith("Mac") || navigator.userAgent?.includes("Mac");
     this._hotkeyHandler = (e) => {
       if (!this.settings.hotkey) return;
