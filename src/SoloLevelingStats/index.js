@@ -577,6 +577,7 @@ const SoloLevelingStats = class SoloLevelingStats {
     this._chatUIDirty = false;
     this._chatUIForceUpdate = null; // React forceUpdate bridge (set by StatsPanel useEffect)
     this._chatUIForceUpdates = new Set(); // Multi-surface forceUpdate bridge (strip + popup)
+    this._chatUIUpdateThrottleTimer = null;
     this._shadowBuffsRefreshPromise = null; // Dedupes async ShadowArmy buff refreshes
     this._shadowBuffsRefreshAt = 0;
     this._headerStatsButton = null;

@@ -449,6 +449,10 @@ module.exports = {
     this._chatUIForceUpdate = null;
   
     this._lastChatUIUpdateAt = 0;
+    if (this._chatUIUpdateThrottleTimer) {
+      clearTimeout(this._chatUIUpdateThrottleTimer);
+      this._chatUIUpdateThrottleTimer = null;
+    }
   
     // Remove injected CSS so it doesn't persist after disable
     document.getElementById(this._constants?.CHAT_UI_STYLE_ID || 'sls-chat-ui-styles')?.remove();
@@ -463,7 +467,20 @@ module.exports = {
     // Self-throttle to avoid redundant work when multiple events trigger updates
     const now = Date.now();
     const lastUpdateAt = this._lastChatUIUpdateAt || 0;
-    if (now - lastUpdateAt < 150) return;
+    const throttleMs = 150;
+    const elapsed = now - lastUpdateAt;
+    if (elapsed < throttleMs) {
+      const waitMs = Math.max(0, throttleMs - elapsed);
+      if (!this._chatUIUpdateThrottleTimer) {
+        this._chatUIUpdateThrottleTimer = setTimeout(() => {
+          this._chatUIUpdateThrottleTimer = null;
+          if (!this._isRunning) return;
+          this._lastChatUIUpdateAt = Date.now();
+          this._triggerUIForceUpdates();
+        }, waitMs);
+      }
+      return;
+    }
     this._lastChatUIUpdateAt = now;
   
     // Trigger React re-render via forceUpdate bridge(s)

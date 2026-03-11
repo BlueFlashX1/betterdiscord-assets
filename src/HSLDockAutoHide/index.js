@@ -21,6 +21,7 @@ module.exports = class HSLDockAutoHide {
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
+    this._fallbackDelayMs = 1000;
     this._warnOnce = createWarnOnce();
     this._toastImpl = null;
   }
@@ -58,7 +59,7 @@ module.exports = class HSLDockAutoHide {
         this._engineMounted = true;
         engine.mount();
       }
-    }, 3000);
+    }, this._fallbackDelayMs);
 
     this._toast(`HSLDockAutoHide v${PLUGIN_VERSION} active (+ UserPanel)`, "success", 2200);
   }

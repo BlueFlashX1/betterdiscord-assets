@@ -12,6 +12,7 @@ This file is the quick-entry index for currently relevant docs.
 
 ## Operations and Runbooks
 - [Operations Folder](operations/)
+- [Project Memory](operations/MEMORY.md)
 
 ## Historical / Archived Root Docs
 - [Root Archive (2026-03-03)](history/root-archive-2026-03-03/)

@@ -112,15 +112,26 @@ module.exports = class ShadowAwayBridge {
     return { guildId, channelId };
   }
 
+  _isCommandLikeText(input) {
+    const text = String(input || "").trim();
+    if (!text) return false;
+    if (text.startsWith("/")) return true;
+
+    const first = text[0];
+    if ((first === "!" || first === "." || first === "?" || first === "$") && text.length > 1) {
+      return true;
+    }
+
+    return /^<@!?\d+>\s+\S+/.test(text);
+  }
+
   _isPlainOutboundTextMessage(msg, myUserId) {
     if (!msg || msg.author?.id !== myUserId) return false;
     if (msg.author?.bot) return false;
 
     const content = String(msg.content || "").trim();
     if (!content) return false;
-
-    // Slash command invocations are not plain text messages.
-    if (content.startsWith("/")) return false;
+    if (this._isCommandLikeText(content)) return false;
 
     return true;
   }

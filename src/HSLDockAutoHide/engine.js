@@ -211,6 +211,7 @@ class DockEngine {
 
     // Initial sync + tick
     this.syncDock();
+    this.trySetupUserPanel();
     this.safeTick();
     this.syncInterval = setInterval(() => {
       if (document.hidden) return; // PERF: Skip when window not visible
@@ -437,8 +438,10 @@ class DockEngine {
         this.stateTarget.classList.add("sl-dock-autohide");
       }
 
-      // PERF: syncDock + trySetupUserPanel as safety net every 5th tick (React effects handle normal case)
-      if (this.tickCount % 5 === 0) {
+      // Keep discovery responsive during startup/reflow churn; otherwise run periodic safety checks.
+      const dockMissing = !this.dock?.isConnected;
+      const panelMissing = !this.userPanel?.isConnected || !this.isUserPanelPositioned;
+      if (dockMissing || panelMissing || this.tickCount % 5 === 0) {
         this.syncDock();
         this.trySetupUserPanel();
       }

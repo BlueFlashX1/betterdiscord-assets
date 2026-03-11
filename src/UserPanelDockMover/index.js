@@ -74,16 +74,17 @@ module.exports = class UserPanelDockMover {
     this.injectStyles();
 
     this.trySetup();
+    const startupPollMs = 250;
     this.pollInterval = setInterval(() => {
       if (document.hidden) return;
       this.trySetup();
-    }, 2000);
+    }, startupPollMs);
 
     if (_PluginUtils?.LayoutObserverBus) {
       this._layoutUnsub = _PluginUtils.LayoutObserverBus.subscribe(
         `${this.pluginId}:dock-sync`,
         () => this.trySetup(),
-        500
+        120
       );
     }
 
