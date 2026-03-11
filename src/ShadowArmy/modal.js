@@ -103,10 +103,10 @@ module.exports = {
   // ============================================================================
 
   /**
-   * Cached React component getter for the Shadow Army Generals Modal.
+   * Cached React component factory for the Shadow Army Generals Modal.
    * Uses React.createElement (no JSX) with hooks for state & auto-refresh.
    */
-  get _ShadowArmyModal() {
+  getShadowArmyModalComponent() {
     if (this.__ShadowArmyModalCached) return this.__ShadowArmyModalCached;
     const pluginRef = this;
     const React = BdApi.React;
@@ -450,7 +450,7 @@ module.exports = {
       this._armyModalRoot = root;
 
       const React = BdApi.React;
-      root.render(React.createElement(this._ShadowArmyModal, {
+      root.render(React.createElement(this.getShadowArmyModalComponent(), {
         pluginInstance: this,
         initialShadows: shadows,
         onClose: () => this.closeShadowArmyModal(),

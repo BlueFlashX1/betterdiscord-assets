@@ -60,7 +60,7 @@ const ShadowArmy = class ShadowArmy {
     // Shadow roles with buffs and effects (26 total: 8 humanoid + 18 magic beast)
     this.shadowRoles = C.SHADOW_ROLES;
     // Stat weight templates per role
-    this.shadowRoleStatWeights = C.STAT_WEIGHTS;
+    this.shadowRoleStatWeights = C.SHADOW_ROLE_STAT_WEIGHTS;
     // Rank probability multipliers for extraction
     this.rankProbabilityMultipliers = C.RANK_PROBABILITY_MULTIPLIERS;
     // Rank stat multipliers (1.5^rank_index exponential scaling)
