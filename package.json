@@ -9,7 +9,8 @@
     "watch:all": "node scripts/build-plugin.js --all --watch",
     "link:plugin": "node scripts/link-plugin.js",
     "link:theme": "node scripts/link-theme.js",
-    "harness:harmony": "node scripts/plugin-harmony-harness.js"
+    "harness:harmony": "node scripts/plugin-harmony-harness.js",
+    "verify:shadowaway-sync": "scripts/verify-shadowawaybridge-sync.sh"
   },
   "keywords": [
     "betterdiscord",

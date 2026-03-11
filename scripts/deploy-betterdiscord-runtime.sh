@@ -34,6 +34,7 @@ for f in \
   Overlay30sRecorder.plugin.js \
   LevelProgressBar.plugin.js \
   ShadowArmy.plugin.js \
+  ShadowAwayBridge.plugin.js \
   ShadowExchange.plugin.js \
   ShadowSenses.plugin.js \
   ShadowStep.plugin.js \

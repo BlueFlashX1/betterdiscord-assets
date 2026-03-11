@@ -21,7 +21,7 @@ module.exports = {
     button.type = 'button';
     button.setAttribute('aria-label', 'Solo Leveling Stats');
     button.innerHTML = `
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
         <path d="M4 18h3v-6H4v6zm6 0h3V6h-3v12zm6 0h4V10h-4v8z" fill="currentColor"></path>
       </svg>
     `;

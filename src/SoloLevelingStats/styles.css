@@ -44,24 +44,45 @@
       }
 
       .sls-header-stats-button {
-        width: 32px;
-        height: 32px;
-        border: none;
-        border-radius: 8px;
-        background: rgba(18, 16, 32, 0.85);
-        color: #c9a8ff;
+        width: 26px;
+        height: 26px;
+        border: none !important;
+        border-radius: 4px;
+        background: transparent !important;
+        box-shadow: none !important;
+        color: var(--interactive-normal, #b5bac1) !important;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 0.18s ease;
-        box-shadow: none;
+        transition: color 0.18s ease;
+        padding: 0;
+        margin-left: 8px;
+        outline: none !important;
+        -webkit-appearance: none;
+        appearance: none;
+      }
+
+      .sls-header-stats-button svg {
+        width: 20px;
+        height: 20px;
+        display: block;
       }
 
       .sls-header-stats-button:hover {
-        color: #efe4ff;
-        background: rgba(30, 24, 52, 0.92);
-        box-shadow: 0 0 10px rgba(138, 43, 226, 0.4);
+        color: var(--interactive-hover, #ffffff) !important;
+        background: transparent !important;
+        box-shadow: none !important;
+      }
+
+      .sls-header-stats-button:focus,
+      .sls-header-stats-button:focus-visible,
+      .sls-header-stats-button:active {
+        outline: none !important;
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        color: var(--interactive-hover, #ffffff) !important;
       }
 
       .sls-header-stats-popup {
