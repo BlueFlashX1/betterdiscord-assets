@@ -209,6 +209,7 @@ module.exports = class RulersAuthority {
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("rulersAuthority") || createToast();
     try {
+      if (this._controller) this.stop({ silent: true });
       this._controller = new AbortController();
       this.loadSettings();
       this.initWebpack();
@@ -235,7 +236,8 @@ module.exports = class RulersAuthority {
     }
   }
 
-  stop() {
+  stop(options = {}) {
+    const { silent = false } = options;
     try {
       // 1. Clear all timers first (prevents callbacks on stopped plugin).
       this._clearLifecycleTimers();
@@ -285,7 +287,7 @@ module.exports = class RulersAuthority {
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
-    this._toast("Ruler's Authority \u2014 Dormant", "info");
+    if (!silent) this._toast("Ruler's Authority \u2014 Dormant", "info");
   }
 
   _clearLifecycleTimers() {

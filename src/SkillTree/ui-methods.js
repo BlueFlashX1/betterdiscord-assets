@@ -130,6 +130,13 @@ const SkillTreeUiMethods = {
    * Enhanced to persist buttons across guild/channel switches
    */
   setupChannelWatcher() {
+    if (this._urlChangeCleanup) {
+      try {
+        this._urlChangeCleanup();
+      } catch (_) {}
+      this._urlChangeCleanup = null;
+    }
+
     // Use event-based URL change detection (no polling)
     let lastUrl = window.location.href;
 
@@ -167,6 +174,13 @@ const SkillTreeUiMethods = {
    * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
    */
   setupWindowFocusWatcher() {
+    if (this._windowFocusCleanup) {
+      try {
+        this._windowFocusCleanup();
+      } catch (_) {}
+      this._windowFocusCleanup = null;
+    }
+
     this._boundHandleBlur = this._handleWindowBlur.bind(this);
     this._boundHandleFocus = this._handleWindowFocus.bind(this);
     this._boundHandleVisibilityChange = () => {

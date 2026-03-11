@@ -92,6 +92,29 @@ try { _TransitionCleanupUtils = loadBdModuleFromPlugins("TransitionCleanupUtils.
 module.exports = class ShadowExchange {
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
+  _flushPendingSave() {
+    if (!this._saveDebounceTimer) return;
+    clearTimeout(this._saveDebounceTimer);
+    this._saveDebounceTimer = null;
+    this._flushSaveSettings();
+  }
+
+  _teardownRuntime() {
+    if (this._unpatchContextMenu) {
+      try { this._unpatchContextMenu(); } catch (_) {}
+      this._unpatchContextMenu = null;
+    }
+    this.closePanel();
+    _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+    _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+    _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+    this.teardownSwirlObserver();
+    this.removeSwirlIcon();
+    const seTip = document.getElementById("sl-toolbar-tip-se");
+    if (seTip) seTip.remove();
+    this.removeCSS();
+  }
+
   _resetRuntimeState() {
     this._panelForceUpdate = null;
     this._panelContainer = null;
@@ -119,6 +142,8 @@ module.exports = class ShadowExchange {
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("shadowExchange") || createToast();
     try {
+      this._flushPendingSave();
+      this._teardownRuntime();
       this.panelOpen = false;
       this.swirlIcon = null;
       this.fallbackIdx = 0;
@@ -158,26 +183,10 @@ module.exports = class ShadowExchange {
   }
 
   stop() {
-    // Flush any pending debounced save
-    if (this._saveDebounceTimer) {
-      clearTimeout(this._saveDebounceTimer);
-      this._saveDebounceTimer = null;
-      this._flushSaveSettings();
-    }
+    this._flushPendingSave();
     try {
-      if (this._unpatchContextMenu) {
-        this._unpatchContextMenu();
-        this._unpatchContextMenu = null;
-      }
-      this.closePanel();
-      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
-      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
-      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
-      this.teardownSwirlObserver();
-      this.removeSwirlIcon();
-      const seTip = document.getElementById("sl-toolbar-tip-se");
-      if (seTip) seTip.remove();
-      this.removeCSS();
+      this._teardownRuntime();
+      this._resetRuntimeState();
     } catch (err) {
       console.error("[ShadowExchange] stop() failed:", err);
     }

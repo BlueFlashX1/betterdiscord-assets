@@ -127,9 +127,24 @@ module.exports = class ShadowRecon {
     this._guildNavOrientationCacheTTL = 1200;
   }
 
+  _clearRuntimeCaches() {
+    this._permissionBitsCache = null;
+    this._allPermsBitsCache = undefined;
+    this._onlineCountMethod = null;
+    this._guildsTargetCache = null;
+    this._guildHintCache.clear();
+    this._guildNavOrientationCache.target = null;
+    this._guildNavOrientationCache.measuredAt = 0;
+    this._guildNavOrientationCache.horizontal = false;
+    if (this._shadowCache?.map) this._shadowCache.map.clear();
+    this._shadowCache.timestamp = 0;
+    this._shadowCache.diskFallbackDone = false;
+  }
+
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("shadowRecon") || createToast();
     try {
+      if (!this._stopped) this.stop({ silent: true });
       this._stopped = false;
       this.loadSettings();
       this.loadMarkedGuilds();
@@ -152,17 +167,18 @@ module.exports = class ShadowRecon {
     }
   }
 
-  stop() {
+  stop(options = {}) {
+    const { silent = false } = options;
     this._stopped = true;
-    this._permissionBitsCache = null;
     this.unpatchContextMenus();
     this.stopRefreshLoops();
     this.teardownObserver();
     this.removeServerCounterWidget();
     this.clearGuildIconHints();
+    this._clearRuntimeCaches();
     this.closeModal();
     BdApi.DOM.removeStyle(STYLE_ID);
-    this._toast(`${PLUGIN_NAME} - Recon dismissed`, "info");
+    if (!silent) this._toast(`${PLUGIN_NAME} - Recon dismissed`, "info");
   }
 
   // ---- Data / Settings -------------------------------------------------
@@ -468,6 +484,7 @@ module.exports = class ShadowRecon {
 
   setupObserver() {
     try {
+      if (this._layoutBusUnsub) return;
       // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
       if (_PluginUtils?.LayoutObserverBus) {
         this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('ShadowRecon', () => {

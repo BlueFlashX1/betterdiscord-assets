@@ -195,6 +195,19 @@ function buildWaypointListContent(React, options) {
   );
 }
 
+function getWaypointListRevision(waypoints) {
+  if (!Array.isArray(waypoints) || waypoints.length === 0) return "0";
+  return waypoints.map((wp) => [
+    wp?.id || "",
+    wp?.label || "",
+    wp?.shadowName || "",
+    wp?.shadowRank || "",
+    wp?.createdAt || 0,
+    wp?.lastVisited || 0,
+    wp?.visitCount || 0,
+  ].join(":")).join("|");
+}
+
 function createWaypointPanel(React, pluginInstance, WaypointCard) {
   const ce = React.createElement;
 
@@ -243,9 +256,10 @@ function createWaypointPanel(React, pluginInstance, WaypointCard) {
       return () => clearTimeout(timer);
     }, []);
 
+    const waypointRevision = getWaypointListRevision(pluginInstance.settings.waypoints);
     const waypoints = React.useMemo(
       () => getFilteredSortedWaypoints(pluginInstance.settings.waypoints, searchQuery, sortBy),
-      [searchQuery, sortBy, pluginInstance.settings.waypoints.length]
+      [searchQuery, sortBy, waypointRevision]
     );
 
     const handleSortChange = React.useCallback((e) => {

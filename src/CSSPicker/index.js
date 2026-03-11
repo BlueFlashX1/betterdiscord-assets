@@ -240,6 +240,9 @@ const positionOverlayOnElement = ({ overlay, el }) => {
 
 module.exports = class CSSPicker {
   start() {
+    if (this.onGlobalHotkeyDown || this.launcher || this.isActive) {
+      try { this.stop(); } catch (_) {}
+    }
     this._toast =
       _PluginUtils?.createToastHelper?.("cSSPicker") || createToast();
     this.isActive = false;

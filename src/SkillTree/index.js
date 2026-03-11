@@ -70,32 +70,22 @@ module.exports = class SkillTree {
     this.activeSkillOrder = data.activeSkillOrder;
 
     this._retryTimeouts = new Set();
-    this._isStopped = false;
+    this._isStopped = true;
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
     this._modalContainer = null;
     this._modalReactRoot = null;
     this._modalForceUpdate = null;
     this._components = null;
-    this._toolbarCache = {
-      element: null,
-      time: 0,
-      ttl: 1500,
-    };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
     this.settings = structuredClone(this.defaultSettings);
-    this.skillTreeModal = null;
     this.skillTreeButton = null;
     this.levelCheckInterval = null; // Deprecated - using events instead
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
     this._windowFocusCleanup = null; // Cleanup function for window focus watcher
-    this._retryTimeout1 = null; // Timeout ID for first retry
-    this._retryTimeout2 = null; // Timeout ID for second retry
-    this._periodicCheckInterval = null; // Periodic button persistence check
     // _composerObserver removed — React patcher handles button persistence
-    this._ensureButtonScheduled = false; // Debounce flag for ensure-button checks
     this._manaRegenInterval = null; // Mana regeneration interval
     this._activeSkillTimers = {};   // Expiry timers for active skills { skillId: timeoutId }
 
@@ -119,6 +109,7 @@ module.exports = class SkillTree {
 
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("skillTree") || createToast();
+    if (!this._isStopped) this.stop();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 
@@ -283,6 +274,9 @@ module.exports = class SkillTree {
     if (this._isStopped) {
       return;
     }
+    if (this.eventUnsubscribers.length > 0) {
+      return;
+    }
 
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
     const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
@@ -343,16 +337,6 @@ module.exports = class SkillTree {
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
     this._retryTimeouts.clear();
-
-    // Clear legacy retry timeouts (for backwards compatibility)
-    if (this._retryTimeout1) {
-      this._clearTrackedTimeout(this._retryTimeout1);
-      this._retryTimeout1 = null;
-    }
-    if (this._retryTimeout2) {
-      this._clearTrackedTimeout(this._retryTimeout2);
-      this._retryTimeout2 = null;
-    }
 
     // Cleanup URL change watcher with guaranteed execution
     if (this._urlChangeCleanup) {
