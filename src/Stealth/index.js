@@ -84,6 +84,7 @@ module.exports = class Stealth {
 
   // ── Lifecycle + Settings ───────────────────────────────────────────────
   start() {
+    this._clearRuntimeArtifacts();
     this._toastImpl = _PluginUtils?.createToastHelper?.("stealth")
       || ((message, type = "info", timeout = null) => {
         const p = (() => {
@@ -117,14 +118,21 @@ module.exports = class Stealth {
   }
 
   _scheduleTimer(fn, delay) {
+    if (typeof fn !== "function") return null;
+    const timeoutMs = Number.isFinite(delay) ? Math.max(0, delay) : 0;
     const tid = setTimeout(() => {
       this._pendingTimers.delete(tid);
-      fn();
-    }, delay);
+      try {
+        fn();
+      } catch (error) {
+        this._logWarning("TIMER", "Scheduled callback failed", error, "timer-callback");
+      }
+    }, timeoutMs);
     this._pendingTimers.add(tid);
+    return tid;
   }
 
-  stop() {
+  _clearRuntimeArtifacts() {
     for (const tid of this._pendingTimers) clearTimeout(tid);
     this._pendingTimers.clear();
     this._unsubscribeFluxEvents();
@@ -132,16 +140,20 @@ module.exports = class Stealth {
       clearInterval(this._dispatcherPollTimer);
       this._dispatcherPollTimer = null;
     }
+    this._Dispatcher = null;
+    this._statusSetters = [];
     this._sentryDisabled = false;
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
+    BdApi.Patcher.unpatchAll(STEALTH_PLUGIN_ID);
+    BdApi.DOM.removeStyle(STEALTH_STYLE_ID);
+  }
 
+  stop() {
     if (this.settings.restoreStatusOnStop) {
       this._restoreOriginalStatus();
     }
-
-    BdApi.Patcher.unpatchAll(STEALTH_PLUGIN_ID);
-    BdApi.DOM.removeStyle(STEALTH_STYLE_ID);
+    this._clearRuntimeArtifacts();
   }
 
   loadSettings() {

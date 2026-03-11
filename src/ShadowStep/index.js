@@ -58,6 +58,7 @@ const { getShadowStepCss } = require("./styles");
 module.exports = class ShadowStep {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
+    this._toast = () => {};
     this._NavigationUtils = null;
     this._ChannelStore = null;
     this._GuildStore = null;
@@ -95,7 +96,7 @@ module.exports = class ShadowStep {
     this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadows ready`, "info");
   }
 
-  stop() {
+  stop(showToast = true) {
     try {
       // 1. Close panel
       this.closePanel();
@@ -143,7 +144,7 @@ module.exports = class ShadowStep {
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
-    this._toast(`${PLUGIN_NAME} \u2014 Anchors dormant`, "info");
+    if (showToast) this._toast(`${PLUGIN_NAME} \u2014 Anchors dormant`, "info");
   }
 
   // ── Webpack ─────────────────────────────────────────────────
@@ -499,6 +500,11 @@ module.exports = class ShadowStep {
 
   openPanel() {
     if (this._panelOpen) return;
+    if (!this._components) this._components = buildComponents(BdApi, this);
+    if (!this._components?.AnchorPanel) {
+      this.debugError("Panel", "Cannot open panel: AnchorPanel component unavailable");
+      return;
+    }
 
     const container = document.createElement("div");
     container.id = PANEL_CONTAINER_ID;

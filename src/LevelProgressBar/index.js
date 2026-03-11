@@ -330,14 +330,14 @@ module.exports = class LevelProgressBar {
       this._updateQueued = false;
     }
     this.detachLevelProgressBarSettingsPanelHandlers?.();
-    if (this.reactInjectionActive) {
-      try {
-        BdApi.Patcher.unpatchAll(PLUGIN_ID);
-        this.reactInjectionActive = false;
+    try {
+      BdApi.Patcher.unpatchAll(PLUGIN_ID);
+      if (this.reactInjectionActive) {
         this.debugLog('STOP', 'Webpack patches and React injection removed');
-      } catch (error) {
-        this.debugError('STOP', error, { phase: 'unpatch' });
       }
+      this.reactInjectionActive = false;
+    } catch (error) {
+      this.debugError('STOP', error, { phase: 'unpatch' });
     }
     this.webpackModules = {
       UserStore: null,

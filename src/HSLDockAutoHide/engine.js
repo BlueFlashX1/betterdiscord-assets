@@ -788,6 +788,11 @@ class DockEngine {
     return y >= zoneTop && y <= zoneBottom;
   }
 
+  // Backward-compat alias used by debug tooling.
+  isCursorNearBottom(x = this.lastMouseX, y = this.lastMouseY) {
+    return this.isCursorInRevealStrip(x, y);
+  }
+
   isCursorInsideDockRect(x = this.lastMouseX, y = this.lastMouseY) {
     if (!this.dock || !this.dock.getBoundingClientRect) return false;
     if (typeof x !== "number" || typeof y !== "number") return false;

@@ -425,7 +425,7 @@ module.exports = class SoloLevelingToasts {
         group.shown = true;
         this.messageGroups.delete(groupKey);
         const combinedMessage = combineMessages(group.messages);
-        this._showToastInternal(combinedMessage, type, timeout);
+        this._showToastInternal(combinedMessage, type, timeout, { groupKey });
       }, fastGroupDelay);
 
       return;
@@ -450,7 +450,7 @@ module.exports = class SoloLevelingToasts {
         currentGroup.shown = true;
         currentGroup.timeoutId = null;
         const combinedMessage = combineMessages(currentGroup.messages);
-        this._showToastInternal(combinedMessage, type, timeout);
+        this._showToastInternal(combinedMessage, type, timeout, { groupKey });
 
         currentGroup.cleanupTimeoutId = this._setTrackedTimeout(() => {
           if (this.messageGroups.get(groupKey) === currentGroup) {
@@ -464,6 +464,11 @@ module.exports = class SoloLevelingToasts {
   }
 
   findToastByKey(groupKey) {
+    const keyedToast = this.activeToasts.find(
+      (toast) => toast?.dataset?.slGroupKey === groupKey
+    );
+    if (keyedToast) return keyedToast;
+
     const normalized = groupKey.split("_")[0];
     return (
       this.activeToasts.find((toast) => {
@@ -506,7 +511,7 @@ module.exports = class SoloLevelingToasts {
   // SECTION 8: INTERNAL TOAST RENDERING
   // ==========================================================================
 
-  _showToastInternal(message, type = "info", timeout = null) {
+  _showToastInternal(message, type = "info", timeout = null, options = {}) {
     if (this._isStopped) return;
 
     this.debugLog("SHOW_TOAST", "Toast request received", {
@@ -543,6 +548,9 @@ module.exports = class SoloLevelingToasts {
       toast.className = `sl-toast ${toastType}`;
       toast.style.setProperty("--sl-toast-timeout", `${toastTimeout}ms`);
       toast.style.setProperty("--sl-card-accent", getAccentColor(toastType));
+      if (options.groupKey) {
+        toast.dataset.slGroupKey = options.groupKey;
+      }
 
       const accentBar = document.createElement("div");
       accentBar.className = "sl-toast-accent";
