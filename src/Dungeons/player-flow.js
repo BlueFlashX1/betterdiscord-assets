@@ -128,6 +128,39 @@ module.exports = {
     }
   },
 
+  leaveDungeon(channelKey, opts = {}) {
+    const { silent = false } = opts;
+    const dungeon = this.activeDungeons.get(channelKey);
+    if (!dungeon) {
+      if (!silent) this.showToast('No active dungeon here.', 'error');
+      return false;
+    }
+
+    if (!dungeon.userParticipating) {
+      if (!silent) this.showToast('You are not joined in this dungeon.', 'info');
+      return false;
+    }
+
+    dungeon.userParticipating = false;
+    if (this.settings.userActiveDungeon === channelKey) {
+      this.settings.userActiveDungeon = null;
+    }
+
+    this._bossBarCache?.delete?.(channelKey);
+    this.queueHPBarUpdate(channelKey);
+    if (!silent) {
+      this.showToast(`Left ${dungeon.name}. You can now join other dungeons.`, 'info');
+    }
+    this.saveSettings();
+
+    if (this.storageManager) {
+      this.storageManager.saveDungeon(dungeon).catch((err) =>
+        this.errorLog('Failed to save dungeon after leave', err)
+      );
+    }
+    return true;
+  },
+
   async deployShadows(channelKey) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) {

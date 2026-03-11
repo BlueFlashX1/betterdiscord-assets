@@ -300,6 +300,15 @@ module.exports = {
     this.dungeonIndicators = new Map();
     this.bossHPBars = new Map();
     this._bossBarLayoutFrame = null;
+    this._navigationUtils = null;
+    this._dungeonHeaderWidgetButton = null;
+    this._dungeonHeaderPopup = null;
+    this._dungeonHeaderWidgetLoop = null;
+    this._dungeonHeaderPopupDocClickHandler = null;
+    this._dungeonHeaderPopupResizeHandler = null;
+    this._dungeonHeaderPopupScrollHandler = null;
+    this._dungeonHeaderPopupPositionRaf = null;
+    this._dungeonUiActionLocks = new Set();
 
     // Performance optimization: Throttled DOM updates
     this._hpBarUpdateQueue = new Set(); // Queue of channelKeys needing HP bar updates

@@ -65,6 +65,7 @@ module.exports = {
     this.validateActiveDungeonStatus();
 
     this.setupChannelWatcher();
+    this.startDungeonHeaderWidget?.();
 
     // PERF: Pre-warm shadow cache in background so first deploy is instant (~<50ms)
     // instead of paying cold-cache IDB penalty (~2-5s). Runs after ShadowArmy ref
@@ -151,6 +152,7 @@ module.exports = {
     // Corpse pile lives on dungeon objects (persisted to IDB) — no separate cleanup needed.
     this.removeAllIndicators();
     this.removeAllBossHPBars();
+    this.stopDungeonHeaderWidget?.();
 
     // RELEASE ALL CHANNEL LOCKS: Plugin stopping - free all channels
     if (this.channelLocks) {
@@ -211,6 +213,7 @@ module.exports = {
     if (this.cache) this.cache.clear();
     if (this.extractionEvents) this.extractionEvents.clear();
     if (this._mobGenerationCache) this._mobGenerationCache.clear();
+    if (this._dungeonUiActionLocks) this._dungeonUiActionLocks.clear();
 
     // Remove plugin toggle event listeners
     if (this._pluginToggleHandler) {

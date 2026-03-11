@@ -9,19 +9,87 @@ module.exports = {
     this._delegatedUiHandlersInstalled = true;
     this.ensureDelegatedUiStyles();
 
+    const refreshDungeonWidgetPopup = () => {
+      if (this._dungeonHeaderPopup?.isConnected) {
+        this.renderDungeonHeaderPopup?.();
+        this.queueDungeonHeaderPopupPosition?.();
+      } else {
+        this._updateDungeonHeaderWidgetBadge?.();
+      }
+    };
+
+    const runGuardedDungeonAction = (action, channelKey, runner) => {
+      if (!action || !channelKey || typeof runner !== 'function') return;
+      this._dungeonUiActionLocks ||= new Set();
+      const lockKey = `${action}:${channelKey}`;
+      if (this._dungeonUiActionLocks.has(lockKey)) return;
+      this._dungeonUiActionLocks.add(lockKey);
+      Promise.resolve()
+        .then(runner)
+        .catch((error) =>
+          this.errorLog('UI', 'Failed to process guarded dungeon action', { action, channelKey, error })
+        )
+        .finally(() => {
+          this._dungeonUiActionLocks?.delete?.(lockKey);
+          refreshDungeonWidgetPopup();
+        });
+    };
+
+    const runDungeonWidgetAction = (action, channelKey) => {
+      switch (action) {
+        case 'goto':
+          return this.focusDungeonChannel?.(channelKey);
+        case 'deploy':
+          return this.deployShadows(channelKey);
+        case 'recall':
+          return this.recallShadows(channelKey);
+        case 'join':
+          return this.selectDungeon(channelKey);
+        case 'leave':
+          return this.leaveDungeon(channelKey);
+        default:
+          return false;
+      }
+    };
+
     this._delegatedUiClickHandler = (e) => {
       const target = /** @type {HTMLElement|null} */ (e.target);
       if (!target) return;
+
+      const dungeonWidgetToggle = target.closest?.('.dungeons-header-widget');
+      if (dungeonWidgetToggle) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.toggleDungeonHeaderPopup?.();
+        return;
+      }
+
+      const dungeonWidgetClose = target.closest?.('.dungeon-widget-close-btn');
+      if (dungeonWidgetClose) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeDungeonHeaderPopup?.();
+        return;
+      }
+
+      const dungeonWidgetAction = target.closest?.('.dungeon-widget-action');
+      if (dungeonWidgetAction) {
+        e.preventDefault();
+        e.stopPropagation();
+        const action = dungeonWidgetAction.getAttribute('data-dungeon-action');
+        const channelKey = dungeonWidgetAction.getAttribute('data-channel-key');
+        if (!action || !channelKey) return;
+        runGuardedDungeonAction(action, channelKey, () => runDungeonWidgetAction(action, channelKey));
+        return;
+      }
 
       const deployBtn = target.closest?.('.dungeon-deploy-btn');
       if (deployBtn) {
         e.preventDefault();
         e.stopPropagation();
         const channelKey = deployBtn.getAttribute('data-channel-key');
-        channelKey &&
-          Promise.resolve(this.deployShadows(channelKey)).catch((error) =>
-            this.errorLog('UI', 'Failed to deploy shadows', { channelKey, error })
-          );
+        if (!channelKey) return;
+        runGuardedDungeonAction('deploy', channelKey, () => this.deployShadows(channelKey));
         return;
       }
 
@@ -30,10 +98,8 @@ module.exports = {
         e.preventDefault();
         e.stopPropagation();
         const channelKey = recallBtn.getAttribute('data-channel-key');
-        channelKey &&
-          Promise.resolve(this.recallShadows(channelKey)).catch((error) =>
-            this.errorLog('UI', 'Failed to recall shadows', { channelKey, error })
-          );
+        if (!channelKey) return;
+        runGuardedDungeonAction('recall', channelKey, () => this.recallShadows(channelKey));
         return;
       }
 
@@ -42,10 +108,8 @@ module.exports = {
         e.preventDefault();
         e.stopPropagation();
         const channelKey = joinBtn.getAttribute('data-channel-key');
-        channelKey &&
-          Promise.resolve(this.selectDungeon(channelKey)).catch((error) =>
-            this.errorLog('UI', 'Failed to join dungeon', { channelKey, error })
-          );
+        if (!channelKey) return;
+        runGuardedDungeonAction('join', channelKey, () => this.selectDungeon(channelKey));
         return;
       }
 
@@ -55,14 +119,7 @@ module.exports = {
         e.stopPropagation();
         const channelKey = leaveBtn.getAttribute('data-channel-key');
         if (!channelKey) return;
-        const dungeon = this.activeDungeons.get(channelKey);
-        if (!dungeon) return;
-
-        dungeon.userParticipating = false;
-        this.settings.userActiveDungeon = null;
-        this.saveSettings();
-        this.updateBossHPBar(channelKey);
-        this.showToast(`Left ${dungeon.name}. You can now join other dungeons.`, 'info');
+        runGuardedDungeonAction('leave', channelKey, () => this.leaveDungeon(channelKey));
         return;
       }
 
@@ -77,10 +134,8 @@ module.exports = {
         ariseBtn.style.pointerEvents = 'none';
         ariseBtn.style.cursor = 'not-allowed';
         const channelKey = ariseBtn.getAttribute('data-arise-button');
-        channelKey &&
-          Promise.resolve(this.attemptBossExtraction(channelKey)).catch((error) =>
-            this.errorLog('UI', 'Failed to attempt boss extraction', { channelKey, error })
-          );
+        if (!channelKey) return;
+        runGuardedDungeonAction('arise', channelKey, () => this.attemptBossExtraction(channelKey));
         return;
       }
 

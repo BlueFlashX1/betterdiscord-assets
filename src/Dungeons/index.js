@@ -17,6 +17,7 @@ Object.assign(
   require('./init-state'),
   require('./corpse-tick-pipeline'),
   require('./lifecycle'),
+  require('./ui-header-widget'),
   require('./ui-delegation'),
   require('./settings-persistence'),
   require('./stats-integration'),
