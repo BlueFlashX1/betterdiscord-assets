@@ -301,8 +301,9 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         if (!this._isStopped) this.stop();
         this._isStopped = false;
         this._lastReturnSignalMs = 0;
-        this._injectHeaderWidgetStyles();
-        this._setupHeaderWidget();
+        // Widget icon removed by preference; rely on slash-command/report flow instead.
+        this._teardownHeaderWidget();
+        this._removeHeaderWidgetStyles();
         this._startHeaderBadgePolling();
         this._setupDispatcher();
         this.debugLog("START", "ShadowAwayBridge started");
@@ -879,11 +880,15 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         this._stopHeaderBadgePolling();
         this._headerBadgePollTimer = setInterval(async () => {
           await this._flushQueuedReturnSignal();
-          await this._refreshHeaderWidgetBadge();
+          if (document.getElementById(HEADER_WIDGET_ID)) {
+            await this._refreshHeaderWidgetBadge();
+          }
         }, HEADER_WIDGET_BADGE_POLL_MS);
         Promise.resolve().then(async () => {
           await this._flushQueuedReturnSignal();
-          await this._refreshHeaderWidgetBadge();
+          if (document.getElementById(HEADER_WIDGET_ID)) {
+            await this._refreshHeaderWidgetBadge();
+          }
         });
       }
       _stopHeaderBadgePolling() {
@@ -898,6 +903,11 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         if (icon) icon.classList.add("sab-toolbar-widget--busy");
         try {
           await this._consumePendingDigestForSelectedContext();
+        } catch (error) {
+          this.debugLog("WIDGET", "Header widget click failed", {
+            error: (error == null ? void 0 : error.message) || String(error)
+          });
+          BdApi.UI.showToast("Shadow Report could not be opened right now.", { type: "warning" });
         } finally {
           this._headerWidgetBusy = false;
           if (icon) icon.classList.remove("sab-toolbar-widget--busy");
@@ -907,11 +917,19 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         const myUserId = this._getCurrentUserId();
         if (!myUserId) {
           BdApi.UI.showToast("Unable to resolve current user for Shadow Report.", { type: "warning" });
+          this._showShadowReportStatusModal(
+            "Shadow Away Report",
+            "Unable to resolve your current user. Please switch channels and try again."
+          );
           return false;
         }
         const { guildId, channelId } = this._getSelectedContext();
         if (!guildId || !channelId) {
           BdApi.UI.showToast("Open the return guild channel to view your Shadow Report.", { type: "warning" });
+          this._showShadowReportStatusModal(
+            "Shadow Away Report",
+            "Open the return guild text channel, then click the Shadow Away icon again."
+          );
           return false;
         }
         const bridgeResult = await this._sendBridgeEvent("consume_pending_digest", {
@@ -926,22 +944,48 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         const outcome = bridgeResult.response && bridgeResult.response.result ? bridgeResult.response.result : null;
         if (!outcome || outcome.action !== "consume_pending_digest") {
           BdApi.UI.showToast("Unexpected Shadow Report bridge response.", { type: "warning" });
+          this._showShadowReportStatusModal(
+            "Shadow Away Report",
+            "The bridge returned an unexpected response. Please try again in a moment."
+          );
           return false;
         }
         if (!outcome.consumed) {
           if (outcome.reason === "no_pending_digest") {
             BdApi.UI.showToast("No pending Shadow Report right now.", { type: "info" });
+            this._showShadowReportStatusModal(
+              "Shadow Away Report",
+              "My liege, there are no pending reports at this time."
+            );
             return false;
           }
           if (outcome.reason === "locked_to_channel") {
             const expected = outcome.expectedChannelId ? `<#${outcome.expectedChannelId}>` : "the return channel";
             BdApi.UI.showToast(`Shadow Report is locked to ${expected}.`, { type: "warning" });
+            this._showShadowReportStatusModal(
+              "Shadow Away Report",
+              `This report is locked to ${expected}. Open that channel and click the icon again.`
+            );
             return false;
           }
           BdApi.UI.showToast(`Shadow Report unavailable (${outcome.reason || "unknown"}).`, { type: "warning" });
+          this._showShadowReportStatusModal(
+            "Shadow Away Report",
+            `The report is currently unavailable (${outcome.reason || "unknown"}).`
+          );
           return false;
         }
-        this._showPrivateDigestModal(outcome);
+        try {
+          this._showPrivateDigestModal(outcome);
+        } catch (error) {
+          this.debugLog("REPORT_MODAL", "Digest modal rendering failed", {
+            error: (error == null ? void 0 : error.message) || String(error)
+          });
+          this._showShadowReportStatusModal(
+            "Shadow Away Report",
+            "The report was received, but the detailed modal failed to render. Check plugin logs for details."
+          );
+        }
         BdApi.UI.showToast(
           `Shadow Report received: ${Number(outcome.mentionCount || 0)} mention${Number(outcome.mentionCount || 0) === 1 ? "" : "s"}.`,
           { type: "success" }
@@ -981,6 +1025,30 @@ Delivered: "${deliveryText}"`
             entry.deliveryMessageLink ? React.createElement("a", { href: entry.deliveryMessageLink, target: "_blank", rel: "noreferrer" }, "Delivery Link") : null
           )
         );
+      }
+      _showShadowReportStatusModal(title, message) {
+        const React = BdApi.React;
+        const safeTitle = String(title || "Shadow Away Report");
+        const safeMessage = String(message || "No additional details are available.");
+        if (React && BdApi.UI.showConfirmationModal) {
+          try {
+            const content = React.createElement(
+              "div",
+              { className: "sab-shadow-report-modal" },
+              React.createElement("div", { className: "sab-shadow-report-text" }, safeMessage)
+            );
+            BdApi.UI.showConfirmationModal(safeTitle, content, {
+              confirmText: "Close",
+              cancelText: "Dismiss"
+            });
+            return;
+          } catch (_) {
+          }
+        }
+        try {
+          BdApi.UI.alert(safeTitle, safeMessage);
+        } catch (_) {
+        }
       }
       _showPrivateDigestModal(outcome) {
         const entries = Array.isArray(outcome.entries) ? outcome.entries : [];

@@ -10,6 +10,7 @@ const {
   RELATIONSHIP_EVENT_NAMES,
   STARTUP_REPORT_ARTWORK_FALLBACK_URL,
   STARTUP_TOAST_GRACE_MS,
+  STATUS_POLL_INTERVAL_MS,
   TRANSITION_ID,
   WIDGET_SPACER_ID,
 } = require("./constants");
@@ -24,6 +25,7 @@ const { createToast } = require("../shared/toast");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 const _fallbackToast = createToast();
+const STARTUP_NOISE_TOPICS = new Set(["lmao", "lmfao", "lol", "ooo", "ohh", "haha", "fr", "ok", "k", "uwu"]);
 
 function toFileUrl(filePath) {
   const resolvedPath = path.resolve(String(filePath || ""));
@@ -59,6 +61,7 @@ class SensesEngine {
     this._dirty = false;
     this._dirtyGuilds = new Set();  // Per-guild dirty tracking — flush only changed guilds
     this._flushInterval = null;
+    this._presencePollInterval = null;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
     this._handlePresenceUpdate = null;
@@ -81,6 +84,7 @@ class SensesEngine {
     this._AFK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours — sweet spot for real AFK detection
     this._subscribeTime = 0; // Set when subscribe() fires — used to defer early toasts
     this._statusByUserId = new Map(); // userId -> normalized status
+    this._presenceStatusMissCount = new Map(); // userId -> consecutive empty PresenceStore reads
     this._relationshipFriendIds = new Set();
     this._typingToastCooldown = new Map(); // userId:channelId -> timestamp
     this._invisibleToastCooldown = new Map(); // userId:channelId -> timestamp
@@ -203,6 +207,13 @@ class SensesEngine {
     this._seedUserActivityFromFeeds();
     this._snapshotFriendRelationships();
 
+    // Presence polling fallback (10s): catches missed transitions when dispatcher payloads are partial.
+    // Kept intentionally low frequency and tiny scope (monitored users only) to avoid UI lag.
+    this._presencePollInterval = setInterval(() => {
+      if (this._plugin._stopped) return;
+      this._pollMonitoredPresenceStatuses("interval");
+    }, STATUS_POLL_INTERVAL_MS);
+
     // Start debounced flush interval (30s)
     this._flushInterval = setInterval(() => {
       if (!this._dirty) return;
@@ -247,6 +258,10 @@ class SensesEngine {
       clearInterval(this._purgeInterval);
       this._purgeInterval = null;
     }
+    if (this._presencePollInterval) {
+      clearInterval(this._presencePollInterval);
+      this._presencePollInterval = null;
+    }
     if (this._dirty || this._activityIndexDirty) {
       this._flushToDisk();
     }
@@ -254,6 +269,7 @@ class SensesEngine {
     this._typingToastCooldown.clear();
     this._invisibleToastCooldown.clear();
     this._statusByUserId.clear();
+    this._presenceStatusMissCount.clear();
     this._relationshipFriendIds.clear();
     this._sessionActivityNotified.clear();
     this._activitySeededFromHistory = false;
@@ -330,6 +346,7 @@ class SensesEngine {
     this._totalFeedEntries = 0;
     this._feedVersion = 0;
     this._statusByUserId = new Map();
+    this._presenceStatusMissCount = new Map();
     this._typingToastCooldown = new Map();
     this._invisibleToastCooldown = new Map();
     this._relationshipFriendIds = new Set();
@@ -538,6 +555,137 @@ module.exports = class ShadowSenses {
     return items.map((item) => `${item.name} ${item.count}`).join(", ");
   }
 
+  _formatStartupChannelLabel(channelName) {
+    const rawName = String(channelName || "unknown").trim() || "unknown";
+    return rawName.startsWith("#") ? rawName : `#${rawName}`;
+  }
+
+  _cleanStartupTopicSnippet(rawContent, maxLength = 72) {
+    let content = String(rawContent || "").replace(/\s+/g, " ").trim();
+    if (!content) return "";
+    content = content
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/<https?:\/\/[^>]+>/gi, "")
+      .replace(/<@!?\d+>/g, "")
+      .replace(/<#\d+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!content) return "";
+    const noiseKey = content.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (STARTUP_NOISE_TOPICS.has(noiseKey)) {
+      return "";
+    }
+    if (content.length <= maxLength) return content;
+    const clipped = content.slice(0, Math.max(16, maxLength - 3));
+    const boundary = clipped.lastIndexOf(" ");
+    if (boundary > 18) return `${clipped.slice(0, boundary)}...`;
+    return `${clipped}...`;
+  }
+
+  _buildStartupAttentionDigest(summary, recentEntries, options = {}) {
+    const maxChannels = Math.max(1, Math.floor(Number(options.maxChannels) || 2));
+    const maxSpeakers = Math.max(1, Math.floor(Number(options.maxSpeakers) || 3));
+    const maxTopics = Math.max(1, Math.floor(Number(options.maxTopics) || 2));
+    const actionableCount = Math.max(
+      0,
+      Number(summary?.urgentCount || 0) +
+      Number(summary?.highCount || 0) +
+      Number(summary?.mediumCount || 0)
+    );
+
+    const channelMap = new Map();
+    const entries = Array.isArray(recentEntries) ? recentEntries : [];
+    for (const entry of entries) {
+      const priority = Number(entry?.priority) || 1;
+      if (priority < 2) continue;
+
+      const channelName = String(entry?.channelName || "unknown").trim() || "unknown";
+      const authorName = String(entry?.authorName || "Unknown").trim() || "Unknown";
+      const weight = Math.max(1, Math.floor(Number(entry?.messageCount) || 1));
+      const topicSnippet = this._cleanStartupTopicSnippet(entry?.content || "");
+
+      if (!channelMap.has(channelName)) {
+        channelMap.set(channelName, {
+          signalCount: 0,
+          speakerCounts: new Map(),
+          topicSnippets: [],
+          summaryOnly: false,
+        });
+      }
+      const channelRecord = channelMap.get(channelName);
+      channelRecord.signalCount += weight;
+      channelRecord.speakerCounts.set(
+        authorName,
+        (channelRecord.speakerCounts.get(authorName) || 0) + weight
+      );
+      if (
+        topicSnippet &&
+        channelRecord.topicSnippets.length < 8 &&
+        !channelRecord.topicSnippets.includes(topicSnippet)
+      ) {
+        channelRecord.topicSnippets.push(topicSnippet);
+      }
+    }
+
+    const topChannels = Array.isArray(summary?.topChannels) ? summary.topChannels : [];
+    for (const topChannel of topChannels) {
+      const topName = String(topChannel?.name || "").trim();
+      if (!topName || channelMap.has(topName)) continue;
+      channelMap.set(topName, {
+        signalCount: Math.max(1, Math.floor(Number(topChannel?.count) || 1)),
+        speakerCounts: new Map(),
+        topicSnippets: [],
+        summaryOnly: true,
+      });
+      if (channelMap.size >= maxChannels) break;
+    }
+
+    const channels = Array.from(channelMap.entries())
+      .sort((left, right) => {
+        const leftCount = left[1]?.signalCount || 0;
+        const rightCount = right[1]?.signalCount || 0;
+        if (rightCount !== leftCount) return rightCount - leftCount;
+        return String(left[0]).localeCompare(String(right[0]));
+      })
+      .slice(0, maxChannels)
+      .map(([channelName, record]) => {
+        const speakers = Array.from(record.speakerCounts.entries())
+          .sort((left, right) => {
+            if (right[1] !== left[1]) return right[1] - left[1];
+            return left[0].localeCompare(right[0]);
+          })
+          .slice(0, maxSpeakers)
+          .map(([name]) => name);
+        const topics = Array.isArray(record.topicSnippets)
+          ? record.topicSnippets.slice(0, maxTopics)
+          : [];
+        return {
+          channelName,
+          channelLabel: this._formatStartupChannelLabel(channelName),
+          signalCount: Number(record.signalCount) || 0,
+          speakers,
+          topics,
+          summaryOnly: !!record.summaryOnly,
+        };
+      });
+
+    const focusText = channels.length
+      ? channels
+        .map((channel) => {
+          const speakersLabel = channel.speakers.length
+            ? channel.speakers.join(", ")
+            : "top recent speakers";
+          const topicsLabel = channel.topics.length
+            ? `; topics: ${channel.topics.join(" | ")}`
+            : "";
+          return `${channel.channelLabel} (${speakersLabel}${topicsLabel})`;
+        })
+        .join(" and ")
+      : "recent monitored channels";
+
+    return { actionableCount, channels, focusText };
+  }
+
   _resolveDefaultStartupArtworkUrl() {
     const homeDir = process.env.HOME || "";
     if (homeDir) {
@@ -698,20 +846,43 @@ module.exports = class ShadowSenses {
     });
   }
 
-  _buildStartupReportFallbackNarration(summary, windowHours) {
+  _buildStartupReportFallbackNarration(summary, windowHours, recentEntries = []) {
     if (!summary || Number(summary.totalEvents || 0) <= 0) {
       return `My liege, in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}, your shadows detected no notable monitored activity.`;
     }
-    return (
-      `My liege, in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}, ` +
-      `your shadows recorded ${summary.totalEvents} signal${summary.totalEvents === 1 ? "" : "s"} ` +
-      `across ${summary.activeGuildCount} guild${summary.activeGuildCount === 1 ? "" : "s"} ` +
-      `(Urgent ${summary.urgentCount}, High ${summary.highCount}, Medium ${summary.mediumCount}).`
-    );
+
+    const totalEvents = Math.max(0, Number(summary.totalEvents || 0));
+    const topChannel = Array.isArray(summary.topChannels) && summary.topChannels.length > 0
+      ? summary.topChannels[0]
+      : null;
+    const topChannelLabel = topChannel
+      ? this._formatStartupChannelLabel(topChannel.name)
+      : "your monitored channels";
+    const topChannelCount = Math.max(0, Number(topChannel?.count || 0));
+    const attentionDigest = this._buildStartupAttentionDigest(summary, recentEntries);
+    const actionableCount = Math.max(0, Number(attentionDigest.actionableCount || 0));
+
+    const parts = [
+      `My liege, shadows observed ${totalEvents} event${totalEvents === 1 ? "" : "s"} in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}.`,
+      topChannel
+        ? `Most activity came from ${topChannelLabel} (${topChannelCount} signal${topChannelCount === 1 ? "" : "s"}).`
+        : `Most activity came from your monitored channels.`,
+    ];
+
+    if (actionableCount > 0) {
+      parts.push(
+        `${actionableCount} of ${totalEvents} signals require your attention, concentrated in: ${attentionDigest.focusText}.`
+      );
+    } else {
+      parts.push("No urgent, high, or medium-priority signals require your attention right now.");
+    }
+
+    return parts.join(" ");
   }
 
   async _generateAiStartupNarration(summary, recentEntries, windowHours) {
-    const fallback = this._buildStartupReportFallbackNarration(summary, windowHours);
+    const attentionDigest = this._buildStartupAttentionDigest(summary, recentEntries);
+    const fallback = this._buildStartupReportFallbackNarration(summary, windowHours, recentEntries);
     const aiConfig = this._resolveStartupAiConfig();
     if (!aiConfig?.apiKey) return fallback;
 
@@ -724,8 +895,17 @@ module.exports = class ShadowSenses {
         mediumCount: Number(summary?.mediumCount || 0),
         lowCount: Number(summary?.lowCount || 0),
         activeGuildCount: Number(summary?.activeGuildCount || 0),
+        actionableCount: Number(attentionDigest?.actionableCount || 0),
         topTargets: Array.isArray(summary?.topTargets) ? summary.topTargets : [],
         topChannels: Array.isArray(summary?.topChannels) ? summary.topChannels : [],
+        actionableChannelFocus: Array.isArray(attentionDigest?.channels)
+          ? attentionDigest.channels.map((channel) => ({
+            channel: channel.channelLabel,
+            signalCount: channel.signalCount,
+            speakers: channel.speakers,
+            topics: channel.topics,
+          }))
+          : [],
       },
       recentSignals: Array.isArray(recentEntries)
         ? recentEntries.slice(0, 8).map((entry) => ({
@@ -745,6 +925,10 @@ module.exports = class ShadowSenses {
       "Write a concise startup catch-up report in plain text.",
       "Tone: respectful, direct, tactical, calm.",
       "Always begin with 'My liege,'.",
+      "Sentence flow requirement:",
+      "1) Total events over the time window.",
+      "2) Most active channel and its signal count.",
+      "3) 'X of Y signals require your attention' and list up to 2 channels with key speakers and brief message topics.",
       "Do not use markdown, emojis, or bullet lists.",
       "Never invent events; use only provided data.",
       "Keep to 3-5 sentences and stay readable.",
@@ -784,7 +968,9 @@ module.exports = class ShadowSenses {
   _showStartupShadowReportModal({ summary, windowHours, narration, recentEntries }) {
     const React = BdApi.React;
     const title = `Igris Report \u2022 ${windowHours}h`;
-    const safeNarration = String(narration || this._buildStartupReportFallbackNarration(summary, windowHours));
+    const safeNarration = String(
+      narration || this._buildStartupReportFallbackNarration(summary, windowHours, recentEntries)
+    );
     const entries = Array.isArray(recentEntries) ? recentEntries.slice(0, 6) : [];
     const detailLine =
       `Urgent: ${Number(summary?.urgentCount || 0)} \u2022 ` +

@@ -566,12 +566,116 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
   return true;
 }
 
+function mergePresenceUpdatesWithStoreSnapshot(ctx, updates, monitoredIds) {
+  const mergedByUserId = new Map();
+  const upsert = (userId, status) => {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId || !monitoredIds.has(normalizedUserId)) return;
+    const normalizedStatus =
+      typeof status === "string" && status.trim().length > 0
+        ? ctx._normalizeStatus(status)
+        : null;
+    const existing = mergedByUserId.get(normalizedUserId);
+    if (existing?.status && !normalizedStatus) return;
+    mergedByUserId.set(normalizedUserId, { userId: normalizedUserId, status: normalizedStatus });
+  };
+
+  for (const update of updates || []) {
+    if (!update || typeof update !== "object") continue;
+    upsert(update.userId, update.status);
+  }
+
+  const presenceStore = ctx._resolvePresenceStore();
+  if (presenceStore && typeof presenceStore.getStatus === "function") {
+    for (const monitoredId of monitoredIds) {
+      const normalizedUserId = String(monitoredId || "").trim();
+      if (!normalizedUserId) continue;
+      let liveStatus = null;
+      try {
+        const rawStatus = presenceStore.getStatus(normalizedUserId);
+        if (typeof rawStatus === "string" && rawStatus.trim().length > 0) {
+          liveStatus = ctx._normalizeStatus(rawStatus);
+        }
+      } catch (_) {}
+      upsert(normalizedUserId, liveStatus);
+    }
+  }
+
+  return Array.from(mergedByUserId.values());
+}
+
 function onPresenceUpdate(payload) {
   try {
     const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
     if (!monitoredIds || monitoredIds.size === 0) return;
 
     const updates = this._extractPresenceUpdates(payload);
+    const mergedUpdates = mergePresenceUpdatesWithStoreSnapshot(this, updates, monitoredIds);
+    if (mergedUpdates.length === 0) return;
+
+    const startupState = getStartupState(this);
+    let hasStateChanges = false;
+    for (const update of mergedUpdates) {
+      hasStateChanges =
+        handlePresenceUpdateEntry(this, update, monitoredIds, startupState) || hasStateChanges;
+    }
+    if (hasStateChanges) this._plugin._widgetDirty = true;
+  } catch (err) {
+    this._plugin.debugError("SensesEngine", "Error in PRESENCE_UPDATE handler", err);
+  }
+}
+
+function pollMonitoredPresenceStatuses(source = "interval") {
+  try {
+    const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+    if (!(this._presenceStatusMissCount instanceof Map)) {
+      this._presenceStatusMissCount = new Map();
+    }
+    if (!(monitoredIds instanceof Set) || monitoredIds.size === 0) {
+      this._statusByUserId.clear();
+      this._presenceStatusMissCount.clear();
+      return;
+    }
+
+    // Keep runtime maps bounded to currently monitored users only.
+    for (const userId of Array.from(this._statusByUserId.keys())) {
+      if (!monitoredIds.has(userId)) this._statusByUserId.delete(userId);
+    }
+    for (const userId of Array.from(this._presenceStatusMissCount.keys())) {
+      if (!monitoredIds.has(userId)) this._presenceStatusMissCount.delete(userId);
+    }
+
+    const presenceStore = this._resolvePresenceStore();
+    if (!presenceStore || typeof presenceStore.getStatus !== "function") return;
+
+    const updates = [];
+    for (const monitoredId of monitoredIds) {
+      const userId = String(monitoredId || "").trim();
+      if (!userId) continue;
+
+      let nextStatus = null;
+      try {
+        const rawStatus = presenceStore.getStatus(userId);
+        if (typeof rawStatus === "string" && rawStatus.trim().length > 0) {
+          nextStatus = this._normalizeStatus(rawStatus);
+          this._presenceStatusMissCount.delete(userId);
+        } else {
+          const missCount = (Number(this._presenceStatusMissCount.get(userId)) || 0) + 1;
+          this._presenceStatusMissCount.set(userId, missCount);
+
+          // Presence store can briefly omit users; require two misses before coercing to offline.
+          if (missCount >= 2) nextStatus = "offline";
+        }
+      } catch (_) {}
+
+      if (!this._statusByUserId.has(userId)) {
+        this._statusByUserId.set(userId, nextStatus || "offline");
+        continue;
+      }
+
+      updates.push({ userId, status: nextStatus });
+    }
+
     if (updates.length === 0) return;
 
     const startupState = getStartupState(this);
@@ -580,9 +684,15 @@ function onPresenceUpdate(payload) {
       hasStateChanges =
         handlePresenceUpdateEntry(this, update, monitoredIds, startupState) || hasStateChanges;
     }
-    if (hasStateChanges) this._plugin._widgetDirty = true;
+    if (hasStateChanges) {
+      this._plugin._widgetDirty = true;
+      this._plugin.debugLog("SensesEngine", "Presence poll detected state changes", {
+        source,
+        monitoredCount: monitoredIds.size,
+      });
+    }
   } catch (err) {
-    this._plugin.debugError("SensesEngine", "Error in PRESENCE_UPDATE handler", err);
+    this._plugin.debugError("SensesEngine", "Error in presence status poll", err);
   }
 }
 
@@ -766,12 +876,14 @@ function onChannelSelect(payload) {
 module.exports = {
   _onChannelSelect: onChannelSelect,
   _onMessageCreate: onMessageCreate,
+  _pollMonitoredPresenceStatuses: pollMonitoredPresenceStatuses,
   _onPresenceUpdate: onPresenceUpdate,
   _onRelationshipChange: onRelationshipChange,
   _seedUserActivityFromFeeds: seedUserActivityFromFeeds,
   _onTypingStart: onTypingStart,
   onChannelSelect,
   onMessageCreate,
+  pollMonitoredPresenceStatuses,
   onPresenceUpdate,
   onRelationshipChange,
   seedUserActivityFromFeeds,

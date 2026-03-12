@@ -43,6 +43,87 @@ function normalizeStatus(status) {
   return status.toLowerCase();
 }
 
+function inferStatusFromClientStatus(clientStatus, normalizer) {
+  if (!clientStatus || typeof clientStatus !== "object") return null;
+  const statuses = Object.values(clientStatus)
+    .map((statusValue) =>
+      typeof statusValue === "string" && statusValue.trim().length > 0
+        ? normalizer(statusValue)
+        : null
+    )
+    .filter(Boolean);
+  if (statuses.length === 0) return null;
+  if (statuses.includes("dnd")) return "dnd";
+  if (statuses.includes("idle")) return "idle";
+  if (statuses.includes("online")) return "online";
+  if (statuses.includes("offline")) return "offline";
+  if (statuses.includes("invisible")) return "invisible";
+  return statuses[0];
+}
+
+function resolvePresenceUpdateUserId(update) {
+  if (!update || typeof update !== "object") return null;
+  const candidate =
+    update.userId ||
+    update.user_id ||
+    update.user?.id ||
+    update.member?.user?.id ||
+    update.presence?.user?.id ||
+    update.id;
+  if (!candidate) return null;
+  return String(candidate);
+}
+
+function resolvePresenceUpdateStatus(update, normalizer) {
+  if (!update || typeof update !== "object") return null;
+  const explicitStatus =
+    update.status ||
+    update.presence?.status ||
+    update.user?.presence?.status ||
+    update.userStatus ||
+    null;
+  if (typeof explicitStatus === "string" && explicitStatus.trim().length > 0) {
+    return normalizer(explicitStatus);
+  }
+  return inferStatusFromClientStatus(
+    update.clientStatus || update.client_status || update.user?.clientStatus || update.user?.client_status,
+    normalizer
+  );
+}
+
+function flattenPresenceUpdateCandidates(group) {
+  if (!group) return [];
+  const queue = [group];
+  const visited = new Set();
+  const updates = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      for (const item of current) queue.push(item);
+      continue;
+    }
+
+    if (current instanceof Map || current instanceof Set) {
+      for (const item of current.values()) queue.push(item);
+      continue;
+    }
+
+    if (resolvePresenceUpdateUserId(current)) {
+      updates.push(current);
+      continue;
+    }
+
+    for (const value of Object.values(current)) queue.push(value);
+  }
+
+  return updates;
+}
+
 function isOnlineStatus(status) {
   return ONLINE_STATUSES.has(this._normalizeStatus(status));
 }
@@ -114,7 +195,10 @@ function isFriend(userId) {
 
 function toast(message, type = "info", timeout = null) {
   if (this._toastEngine) {
-    this._toastEngine.showToast(message, type, timeout, { callerId: "shadowSenses" });
+    this._toastEngine.showToast(message, type, timeout, {
+      callerId: "shadowSenses-utility",
+      maxPerMinute: 30,
+    });
   } else {
     _fallbackToast(message, type);
   }
@@ -167,7 +251,8 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
       header: `[${rankLabel}] ${shadowName} reports${friendSuffix}`,
       body: `${userName || "Unknown"} ${previousLabel} -> ${nextLabel}`,
       timeout: STATUS_TOAST_TIMEOUT_MS,
-      callerId: "shadowSenses",
+      callerId: "shadowSenses-status",
+      maxPerMinute: 45,
     });
   } else {
     BdApi.UI.showToast(`[${rankLabel}] ${shadowName}: ${userName} ${previousLabel} -> ${nextLabel}`, { type: "info" });
@@ -185,7 +270,8 @@ function showMentionToast({ userId, userName, label, detail, accent, deployment 
       body: `${userName} ${label}`,
       detail: detail || undefined,
       timeout: STATUS_TOAST_TIMEOUT_MS,
-      callerId: "shadowSenses",
+      callerId: "shadowSenses-mention",
+      maxPerMinute: 30,
     });
   } else {
     BdApi.UI.showToast(`${userName} ${label}`, { type: "info" });
@@ -213,35 +299,53 @@ function getTypingCooldownMs() {
 
 function extractPresenceUpdates(payload) {
   if (!payload) return [];
-  const updates = [];
-  const push = (userId, status) => {
+  const updatesByUserId = new Map();
+  const normalizer = (statusValue) => this._normalizeStatus(statusValue);
+  const upsertUpdate = (userId, status) => {
     if (!userId) return;
+    const normalizedUserId = String(userId);
     const normalizedStatus =
       typeof status === "string" && status.trim().length > 0
-        ? this._normalizeStatus(status)
+        ? normalizer(status)
         : null;
-    updates.push({
-      userId: String(userId),
+    const existing = updatesByUserId.get(normalizedUserId);
+    if (existing?.status && !normalizedStatus) return;
+    updatesByUserId.set(normalizedUserId, {
+      userId: normalizedUserId,
       status: normalizedStatus,
     });
   };
 
-  if (Array.isArray(payload.updates)) {
-    for (const update of payload.updates) {
-      if (!update) continue;
-      const userId = update.userId || update.user_id || update.user?.id;
-      const status = update.status || update.presence?.status;
-      if (userId) push(userId, status);
+  const updateGroups = [
+    payload,
+    payload.updates,
+    payload.presences,
+    payload.presenceUpdates,
+    payload.presence_updates,
+    payload.guildPresences,
+    payload.guild_presences,
+    payload.memberPresences,
+    payload.member_presences,
+    payload.memberUpdates,
+    payload.member_updates,
+    payload.members,
+  ];
+  for (const group of updateGroups) {
+    for (const update of flattenPresenceUpdateCandidates(group)) {
+      const userId = resolvePresenceUpdateUserId(update);
+      if (!userId) continue;
+      const status = resolvePresenceUpdateStatus(update, normalizer);
+      upsertUpdate(userId, status);
     }
   }
 
-  const directUserId = payload.userId || payload.user_id || payload.user?.id || payload.id;
+  const directUserId = resolvePresenceUpdateUserId(payload);
   if (directUserId) {
-    const directStatus = payload.status || payload.presence?.status;
-    push(directUserId, directStatus);
+    const directStatus = resolvePresenceUpdateStatus(payload, normalizer);
+    upsertUpdate(directUserId, directStatus);
   }
 
-  return updates;
+  return Array.from(updatesByUserId.values());
 }
 
 module.exports = {
