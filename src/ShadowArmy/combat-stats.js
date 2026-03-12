@@ -191,13 +191,23 @@ module.exports = {
       }, {});
     }
 
-    const rankBaselinesFixed = {
-      E: 10, D: 22, C: 50, B: 112, A: 252, S: 567, SS: 1275,
-      SSS: 2866, 'SSS+': 6447, NH: 14505, Monarch: 32636,
-      'Monarch+': 73431, 'Shadow Monarch': 165219,
-    };
+    const rankIndex = Math.max(0, this.shadowRanks.indexOf(shadowRank));
+    const resolvedMultiplier =
+      (Number.isFinite(rankMultiplier) && rankMultiplier > 0
+        ? rankMultiplier
+        : null) ||
+      (Number.isFinite(this.rankStatMultipliers?.[shadowRank]) &&
+      this.rankStatMultipliers[shadowRank] > 0
+        ? this.rankStatMultipliers[shadowRank]
+        : Math.pow(1.35, rankIndex));
 
-    const baselineValue = rankBaselinesFixed[shadowRank] || 10;
+    // Harmonized baseline curve:
+    // - keeps rank progression meaningful
+    // - avoids old runaway exponential growth that outpaced dungeon scaling.
+    const baselineValue = Math.max(
+      10,
+      Math.round(10 + 150 * (Math.pow(resolvedMultiplier, 1.05) - 1))
+    );
     const statKeys = C.STAT_KEYS;
     return statKeys.reduce((stats, key) => {
       stats[key] = baselineValue;

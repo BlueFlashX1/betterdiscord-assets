@@ -1,7 +1,49 @@
 module.exports = {
   calculateHPSync(vitality, rank = 'E') {
+    const safeVitalityRaw = Number(vitality);
+    const safeVitality = Number.isFinite(safeVitalityRaw) ? Math.max(0, safeVitalityRaw) : 0;
     const rankIndex = this.getRankIndexValue(rank);
-    return 100 + vitality * 10 + rankIndex * 50;
+    const rankHpBonus = this.getUserRankHpBonusByIndex(rankIndex);
+    return 100 + safeVitality * 10 + rankHpBonus;
+  },
+
+  getUserRankHpBonusByIndex(rankIndex) {
+    const safeRankIndex = Number.isFinite(rankIndex) ? Math.max(0, rankIndex) : 0;
+    const linearStep = Number.isFinite(this.settings?.userRankHpLinearStep)
+      ? this.settings.userRankHpLinearStep
+      : 50;
+    const curveStep = Number.isFinite(this.settings?.userRankHpCurveStep)
+      ? this.settings.userRankHpCurveStep
+      : 35;
+    return Math.max(0, Math.floor(safeRankIndex * linearStep + safeRankIndex * safeRankIndex * curveStep));
+  },
+
+  calculateShadowArmyHpBonus(shadowCount, rank = 'E') {
+    const safeShadowCountRaw = Number(shadowCount);
+    const safeShadowCount = Number.isFinite(safeShadowCountRaw) ? Math.max(0, Math.floor(safeShadowCountRaw)) : 0;
+    if (safeShadowCount <= 0) return 0;
+
+    const rankIndex = this.getRankIndexValue(rank);
+    const perShadowBase = Number.isFinite(this.settings?.userHpPerShadowBase)
+      ? this.settings.userHpPerShadowBase
+      : 8;
+    const perShadowRankStep = Number.isFinite(this.settings?.userHpPerShadowRankStep)
+      ? this.settings.userHpPerShadowRankStep
+      : 0.6;
+    const perShadowValue = Math.max(0, perShadowBase + rankIndex * perShadowRankStep);
+
+    const softCapCount = Number.isFinite(this.settings?.userHpShadowSoftCapCount)
+      ? Math.max(0, Math.floor(this.settings.userHpShadowSoftCapCount))
+      : 500;
+    const tailMultiplier = Number.isFinite(this.settings?.userHpShadowSoftCapMultiplier)
+      ? this.clampNumber(this.settings.userHpShadowSoftCapMultiplier, 0, 1)
+      : 0.12;
+
+    const primaryCount = Math.min(safeShadowCount, softCapCount);
+    const overflowCount = Math.max(0, safeShadowCount - softCapCount);
+    const primaryBonus = primaryCount * perShadowValue;
+    const overflowBonus = overflowCount * perShadowValue * tailMultiplier;
+    return Math.max(0, Math.floor(primaryBonus + overflowBonus));
   },
 
   async calculateHP(vitality, rank = 'E', includeShadowBonus = false) {
@@ -9,7 +51,7 @@ module.exports = {
 
     if (includeShadowBonus) {
       const shadowCount = await this.getShadowCount();
-      const shadowArmyBonus = shadowCount * 25; // 25 HP per shadow
+      const shadowArmyBonus = this.calculateShadowArmyHpBonus(shadowCount, rank);
       return baseHP + shadowArmyBonus;
     }
 

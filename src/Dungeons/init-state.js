@@ -67,6 +67,16 @@ module.exports = {
       userMaxHP: null,
       userMana: null, // Will be calculated from intelligence
       userMaxMana: null,
+      // User HP scaling: rank contributes quadratically; shadow bonus uses soft-cap scaling.
+      userRankHpLinearStep: 50,
+      userRankHpCurveStep: 35,
+      userHpPerShadowBase: 8,
+      userHpPerShadowRankStep: 0.6,
+      userHpShadowSoftCapCount: 500,
+      userHpShadowSoftCapMultiplier: 0.12,
+      // Shadow combat stat harmonizer (combat-only): compresses extreme high-rank stats.
+      shadowCombatStatPivotScale: 3.5,
+      shadowCombatStatCompressionExp: 0.68,
       settingsVersion: 4,
     };
 

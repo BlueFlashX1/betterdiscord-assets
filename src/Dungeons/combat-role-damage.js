@@ -541,6 +541,60 @@ module.exports = {
     return this.calculateDamage(userStats, enemyStats, userRank, enemyRank);
   },
 
+  _getMobStatReferenceForRank(rankIndex) {
+    const safeRankIndex = Number.isFinite(rankIndex) ? Math.max(0, rankIndex) : 0;
+    const base = this.calculateMobBaseStats(safeRankIndex);
+    const perceptionRef = Math.max(
+      10,
+      Math.floor(((base.strength || 0) + (base.agility || 0) + (base.intelligence || 0)) / 6)
+    );
+    return {
+      strength: Math.max(10, Number(base.strength) || 10),
+      agility: Math.max(10, Number(base.agility) || 10),
+      intelligence: Math.max(10, Number(base.intelligence) || 10),
+      vitality: Math.max(10, Number(base.vitality) || 10),
+      perception: perceptionRef,
+    };
+  },
+
+  normalizeShadowCombatStatsByRank(stats, rank = 'E') {
+    const safeStats = {
+      strength: Number.isFinite(Number(stats?.strength)) ? Number(stats.strength) : 0,
+      agility: Number.isFinite(Number(stats?.agility)) ? Number(stats.agility) : 0,
+      intelligence: Number.isFinite(Number(stats?.intelligence)) ? Number(stats.intelligence) : 0,
+      vitality: Number.isFinite(Number(stats?.vitality)) ? Number(stats.vitality) : 0,
+      perception: Number.isFinite(Number(stats?.perception)) ? Number(stats.perception) : 0,
+    };
+
+    const pivotScale = Number.isFinite(this.settings?.shadowCombatStatPivotScale)
+      ? this.settings.shadowCombatStatPivotScale
+      : 3.5;
+    const compressionExp = Number.isFinite(this.settings?.shadowCombatStatCompressionExp)
+      ? this.settings.shadowCombatStatCompressionExp
+      : 0.68;
+
+    if (pivotScale <= 0 || compressionExp >= 1) {
+      return safeStats;
+    }
+
+    const rankIndex = this.getRankIndexValue(rank);
+    const reference = this._getMobStatReferenceForRank(rankIndex);
+    const compress = (value, pivot) => {
+      const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
+      const safePivot = Math.max(1, Number.isFinite(pivot) ? pivot : 1);
+      if (safeValue <= safePivot) return Math.floor(safeValue);
+      return Math.floor(safePivot + Math.pow(safeValue - safePivot, compressionExp));
+    };
+
+    return {
+      strength: compress(safeStats.strength, reference.strength * pivotScale),
+      agility: compress(safeStats.agility, reference.agility * pivotScale),
+      intelligence: compress(safeStats.intelligence, reference.intelligence * pivotScale),
+      vitality: compress(safeStats.vitality, reference.vitality * pivotScale),
+      perception: compress(safeStats.perception, reference.perception * pivotScale),
+    };
+  },
+
   getShadowEffectiveStatsCached(shadow) {
     const shadowId = this.getShadowIdValue(shadow);
     if (!shadowId) return null;
@@ -613,6 +667,8 @@ module.exports = {
             (naturalGrowthStats.perception || 0) || stats.perception,
       };
     }
+
+    stats = this.normalizeShadowCombatStatsByRank(stats, shadow?.rank || 'E');
 
     // Cache result
     if (this._shadowStatsCache) {

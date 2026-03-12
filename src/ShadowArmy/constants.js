@@ -347,23 +347,24 @@ const RANK_PROBABILITY_MULTIPLIERS = {
 };
 
 // ============================================================================
-// RANK STAT MULTIPLIERS — Exponential Power Scaling (1.5x per rank)
+// RANK STAT MULTIPLIERS — Harmonized power scaling (~1.35x per rank)
+// Keeps rank identity strong without outpacing dungeon mob/boss curves too aggressively.
 // ============================================================================
 
 const RANK_STAT_MULTIPLIERS = {
   E: 1.0,
-  D: 1.5,
-  C: 2.25,
-  B: 3.375,
-  A: 5.0625,
-  S: 7.59375,
-  SS: 11.390625,
-  SSS: 17.0859375,
-  'SSS+': 25.62890625,
-  NH: 38.443359375,
-  Monarch: 57.6650390625,
-  'Monarch+': 86.49755859375,
-  'Shadow Monarch': 129.746337890625,
+  D: 1.35,
+  C: 1.8225,
+  B: 2.460375,
+  A: 3.32150625,
+  S: 4.4840334375,
+  SS: 6.053445140625,
+  SSS: 8.17215093984375,
+  'SSS+': 11.032403768789064,
+  NH: 14.893745087865237,
+  Monarch: 20.10655586861807,
+  'Monarch+': 27.143850422634397,
+  'Shadow Monarch': 36.64419807055644,
 };
 
 // ============================================================================
