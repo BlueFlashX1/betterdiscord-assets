@@ -407,6 +407,10 @@ const ShadowSensesUiMethods = {
       gap: "12px",
       marginTop: "10px",
     };
+    const startupArtworkUrl =
+      typeof this._resolveStartupReportArtworkUrl === "function"
+        ? this._resolveStartupReportArtworkUrl(this.settings.startupShadowReportArtwork)
+        : "https://cdn.discordapp.com/embed/avatars/0.png";
 
     const updateSetting = (key, value) => {
       this.settings[key] = value;
@@ -418,6 +422,40 @@ const ShadowSensesUiMethods = {
     return ce("div", { style: { padding: "16px", background: "#1e1e2e", borderRadius: "8px", color: "#ccc" } },
       // Statistics header
       ce("h3", { style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px" } }, "Shadow Senses Statistics"),
+
+      ce("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          marginBottom: "14px",
+          padding: "10px 12px",
+          borderRadius: "10px",
+          border: "1px solid rgba(138, 43, 226, 0.35)",
+          background: "linear-gradient(120deg, rgba(138, 43, 226, 0.16), rgba(10, 10, 18, 0.92))",
+        },
+      },
+      ce("img", {
+        src: startupArtworkUrl,
+        alt: "Startup report artwork",
+        style: {
+          width: "52px",
+          height: "52px",
+          objectFit: "cover",
+          borderRadius: "10px",
+          border: "1px solid rgba(138, 43, 226, 0.5)",
+          boxShadow: "0 0 14px rgba(138, 43, 226, 0.28)",
+        },
+        onError: (event) => {
+          if (event?.target?.style) event.target.style.display = "none";
+        },
+      }),
+      ce("div", null,
+        ce("div", { style: { color: "#d6bcff", fontSize: "13px", fontWeight: "700", letterSpacing: "0.03em" } }, "Startup Shadow Report Art"),
+        ce("div", { style: { color: "#9ca3af", fontSize: "11px", marginTop: "3px", lineHeight: 1.35 } },
+          "Used for overview decoration and startup report popup dialogs."
+        )
+      )),
 
       // Stat cards grid
       ce("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" } },
@@ -450,6 +488,70 @@ const ShadowSensesUiMethods = {
           style: { accentColor: "#8a2be2" },
         })
       ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Shadow Report"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: this.settings.startupShadowReport !== false,
+          onChange: (e) => updateSetting("startupShadowReport", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Report Window (hours)"),
+        ce("input", {
+          type: "number",
+          min: 1,
+          max: 72,
+          step: 1,
+          defaultValue: Number(this.settings.startupShadowReportWindowHours) || 24,
+          onChange: (e) => {
+            const hours = Number(e.target.value);
+            if (!Number.isFinite(hours)) return;
+            updateSetting("startupShadowReportWindowHours", Math.min(72, Math.max(1, Math.floor(hours))));
+          },
+          style: {
+            width: "80px",
+            padding: "4px 6px",
+            borderRadius: "6px",
+            border: "1px solid rgba(138, 43, 226, 0.4)",
+            background: "#111827",
+            color: "#ccc",
+          },
+        })
+      ),
+
+      ce("div", {
+        style: {
+          ...rowStyle,
+          alignItems: "flex-start",
+          flexDirection: "column",
+          gap: "6px",
+        },
+      },
+      ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Report Artwork (PNG/JPG/SVG URL or file path)"),
+      ce("input", {
+        type: "text",
+        placeholder: "/Downloads/Igris.svg or https://...",
+        defaultValue: this.settings.startupShadowReportArtwork || "",
+        onChange: (e) => updateSetting("startupShadowReportArtwork", e.target.value || ""),
+        style: {
+          width: "100%",
+          padding: "8px 10px",
+          borderRadius: "6px",
+          border: "1px solid rgba(138, 43, 226, 0.35)",
+          background: "rgba(30, 30, 46, 0.9)",
+          color: "#e0e0e0",
+          fontSize: "13px",
+          outline: "none",
+          boxSizing: "border-box",
+        },
+      }),
+      ce("div", { style: { color: "#7f8593", fontSize: "11px", lineHeight: 1.35 } },
+        "Supports /Downloads/Igris.svg, ~/Downloads/Igris.svg, absolute paths, and URLs."
+      )),
 
       ce("div", { style: rowStyle },
         ce("span", { style: { color: "#999", fontSize: "13px" } }, "Typing Alerts"),

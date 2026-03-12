@@ -52,11 +52,16 @@ const STATUS_ACCENT_COLORS = {
   invisible: "#9ca3af",
 };
 const STATUS_TOAST_TIMEOUT_MS = 5200;
+const STARTUP_REPORT_ARTWORK_FALLBACK_URL =
+  "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/assets/igris/Igris.svg";
 const DEFAULT_SETTINGS = {
   animationEnabled: true,
   respectReducedMotion: false,
   animationDuration: 550,
   statusAlerts: true,
+  startupShadowReport: true,
+  startupShadowReportWindowHours: 24,
+  startupShadowReportArtwork: STARTUP_REPORT_ARTWORK_FALLBACK_URL,
   typingAlerts: true,
   removedFriendAlerts: true,
   showMarkedOnlineCount: true,
@@ -89,6 +94,7 @@ module.exports = {
   RANKS,
   RELATIONSHIP_EVENT_NAMES,
   STARTUP_TOAST_GRACE_MS,
+  STARTUP_REPORT_ARTWORK_FALLBACK_URL,
   STATUS_ACCENT_COLORS,
   STATUS_LABELS,
   STATUS_TOAST_TIMEOUT_MS,

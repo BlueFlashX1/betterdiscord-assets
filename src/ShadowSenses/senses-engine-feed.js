@@ -481,14 +481,139 @@ function getTotalDetections() {
   return this._totalDetections;
 }
 
+function getEntryWeight(entry) {
+  const count = Number(entry?.messageCount);
+  if (!Number.isFinite(count) || count < 1) return 1;
+  return Math.floor(count);
+}
+
+function sortTopCounts(map, limit = 3) {
+  const cappedLimit = Math.max(1, Math.floor(Number(limit) || 3));
+  return Array.from(map.entries())
+    .sort((left, right) => {
+      if (right[1] !== left[1]) return right[1] - left[1];
+      return left[0].localeCompare(right[0]);
+    })
+    .slice(0, cappedLimit)
+    .map(([name, count]) => ({ name, count }));
+}
+
+function getStartupSummary(windowMs = 24 * 60 * 60 * 1000, topTargetLimit = 3, topChannelLimit = 2) {
+  const parsedWindowMs = Number(windowMs);
+  const safeWindowMs =
+    Number.isFinite(parsedWindowMs) && parsedWindowMs > 0
+      ? Math.floor(parsedWindowMs)
+      : 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - safeWindowMs;
+  const activeGuildIds = new Set();
+  const targetCounts = new Map();
+  const channelCounts = new Map();
+  let totalEvents = 0;
+  let urgentCount = 0;
+  let highCount = 0;
+  let mediumCount = 0;
+  let lowCount = 0;
+  let latestTimestamp = 0;
+
+  for (const [guildId, feed] of Object.entries(this._guildFeeds)) {
+    if (!Array.isArray(feed) || feed.length === 0) continue;
+    for (const entry of feed) {
+      if (!entry || (entry.eventType && entry.eventType !== "message")) continue;
+      const timestamp = Number(entry.timestamp) || 0;
+      if (timestamp < cutoff) continue;
+
+      const weight = getEntryWeight(entry);
+      const priority = Number(entry.priority) || PRIORITY.LOW;
+      totalEvents += weight;
+      if (priority >= PRIORITY.CRITICAL) {
+        urgentCount += weight;
+      } else if (priority >= PRIORITY.HIGH) {
+        highCount += weight;
+      } else if (priority >= PRIORITY.MEDIUM) {
+        mediumCount += weight;
+      } else {
+        lowCount += weight;
+      }
+
+      const normalizedGuildId = String(guildId || "").trim();
+      if (normalizedGuildId) activeGuildIds.add(normalizedGuildId);
+
+      const targetName = String(entry.authorName || "Unknown").trim() || "Unknown";
+      targetCounts.set(targetName, (targetCounts.get(targetName) || 0) + weight);
+
+      const channelName = String(entry.channelName || "unknown").trim() || "unknown";
+      channelCounts.set(channelName, (channelCounts.get(channelName) || 0) + weight);
+
+      if (timestamp > latestTimestamp) latestTimestamp = timestamp;
+    }
+  }
+
+  return {
+    windowMs: safeWindowMs,
+    totalEvents,
+    urgentCount,
+    highCount,
+    mediumCount,
+    lowCount,
+    activeGuildCount: activeGuildIds.size,
+    topTargets: sortTopCounts(targetCounts, topTargetLimit),
+    topChannels: sortTopCounts(channelCounts, topChannelLimit),
+    latestTimestamp,
+  };
+}
+
+function getStartupEntries(windowMs = 24 * 60 * 60 * 1000, limit = 12) {
+  const parsedWindowMs = Number(windowMs);
+  const safeWindowMs =
+    Number.isFinite(parsedWindowMs) && parsedWindowMs > 0
+      ? Math.floor(parsedWindowMs)
+      : 24 * 60 * 60 * 1000;
+  const parsedLimit = Number(limit);
+  const safeLimit =
+    Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(50, Math.floor(parsedLimit))
+      : 12;
+  const cutoff = Date.now() - safeWindowMs;
+  const collected = [];
+
+  for (const [guildId, feed] of Object.entries(this._guildFeeds)) {
+    if (!Array.isArray(feed) || feed.length === 0) continue;
+    for (const entry of feed) {
+      if (!entry || (entry.eventType && entry.eventType !== "message")) continue;
+      const timestamp = Number(entry.timestamp) || 0;
+      if (timestamp < cutoff) continue;
+      collected.push({
+        timestamp,
+        guildId: String(guildId || "").trim(),
+        guildName: String(entry.guildName || guildId || "Unknown").trim() || "Unknown",
+        channelName: String(entry.channelName || "unknown").trim() || "unknown",
+        authorName: String(entry.authorName || "Unknown").trim() || "Unknown",
+        priority: Number(entry.priority) || PRIORITY.LOW,
+        messageCount: Number(entry.messageCount) || 1,
+        content: String(entry.content || "").replace(/\s+/g, " ").trim().slice(0, 220),
+      });
+    }
+  }
+
+  collected.sort((left, right) => {
+    if (right.timestamp !== left.timestamp) return right.timestamp - left.timestamp;
+    if (right.priority !== left.priority) return right.priority - left.priority;
+    return left.authorName.localeCompare(right.authorName);
+  });
+
+  return collected.slice(0, safeLimit);
+}
+
 module.exports = {
   _addToGuildFeed: addToGuildFeed,
   _computePriority: computePriority,
   _flushToDisk: flushToDisk,
+  _getStartupSummary: getStartupSummary,
   _purgeOldEntries: purgeOldEntries,
   _purgeUtilityEntries: purgeUtilityEntries,
   _registerBurst: registerBurst,
   _resolveBurstTargetIndex: resolveBurstTargetIndex,
+  _getStartupEntries: getStartupEntries,
   _tryBurstGroup: tryBurstGroup,
   addToGuildFeed,
   computePriority,
@@ -497,6 +622,8 @@ module.exports = {
   getActiveFeedCount,
   getMarkedOnlineCount,
   getSessionMessageCount,
+  getStartupSummary,
+  getStartupEntries,
   getTotalDetections,
   purgeOldEntries,
   purgeUtilityEntries,

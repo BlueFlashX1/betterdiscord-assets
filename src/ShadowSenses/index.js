@@ -1,3 +1,6 @@
+const fs = require("fs");
+const https = require("https");
+const path = require("path");
 const {
   DEFAULT_SETTINGS,
   PLUGIN_NAME,
@@ -5,6 +8,8 @@ const {
   PRESENCE_EVENT_NAMES,
   PURGE_INTERVAL_MS,
   RELATIONSHIP_EVENT_NAMES,
+  STARTUP_REPORT_ARTWORK_FALLBACK_URL,
+  STARTUP_TOAST_GRACE_MS,
   TRANSITION_ID,
   WIDGET_SPACER_ID,
 } = require("./constants");
@@ -19,6 +24,27 @@ const { createToast } = require("../shared/toast");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 const _fallbackToast = createToast();
+
+function toFileUrl(filePath) {
+  const resolvedPath = path.resolve(String(filePath || ""));
+  const normalizedPath = resolvedPath.replace(/\\/g, "/");
+  const urlPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+  return `file://${encodeURI(urlPath).replace(/#/g, "%23").replace(/\?/g, "%3F")}`;
+}
+
+function parseEnvValue(content, key) {
+  if (typeof content !== "string" || !content) return "";
+  const escapedKey = String(key || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`^\\s*${escapedKey}\\s*=\\s*(.*)\\s*$`, "m");
+  const match = content.match(regex);
+  if (!match) return "";
+  let value = String(match[1] || "").trim();
+  if (!value) return "";
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    value = value.slice(1, -1);
+  }
+  return value.trim();
+}
 
 // ─── SensesEngine ──────────────────────────────────────────────────────────
 
@@ -355,6 +381,7 @@ module.exports = class ShadowSenses {
     this._navigateRequestId = 0;
     this._channelFadeToken = 0;
     this._channelFadeResetTimer = null;
+    this._startupReportTimer = null;
   }
 
   start() {
@@ -378,6 +405,7 @@ module.exports = class ShadowSenses {
       this._navigateRequestId = 0;
       this._channelFadeToken = 0;
       this._channelFadeResetTimer = null;
+      this._startupReportTimer = null;
 
       // DeploymentManager
       this.deploymentManager = new DeploymentManager(
@@ -415,6 +443,7 @@ module.exports = class ShadowSenses {
 
       this.debugLog("Lifecycle", "Started successfully");
       this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadow deployment online`);
+      this._scheduleStartupShadowReport();
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] FATAL: start() crashed:`, err);
       this._toast(`${PLUGIN_NAME} failed to start: ${err.message}`, "error");
@@ -428,6 +457,10 @@ module.exports = class ShadowSenses {
       if (this._dispatcherRetryTimer) {
         clearTimeout(this._dispatcherRetryTimer);
         this._dispatcherRetryTimer = null;
+      }
+      if (this._startupReportTimer) {
+        clearTimeout(this._startupReportTimer);
+        this._startupReportTimer = null;
       }
 
       // 1. Unsubscribe Dispatcher + final flush (persists feeds to disk)
@@ -490,6 +523,419 @@ module.exports = class ShadowSenses {
     } else {
       _fallbackToast(message, type);
     }
+  }
+
+  _getStartupShadowReportWindowMs() {
+    const configuredHours = Number(this.settings?.startupShadowReportWindowHours);
+    const safeHours = Number.isFinite(configuredHours)
+      ? Math.min(72, Math.max(1, Math.floor(configuredHours)))
+      : 24;
+    return safeHours * 60 * 60 * 1000;
+  }
+
+  _formatStartupTopList(items, emptyLabel = "None") {
+    if (!Array.isArray(items) || items.length === 0) return emptyLabel;
+    return items.map((item) => `${item.name} ${item.count}`).join(", ");
+  }
+
+  _resolveDefaultStartupArtworkUrl() {
+    const homeDir = process.env.HOME || "";
+    if (homeDir) {
+      const candidatePaths = [
+        path.join(homeDir, "Downloads", "Igris.svg"),
+        path.join(homeDir, "Downloads", "Igris.png"),
+        path.join(homeDir, "Downloads", "Igris.webp"),
+        path.join(homeDir, "Downloads", "Igris.jpg"),
+        path.join(homeDir, "Downloads", "Igris.jpeg"),
+      ];
+      for (const candidatePath of candidatePaths) {
+        try {
+          if (fs.existsSync(candidatePath)) return toFileUrl(candidatePath);
+        } catch (_) {}
+      }
+    }
+    return STARTUP_REPORT_ARTWORK_FALLBACK_URL || null;
+  }
+
+  _normalizeArtworkInput(value) {
+    const configured = String(value || "").trim();
+    if (!configured) return "";
+    if (/^(https?:|data:|file:)/i.test(configured)) return configured;
+
+    const homeDir = process.env.HOME || "";
+    if (configured.startsWith("~/") && homeDir) {
+      return path.join(homeDir, configured.slice(2));
+    }
+    if (configured.startsWith("/Downloads/") && homeDir) {
+      return path.join(homeDir, "Downloads", configured.slice("/Downloads/".length));
+    }
+    return configured;
+  }
+
+  _resolveStartupReportArtworkUrl(override = null) {
+    const fallback = "https://cdn.discordapp.com/embed/avatars/0.png";
+    const rawValue =
+      typeof override === "string" ? override : this.settings?.startupShadowReportArtwork;
+    const configured = this._normalizeArtworkInput(rawValue);
+    if (!configured) {
+      const autoDetected = this._resolveDefaultStartupArtworkUrl();
+      return autoDetected || STARTUP_REPORT_ARTWORK_FALLBACK_URL || fallback;
+    }
+    if (/^(https?:|data:|file:)/i.test(configured)) return configured;
+
+    const candidates = [];
+    if (path.isAbsolute(configured)) {
+      candidates.push(configured);
+    } else {
+      const pluginFolder = BdApi?.Plugins?.folder;
+      if (typeof pluginFolder === "string" && pluginFolder.trim().length > 0) {
+        candidates.push(path.resolve(pluginFolder, configured));
+      }
+      candidates.push(path.resolve(process.cwd(), configured));
+    }
+
+    for (const candidatePath of candidates) {
+      try {
+        if (fs.existsSync(candidatePath)) return toFileUrl(candidatePath);
+      } catch (_) {}
+    }
+    const autoDetected = this._resolveDefaultStartupArtworkUrl();
+    return autoDetected || STARTUP_REPORT_ARTWORK_FALLBACK_URL || fallback;
+  }
+
+  _readEnvValueFromFile(filePath, key) {
+    try {
+      const resolvedPath = path.resolve(String(filePath || ""));
+      if (!resolvedPath || !fs.existsSync(resolvedPath)) return "";
+      const content = fs.readFileSync(resolvedPath, "utf8");
+      return parseEnvValue(content, key);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  _resolveStartupAiConfig() {
+    const apiKeyFromProcess = String(process.env.OPENAI_API_KEY || "").trim();
+    const modelFromProcess = String(process.env.OPENAI_MODEL || "").trim();
+    if (apiKeyFromProcess) {
+      return {
+        apiKey: apiKeyFromProcess,
+        model: modelFromProcess || "gpt-4o-mini",
+      };
+    }
+
+    const homeDir = process.env.HOME || "";
+    if (!homeDir) return null;
+
+    const shadowAwayEnvPath = path.join(
+      homeDir,
+      "Documents",
+      "DEVELOPMENT",
+      "discord",
+      "bots",
+      "shadow-away-bot",
+      ".env"
+    );
+    const apiKey = this._readEnvValueFromFile(shadowAwayEnvPath, "OPENAI_API_KEY");
+    if (!apiKey) return null;
+    const model = this._readEnvValueFromFile(shadowAwayEnvPath, "OPENAI_MODEL") || "gpt-4o-mini";
+    return { apiKey, model };
+  }
+
+  _requestOpenAiChatCompletion({ apiKey, model, messages, maxTokens = 260, temperature = 0.45, timeoutMs = 8000 }) {
+    return new Promise((resolve, reject) => {
+      const payload = JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        response_format: { type: "json_object" },
+      });
+
+      const req = https.request(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Length": Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          let raw = "";
+          res.on("data", (chunk) => {
+            raw += chunk;
+          });
+          res.on("end", () => {
+            const status = Number(res.statusCode) || 0;
+            if (status >= 400) {
+              const safeText = String(raw || "").slice(0, 200).replace(/\s+/g, " ");
+              reject(new Error(`openai_http_${status}:${safeText}`));
+              return;
+            }
+            try {
+              const parsed = JSON.parse(raw || "{}");
+              const content = parsed?.choices?.[0]?.message?.content;
+              if (!content) {
+                reject(new Error("openai_empty_response"));
+                return;
+              }
+              resolve(String(content));
+            } catch (error) {
+              reject(new Error(`openai_parse_error:${error.message}`));
+            }
+          });
+        }
+      );
+
+      req.on("error", (error) => reject(error));
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error("openai_timeout"));
+      });
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  _buildStartupReportFallbackNarration(summary, windowHours) {
+    if (!summary || Number(summary.totalEvents || 0) <= 0) {
+      return `My liege, in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}, your shadows detected no notable monitored activity.`;
+    }
+    return (
+      `My liege, in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}, ` +
+      `your shadows recorded ${summary.totalEvents} signal${summary.totalEvents === 1 ? "" : "s"} ` +
+      `across ${summary.activeGuildCount} guild${summary.activeGuildCount === 1 ? "" : "s"} ` +
+      `(Urgent ${summary.urgentCount}, High ${summary.highCount}, Medium ${summary.mediumCount}).`
+    );
+  }
+
+  async _generateAiStartupNarration(summary, recentEntries, windowHours) {
+    const fallback = this._buildStartupReportFallbackNarration(summary, windowHours);
+    const aiConfig = this._resolveStartupAiConfig();
+    if (!aiConfig?.apiKey) return fallback;
+
+    const promptPayload = {
+      windowHours,
+      summary: {
+        totalEvents: Number(summary?.totalEvents || 0),
+        urgentCount: Number(summary?.urgentCount || 0),
+        highCount: Number(summary?.highCount || 0),
+        mediumCount: Number(summary?.mediumCount || 0),
+        lowCount: Number(summary?.lowCount || 0),
+        activeGuildCount: Number(summary?.activeGuildCount || 0),
+        topTargets: Array.isArray(summary?.topTargets) ? summary.topTargets : [],
+        topChannels: Array.isArray(summary?.topChannels) ? summary.topChannels : [],
+      },
+      recentSignals: Array.isArray(recentEntries)
+        ? recentEntries.slice(0, 8).map((entry) => ({
+          when: new Date(Number(entry.timestamp) || Date.now()).toISOString(),
+          guild: entry.guildName,
+          channel: entry.channelName,
+          author: entry.authorName,
+          priority: Number(entry.priority) || 1,
+          content: String(entry.content || "").slice(0, 180),
+          messageCount: Number(entry.messageCount) || 1,
+        }))
+        : [],
+    };
+
+    const systemPrompt = [
+      "You are Igris, a loyal shadow retainer reporting to the Shadow Monarch.",
+      "Write a concise startup catch-up report in plain text.",
+      "Tone: respectful, direct, tactical, calm.",
+      "Always begin with 'My liege,'.",
+      "Do not use markdown, emojis, or bullet lists.",
+      "Never invent events; use only provided data.",
+      "Keep to 3-5 sentences and stay readable.",
+      "Return JSON only: {\"report\":\"...\"}.",
+    ].join(" ");
+
+    try {
+      const raw = await this._requestOpenAiChatCompletion({
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(promptPayload) },
+        ],
+      });
+      let report = "";
+      try {
+        const parsed = JSON.parse(raw);
+        report = String(parsed?.report || "").trim();
+      } catch (_) {
+        report = String(raw || "").trim();
+      }
+      report = report.replace(/```/g, "").replace(/\s+/g, " ").trim();
+      if (!report) return fallback;
+      if (!/^My liege,/i.test(report)) {
+        report = `My liege, ${report.charAt(0).toLowerCase()}${report.slice(1)}`;
+      }
+      return report.slice(0, 700);
+    } catch (error) {
+      this.debugLog("StartupReport", "AI summary fallback", {
+        reason: error?.message || String(error),
+      });
+      return fallback;
+    }
+  }
+
+  _showStartupShadowReportModal({ summary, windowHours, narration, recentEntries }) {
+    const React = BdApi.React;
+    const title = `Igris Report \u2022 ${windowHours}h`;
+    const safeNarration = String(narration || this._buildStartupReportFallbackNarration(summary, windowHours));
+    const entries = Array.isArray(recentEntries) ? recentEntries.slice(0, 6) : [];
+    const detailLine =
+      `Urgent: ${Number(summary?.urgentCount || 0)} \u2022 ` +
+      `High: ${Number(summary?.highCount || 0)} \u2022 ` +
+      `Medium: ${Number(summary?.mediumCount || 0)} \u2022 ` +
+      `Guilds active: ${Number(summary?.activeGuildCount || 0)}`;
+    const topTargetsLine = `Top targets: ${this._formatStartupTopList(summary?.topTargets, "None")}`;
+    const topChannelsLine = `Top channels: ${this._formatStartupTopList(summary?.topChannels, "None")}`;
+    const artworkUrl = this._resolveStartupReportArtworkUrl();
+    const recentSignalText = entries.length
+      ? entries
+        .map((entry, idx) => {
+          const when = new Date(Number(entry.timestamp) || Date.now()).toLocaleString();
+          const countLabel = Number(entry.messageCount) > 1 ? ` x${entry.messageCount}` : "";
+          return `${idx + 1}. [P${Number(entry.priority) || 1}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}\n${entry.content}\n${when}`;
+        })
+        .join("\n\n")
+      : "No recent signal details were captured for this window.";
+
+    if (!React || !BdApi.UI?.showConfirmationModal) {
+      const fallbackText =
+        `${safeNarration}\n\n${detailLine}\n${topTargetsLine}\n${topChannelsLine}\n\nRecent Signals:\n${recentSignalText}`;
+      BdApi.UI.alert(title, fallbackText);
+      return;
+    }
+
+    const content = React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+          maxHeight: "68vh",
+          overflowY: "auto",
+        },
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+            padding: "8px 10px",
+            borderRadius: "10px",
+            border: "1px solid rgba(138, 43, 226, 0.35)",
+            background: "linear-gradient(120deg, rgba(138, 43, 226, 0.15), rgba(15, 15, 24, 0.96))",
+          },
+        },
+        React.createElement("img", {
+          src: artworkUrl,
+          alt: "Igris",
+          style: {
+            width: "52px",
+            height: "52px",
+            borderRadius: "10px",
+            objectFit: "cover",
+            border: "1px solid rgba(138, 43, 226, 0.45)",
+          },
+          onError: (event) => {
+            if (event?.target?.style) event.target.style.display = "none";
+          },
+        }),
+        React.createElement(
+          "div",
+          { style: { color: "#d6bcff", fontSize: "12px", lineHeight: 1.45, fontWeight: 600 } },
+          safeNarration
+        )
+      ),
+      React.createElement(
+        "div",
+        { style: { color: "#a3a3a3", fontSize: "12px", lineHeight: 1.45 } },
+        `${detailLine}\n${topTargetsLine}\n${topChannelsLine}`
+      ),
+      React.createElement(
+        "div",
+        { style: { color: "#8a8a8a", fontSize: "11px", letterSpacing: "0.02em", fontWeight: 700 } },
+        "RECENT SIGNALS"
+      ),
+      React.createElement(
+        "pre",
+        {
+          style: {
+            margin: 0,
+            padding: "10px",
+            borderRadius: "8px",
+            border: "1px solid rgba(138, 43, 226, 0.22)",
+            background: "rgba(18, 18, 30, 0.92)",
+            color: "#d1d5db",
+            fontSize: "11px",
+            lineHeight: 1.45,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          },
+        },
+        recentSignalText
+      )
+    );
+
+    BdApi.UI.showConfirmationModal(title, content, {
+      confirmText: "Understood",
+      cancelText: "Dismiss",
+    });
+  }
+
+  async _showStartupShadowReport() {
+    if (this._stopped) return;
+    if (!this.settings?.startupShadowReport) return;
+    if (!this.sensesEngine?.getStartupSummary) return;
+
+    const windowMs = this._getStartupShadowReportWindowMs();
+    const summary = this.sensesEngine.getStartupSummary(windowMs, 3, 2);
+    if (!summary) return;
+    const recentEntries = this.sensesEngine.getStartupEntries
+      ? this.sensesEngine.getStartupEntries(windowMs, 12)
+      : [];
+
+    const windowHours = Math.max(1, Math.round(summary.windowMs / (60 * 60 * 1000)));
+    const narration = await this._generateAiStartupNarration(summary, recentEntries, windowHours);
+    this._showStartupShadowReportModal({
+      summary,
+      windowHours,
+      narration,
+      recentEntries,
+    });
+
+    this.debugLog("Lifecycle", "Startup shadow report emitted", {
+      windowHours,
+      totalEvents: summary.totalEvents,
+      urgentCount: summary.urgentCount,
+      highCount: summary.highCount,
+      mediumCount: summary.mediumCount,
+      activeGuildCount: summary.activeGuildCount,
+    });
+  }
+
+  _scheduleStartupShadowReport() {
+    if (this._startupReportTimer) {
+      clearTimeout(this._startupReportTimer);
+      this._startupReportTimer = null;
+    }
+    if (!this.settings?.startupShadowReport) return;
+
+    const delayMs = STARTUP_TOAST_GRACE_MS + 750;
+    this._startupReportTimer = setTimeout(() => {
+      this._startupReportTimer = null;
+      this._showStartupShadowReport().catch((error) => {
+        this.debugError("Lifecycle", "Startup report failed", error);
+      });
+    }, delayMs);
   }
 
   loadSettings() {
