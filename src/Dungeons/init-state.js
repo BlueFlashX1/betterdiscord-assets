@@ -39,6 +39,9 @@ module.exports = {
       rankAllocationSameRankShare: 0.75, // Inside preferred pair, majority stays same-rank
       roleCombatModelEnabled: true, // Lore-role combat model (bounded state, low-overhead)
       roleCombatModelVersion: 1, // Reserved for future behavior migrations
+      combatStatusEffectsEnabled: true, // Explicit per-entity debuffs (poison/slow/armor-break)
+      combatStatusTickMs: 1000, // Debuff DOT tick cadence
+      combatStatusMaxTrackedMobs: 600, // Safety cap for active mob status buckets
       // Dungeon ranks including SS, SSS
       dungeonRanks: [
         'E',
@@ -221,6 +224,7 @@ module.exports = {
     this._pendingDungeonMobKillsByBatch = new Map(); // xpBatchKey -> pending mob kills (summary context)
     this._combatRoundRobinCursor = 0; // Fair scheduler cursor for multi-dungeon combat processing
     this._roleCombatStates = new Map(); // channelKey -> bounded role-combat pressure state
+    this._combatStatusByChannel = new Map(); // channelKey -> explicit status effects (runtime-only)
     this._perfTelemetry = {
       combatTickEmaMs: 0,
       mobSpawnTickEmaMs: 0,

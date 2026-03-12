@@ -30,6 +30,7 @@ Object.assign(
   require('./difficulty-contributions'),
   require('./combat-primitives'),
   require('./combat-role-damage'),
+  require('./combat-status-effects'),
   require('./combat-shadow-allocation'),
   require('./combat-shadow-execution'),
   require('./combat-shadow-support'),

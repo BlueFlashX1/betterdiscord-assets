@@ -585,6 +585,18 @@ module.exports = {
             if (mobDamageApplied) analytics.shadowsAttackedMobs++;
           }
 
+          this.applyShadowCombatStatusEffects({
+            channelKey,
+            shadow,
+            combatData: finalCombatData,
+            attacksInSpan,
+            bossAttacks,
+            mobAttacks,
+            aliveMobs,
+            bossAlive: bossAliveNow,
+            now,
+          });
+
           // AGGREGATE boss damage (apply once after loop instead of per-shadow)
           if (totalBossDamage > 0) {
             aggregatedBossDamage += totalBossDamage;
@@ -650,11 +662,20 @@ module.exports = {
         // BATCH MOB DAMAGE: Apply accumulated mob damage from all shadows
         const deadMobsThisTick = [];
         if (mobDamageMap.size > 0) {
+          const statusApplyTs = Date.now();
           this.batchApplyDamage(
             mobDamageMap,
             aliveMobs,
             (mob, damage) => {
-              this.applyDamageToEntityHp(mob, damage);
+              const mobId = this.getEnemyKey(mob, 'mob');
+              const adjustedDamage = this.applyStatusAdjustedIncomingDamage(
+                channelKey,
+                'mob',
+                mobId,
+                damage,
+                statusApplyTs
+              );
+              this.applyDamageToEntityHp(mob, adjustedDamage);
             },
             combatSnapshot.mobById
           );

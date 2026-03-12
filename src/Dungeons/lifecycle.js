@@ -214,6 +214,7 @@ module.exports = {
     if (this.extractionEvents) this.extractionEvents.clear();
     if (this._mobGenerationCache) this._mobGenerationCache.clear();
     if (this._dungeonUiActionLocks) this._dungeonUiActionLocks.clear();
+    this.clearCombatStatusState?.();
 
     // Remove plugin toggle event listeners
     if (this._pluginToggleHandler) {

@@ -1,4 +1,29 @@
 module.exports = {
+  COMBAT_STATUS_EFFECTS: {
+    poison: {
+      maxStacks: 4,
+      durationMs: 9000,
+      tickMs: 1000,
+      damagePctPerStack: 0.0025, // 0.25% maxHP per stack per tick
+      maxDamagePct: 0.018, // 1.8% maxHP cap
+    },
+    armorBreak: {
+      maxStacks: 3,
+      durationMs: 7000,
+      damageAmpPerStack: 0.06, // +6% incoming damage per stack
+      maxDamageAmp: 0.2, // +20% cap
+    },
+    slow: {
+      maxStacks: 3,
+      durationMs: 7000,
+      slowPerStack: 0.08, // +8% attack cooldown per stack
+      maxSlow: 0.3, // +30% cap
+    },
+  },
+  COMBAT_STATUS_LIMITS: {
+    tickIntervalMs: 1000,
+    maxTrackedMobsPerDungeon: 600,
+  },
   RANK_MULTIPLIERS: {
     E: 1,
     D: 2,

@@ -485,9 +485,10 @@ module.exports = {
       const mobLastTime = hasMobTimer ? (this._lastMobAttackTime.get(channelKey) || now) : now;
       const mobElapsed = now - mobLastTime;
       const mobDue = hasMobTimer && mobElapsed >= mobIntervalTime;
+      const statusDue = this.isCombatStatusTickDue(channelKey, now);
 
       // Fast path: no due attacks and no periodic maintenance work.
-      if (!needsDeployGuard && !needsUiGuard && !shadowDue && !bossDue && !mobDue) return;
+      if (!needsDeployGuard && !needsUiGuard && !shadowDue && !bossDue && !mobDue && !statusDue) return;
 
       // React re-render guard: every 5th tick, verify injected UI is still in DOM
       if (needsUiGuard) {
@@ -517,6 +518,11 @@ module.exports = {
           );
           this.ensureDeployedSpawnPipeline(channelKey, 'stuck_deploy_heal');
         }
+      }
+
+      if (statusDue) {
+        await this.processCombatStatusEffects(channelKey, dungeon, now);
+        if (!this._getActiveDungeon(channelKey)) return;
       }
 
       // Shadow attacks

@@ -53,8 +53,14 @@ module.exports = {
 
       const activeInterval = 1000; // Boss attacks every 1 second
       const totalTimeSpan = cyclesMultiplier * activeInterval;
+      const bossSlowMultiplier = this.getEntityAttackSlowMultiplier(
+        channelKey,
+        'boss',
+        'boss',
+        now
+      );
       const bossCooldown = this.getEffectiveAttackCooldownMs(
-        dungeon.boss.attackCooldown,
+        (dungeon.boss.attackCooldown || activeInterval) * bossSlowMultiplier,
         activeInterval
       );
 
@@ -337,8 +343,18 @@ module.exports = {
         if (!mob || mob.hp <= 0) continue;
         totalAliveMobs++;
         if (!mob.lastAttackTime || mob.lastAttackTime === 0) mob.lastAttackTime = now;
+        const mobId = this.getEnemyKey(mob, 'mob');
+        const slowMultiplier = this.getEntityAttackSlowMultiplier(
+          channelKey,
+          'mob',
+          mobId,
+          now
+        );
         const timeSince = Math.max(0, now - mob.lastAttackTime);
-        const cooldown = this.getEffectiveAttackCooldownMs(mob.attackCooldown, activeInterval);
+        const cooldown = this.getEffectiveAttackCooldownMs(
+          (mob.attackCooldown || activeInterval) * slowMultiplier,
+          activeInterval
+        );
         const attacks = this.calculateAttacksInSpan(timeSince, cooldown, cyclesMultiplier);
         mobAttackState.set(mob, { timeSince, cooldown, attacks });
         if (attacks > 0) totalAttacksAll += attacks;
@@ -657,7 +673,15 @@ module.exports = {
           };
 
           const userDamage = this.calculateUserDamage(mobStats, mob.rank);
-          mob.hp = Math.max(0, mob.hp - userDamage);
+          const mobId = this.getEnemyKey(mob, 'mob');
+          const adjustedUserDamage = this.applyStatusAdjustedIncomingDamage(
+            channelKey,
+            'mob',
+            mobId,
+            userDamage,
+            Date.now()
+          );
+          mob.hp = Math.max(0, mob.hp - adjustedUserDamage);
 
           if (mob.hp <= 0) {
             this._onMobKilled(channelKey, dungeon, mob.rank);
@@ -711,6 +735,16 @@ module.exports = {
         }
       }
       return;
+    }
+
+    if (source !== 'status') {
+      damage = this.applyStatusAdjustedIncomingDamage(
+        channelKey,
+        'boss',
+        'boss',
+        damage,
+        Date.now()
+      );
     }
 
     dungeon.boss.hp = Math.max(0, dungeon.boss.hp - damage);

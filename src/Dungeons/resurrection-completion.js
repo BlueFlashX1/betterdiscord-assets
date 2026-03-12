@@ -272,6 +272,7 @@ module.exports = {
     if (this.settings.mobKillNotifications) delete this.settings.mobKillNotifications[channelKey];
     this.deadShadows?.delete?.(channelKey);
     this.clearRoleCombatState(channelKey);
+    this.clearCombatStatusState?.(channelKey);
     this.extractionInProgress?.delete?.(channelKey);
     this._lastShadowAttackTime?.delete?.(channelKey);
     this._lastBossAttackTime?.delete?.(channelKey);
