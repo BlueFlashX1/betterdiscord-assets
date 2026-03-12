@@ -33,7 +33,7 @@ module.exports = {
     };
 
     this.ensureDungeonHeaderWidget();
-    this._dungeonHeaderWidgetLoop = setInterval(tick, 1500);
+    this._dungeonHeaderWidgetLoop = setInterval(tick, 1000);
     this._intervals.add(this._dungeonHeaderWidgetLoop);
   },
 
@@ -85,6 +85,38 @@ module.exports = {
         if (aRank !== bRank) return bRank - aRank;
         return (Number(b[1]?.startTime) || 0) - (Number(a[1]?.startTime) || 0);
       });
+  },
+
+  _getWidgetMobMetrics(channelKey, dungeon) {
+    const mobsState = dungeon?.mobs || {};
+    const activeList = Array.isArray(mobsState.activeMobs) ? mobsState.activeMobs : [];
+
+    // Reuse recent alive count cache when available; fallback to lightweight scan.
+    const cache = this._mobCleanupCache?.get?.(channelKey);
+    const cacheAgeMs = cache ? Date.now() - (Number(cache.time) || 0) : Number.POSITIVE_INFINITY;
+    const aliveFromCache = Number(cache?.alive);
+    const aliveMobs =
+      Number.isFinite(aliveFromCache) && cacheAgeMs <= 1200
+        ? Math.max(0, Math.floor(aliveFromCache))
+        : activeList.reduce((count, mob) => count + ((Number(mob?.hp) || 0) > 0 ? 1 : 0), 0);
+
+    const queuedList = this._mobSpawnQueue?.get?.(channelKey);
+    const queuedMobs = Array.isArray(queuedList)
+      ? queuedList.length
+      : Number.isFinite(Number(queuedList))
+        ? Math.max(0, Math.floor(Number(queuedList)))
+        : 0;
+
+    const mobsKilled = Math.max(0, Math.floor(Number(mobsState.killed) || 0));
+    const mobsTarget = Math.max(0, Math.floor(Number(mobsState.targetCount) || 0));
+    const mobsSpawned = Math.max(0, Math.floor(Number(mobsState.total) || 0));
+    return {
+      aliveMobs,
+      queuedMobs,
+      mobsKilled,
+      mobsTarget,
+      mobsSpawned,
+    };
   },
 
   _createDungeonHeaderWidgetButton() {
@@ -285,9 +317,15 @@ module.exports = {
       const deployed = Boolean(dungeon.shadowsDeployed);
       const joined = Boolean(dungeon.userParticipating);
       const bossHp = Math.max(0, Math.floor(Number(dungeon?.boss?.hp) || 0)).toLocaleString();
-      const mobsKilled = Math.max(0, Math.floor(Number(dungeon?.mobs?.killed) || 0));
-      const mobsTarget = Math.max(0, Math.floor(Number(dungeon?.mobs?.targetCount) || 0));
-      const mobLine = mobsTarget > 0 ? `${mobsKilled}/${mobsTarget}` : `${mobsKilled}`;
+      const {
+        aliveMobs,
+        queuedMobs,
+        mobsKilled,
+        mobsTarget,
+        mobsSpawned,
+      } = this._getWidgetMobMetrics(channelKey, dungeon);
+      const mobKillLine = mobsTarget > 0 ? `${mobsKilled}/${mobsTarget}` : `${mobsKilled}`;
+      const spawnLine = mobsTarget > 0 ? `${mobsSpawned}/${mobsTarget}` : `${mobsSpawned}`;
 
       return `
         <div class="dungeons-header-popup-row" data-channel-key="${channelKey}">
@@ -303,7 +341,13 @@ module.exports = {
           <div class="dungeons-header-popup-row-stats">
             <span>Boss HP ${bossHp}</span>
             <span>•</span>
-            <span>Mobs ${mobLine}</span>
+            <span>Active ${aliveMobs.toLocaleString()}</span>
+            <span>•</span>
+            <span>Queued ${queuedMobs.toLocaleString()}</span>
+            <span>•</span>
+            <span>Spawned ${spawnLine}</span>
+            <span>•</span>
+            <span>Killed ${mobKillLine}</span>
             <span class="dungeons-header-popup-state ${deployed ? 'is-deployed' : 'is-waiting'}">
               ${deployed ? 'DEPLOYED' : 'WAITING'}
             </span>
@@ -343,16 +387,48 @@ module.exports = {
 
   focusDungeonChannel(channelKey) {
     const dungeon = this.activeDungeons?.get?.(channelKey);
-    if (!dungeon || !dungeon.guildId || !dungeon.channelId) {
+    if (!dungeon) {
+      this.showToast('Cannot open dungeon channel right now.', 'error');
+      return false;
+    }
+
+    let guildId = dungeon.guildId;
+    let channelId = dungeon.channelId;
+    if (!guildId || !channelId) {
+      const key = String(channelKey || '');
+      const splitIndex = key.indexOf('_');
+      if (splitIndex > 0 && splitIndex < key.length - 1) {
+        guildId ||= key.slice(0, splitIndex);
+        channelId ||= key.slice(splitIndex + 1);
+      }
+    }
+    if (!guildId || !channelId) {
       this.showToast('Cannot open dungeon channel right now.', 'error');
       return false;
     }
 
     try {
+      const path = `/channels/${guildId}/${channelId}`;
       this._navigationUtils ||= getNavigationUtils();
-      const path = `/channels/${dungeon.guildId}/${dungeon.channelId}`;
+
       if (this._navigationUtils?.transitionTo) {
         this._navigationUtils.transitionTo(path);
+        return true;
+      }
+
+      const { Webpack } = BdApi;
+      const nav =
+        Webpack?.getByKeys?.('transitionTo', 'back', 'forward') ||
+        Webpack?.getModule?.((m) => m?.transitionTo && m?.back && m?.forward);
+      if (nav?.transitionTo) {
+        this._navigationUtils = nav;
+        nav.transitionTo(path);
+        return true;
+      }
+
+      if (window.history?.pushState) {
+        window.history.pushState({}, '', path);
+        window.dispatchEvent(new PopStateEvent('popstate'));
         return true;
       }
     } catch (error) {

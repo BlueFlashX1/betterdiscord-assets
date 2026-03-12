@@ -400,7 +400,6 @@ module.exports = {
     if (this.storageManager) {
       try {
         await this.storageManager.deleteDungeon(channelKey);
-        await this.storageManager.clearCompletedDungeons();
       } catch (error) {
         this.errorLog('Failed to delete dungeon from storage', error);
       }

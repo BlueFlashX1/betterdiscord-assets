@@ -363,6 +363,15 @@ module.exports = {
   async triggerGarbageCollection(trigger = 'manual') {
     this.debugLog(`Triggering garbage collection (${trigger})`);
 
+    // Run dungeon store archival cleanup in periodic/manual GC instead of hot completion path.
+    if (this.storageManager) {
+      try {
+        await this.storageManager.clearCompletedDungeons();
+      } catch (error) {
+        this.errorLog('Failed to cleanup completed dungeons', error);
+      }
+    }
+
     // Clean up old extracted mobs from database (24+ hours old)
     if (this.mobBossStorageManager) {
       try {

@@ -311,35 +311,11 @@ module.exports = {
 
   async _completeDungeonBackground(channelKey, reason, snap, corpsePileSnapshot, hadShadowsDeployed, shadowDeathCount) {
     if (!this.started) return; // Plugin disabled before Phase B could run
-
-    // ── ARISE Extraction ──
-    let extractionResults = { extracted: 0, attempted: 0 };
-    const pileSize = corpsePileSnapshot.length;
-    if (
-      snap.userParticipating &&
-      (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
-      pileSize > 0
-    ) {
-      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
-      try {
-        extractionResults = await this._processCorpsePile(channelKey, snap, corpsePileSnapshot);
-        if (extractionResults.attempted > 0) {
-          this.showToast(
-            `ARISE: ${extractionResults.extracted} shadows from ${extractionResults.attempted} fallen enemies`,
-            'info'
-          );
-        }
-      } catch (error) {
-        this.errorLog('Failed to process corpse pile extraction', error);
-      }
-    } else if (snap.userParticipating && pileSize === 0 && hadShadowsDeployed) {
-      this.debugLog(
-        'ARISE',
-        `Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${hadShadowsDeployed}, mobs killed: ${snap.mobs?.killed || 0})`
-      );
-    } else if (!snap.userParticipating) {
-      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${snap.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
-    }
+    const backgroundStartedAt = Date.now();
+    const phaseTimings = {};
+    const markPhase = (phaseKey, startedAt) => {
+      phaseTimings[phaseKey] = Date.now() - startedAt;
+    };
 
     // ── Collect summary stats ──
     const combatAnalytics = snap.combatAnalytics || {};
@@ -362,6 +338,7 @@ module.exports = {
     };
 
     // ── Batched mob-kill XP grant ──
+    let phaseStartAt = Date.now();
     const xpBatchKey = this._resolveDungeonXPBatchKey(channelKey, snap);
     const { pendingXP: pendingMobXP, pendingKills: pendingMobKills } =
       this._consumePendingDungeonMobXP(xpBatchKey, snap);
@@ -379,43 +356,10 @@ module.exports = {
     }
     summaryStats.mobKillXP = pendingMobXP;
     summaryStats.mobKillsAwarded = pendingMobKills;
+    markPhase('userMobBatchXpMs', phaseStartAt);
 
-    // ── Shadow XP grants ──
-    if (reason === 'boss' || reason === 'complete') {
-      const contributionEntries = Object.values(snap.shadowContributions || {}).filter((entry) => {
-        const mobsKilled = Number(entry?.mobsKilled) || 0;
-        const bossDamage = Number(entry?.bossDamage) || 0;
-        return mobsKilled > 0 || bossDamage > 0;
-      });
-      if (
-        hadShadowsDeployed &&
-        (summaryStats.totalMobsKilled > 0 || summaryStats.totalBossDamage > 0) &&
-        contributionEntries.length === 0
-      ) {
-        this.errorLog(
-          true,
-          'SHADOW_CONTRIBUTIONS_EMPTY: Expected shadow contribution records but found none at completion',
-          {
-            channelKey,
-            reason,
-            totalMobsKilled: summaryStats.totalMobsKilled,
-            totalBossDamage: summaryStats.totalBossDamage,
-          }
-        );
-      }
-
-      const shadowResults = await this.grantShadowDungeonXP(channelKey, snap);
-      if (shadowResults) {
-        summaryStats.shadowTotalXP = shadowResults.totalXP;
-        summaryStats.shadowsLeveledUp = shadowResults.leveledUp;
-        summaryStats.shadowsRankedUp = shadowResults.rankedUp;
-        if (shadowResults.deferredPostProcess) {
-          this.showToast('Shadow XP growth processing in background...', 'info');
-        }
-      }
-    }
-
-    // ── User XP calculation ──
+    // ── User XP calculation + early boss ARISE UI ──
+    phaseStartAt = Date.now();
     const rankIndex = this.getRankIndexValue(snap.rank);
 
     if (reason === 'complete') {
@@ -456,7 +400,7 @@ module.exports = {
         }
       }
 
-      // Boss ARISE button (only if user participated)
+      // Boss ARISE button (only if user participated) — show early for responsiveness
       if (snap.userParticipating) {
         this.defeatedBosses.set(channelKey, {
           boss: snap.boss,
@@ -467,8 +411,81 @@ module.exports = {
         this.showAriseButton(channelKey);
       }
     }
+    markPhase('userBaseXpAndBossUiMs', phaseStartAt);
+
+    // Yield before heavy post-processing to keep UI responsive
+    await this._yieldToEventLoop(0);
+
+    // ── ARISE Extraction (mob corpses) ──
+    phaseStartAt = Date.now();
+    let extractionResults = { extracted: 0, attempted: 0 };
+    const pileSize = corpsePileSnapshot.length;
+    if (
+      snap.userParticipating &&
+      (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
+      pileSize > 0
+    ) {
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
+      try {
+        extractionResults = await this._processCorpsePile(channelKey, snap, corpsePileSnapshot);
+        if (extractionResults.attempted > 0) {
+          this.showToast(
+            `ARISE: ${extractionResults.extracted} shadows from ${extractionResults.attempted} fallen enemies`,
+            'info'
+          );
+        }
+      } catch (error) {
+        this.errorLog('Failed to process corpse pile extraction', error);
+      }
+    } else if (snap.userParticipating && pileSize === 0 && hadShadowsDeployed) {
+      this.debugLog(
+        'ARISE',
+        `Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${hadShadowsDeployed}, mobs killed: ${snap.mobs?.killed || 0})`
+      );
+    } else if (!snap.userParticipating) {
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${snap.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
+    }
+    markPhase('corpseExtractionMs', phaseStartAt);
+
+    // ── Shadow XP grants ──
+    phaseStartAt = Date.now();
+    if (reason === 'boss' || reason === 'complete') {
+      const contributionEntries = Object.values(snap.shadowContributions || {}).filter((entry) => {
+        const mobsKilled = Number(entry?.mobsKilled) || 0;
+        const bossDamage = Number(entry?.bossDamage) || 0;
+        return mobsKilled > 0 || bossDamage > 0;
+      });
+      if (
+        hadShadowsDeployed &&
+        (summaryStats.totalMobsKilled > 0 || summaryStats.totalBossDamage > 0) &&
+        contributionEntries.length === 0
+      ) {
+        this.errorLog(
+          true,
+          'SHADOW_CONTRIBUTIONS_EMPTY: Expected shadow contribution records but found none at completion',
+          {
+            channelKey,
+            reason,
+            totalMobsKilled: summaryStats.totalMobsKilled,
+            totalBossDamage: summaryStats.totalBossDamage,
+          }
+        );
+      }
+
+      const shadowResults = await this.grantShadowDungeonXP(channelKey, snap);
+      if (shadowResults) {
+        summaryStats.shadowTotalXP = shadowResults.totalXP;
+        summaryStats.shadowsLeveledUp = shadowResults.leveledUp;
+        summaryStats.shadowsRankedUp = shadowResults.rankedUp;
+        if (shadowResults.deferredPostProcess) {
+          this.showToast('Shadow XP growth processing in background...', 'info');
+        }
+      }
+    }
+    markPhase('shadowXpGrantMs', phaseStartAt);
 
     // ── Shadow XP mirror to user ──
+    phaseStartAt = Date.now();
     if (summaryStats.shadowTotalXP > 0 && this.soloLevelingStats) {
       const shadowSharePercent = 1.0;
       const shadowShareXP = Math.floor(summaryStats.shadowTotalXP * shadowSharePercent);
@@ -486,6 +503,7 @@ module.exports = {
         }
       }
     }
+    markPhase('shadowShareUserXpMs', phaseStartAt);
 
     // Attach extraction results to summary
     summaryStats.shadowsExtracted = extractionResults.extracted;
@@ -498,7 +516,8 @@ module.exports = {
       console.log(
         `[Dungeons] 🏰 ${reason === 'timeout' ? 'FAILED' : 'COMPLETE'}: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ` +
         `${durationStr} | Mobs: ${summaryStats.totalMobsKilled} | Deaths: ${summaryStats.totalShadowDeaths || 0} | ` +
-        `Extracted: ${extractionResults.extracted}/${extractionResults.attempted} | Key: ${channelKey}`
+        `Extracted: ${extractionResults.extracted}/${extractionResults.attempted} | Key: ${channelKey} | ` +
+        `timings=${JSON.stringify({ ...phaseTimings, totalBackgroundMs: Date.now() - backgroundStartedAt })}`
       );
     }
 
@@ -514,7 +533,6 @@ module.exports = {
       if (this.storageManager) {
         try {
           await this.storageManager.deleteDungeon(channelKey);
-          await this.storageManager.clearCompletedDungeons();
         } catch (error) {
           this.errorLog('Failed to delete dungeon from storage', error);
         }

@@ -162,6 +162,14 @@ module.exports = {
             }
             this.settings.settingsVersion = 3;
           }
+          if (currentVersion < 4) {
+            // v4: Trial uplift from 1000 -> 2000 unless user had a custom cap.
+            const legacyMobCap = Number(this.settings?.mobMaxActiveCap);
+            if (!Number.isFinite(legacyMobCap) || legacyMobCap <= 0 || legacyMobCap === 1000) {
+              this.settings.mobMaxActiveCap = this.defaultSettings.mobMaxActiveCap;
+            }
+            this.settings.settingsVersion = 4;
+          }
         } catch (migrationError) {
           this.errorLog?.('SETTINGS', 'Migration failed, restoring backup', migrationError);
           this.settings = preMigrationBackup;

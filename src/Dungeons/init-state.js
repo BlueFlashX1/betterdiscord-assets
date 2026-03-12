@@ -16,7 +16,7 @@ module.exports = {
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
-      mobMaxActiveCap: 1000, // Hard limit on simultaneously active mobs per dungeon
+      mobMaxActiveCap: 2000, // Hard limit on simultaneously active mobs per dungeon
       mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
       mobWaveVariancePercent: 0.2, // ±20% organic wave variance
       mobTierNormalShare: 0.7, // Spawn mix: normal mobs
@@ -64,7 +64,7 @@ module.exports = {
       userMaxHP: null,
       userMana: null, // Will be calculated from intelligence
       userMaxMana: null,
-      settingsVersion: 3,
+      settingsVersion: 4,
     };
 
     // IMPORTANT: avoid sharing references between defaults and live settings.
