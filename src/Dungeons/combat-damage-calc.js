@@ -113,7 +113,7 @@ module.exports = {
         (baseStats.vitality || 0) +
           (growthStats.vitality || 0) +
           (naturalGrowthStats.vitality || 0) ||
-        shadow.strength ||
+        shadow.vitality ||
         50,
       perception:
         (baseStats.perception || 0) +
@@ -137,25 +137,23 @@ module.exports = {
   },
 
   calculateAttacksInSpan(timeSinceLastAttack, attackCooldown, cyclesMultiplier = 1) {
-    // CRITICAL: Cap timeSinceLastAttack to prevent one-shot when joining
-    // If timeSinceLastAttack is huge (dungeon running for hours), cap it to reasonable value
-    const activeInterval = 1000; // 1 second base interval
-    const totalTimeSpan = cyclesMultiplier * activeInterval;
-    const maxTimeSinceLastAttack = totalTimeSpan * 2; // Max 2x the time span
-    const cappedTimeSinceLastAttack = Math.min(
-      Math.max(0, timeSinceLastAttack),
-      maxTimeSinceLastAttack
-    );
-
-    // If cyclesMultiplier > 1, calculate based on time span
-    if (cyclesMultiplier > 1) {
-      // Calculate how many attacks fit in the time span
-      const attacksInSpan = Math.floor(totalTimeSpan / attackCooldown);
-      return Math.max(1, Math.min(attacksInSpan, cyclesMultiplier)); // At least 1, max cyclesMultiplier
-    }
-
-    // Single cycle: if cooldown is ready, process 1 attack
-    return cappedTimeSinceLastAttack >= attackCooldown ? 1 : 0;
+    const activeInterval = 1000;
+    const multiplier = Number.isFinite(Number(cyclesMultiplier)) && Number(cyclesMultiplier) > 0
+      ? Math.floor(Number(cyclesMultiplier))
+      : 1;
+    const totalTimeSpan = multiplier * activeInterval;
+    const effectiveCooldown = this.getEffectiveAttackCooldownMs
+      ? this.getEffectiveAttackCooldownMs(attackCooldown, activeInterval)
+      : Math.max(800, Number.isFinite(Number(attackCooldown)) && Number(attackCooldown) > 0
+          ? Number(attackCooldown)
+          : activeInterval);
+    const effectiveElapsed = this.getCappedAttackElapsedMs
+      ? this.getCappedAttackElapsedMs(timeSinceLastAttack, effectiveCooldown, totalTimeSpan)
+      : Math.min(
+          Math.max(0, Number(timeSinceLastAttack) || 0),
+          Math.max(totalTimeSpan * 2, effectiveCooldown * 4)
+        );
+    return Math.floor(effectiveElapsed / effectiveCooldown);
   },
 
   applyRoleDamageMultiplier(role, damage) {

@@ -183,33 +183,6 @@ module.exports = {
           }
         }
 
-        // Count alive shadows — use cached count (recompute every 10th tick for accuracy)
-        let aliveShadowCount;
-        if (dungeon._cachedAliveCount != null && this._combatTickCount % 10 !== 0) {
-          aliveShadowCount = dungeon._cachedAliveCount;
-        } else {
-          aliveShadowCount = 0;
-          for (const s of assignedShadows) {
-            const shadowId = this.getShadowIdValue(s);
-            if (!shadowId) continue;
-            if (deadShadows.has(shadowId)) continue;
-            shadowHP.get(shadowId)?.hp > 0 && aliveShadowCount++;
-          }
-          dungeon._cachedAliveCount = aliveShadowCount;
-        }
-
-        // Shadow deployment status tracked internally (debug logs removed for performance)
-
-        // Log combat readiness (ONCE per critical threshold to prevent spam)
-        if (aliveShadowCount < assignedShadows.length * 0.25 && !dungeon.criticalHPWarningShown) {
-          dungeon.criticalHPWarningShown = true;
-          this.debugLog(
-            `CRITICAL: Only ${aliveShadowCount}/${
-              assignedShadows.length
-            } shadows alive (${Math.floor((aliveShadowCount / assignedShadows.length) * 100)}%)!`
-          );
-        }
-
         // Prepare target stats
         const bossStats = {
           strength: dungeon.boss.strength,
@@ -250,33 +223,56 @@ module.exports = {
         const activeInterval = 3000; // Shadow attacks happen every 3 seconds
         const totalTimeSpan = cyclesMultiplier * activeInterval; // Total time being processed
 
-        // DYNAMIC CHAOTIC COMBAT: shadows prioritize mobs by default and switch to boss execute focus.
-        // OPTIMIZATION: Use getCombatReadyShadows helper for attack loop (after initialization)
-        const combatReadyShadows = this.getCombatReadyShadows(
-          assignedShadows,
-          deadShadows,
-          shadowHP
-        );
-
         // PERFORMANCE: Sampling — do not process thousands of shadows every tick.
-        // We simulate a subset and scale damage up. This keeps gameplay responsive and prevents CPU pegging.
-        // T2-1: shadowBudget is computed per-tick in _combatLoopTick as globalBudget / activeDungeonCount,
-        // so total CPU stays constant regardless of how many dungeons are running.
+        // We simulate a representative subset and scale damage up. This keeps gameplay responsive
+        // and avoids per-tick large array allocations for massive armies.
         const visibleTargetBudget = aliveMobs.length > 0
           ? Math.max(80, Math.min(shadowBudget, aliveMobs.length * 2))
           : Math.max(100, Math.min(shadowBudget, 160));
-        const backgroundTargetBudget = Math.max(
-          20,
-          Math.min(80, Math.floor(combatReadyShadows.length * 0.25))
-        );
-        const maxShadowsToProcess = isWindowVisible
-          ? Math.min(combatReadyShadows.length, visibleTargetBudget)
-          : Math.min(combatReadyShadows.length, backgroundTargetBudget);
+        const backgroundTargetBudget = Math.max(20, Math.min(80, Math.floor(assignedShadows.length * 0.25)));
+        const sampleCap = isWindowVisible ? visibleTargetBudget : backgroundTargetBudget;
 
-        const stride =
-          maxShadowsToProcess > 0
-            ? Math.max(1, Math.floor(combatReadyShadows.length / maxShadowsToProcess))
-            : 1;
+        const { exchangeMarkedIds, sensesDeployedIds } = this._getCachedExclusionSets();
+        const combatReadyShadows = [];
+        let aliveShadowCount = 0;
+        let combatReadyCount = 0;
+        for (const shadow of assignedShadows) {
+          const shadowId = this.getShadowIdValue(shadow);
+          if (!shadowId) continue;
+
+          const shadowKey = String(shadowId);
+          const isDead = deadShadows.has(shadowId) || deadShadows.has(shadowKey);
+          if (isDead) continue;
+
+          const hpData = shadowHP.get(shadowId) || shadowHP.get(shadowKey);
+          if (!hpData || hpData.hp <= 0) continue;
+          aliveShadowCount++;
+
+          if (exchangeMarkedIds.has(shadowKey) || sensesDeployedIds.has(shadowKey)) continue;
+
+          // Reservoir sampling keeps memory bounded while preserving representative coverage.
+          combatReadyCount++;
+          if (combatReadyShadows.length < sampleCap) {
+            combatReadyShadows.push(shadow);
+          } else {
+            const pickIndex = Math.floor(Math.random() * combatReadyCount);
+            if (pickIndex < sampleCap) combatReadyShadows[pickIndex] = shadow;
+          }
+        }
+        dungeon._cachedAliveCount = aliveShadowCount;
+
+        // Shadow deployment status tracked internally (debug logs removed for performance)
+        if (aliveShadowCount < assignedShadows.length * 0.25 && !dungeon.criticalHPWarningShown) {
+          dungeon.criticalHPWarningShown = true;
+          this.debugLog(
+            `CRITICAL: Only ${aliveShadowCount}/${
+              assignedShadows.length
+            } shadows alive (${Math.floor((aliveShadowCount / assignedShadows.length) * 100)}%)!`
+          );
+        }
+
+        const maxShadowsToProcess = combatReadyShadows.length;
+        const stride = 1;
         const totalPowerAll =
           Number.isFinite(dungeon?.shadowAllocation?.totalPower) &&
           dungeon.shadowAllocation.totalPower > 0
@@ -292,7 +288,7 @@ module.exports = {
         }
         const countScale =
           maxShadowsToProcess > 0
-            ? Math.max(1, combatReadyShadows.length / maxShadowsToProcess)
+            ? Math.max(1, combatReadyCount / maxShadowsToProcess)
             : 1;
         const powerScale =
           totalPowerAll && sampledPower > 0 ? totalPowerAll / sampledPower : countScale;
@@ -300,7 +296,7 @@ module.exports = {
 
         // TRACE: Log combat state every 10th tick
         if (this._combatTickCount % 10 === 0) {
-          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, ready=${combatReadyShadows.length}, sample=${maxShadowsToProcess}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, ready=${combatReadyCount}, sample=${maxShadowsToProcess}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
         }
 
         // HOISTED: These only depend on dungeon state, not per-shadow state
@@ -425,25 +421,17 @@ module.exports = {
 
           const finalCombatData = combatData;
 
-          // Calculate how many attacks this shadow would make in the time span
-          const timeSinceLastAttack = now - finalCombatData.lastAttackTime;
-          const effectiveInterval =
-            finalCombatData.attackInterval || finalCombatData.cooldown || 2000;
-          const effectiveCooldown = Math.max(effectiveInterval, 800); // Min 800ms cooldown
-
-          let attacksInSpan = 0;
-          if (timeSinceLastAttack < 0) {
-            const remainingCooldown = Math.abs(timeSinceLastAttack);
-            if (remainingCooldown < totalTimeSpan) {
-              const availableTime = totalTimeSpan - remainingCooldown;
-              attacksInSpan = Math.max(0, Math.floor(availableTime / effectiveCooldown));
-            }
-          } else {
-            attacksInSpan = Math.max(
-              0,
-              Math.floor((totalTimeSpan + timeSinceLastAttack) / effectiveCooldown)
-            );
-          }
+          // Calculate attacks with shared cadence helpers to stay consistent with boss/mob timing.
+          const timeSinceLastAttack = Math.max(0, now - (finalCombatData.lastAttackTime || 0));
+          const effectiveCooldown = this.getEffectiveAttackCooldownMs(
+            finalCombatData.attackInterval || finalCombatData.cooldown || 2000,
+            activeInterval
+          );
+          const attacksInSpan = this.calculateAttacksInTimeSpan(
+            timeSinceLastAttack,
+            effectiveCooldown,
+            totalTimeSpan
+          );
 
           if (attacksInSpan <= 0) {
             continue; // Shadow not ready yet, continue to next shadow
@@ -475,7 +463,10 @@ module.exports = {
             finalCombatData.comboHits = attacksInSpan;
             finalCombatData.lastTargetType = dominantTarget;
           }
-          const shadowPerception = (this.getShadowEffectiveStatsCached(shadow) || {}).perception || 0;
+          const shadowPerception =
+            Number.isFinite(finalCombatData?.effectiveStats?.perception)
+              ? finalCombatData.effectiveStats.perception
+              : (this.getShadowEffectiveStatsCached(shadow) || {}).perception || 0;
           const comboMultiplier = Math.min(2.0, 1 + (finalCombatData.comboHits || 0) * shadowPerception * 0.002);
 
           if (bossAliveNow && bossAttacks > 0) {
@@ -620,11 +611,14 @@ module.exports = {
           combatDataToUpdate.attackCount += attacksInSpan;
           combatDataToUpdate.damageDealt += totalBossDamage + totalMobDamage;
 
-          // Calculate actual time spent — single multiply instead of per-attack RNG loop.
-          // Average of N narrow-variance samples ≈ 1.0, so total ≈ attacksInSpan * cooldown.
-          const baseTimeSpent = (timeSinceLastAttack < 0 ? Math.abs(timeSinceLastAttack) : 0)
-            + attacksInSpan * effectiveCooldown * this._varianceNarrow();
-          combatDataToUpdate.lastAttackTime = now + Math.min(baseTimeSpent, totalTimeSpan);
+          // Advance cadence using elapsed/cooldown carryover.
+          combatDataToUpdate.lastAttackTime = this.getPostAttackTimestamp(
+            now,
+            timeSinceLastAttack,
+            effectiveCooldown,
+            totalTimeSpan,
+            attacksInSpan
+          );
 
           // Update attack interval for next batch
           if (this.shadowArmy?.calculateShadowAttackInterval) {
@@ -632,13 +626,11 @@ module.exports = {
             combatDataToUpdate.attackInterval = newInterval;
           } else {
             const cooldownVariance = this._varianceNarrow();
-            combatDataToUpdate.cooldown = Math.max(
+            combatDataToUpdate.attackInterval = Math.max(
               800,
-              Math.floor((combatDataToUpdate.cooldown || 2000) * cooldownVariance)
+              Math.floor((combatDataToUpdate.attackInterval || combatDataToUpdate.cooldown || 2000) * cooldownVariance)
             );
           }
-
-          dungeon.shadowAttacks[shadowId] = now + totalTimeSpan;
         }
 
         if (this.isRoleCombatModelEnabled()) {

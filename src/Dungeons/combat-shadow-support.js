@@ -108,32 +108,55 @@ module.exports = {
     return true;
   },
 
+  getEffectiveAttackCooldownMs(attackInterval, fallbackInterval = 1000) {
+    const fallback = Number.isFinite(Number(fallbackInterval)) && Number(fallbackInterval) > 0
+      ? Number(fallbackInterval)
+      : 1000;
+    const candidate = Number(attackInterval);
+    const cooldown = Number.isFinite(candidate) && candidate > 0 ? candidate : fallback;
+    return Math.max(800, Math.floor(cooldown));
+  },
+
+  getCappedAttackElapsedMs(timeSinceLastAttack, attackInterval, totalTimeSpan) {
+    const effectiveCooldown = this.getEffectiveAttackCooldownMs(attackInterval, 1000);
+    const span = Number.isFinite(Number(totalTimeSpan)) && Number(totalTimeSpan) > 0
+      ? Number(totalTimeSpan)
+      : 1000;
+    // Catch-up window allows moderate backlog processing without huge burst loops.
+    const maxCatchUp = Math.max(span * 2, effectiveCooldown * 4);
+    const elapsed = Number(timeSinceLastAttack);
+    const safeElapsed = Number.isFinite(elapsed) ? elapsed : 0;
+    return Math.min(Math.max(0, safeElapsed), maxCatchUp);
+  },
+
   calculateAttacksInTimeSpan(timeSinceLastAttack, attackInterval, totalTimeSpan) {
-    // CRITICAL: Cap timeSinceLastAttack to prevent one-shot when joining
-    // If timeSinceLastAttack is huge (dungeon running for hours), cap it to reasonable value
-    const maxTimeSinceLastAttack = totalTimeSpan * 2; // Max 2x the time span
-    const cappedTimeSinceLastAttack = Math.min(
-      Math.max(0, timeSinceLastAttack),
-      maxTimeSinceLastAttack
+    const effectiveCooldown = this.getEffectiveAttackCooldownMs(attackInterval, 1000);
+    const effectiveElapsed = this.getCappedAttackElapsedMs(
+      timeSinceLastAttack,
+      effectiveCooldown,
+      totalTimeSpan
     );
+    return Math.floor(effectiveElapsed / effectiveCooldown);
+  },
 
-    const effectiveCooldown = Math.max(attackInterval, 800); // Min 800ms cooldown
-
-    // If timeSinceLastAttack is 0 or negative (just joined), process 1 attack
-    if (cappedTimeSinceLastAttack <= 0) {
-      return 1; // Process at least 1 attack if cooldown is ready
-    }
-
-    // Calculate how many attacks fit in the remaining time
-    const remainingTime = totalTimeSpan - cappedTimeSinceLastAttack;
-    if (remainingTime <= 0) {
-      return 0; // No time remaining
-    }
-
-    // Calculate attacks based on remaining time and cooldown
-    // BUGFIX LOGIC-8: Removed Math.max(1,...) — forces >=1 attack even when remainingTime < cooldown.
-    // First-attack case is already handled above (return 1 when timeSinceLastAttack <= 0).
-    return Math.floor(remainingTime / effectiveCooldown);
+  getPostAttackTimestamp(
+    now,
+    timeSinceLastAttack,
+    attackInterval,
+    totalTimeSpan,
+    attacksProcessed
+  ) {
+    const safeNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    const effectiveCooldown = this.getEffectiveAttackCooldownMs(attackInterval, 1000);
+    const effectiveElapsed = this.getCappedAttackElapsedMs(
+      timeSinceLastAttack,
+      effectiveCooldown,
+      totalTimeSpan
+    );
+    const processed = Math.max(0, Math.floor(Number(attacksProcessed) || 0));
+    const consumedMs = processed * effectiveCooldown;
+    const remainingElapsed = Math.max(0, effectiveElapsed - consumedMs);
+    return safeNow - remainingElapsed;
   },
 
   batchApplyDamage(damageMap, targets, applyDamageCallback, targetIndex = null) {
@@ -186,7 +209,7 @@ module.exports = {
 
     if (!shadowVitality || typeof shadowVitality !== 'number' || isNaN(shadowVitality)) {
       shadowVitality =
-        typeof shadow.strength === 'number' && shadow.strength > 0 ? shadow.strength : 50;
+        typeof shadow.vitality === 'number' && shadow.vitality > 0 ? shadow.vitality : 50;
     }
     if (shadowVitality < 0) shadowVitality = 0;
 

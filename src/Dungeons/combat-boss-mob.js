@@ -2,6 +2,31 @@ const C = require('./constants');
 const Dungeons = { RANK_MULTIPLIERS: C.RANK_MULTIPLIERS };
 
 module.exports = {
+  _resolveShadowMapKey(shadowByIdMap, shadowId) {
+    if (shadowId === null || shadowId === undefined) return null;
+    if (shadowByIdMap?.has?.(shadowId)) return shadowId;
+
+    const shadowIdString = String(shadowId);
+    if (shadowByIdMap?.has?.(shadowIdString)) return shadowIdString;
+
+    const numericId = Number(shadowIdString);
+    if (Number.isFinite(numericId) && shadowByIdMap?.has?.(numericId)) return numericId;
+    return null;
+  },
+
+  _getShadowHpDataByKey(shadowHP, shadowByIdMap, shadowId) {
+    if (shadowId === null || shadowId === undefined) return null;
+    const resolvedKey = this._resolveShadowMapKey(shadowByIdMap, shadowId) ?? shadowId;
+
+    if (shadowHP?.has?.(resolvedKey)) return shadowHP.get(resolvedKey);
+    const keyString = String(resolvedKey);
+    if (shadowHP?.has?.(keyString)) return shadowHP.get(keyString);
+
+    const numericId = Number(keyString);
+    if (Number.isFinite(numericId) && shadowHP?.has?.(numericId)) return shadowHP.get(numericId);
+    return null;
+  },
+
   async processBossAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, prebuiltShadowByIdMap = null) {
     try {
       // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
@@ -28,16 +53,20 @@ module.exports = {
 
       const activeInterval = 1000; // Boss attacks every 1 second
       const totalTimeSpan = cyclesMultiplier * activeInterval;
+      const bossCooldown = this.getEffectiveAttackCooldownMs(
+        dungeon.boss.attackCooldown,
+        activeInterval
+      );
 
       // OPTIMIZATION: Calculate attacks using helper function
       // CRITICAL: Initialize lastAttackTime if not set (prevents one-shot on join)
       if (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0) {
         dungeon.boss.lastAttackTime = now;
       }
-      const timeSinceLastAttack = now - dungeon.boss.lastAttackTime;
+      const timeSinceLastAttack = Math.max(0, now - dungeon.boss.lastAttackTime);
       const attacksInSpan = this.calculateAttacksInTimeSpan(
         timeSinceLastAttack,
-        dungeon.boss.attackCooldown || activeInterval,
+        bossCooldown,
         totalTimeSpan
       );
 
@@ -68,11 +97,19 @@ module.exports = {
       const shadowByIdMap = prebuiltShadowByIdMap || new Map(
         assignedShadows.map((s) => [this.getShadowIdValue(s), s])
       );
+      const resolveShadowMapKey = (shadowId) => this._resolveShadowMapKey(shadowByIdMap, shadowId);
+      const getShadowHpData = (shadowId) =>
+        this._getShadowHpDataByKey(shadowHP, shadowByIdMap, shadowId);
 
       // BATCH PROCESSING: Calculate all attacks in one calculation with variance
       let totalUserDamage = 0;
       const shadowDamageMap = new Map(); // Track damage per shadow
-      const maxTargetsPerAttack = Dungeons.RANK_MULTIPLIERS[dungeon.boss?.rank] || 1;
+      const rankIndexForFallback =
+        typeof this.getRankIndexValue === 'function'
+          ? this.getRankIndexValue(dungeon.boss?.rank || 'E')
+          : 0;
+      const fallbackAoeTargets = Math.max(1, Math.ceil((rankIndexForFallback + 1) * 1.5));
+      const maxTargetsPerAttack = Dungeons.RANK_MULTIPLIERS[dungeon.boss?.rank] || fallbackAoeTargets;
 
       if (aliveShadows.length > 0) {
         // ACCURATE AOE: Per-attack-round processing with intermediate death tracking.
@@ -84,7 +121,12 @@ module.exports = {
         // For rank-S boss: ~5 attacks × 12 targets = 60 picks + ~30 unique calcs. Very fast.
 
         // Mutable alive set — shadows are removed when killed during this tick
-        const aliveSet = new Set(aliveShadows.map(s => s.id));
+        const aliveSet = new Set(
+          aliveShadows
+            .map((shadow) => this.getShadowIdValue(shadow))
+            .filter((shadowId) => shadowId !== null && shadowId !== undefined)
+            .map((shadowId) => String(shadowId))
+        );
         // Cache: one damage calc per unique shadow (reuse across attack rounds)
         const damageCache = new Map(); // shadowId -> baseDamage
 
@@ -104,24 +146,28 @@ module.exports = {
           while (picks < actualTargets && attempts < maxAttempts) {
             attempts++;
             const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
-            if (!aliveSet.has(target.id)) continue; // Skip dead shadows
-            const hpData = shadowHP.get(target.id);
+            const targetId = this.getShadowIdValue(target);
+            if (targetId === null || targetId === undefined) continue;
+            const targetIdKey = String(targetId);
+            if (!aliveSet.has(targetIdKey)) continue; // Skip dead shadows
+            const hpData = getShadowHpData(targetId);
             if (!hpData || hpData.hp <= 0) {
-              aliveSet.delete(target.id);
+              aliveSet.delete(targetIdKey);
               continue;
             }
-            roundHits.set(target.id, (roundHits.get(target.id) || 0) + 1);
+            roundHits.set(targetId, (roundHits.get(targetId) || 0) + 1);
             picks++;
           }
 
           // Apply damage for this attack round immediately
           const roundVariance = this._varianceWide();
           for (const [shadowId, hits] of roundHits) {
-            const target = shadowByIdMap.get(shadowId);
+            const resolvedShadowId = resolveShadowMapKey(shadowId) ?? shadowId;
+            const target = shadowByIdMap.get(resolvedShadowId);
             if (!target) continue;
 
             // Cache damage calc (shadow stats don't change within a tick)
-            let baseDamage = damageCache.get(shadowId);
+            let baseDamage = damageCache.get(resolvedShadowId);
             if (baseDamage == null) {
               const shadowStats = this.buildShadowStats(target);
               const shadowRank = target.rank || 'E';
@@ -136,27 +182,30 @@ module.exports = {
                 shadowRole,
                 dungeon.boss.beastFamily
               );
-              damageCache.set(shadowId, baseDamage);
+              damageCache.set(resolvedShadowId, baseDamage);
             }
 
             const roundDamage = Math.floor(baseDamage * hits * roundVariance * incomingDamageMultiplier);
             if (roundDamage <= 0) continue;
 
             // Apply damage immediately to track intermediate deaths
-            const hpData = shadowHP.get(shadowId);
+            const hpData = getShadowHpData(resolvedShadowId);
             if (!hpData || hpData.hp <= 0) {
-              aliveSet.delete(shadowId);
+              aliveSet.delete(String(resolvedShadowId));
               continue;
             }
             hpData.hp = Math.max(0, hpData.hp - roundDamage);
-            shadowHP.set(shadowId, hpData);
+            shadowHP.set(resolvedShadowId, hpData);
 
             // Accumulate for death processing and resurrection
-            shadowDamageMap.set(shadowId, (shadowDamageMap.get(shadowId) || 0) + roundDamage);
+            shadowDamageMap.set(
+              resolvedShadowId,
+              (shadowDamageMap.get(resolvedShadowId) || 0) + roundDamage
+            );
 
             // Shadow died this round — remove from future target pool
             if (hpData.hp <= 0) {
-              aliveSet.delete(shadowId);
+              aliveSet.delete(String(resolvedShadowId));
             }
           }
         }
@@ -196,8 +245,14 @@ module.exports = {
         damageAlreadyApplied: true, // Boss AOE applies damage per-round for accurate death tracking
       });
 
-      // Atomic update: create new object reference to prevent race conditions
-      dungeon.boss.lastAttackTime = now + totalTimeSpan;
+      // Advance cadence using elapsed/cooldown carryover (prevents stall/overfire loops).
+      dungeon.boss.lastAttackTime = this.getPostAttackTimestamp(
+        now,
+        timeSinceLastAttack,
+        bossCooldown,
+        totalTimeSpan,
+        attacksInSpan
+      );
       // INTEGRITY-1 (verified FP): deadShadows is the same Set reference from _getDungeonShadowCombatContext
       // (mutated in-place). Write-back is a no-op for existing entries but correctly initializes
       // the Map entry when deadShadows was created via the `|| new Set()` fallback (first combat tick).
@@ -252,6 +307,9 @@ module.exports = {
       const shadowByIdMap = prebuiltShadowByIdMap || new Map(
         assignedShadows.map((s) => [this.getShadowIdValue(s), s])
       );
+      const resolveShadowMapKey = (shadowId) => this._resolveShadowMapKey(shadowByIdMap, shadowId);
+      const getShadowHpData = (shadowId) =>
+        this._getShadowHpDataByKey(shadowHP, shadowByIdMap, shadowId);
 
       // Pre-compute user stats once (not per-attack)
       const userStats = dungeon.userParticipating ? this.getUserEffectiveStats() : null;
@@ -271,6 +329,7 @@ module.exports = {
       const maxMobsToSimulate = isWindowVisible ? mobBudget : Math.min(100, Math.floor(mobBudget * 0.2));
 
       // Phase 1: Count alive mobs and compute total attacks (lightweight scan — no damage calc)
+      const mobAttackState = new Map(); // mob -> { timeSince, cooldown, attacks }
       let totalAliveMobs = 0;
       let totalAttacksAll = 0;
       for (let m = 0; m < allActiveMobs.length; m++) {
@@ -278,8 +337,10 @@ module.exports = {
         if (!mob || mob.hp <= 0) continue;
         totalAliveMobs++;
         if (!mob.lastAttackTime || mob.lastAttackTime === 0) mob.lastAttackTime = now;
-        const timeSince = now - mob.lastAttackTime;
-        const attacks = this.calculateAttacksInSpan(timeSince, mob.attackCooldown, cyclesMultiplier);
+        const timeSince = Math.max(0, now - mob.lastAttackTime);
+        const cooldown = this.getEffectiveAttackCooldownMs(mob.attackCooldown, activeInterval);
+        const attacks = this.calculateAttacksInSpan(timeSince, cooldown, cyclesMultiplier);
+        mobAttackState.set(mob, { timeSince, cooldown, attacks });
         if (attacks > 0) totalAttacksAll += attacks;
       }
 
@@ -306,8 +367,8 @@ module.exports = {
           if ((aliveIdx - 1) % mobStride !== 0) continue;
           sampled++;
 
-          const timeSince = now - mob.lastAttackTime;
-          const attacksInSpan = this.calculateAttacksInSpan(timeSince, mob.attackCooldown, cyclesMultiplier);
+          const attackState = mobAttackState.get(mob);
+          const attacksInSpan = attackState?.attacks || 0;
           if (attacksInSpan <= 0) continue;
 
           const rank = mob.rank || 'E';
@@ -327,7 +388,6 @@ module.exports = {
             });
           }
 
-          mob.lastAttackTime = now + totalTimeSpan;
         }
 
         // One damage calculation per rank+role group × random shadow targets
@@ -336,6 +396,11 @@ module.exports = {
           const mobRole = group.role;
           const mob = group.representativeMob;
           const scaledHits = Math.ceil(group.totalHits * mobScaleFactor);
+          // PERFORMANCE: cap per-group hit simulation to avoid huge per-hit loops on mega swarms.
+          // Damage is weighted back up via hitWeight to preserve expected output.
+          const hitSimulationCap = isWindowVisible ? 1800 : 600;
+          const simulatedHits = Math.max(1, Math.min(scaledHits, hitSimulationCap));
+          const hitWeight = scaledHits > 0 ? scaledHits / simulatedHits : 1;
 
           // Apply stat variance at group level (representative mob stats with variance)
           const mobStatVariance = this._varianceNarrow();
@@ -351,14 +416,14 @@ module.exports = {
           const useShadowArmyTargeting = !!this.shadowArmy?.processMobAttackOnShadow;
           const hitsPerTarget = new Map();
 
-          for (let h = 0; h < scaledHits; h++) {
+          for (let h = 0; h < simulatedHits; h++) {
             let targetId = null;
 
             if (useShadowArmyTargeting && h < group.totalHits) {
               // Use ShadowArmy personality targeting for sampled (non-scaled) hits
               const attackResult = this.shadowArmy.processMobAttackOnShadow(mob, aliveShadows);
               if (attackResult?.targetShadow) {
-                targetId = attackResult.targetShadow;
+                targetId = resolveShadowMapKey(attackResult.targetShadow);
               }
             }
 
@@ -368,11 +433,14 @@ module.exports = {
               for (let pick = 0; pick < 3; pick++) {
                 const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
                 if (!target) continue;
-                const hpData = shadowHP.get(target.id);
+                const rawTargetId = this.getShadowIdValue(target);
+                if (rawTargetId === null || rawTargetId === undefined) continue;
+                const resolvedTargetId = resolveShadowMapKey(rawTargetId) ?? rawTargetId;
+                const hpData = getShadowHpData(resolvedTargetId);
                 if (!hpData || hpData.hp <= 0) continue;
-                const accumulatedDmg = shadowDamageMap.get(target.id) || 0;
+                const accumulatedDmg = shadowDamageMap.get(resolvedTargetId) || 0;
                 if (hpData.hp - accumulatedDmg > 0) {
-                  targetId = target.id;
+                  targetId = resolvedTargetId;
                   break;
                 }
               }
@@ -380,8 +448,12 @@ module.exports = {
               if (!targetId) {
                 const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
                 if (target) {
-                  const hpData = shadowHP.get(target.id);
-                  if (hpData && hpData.hp > 0) targetId = target.id;
+                  const rawTargetId = this.getShadowIdValue(target);
+                  if (rawTargetId !== null && rawTargetId !== undefined) {
+                    const resolvedTargetId = resolveShadowMapKey(rawTargetId) ?? rawTargetId;
+                    const hpData = getShadowHpData(resolvedTargetId);
+                    if (hpData && hpData.hp > 0) targetId = resolvedTargetId;
+                  }
                 }
               }
             }
@@ -399,15 +471,16 @@ module.exports = {
           const _redistributionStatsCache = new Map();
           let overflowHits = 0;
           for (const [shadowId, hits] of hitsPerTarget) {
-            const target = shadowByIdMap.get(shadowId);
+            const resolvedShadowId = resolveShadowMapKey(shadowId) ?? shadowId;
+            const target = shadowByIdMap.get(resolvedShadowId);
             if (!target) continue;
-            const hpData = shadowHP.get(shadowId);
+            const hpData = getShadowHpData(resolvedShadowId);
             if (!hpData || hpData.hp <= 0) continue;
 
-            let shadowStats = _redistributionStatsCache.get(shadowId);
+            let shadowStats = _redistributionStatsCache.get(resolvedShadowId);
             if (!shadowStats) {
               shadowStats = this.buildShadowStats(target);
-              _redistributionStatsCache.set(shadowId, shadowStats);
+              _redistributionStatsCache.set(resolvedShadowId, shadowStats);
             }
             const shadowRole =
               target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
@@ -422,11 +495,11 @@ module.exports = {
             );
             const aggregateVariance = this._varianceWide();
             const rawDamage = Math.floor(
-              baseDamage * hits * aggregateVariance * incomingDamageMultiplier
+              baseDamage * hits * hitWeight * aggregateVariance * incomingDamageMultiplier
             );
 
             // Cap damage at shadow's effective HP to prevent overkill waste
-            const accumulatedDmg = shadowDamageMap.get(shadowId) || 0;
+            const accumulatedDmg = shadowDamageMap.get(resolvedShadowId) || 0;
             const effectiveHP = Math.max(0, hpData.hp - accumulatedDmg);
             if (effectiveHP <= 0) {
               // Shadow already "dead" from prior rank groups — all hits overflow
@@ -435,12 +508,13 @@ module.exports = {
             }
 
             const cappedDamage = Math.min(rawDamage, effectiveHP + 1); // +1 to ensure kill
-            shadowDamageMap.set(shadowId, accumulatedDmg + cappedDamage);
+            shadowDamageMap.set(resolvedShadowId, accumulatedDmg + cappedDamage);
 
             // Convert excess damage back into overflow hits for redistribution
             if (rawDamage > cappedDamage && baseDamage > 0) {
               const excessDamage = rawDamage - cappedDamage;
-              overflowHits += Math.floor(excessDamage / baseDamage);
+              const effectiveDamagePerHit = Math.max(1, baseDamage * hitWeight);
+              overflowHits += Math.floor(excessDamage / effectiveDamagePerHit);
             }
           }
 
@@ -453,16 +527,19 @@ module.exports = {
               for (let pick = 0; pick < 3; pick++) {
                 const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
                 if (!target) continue;
-                const hpData = shadowHP.get(target.id);
+                const rawTargetId = this.getShadowIdValue(target);
+                if (rawTargetId === null || rawTargetId === undefined) continue;
+                const resolvedTargetId = resolveShadowMapKey(rawTargetId) ?? rawTargetId;
+                const hpData = getShadowHpData(resolvedTargetId);
                 if (!hpData || hpData.hp <= 0) continue;
-                const accDmg = shadowDamageMap.get(target.id) || 0;
+                const accDmg = shadowDamageMap.get(resolvedTargetId) || 0;
                 if (hpData.hp - accDmg <= 0) continue;
 
                 // Apply one hit worth of damage
-                let shadowStats = _redistributionStatsCache.get(target.id);
+                let shadowStats = _redistributionStatsCache.get(resolvedTargetId);
                 if (!shadowStats) {
                   shadowStats = this.buildShadowStats(target);
-                  _redistributionStatsCache.set(target.id, shadowStats);
+                  _redistributionStatsCache.set(resolvedTargetId, shadowStats);
                 }
                 const shadowRole =
                   target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
@@ -477,10 +554,10 @@ module.exports = {
                 );
                 const effectiveHP = hpData.hp - accDmg;
                 const dmg = Math.min(
-                  Math.floor(baseDmg * this._varianceWide() * incomingDamageMultiplier),
+                  Math.floor(baseDmg * hitWeight * this._varianceWide() * incomingDamageMultiplier),
                   effectiveHP + 1
                 );
-                shadowDamageMap.set(target.id, accDmg + dmg);
+                shadowDamageMap.set(resolvedTargetId, accDmg + dmg);
                 found = true;
                 break;
               }
@@ -489,12 +566,6 @@ module.exports = {
           }
         }
 
-        // Update lastAttackTime for non-sampled mobs too (they still "attacked")
-        for (const mob of allActiveMobs) {
-          if (mob && mob.hp > 0 && mob.lastAttackTime < now) {
-            mob.lastAttackTime = now + totalTimeSpan;
-          }
-        }
       } else if (dungeon.userParticipating && userStats) {
         // ALL shadows dead — aggregate all mob damage to user in one batch.
         // Instead of per-mob per-hit: compute average mob damage once, multiply by totalAttacks × scale.
@@ -528,10 +599,20 @@ module.exports = {
           }
         }
 
-        // Update all mob lastAttackTime
-        for (const mob of allActiveMobs) {
-          if (mob && mob.hp > 0) mob.lastAttackTime = now + totalTimeSpan;
-        }
+      }
+
+      // Advance cadence using elapsed/cooldown carryover.
+      for (const mob of allActiveMobs) {
+        if (!mob || mob.hp <= 0) continue;
+        const attackState = mobAttackState.get(mob);
+        if (!attackState || attackState.attacks <= 0) continue;
+        mob.lastAttackTime = this.getPostAttackTimestamp(
+          now,
+          attackState.timeSince,
+          attackState.cooldown,
+          totalTimeSpan,
+          attackState.attacks
+        );
       }
 
       await this._applyAccumulatedShadowAndUserDamage({
@@ -600,138 +681,10 @@ module.exports = {
     }
 
     if (source === 'shadows') {
-      // Shadows attack mobs (CHAOTIC: individual timings, random targets)
-      const assignedShadows =
-        this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
-      const deadShadows = this.deadShadows.get(channelKey) || new Set();
-      const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
-      const now = Date.now();
-
-      // Filter alive mobs and shadows
-      const aliveMobs = [];
-      for (const m of dungeon.mobs.activeMobs) {
-        m && m.hp > 0 && aliveMobs.push(m);
-      }
-      if (aliveMobs.length === 0) return;
-
-      for (const shadow of assignedShadows) {
-        const shadowId = this.getShadowIdValue(shadow);
-        if (!shadowId) continue;
-        if (deadShadows.has(shadowId)) continue;
-        const shadowHPData = shadowHP.get(shadowId);
-        if (!shadowHPData || shadowHPData.hp <= 0) continue;
-
-        const combatData = dungeon.shadowCombatData?.get?.(shadowId);
-        if (!combatData) continue;
-
-        // Check individual shadow cooldown (chaotic timing)
-        const timeSinceLastAttack = now - combatData.lastAttackTime;
-        // BUGFIX LOGIC-4: Was reading nonexistent `cooldown` field (always undefined).
-        // `initializeShadowCombatData` sets `attackInterval`, not `cooldown`.
-        // undefined comparison always returned false, so ALL shadows attacked EVERY tick.
-        if (timeSinceLastAttack < (combatData.attackInterval || 2000)) {
-          continue; // Not ready yet
-        }
-
-        // Pick random mob target (dynamic target selection)
-        const targetMob = aliveMobs[Math.floor(Math.random() * aliveMobs.length)];
-        if (!targetMob || targetMob.hp <= 0) continue;
-
-        const mobStats = {
-          strength: targetMob.strength,
-          agility: targetMob.agility,
-          intelligence: targetMob.intelligence,
-          vitality: targetMob.vitality,
-        };
-
-        // Calculate damage with variance
-        let shadowDamage = this.calculateShadowDamage(shadow, mobStats, targetMob.rank);
-
-        // Add damage variance (±20%)
-        const variance = 0.8 + Math.random() * 0.4;
-        shadowDamage = Math.floor(shadowDamage * variance);
-
-        // Behavior modifiers
-        const behaviorMultipliers = {
-          aggressive: 1.3,
-          balanced: 1.0,
-          tactical: 0.85,
-        };
-        shadowDamage = Math.floor(shadowDamage * (behaviorMultipliers[combatData.behavior] || 1.0));
-
-        const targetMobId = this.getEnemyKey(targetMob, 'mob');
-        const targetMobHpBefore = targetMob.hp;
-        targetMob.hp = Math.max(0, targetMob.hp - shadowDamage);
-        const damageApplied = Math.max(0, targetMobHpBefore - targetMob.hp);
-        if (damageApplied > 0 && targetMobId) {
-          this._recordShadowMobDamageContribution(dungeon, targetMobId, shadowId, damageApplied);
-        }
-
-        // Update combat data
-        combatData.lastAttackTime = now;
-        combatData.attackCount++;
-        combatData.damageDealt += shadowDamage;
-
-        // Vary cooldown for next attack (keeps combat rhythm dynamic, clamped to prevent drift)
-        const cooldownVariance = this._varianceNarrow();
-        combatData.attackInterval = Math.max(800, Math.min(5000, (combatData.attackInterval || 2000) * cooldownVariance));
-
-        // BUGFIX INTEGRITY-8: Only count kill if THIS shadow's attack was the killing blow.
-        // Without this, multiple shadows attacking the same 0-HP mob each call _onMobKilled.
-        if (targetMob.hp <= 0 && targetMobHpBefore > 0) {
-          this._onMobKilled(channelKey, dungeon, targetMob.rank);
-
-          // ARISE: Stash dead mob in corpse pile for post-dungeon extraction (lore-accurate)
-          this._addToCorpsePile(channelKey, targetMob, false);
-
-          let killAttributed = false;
-          if (targetMobId) {
-            killAttributed = this._applyMobKillContributionsFromLedger(dungeon, targetMobId, 1);
-          }
-          if (!killAttributed) {
-            const fallbackAttributed = this._applyFallbackMobKillContribution(
-              dungeon,
-              assignedShadows,
-              shadowId,
-              1
-            );
-            if (!fallbackAttributed && targetMobId) {
-              this._logMobContributionMiss(channelKey, targetMobId, { phase: 'attackMobs' });
-            }
-          }
-        }
-
-      }
-
-      // PERF-2: Moved cleanup OUTSIDE the per-shadow loop. Was O(N) per kill × up to 500 shadows.
-      // Now runs once after all shadow attacks, same as the main processShadowAttacks path.
-      if (dungeon.mobs?.activeMobs?.some(m => m && m.hp <= 0)) {
-        this._cleanupDungeonActiveMobs(dungeon);
-      }
-      this._pruneShadowMobContributionLedger(dungeon);
-
-      // PERF-3: Moved extraction cache cleanup OUTSIDE the per-shadow loop.
-      // Was allocating Array.from() per shadow iteration unnecessarily.
-      if (this.extractionEvents && this.extractionEvents.size > 1000) {
-        const entries = Array.from(this.extractionEvents.entries());
-        this.extractionEvents.clear();
-        entries.slice(-500).forEach(([k, v]) => this.extractionEvents.set(k, v));
-      }
-
-      // PERFORMANCE: Only save to storage every 5 attack cycles per dungeon.
-      // BUGFIX: Was a global counter (this._saveCycleCount) shared across all dungeons,
-      // causing 10x write amplification with 10 concurrent dungeons (counter hit 5 in 500ms).
-      // Now per-dungeon so each dungeon saves exactly once per 5 of its own mob-attack cycles.
-      if (!dungeon._saveCycleCount) dungeon._saveCycleCount = 0;
-      dungeon._saveCycleCount++;
-
-      if (dungeon._saveCycleCount >= 5 && this.storageManager) {
-        this.storageManager
-          .saveDungeon(dungeon)
-          .catch((err) => this.errorLog('Failed to save dungeon', err));
-        this.markCombatSettingsDirty('shadow-attack-cycle-save');
-        dungeon._saveCycleCount = 0;
-      }
+      // Legacy compatibility path: delegate to the canonical shadow combat engine so
+      // shadow-vs-mob behavior stays in one place and cannot drift over time.
+      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+      return;
     }
   },
 
