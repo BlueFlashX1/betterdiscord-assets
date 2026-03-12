@@ -257,6 +257,9 @@ module.exports = {
     // Formula: (vitality / 100) * 0.01 * maxHP per second
     let hpChanged = false;
     let manaChanged = false;
+    const skillBonuses = this.getSkillTreeBonuses?.() || {};
+    const hpRegenMultiplier = 1 + Math.max(0, Number(skillBonuses.hpRegenBonus || 0));
+    const manaRegenMultiplier = 1 + Math.max(0, Number(skillBonuses.manaRegenBonus || 0));
 
     // DETECTION: Check if regeneration is needed
     const needsHPRegen = this.settings.userHP < this.settings.userMaxHP;
@@ -274,7 +277,7 @@ module.exports = {
       const baseRate = 0.005; // 0.5% base regeneration
       const statRate = (vitality / 50) * 0.005; // 0.5% per 50 vitality (1% per 100)
       const levelRate = (level / 10) * 0.002; // 0.2% per 10 levels
-      const totalRate = baseRate + statRate + levelRate;
+      const totalRate = (baseRate + statRate + levelRate) * hpRegenMultiplier;
 
       const hpRegen = Math.max(1, Math.floor(this.settings.userMaxHP * totalRate));
       const oldHP = this.settings.userHP;
@@ -325,7 +328,7 @@ module.exports = {
         : (Math.sqrt(intelligence) / 12) * 0.007; // sqrt diminishing returns
       const levelRate = inCombat ? (level / 20) * 0.0005 : (level / 10) * 0.003;
       const capRate = inCombat ? 0.02 : 0.10; // Combat regen intentionally much lower
-      const totalRate = Math.min(capRate, baseRate + statRate + levelRate);
+      const totalRate = Math.min(capRate, (baseRate + statRate + levelRate) * manaRegenMultiplier);
 
       const manaRegen = Math.max(1, Math.floor(this.settings.userMaxMana * totalRate));
       const oldMana = this.settings.userMana;

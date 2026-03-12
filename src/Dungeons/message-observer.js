@@ -266,7 +266,17 @@ module.exports = {
 
       // Still check current channel for user attacks
       if (this.settings.userActiveDungeon === userChannelKey) {
-        if (now - this.lastUserAttackTime >= this.settings.userAttackCooldown) {
+        const userSlowMultiplier = this.getEntityAttackSlowMultiplier(
+          userChannelKey,
+          'user',
+          'user',
+          now
+        );
+        const effectiveUserAttackCooldown = this.getEffectiveUserAttackCooldownMs(
+          (this.settings.userAttackCooldown || 2000) * userSlowMultiplier,
+          this.settings.userAttackCooldown || 2000
+        );
+        if (now - this.lastUserAttackTime >= effectiveUserAttackCooldown) {
           // Pass messageElement for critical hit detection
           await this.processUserAttack(userChannelKey, messageElement);
           this.lastUserAttackTime = now;

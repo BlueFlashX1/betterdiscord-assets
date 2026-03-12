@@ -155,7 +155,14 @@ module.exports = {
     }
   
     try {
-      const bonuses = BdApi.Data.load('SkillTree', 'bonuses') || null;
+      let bonuses = null;
+      const instance = this._SLUtils?.getPluginInstance?.('SkillTree');
+      if (instance && typeof instance.calculateSkillBonuses === 'function') {
+        bonuses = instance.calculateSkillBonuses() || null;
+      }
+      if (!bonuses) {
+        bonuses = BdApi.Data.load('SkillTree', 'bonuses') || null;
+      }
       this._cache.skillTreeBonuses = bonuses;
       this._cache.skillTreeBonusesTime = now;
       return bonuses;
@@ -186,6 +193,38 @@ module.exports = {
       this.debugError('ACTIVE_SKILL_BUFFS', error);
       this._cache.activeSkillBuffs = null;
       this._cache.activeSkillBuffsTime = now;
+      return null;
+    }
+  },
+
+  getHiddenBlessingBonuses() {
+    const now = Date.now();
+    if (
+      this._cache.hiddenBlessingBonuses !== null &&
+      this._cache.hiddenBlessingBonusesTime &&
+      now - this._cache.hiddenBlessingBonusesTime < (this._cache.hiddenBlessingBonusesTTL || 2000)
+    ) {
+      return this._cache.hiddenBlessingBonuses;
+    }
+
+    try {
+      let blessings = null;
+      const instance = this._SLUtils?.getPluginInstance?.('SkillTree');
+      if (instance && typeof instance.getHiddenBlessingBonuses === 'function') {
+        blessings = instance.getHiddenBlessingBonuses() || null;
+      }
+      if (!blessings) {
+        blessings = BdApi.Data.load('SkillTree', 'hiddenBlessings') || null;
+      }
+      this._cache.hiddenBlessingBonuses = blessings;
+      this._cache.hiddenBlessingBonusesTime = now;
+      if (!this._cache.hiddenBlessingBonusesTTL) this._cache.hiddenBlessingBonusesTTL = 2000;
+      return blessings;
+    } catch (error) {
+      this.debugError('HIDDEN_BLESSING_BONUSES', error);
+      this._cache.hiddenBlessingBonuses = null;
+      this._cache.hiddenBlessingBonusesTime = now;
+      if (!this._cache.hiddenBlessingBonusesTTL) this._cache.hiddenBlessingBonusesTTL = 2000;
       return null;
     }
   },

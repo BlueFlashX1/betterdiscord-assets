@@ -43,7 +43,7 @@ function attachStealthStatusProtoMethods(StealthClass) {
       }
 
       BdApi.Patcher.before(STEALTH_PLUGIN_ID, this._protoUtils, "updateAsync", (_ctx, args) => {
-        if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+        if (!this._canSuppress("invisibleStatus")) return;
 
         // args[0] = setting group key ("status", "appearance", etc.)
         // args[1] = callback that mutates the proto settings

@@ -64,6 +64,28 @@ function buildStealthSettingsPanel(BdApi, plugin) {
     )
   );
 
+  const GateStatus = () => {
+    const summary = typeof plugin.getStealthGateSummary === "function"
+      ? plugin.getStealthGateSummary()
+      : { state: "UNKNOWN", label: "Unknown gate state", skillId: "stealth_technique" };
+    return React.createElement(
+      "div",
+      {
+        style: {
+          marginBottom: "12px",
+          padding: "8px 10px",
+          borderRadius: "8px",
+          border: "1px solid rgba(138,43,226,0.25)",
+          background: "rgba(14, 10, 24, 0.72)",
+          color: "rgba(226,232,240,0.85)",
+          fontSize: "12px",
+          lineHeight: 1.35,
+        },
+      },
+      `Gate: ${summary.label} (${summary.state}) - Requires ${summary.skillId}`
+    );
+  };
+
   const SettingRow = ({ settingKey, title, description }) => {
     const [checked, setChecked] = React.useState(Boolean(plugin.settings[settingKey]));
 
@@ -124,6 +146,7 @@ function buildStealthSettingsPanel(BdApi, plugin) {
       },
     },
     React.createElement(Header),
+    React.createElement(GateStatus),
     React.createElement(SettingRow, {
       settingKey: "enabled",
       title: "Master Stealth",

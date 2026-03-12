@@ -331,7 +331,12 @@ module.exports = {
       const userLevel = this.settings.level || 1;
       const userRank = this.settings.rank || 'E';
       const rankIndex = this.settings.ranks?.indexOf(userRank) || 0;
-  
+      const hiddenBlessings = this.getHiddenBlessingBonuses?.() || null;
+      const kandiaruGrowthMultiplier = Math.max(
+        1,
+        Number(hiddenBlessings?.naturalGrowthMultiplier || 1)
+      );
+
       // Level-based bonus: +0.002% per level (caps at +2% at level 1000)
       const levelBonus = Math.min(0.02, userLevel * 0.00002);
   
@@ -347,10 +352,13 @@ module.exports = {
         // Level/rank add small additive boosts
         const baseChance = 0.0012;
         const statScaling = Math.min(0.018, Math.sqrt(currentStat) * 0.00045);
-  
+
         // Total growth chance with bonuses
-        const growthChance = Math.min(0.05, baseChance + statScaling + levelBonus + rankBonus); // Cap at 5% max
-  
+        const growthChance = Math.min(
+          0.05,
+          (baseChance + statScaling + levelBonus + rankBonus) * kandiaruGrowthMultiplier
+        ); // Cap at 5% max
+
         // Roll for natural growth
         const roll = Math.random();
         if (roll < growthChance) {
@@ -385,6 +393,7 @@ module.exports = {
             growthChance: (growthChance * 100).toFixed(2) + '%',
             levelBonus: (levelBonus * 100).toFixed(2) + '%',
             rankBonus: (rankBonus * 100).toFixed(2) + '%',
+            kandiaruGrowthMultiplier: kandiaruGrowthMultiplier.toFixed(2),
             roll: roll.toFixed(4),
           });
         }

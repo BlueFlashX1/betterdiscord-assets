@@ -19,6 +19,16 @@ const { attachStealthStatusPolicyMethods } = require("./status-policy");
 
 const STEALTH_PLUGIN_ID = "Stealth";
 const STEALTH_STYLE_ID = "stealth-plugin-css";
+const STEALTH_SKILLTREE_PLUGIN_ID = "SkillTree";
+const STEALTH_ACTIVE_SKILL_ID = "stealth_technique";
+const STEALTH_GATE_REFRESH_MS = 15000;
+const STEALTH_GATE_STATES = Object.freeze({
+  PLUGIN_DISABLED: "PLUGIN_DISABLED",
+  LOCKED: "LOCKED",
+  DORMANT: "DORMANT",
+  ACTIVE: "ACTIVE",
+  UNAVAILABLE: "UNAVAILABLE",
+});
 
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -75,6 +85,14 @@ module.exports = class Stealth {
     this._protoUtils = null;
     this._sentryDisabled = false;
     this._pendingTimers = new Set();
+    this._gateState = STEALTH_GATE_STATES.UNAVAILABLE;
+    this._lastGateReason = "init";
+    this._skillTreeWatcher = {
+      pollTimer: null,
+      stateChangeHandler: null,
+      activatedHandler: null,
+      expiredHandler: null,
+    };
   }
 
   _toast(message, type = "info", timeout = null) {
@@ -112,9 +130,16 @@ module.exports = class Stealth {
 
     this._installPatches();
     this._statusSetters = this._resolveStatusSetters(); // eager resolve, avoid lazy init on hot path
+    this._setupStealthSkillGate();
     this._syncStatusPolicy();
+    this._applyStealthHardening();
 
-    this._toast("Stealth engaged", "success");
+    const gate = this.getStealthGateSummary();
+    if (gate.state === STEALTH_GATE_STATES.ACTIVE) {
+      this._toast("Stealth engaged", "success");
+    } else {
+      this._toast(`Stealth armed (${gate.label})`, "info", 2600);
+    }
   }
 
   _scheduleTimer(fn, delay) {
@@ -135,6 +160,7 @@ module.exports = class Stealth {
   _clearRuntimeArtifacts() {
     for (const tid of this._pendingTimers) clearTimeout(tid);
     this._pendingTimers.clear();
+    this._teardownStealthSkillGate();
     this._unsubscribeFluxEvents();
     if (this._dispatcherPollTimer) {
       clearInterval(this._dispatcherPollTimer);
@@ -145,6 +171,8 @@ module.exports = class Stealth {
     this._sentryDisabled = false;
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
+    this._gateState = STEALTH_GATE_STATES.UNAVAILABLE;
+    this._lastGateReason = "cleared";
     BdApi.Patcher.unpatchAll(STEALTH_PLUGIN_ID);
     BdApi.DOM.removeStyle(STEALTH_STYLE_ID);
   }
@@ -183,6 +211,188 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("SETTINGS", "Failed to persist settings", error, "settings-save");
     }
+  }
+
+  _canSuppress(settingKey) {
+    return (
+      this.settings.enabled &&
+      this._gateState === STEALTH_GATE_STATES.ACTIVE &&
+      Boolean(this.settings[settingKey])
+    );
+  }
+
+  _isStealthSuppressionActive() {
+    return this._gateState === STEALTH_GATE_STATES.ACTIVE;
+  }
+
+  _resolveSkillTreeRuntime() {
+    try {
+      const plugin = BdApi.Plugins.get(STEALTH_SKILLTREE_PLUGIN_ID);
+      const instance = plugin?.instance || null;
+      if (!instance) return { available: false, unlocked: false, active: false, phase: null };
+
+      let unlocked = false;
+      let active = false;
+      let phase = null;
+
+      if (typeof instance.getActiveSkillRuntimeSnapshot === "function") {
+        const snapshot = instance.getActiveSkillRuntimeSnapshot(STEALTH_ACTIVE_SKILL_ID);
+        if (snapshot && typeof snapshot === "object") {
+          unlocked = Boolean(snapshot.unlocked);
+          active = Boolean(snapshot.isRunning);
+          phase = snapshot.phase || null;
+        }
+      }
+
+      if (typeof instance.isActiveSkillUnlocked === "function") {
+        unlocked = Boolean(instance.isActiveSkillUnlocked(STEALTH_ACTIVE_SKILL_ID));
+      }
+      if (typeof instance.isActiveSkillRunning === "function") {
+        active = Boolean(instance.isActiveSkillRunning(STEALTH_ACTIVE_SKILL_ID));
+      }
+
+      return { available: true, unlocked, active, phase };
+    } catch (error) {
+      this._logWarning("GATE", "Failed to inspect SkillTree runtime", error, "gate-runtime");
+      return { available: false, unlocked: false, active: false, phase: null };
+    }
+  }
+
+  _computeStealthGateState(runtime) {
+    if (!this.settings.enabled) return STEALTH_GATE_STATES.PLUGIN_DISABLED;
+    if (!runtime.available) return STEALTH_GATE_STATES.UNAVAILABLE;
+    if (!runtime.unlocked) return STEALTH_GATE_STATES.LOCKED;
+    if (runtime.active) return STEALTH_GATE_STATES.ACTIVE;
+    return STEALTH_GATE_STATES.DORMANT;
+  }
+
+  _formatStealthGateLabel(state) {
+    switch (state) {
+      case STEALTH_GATE_STATES.ACTIVE:
+        return "Stealth Technique active";
+      case STEALTH_GATE_STATES.DORMANT:
+        return "Unlocked, waiting activation";
+      case STEALTH_GATE_STATES.LOCKED:
+        return "Locked in SkillTree";
+      case STEALTH_GATE_STATES.PLUGIN_DISABLED:
+        return "Master Stealth disabled";
+      default:
+        return "SkillTree unavailable";
+    }
+  }
+
+  getStealthGateSummary() {
+    const state = this._gateState;
+    return {
+      state,
+      label: this._formatStealthGateLabel(state),
+      skillId: STEALTH_ACTIVE_SKILL_ID,
+      enabled: Boolean(this.settings.enabled),
+      active: this._isStealthSuppressionActive(),
+    };
+  }
+
+  _setupStealthSkillGate() {
+    if (!this._skillTreeWatcher) {
+      this._skillTreeWatcher = {
+        pollTimer: null,
+        stateChangeHandler: null,
+        activatedHandler: null,
+        expiredHandler: null,
+      };
+    }
+    if (this._skillTreeWatcher.stateChangeHandler) return;
+
+    this._skillTreeWatcher.stateChangeHandler = (event) => {
+      const skillId = event?.detail?.skillId;
+      if (skillId && skillId !== STEALTH_ACTIVE_SKILL_ID) return;
+      this._refreshStealthSkillGate("skill-event");
+    };
+    this._skillTreeWatcher.activatedHandler = (event) => {
+      const skillId = event?.detail?.skillId;
+      if (skillId !== STEALTH_ACTIVE_SKILL_ID) return;
+      this._refreshStealthSkillGate("legacy-activated");
+    };
+    this._skillTreeWatcher.expiredHandler = (event) => {
+      const skillId = event?.detail?.skillId;
+      if (skillId !== STEALTH_ACTIVE_SKILL_ID) return;
+      this._refreshStealthSkillGate("legacy-expired");
+    };
+
+    document.addEventListener("SkillTree:activeSkillStateChanged", this._skillTreeWatcher.stateChangeHandler);
+    document.addEventListener("SkillTree:activeSkillActivated", this._skillTreeWatcher.activatedHandler);
+    document.addEventListener("SkillTree:activeSkillExpired", this._skillTreeWatcher.expiredHandler);
+
+    this._skillTreeWatcher.pollTimer = setInterval(() => {
+      this._refreshStealthSkillGate("poll");
+    }, STEALTH_GATE_REFRESH_MS);
+
+    this._refreshStealthSkillGate("start");
+  }
+
+  _teardownStealthSkillGate() {
+    if (!this._skillTreeWatcher) return;
+    if (this._skillTreeWatcher.pollTimer) {
+      clearInterval(this._skillTreeWatcher.pollTimer);
+      this._skillTreeWatcher.pollTimer = null;
+    }
+    if (this._skillTreeWatcher.stateChangeHandler) {
+      document.removeEventListener("SkillTree:activeSkillStateChanged", this._skillTreeWatcher.stateChangeHandler);
+      this._skillTreeWatcher.stateChangeHandler = null;
+    }
+    if (this._skillTreeWatcher.activatedHandler) {
+      document.removeEventListener("SkillTree:activeSkillActivated", this._skillTreeWatcher.activatedHandler);
+      this._skillTreeWatcher.activatedHandler = null;
+    }
+    if (this._skillTreeWatcher.expiredHandler) {
+      document.removeEventListener("SkillTree:activeSkillExpired", this._skillTreeWatcher.expiredHandler);
+      this._skillTreeWatcher.expiredHandler = null;
+    }
+  }
+
+  _handleStealthGateTransition(prevState, nextState, reason) {
+    const becameActive =
+      prevState !== STEALTH_GATE_STATES.ACTIVE &&
+      nextState === STEALTH_GATE_STATES.ACTIVE;
+    const stoppedBeingActive =
+      prevState === STEALTH_GATE_STATES.ACTIVE &&
+      nextState !== STEALTH_GATE_STATES.ACTIVE;
+
+    if (stoppedBeingActive) {
+      if (this.settings.restoreStatusOnStop) {
+        this._restoreOriginalStatus();
+      }
+      this._forcedInvisible = false;
+      if (reason !== "poll" && this.settings.enabled) {
+        this._toast("Stealth Technique ended. Suppression paused.", "info", 2200);
+      }
+    }
+
+    if (becameActive) {
+      this._applyStealthHardening();
+      if (reason !== "poll") {
+        this._toast("Stealth Technique active. Suppression engaged.", "success", 2200);
+      }
+    }
+
+    this._syncStatusPolicy();
+  }
+
+  _refreshStealthSkillGate(reason = "refresh") {
+    const runtime = this._resolveSkillTreeRuntime();
+    const nextState = this._computeStealthGateState(runtime);
+    const prevState = this._gateState;
+    this._lastGateReason = reason;
+    this._gateState = nextState;
+
+    if (prevState === nextState) {
+      if (nextState === STEALTH_GATE_STATES.ACTIVE) {
+        this._syncStatusPolicy();
+      }
+      return;
+    }
+
+    this._handleStealthGateTransition(prevState, nextState, reason);
   }
 
   // ── Store + Flux Dispatcher Wiring ─────────────────────────────────────
@@ -238,39 +448,39 @@ module.exports = class Stealth {
 
     const events = {
       PRESENCE_UPDATES: () => {
-        if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+        if (!this._canSuppress("invisibleStatus")) return;
         this._ensureInvisibleStatus();
       },
 
       IDLE: () => {
-        if (!this.settings.enabled || !this.settings.suppressIdle) return;
+        if (!this._canSuppress("suppressIdle")) return;
         this._recordSuppressed("idle");
-        this._ensureInvisibleStatus();
+        if (this._canSuppress("invisibleStatus")) this._ensureInvisibleStatus();
       },
 
       AFK: () => {
-        if (!this.settings.enabled || !this.settings.suppressIdle) return;
+        if (!this._canSuppress("suppressIdle")) return;
         this._recordSuppressed("idle");
-        this._ensureInvisibleStatus();
+        if (this._canSuppress("invisibleStatus")) this._ensureInvisibleStatus();
       },
 
       TRACK: () => {
-        if (!this.settings.enabled || !this.settings.suppressTelemetry) return;
+        if (!this._canSuppress("suppressTelemetry")) return;
         this._recordSuppressed("telemetry");
       },
 
       CONNECTION_OPEN: () => {
-        if (this.settings.enabled && this.settings.suppressTelemetry) {
+        if (this._canSuppress("suppressTelemetry")) {
           this._disableSentryAndTelemetry();
         }
-        if (this.settings.enabled && this.settings.invisibleStatus) {
+        if (this._canSuppress("invisibleStatus")) {
           this._scheduleTimer(() => this._ensureInvisibleStatus(), 1000);
         }
       },
 
       // Fires when user changes status via Discord's UI status picker
       USER_SETTINGS_PROTO_UPDATE: () => {
-        if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+        if (!this._canSuppress("invisibleStatus")) return;
         // Small delay so Discord applies the setting, then we override
         this._scheduleTimer(() => this._ensureInvisibleStatus(), 300);
       },
@@ -327,7 +537,7 @@ module.exports = class Stealth {
           typingModule,
           "startTyping",
           (ctx, args, original) => {
-            if (this.settings.enabled && this.settings.suppressTyping) {
+            if (this._canSuppress("suppressTyping")) {
               this._recordSuppressed("typing");
               return undefined;
             }
@@ -342,7 +552,7 @@ module.exports = class Stealth {
           typingModule,
           "stopTyping",
           (ctx, args, original) => {
-            if (this.settings.enabled && this.settings.suppressTyping) {
+            if (this._canSuppress("suppressTyping")) {
               return undefined;
             }
             return original.apply(ctx, args);
@@ -372,7 +582,7 @@ module.exports = class Stealth {
     patched += this._patchFunctions({
       fnNames,
       keyCombos,
-      shouldBlock: () => this.settings.enabled && this.settings.suppressTyping,
+      shouldBlock: () => this._canSuppress("suppressTyping"),
       onBlocked: () => this._recordSuppressed("typing"),
       tag: "typing",
       blockedReturnValue: undefined,
@@ -403,7 +613,7 @@ module.exports = class Stealth {
     const patched = this._patchFunctions({
       fnNames,
       keyCombos,
-      shouldBlock: () => this.settings.enabled && this.settings.suppressActivities,
+      shouldBlock: () => this._canSuppress("suppressActivities"),
       onBlocked: () => this._recordSuppressed("activities"),
       tag: "activities",
       blockedReturnValue: undefined,
@@ -423,7 +633,7 @@ module.exports = class Stealth {
           analytics.default,
           "track",
           (ctx, args, original) => {
-            if (this.settings.enabled && this.settings.suppressTelemetry) {
+            if (this._canSuppress("suppressTelemetry")) {
               this._recordSuppressed("telemetry");
               return undefined;
             }
@@ -448,8 +658,7 @@ module.exports = class Stealth {
           (ctx, args, original) => {
             const moduleName = args?.[0];
             if (
-              this.settings.enabled &&
-              this.settings.disableProcessMonitor &&
+              this._canSuppress("disableProcessMonitor") &&
               typeof moduleName === "string" &&
               moduleName.includes("discord_rpc")
             ) {
@@ -474,7 +683,7 @@ module.exports = class Stealth {
       const messageActions = BdApi.Webpack.getByKeys("sendMessage");
       if (messageActions && typeof messageActions.sendMessage === "function") {
         BdApi.Patcher.before(STEALTH_PLUGIN_ID, messageActions, "sendMessage", (_ctx, args) => {
-          if (!this.settings.enabled || !this.settings.autoSilentMessages) return;
+          if (!this._canSuppress("autoSilentMessages")) return;
           const message = args?.[1];
           if (!message || typeof message.content !== "string") return;
 
@@ -507,7 +716,7 @@ module.exports = class Stealth {
     patched += this._patchFunctions({
       fnNames: ackFnNames,
       keyCombos: ackKeyCombos,
-      shouldBlock: () => this.settings.enabled && this.settings.suppressReadReceipts,
+      shouldBlock: () => this._canSuppress("suppressReadReceipts"),
       onBlocked: () => this._recordSuppressed("readReceipts"),
       tag: "readReceipts",
       blockedReturnValue: Promise.resolve(),
@@ -526,7 +735,7 @@ module.exports = class Stealth {
               markReadModule,
               fn,
               (ctx, args, original) => {
-                if (this.settings.enabled && this.settings.suppressReadReceipts) {
+                if (this._canSuppress("suppressReadReceipts")) {
                   this._recordSuppressed("readReceipts");
                   return Promise.resolve();
                 }
@@ -545,9 +754,9 @@ module.exports = class Stealth {
   }
 
   _applyStealthHardening() {
-    if (!this.settings.enabled) return;
-    if (this.settings.suppressTelemetry) this._disableSentryAndTelemetry();
-    if (this.settings.disableProcessMonitor) this._disableProcessMonitor();
+    if (!this._isStealthSuppressionActive()) return;
+    if (this._canSuppress("suppressTelemetry")) this._disableSentryAndTelemetry();
+    if (this._canSuppress("disableProcessMonitor")) this._disableProcessMonitor();
   }
 
   _disableSentryAndTelemetry() {
@@ -773,17 +982,23 @@ module.exports = class Stealth {
   }
 
   _handleStatusPolicySettingChange(key) {
+    this._refreshStealthSkillGate("settings");
     this._syncStatusPolicy();
     this._applyStealthHardening();
     if (key !== "enabled") return;
+    if (!this.settings.enabled) {
+      this._toast("Stealth disengaged", "info");
+      return;
+    }
+    const gate = this.getStealthGateSummary();
     this._toast(
-      this.settings.enabled ? "Stealth engaged" : "Stealth disengaged",
-      this.settings.enabled ? "success" : "info"
+      gate.state === STEALTH_GATE_STATES.ACTIVE ? "Stealth engaged" : `Stealth armed (${gate.label})`,
+      gate.state === STEALTH_GATE_STATES.ACTIVE ? "success" : "info"
     );
   }
 
   _shouldReapplyHardeningForSetting(key) {
-    return (key === "suppressTelemetry" || key === "disableProcessMonitor") && this.settings.enabled;
+    return (key === "suppressTelemetry" || key === "disableProcessMonitor") && this._isStealthSuppressionActive();
   }
 
   _setSetting(key, value) {

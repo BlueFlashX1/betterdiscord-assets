@@ -438,10 +438,28 @@ module.exports = {
 
     // Apply user damage
     if (totalUserDamage > 0 && dungeon.userParticipating) {
+      const adjustedUserDamage = this.applyStatusAdjustedIncomingDamage(
+        channelKey,
+        'user',
+        'user',
+        totalUserDamage,
+        Date.now()
+      );
       this.syncHPFromStats();
-      this.settings.userHP = Math.max(0, this.settings.userHP - totalUserDamage);
+      this.settings.userHP = Math.max(0, this.settings.userHP - adjustedUserDamage);
       this.pushHPToStats(true);
       this.startRegeneration(); // PERF: restart regen if it was paused
+      if (Number(this.settings.userHP) > 0) {
+        this.applyEnemyCombatStatusEffects({
+          channelKey,
+          attacker: dungeon.boss,
+          attackerType: 'boss',
+          attacksInSpan: cycles,
+          targetType: 'user',
+          targetId: 'user',
+          now: Date.now(),
+        });
+      }
 
       if (this.settings.userHP <= 0) {
         await this.handleUserDefeat(channelKey);
@@ -556,10 +574,29 @@ module.exports = {
 
     // Apply user damage
     if (totalUserDamage > 0 && dungeon.userParticipating) {
+      const adjustedUserDamage = this.applyStatusAdjustedIncomingDamage(
+        channelKey,
+        'user',
+        'user',
+        totalUserDamage,
+        Date.now()
+      );
       this.syncHPFromStats();
-      this.settings.userHP = Math.max(0, this.settings.userHP - totalUserDamage);
+      this.settings.userHP = Math.max(0, this.settings.userHP - adjustedUserDamage);
       this.pushHPToStats(true);
       this.startRegeneration(); // PERF: restart regen if it was paused
+      const representativeMob = sampleMobs[0] || null;
+      if (representativeMob && Number(this.settings.userHP) > 0) {
+        this.applyEnemyCombatStatusEffects({
+          channelKey,
+          attacker: representativeMob,
+          attackerType: 'mob',
+          attacksInSpan: aliveMobCount * cycles,
+          targetType: 'user',
+          targetId: 'user',
+          now: Date.now(),
+        });
+      }
 
       if (this.settings.userHP <= 0) {
         await this.handleUserDefeat(channelKey);

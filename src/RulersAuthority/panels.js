@@ -876,14 +876,14 @@ export function getSoloLevelingData(ctx) {
 
 export function setupSkillTreeListeners(ctx) {
   ctx._onSkillActivated = (e) => {
-    if (e.detail?.skillId === "rulers_authority") {
+    if (e.detail?.skillId === "rulers_authority_active") {
       ctx._amplifiedMode = true;
       ctx._amplifiedExpiresAt = e.detail.expiresAt || 0;
       onAmplifiedModeChange(ctx, true);
     }
   };
   ctx._onSkillExpired = (e) => {
-    if (e.detail?.skillId === "rulers_authority") {
+    if (e.detail?.skillId === "rulers_authority_active") {
       ctx._amplifiedMode = false;
       onAmplifiedModeChange(ctx, false);
     }
@@ -894,9 +894,9 @@ export function setupSkillTreeListeners(ctx) {
   // Check if skill is already active on start
   if (BdApi.Plugins.isEnabled("SkillTree")) {
     const stInstance = BdApi.Plugins.get("SkillTree")?.instance;
-    if (stInstance?.isActiveSkillRunning?.("rulers_authority")) {
+    if (stInstance?.isActiveSkillRunning?.("rulers_authority_active")) {
       ctx._amplifiedMode = true;
-      ctx.debugLog("SkillTree", "rulers_authority already active on start");
+      ctx.debugLog("SkillTree", "rulers_authority_active already active on start");
     }
   }
 }

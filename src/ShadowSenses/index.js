@@ -971,7 +971,15 @@ module.exports = class ShadowSenses {
     const safeNarration = String(
       narration || this._buildStartupReportFallbackNarration(summary, windowHours, recentEntries)
     );
-    const entries = Array.isArray(recentEntries) ? recentEntries.slice(0, 6) : [];
+    const attentionEntries = (Array.isArray(recentEntries) ? recentEntries : [])
+      .filter((entry) => (Number(entry?.priority) || 1) >= 2)
+      .sort((left, right) => {
+        const rightPriority = Number(right?.priority) || 1;
+        const leftPriority = Number(left?.priority) || 1;
+        if (rightPriority !== leftPriority) return rightPriority - leftPriority;
+        return (Number(right?.timestamp) || 0) - (Number(left?.timestamp) || 0);
+      })
+      .slice(0, 6);
     const detailLine =
       `Urgent: ${Number(summary?.urgentCount || 0)} \u2022 ` +
       `High: ${Number(summary?.highCount || 0)} \u2022 ` +
@@ -980,19 +988,19 @@ module.exports = class ShadowSenses {
     const topTargetsLine = `Top targets: ${this._formatStartupTopList(summary?.topTargets, "None")}`;
     const topChannelsLine = `Top channels: ${this._formatStartupTopList(summary?.topChannels, "None")}`;
     const artworkUrl = this._resolveStartupReportArtworkUrl();
-    const recentSignalText = entries.length
-      ? entries
+    const attentionSignalText = attentionEntries.length
+      ? attentionEntries
         .map((entry, idx) => {
           const when = new Date(Number(entry.timestamp) || Date.now()).toLocaleString();
           const countLabel = Number(entry.messageCount) > 1 ? ` x${entry.messageCount}` : "";
           return `${idx + 1}. [P${Number(entry.priority) || 1}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}\n${entry.content}\n${when}`;
         })
         .join("\n\n")
-      : "No recent signal details were captured for this window.";
+      : "No urgent, high, or medium-priority signals require your attention in this window.";
 
     if (!React || !BdApi.UI?.showConfirmationModal) {
       const fallbackText =
-        `${safeNarration}\n\n${detailLine}\n${topTargetsLine}\n${topChannelsLine}\n\nRecent Signals:\n${recentSignalText}`;
+        `${safeNarration}\n\n${detailLine}\n${topTargetsLine}\n${topChannelsLine}\n\nSignals Requiring Attention:\n${attentionSignalText}`;
       BdApi.UI.alert(title, fallbackText);
       return;
     }
@@ -1049,7 +1057,7 @@ module.exports = class ShadowSenses {
       React.createElement(
         "div",
         { style: { color: "#8a8a8a", fontSize: "11px", letterSpacing: "0.02em", fontWeight: 700 } },
-        "RECENT SIGNALS"
+        "SIGNALS REQUIRING ATTENTION"
       ),
       React.createElement(
         "pre",
@@ -1067,7 +1075,7 @@ module.exports = class ShadowSenses {
             wordBreak: "break-word",
           },
         },
-        recentSignalText
+        attentionSignalText
       )
     );
 

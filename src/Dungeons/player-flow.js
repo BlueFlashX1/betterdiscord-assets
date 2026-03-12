@@ -531,29 +531,193 @@ module.exports = {
     // Boss can only be engaged after gate requirements are met.
     const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
     if (dungeon.boss.hp > 0 && bossUnlocked) {
-      const bossStats = {
-        strength: dungeon.boss.strength,
-        agility: dungeon.boss.agility,
-        intelligence: dungeon.boss.intelligence,
-        vitality: dungeon.boss.vitality,
-      };
-      let userDamage = this.calculateUserDamage(bossStats, dungeon.boss.rank);
-
-      // CHECK FOR CRITICAL HIT (integrates with CriticalHitMerged plugin)
-      let isCritical = false;
-      if (this.checkCriticalHit(messageElement)) {
-        isCritical = true;
-        // CRITICAL HIT MULTIPLIER: 2x damage!
-        userDamage = Math.floor(userDamage * 2.0);
-        this.debugLog(
-          `CRITICAL HIT! User damage: ${Math.floor(userDamage / 2)} -> ${userDamage} (2x)`
+      const attackResult = this._resolveUserBossDamage(dungeon, {
+        messageElement,
+      });
+      if (attackResult.damage > 0) {
+        await this.applyDamageToBoss(
+          channelKey,
+          attackResult.damage,
+          'user',
+          null,
+          attackResult.isCritical
         );
       }
-
-      await this.applyDamageToBoss(channelKey, userDamage, 'user', null, isCritical);
     } else {
       // Attack mobs
       await this.attackMobs(channelKey, 'user');
     }
+  },
+
+  _getBossCombatStats(dungeon) {
+    return {
+      strength: dungeon?.boss?.strength || 0,
+      agility: dungeon?.boss?.agility || 0,
+      intelligence: dungeon?.boss?.intelligence || 0,
+      vitality: dungeon?.boss?.vitality || 0,
+      perception: dungeon?.boss?.perception || 0,
+    };
+  },
+
+  _resolveUserBossDamage(dungeon, options = {}) {
+    const {
+      messageElement = null,
+      skillMultiplier = 1,
+      passiveDamageBonusKey = null,
+      executeThreshold = 0,
+      executeMultiplier = 1,
+    } = options || {};
+
+    const bossStats = this._getBossCombatStats(dungeon);
+    const breakdown =
+      typeof this.calculateUserDamageBreakdown === 'function'
+        ? this.calculateUserDamageBreakdown(bossStats, dungeon.boss.rank)
+        : {
+            damage: this.calculateUserDamage(bossStats, dungeon.boss.rank),
+            dodged: false,
+            wasCrit: false,
+            critMultiplier: 1,
+          };
+
+    let damage = Math.max(0, Number(breakdown.damage) || 0);
+    const critDamageBonus = this.getUserCritDamageBonus?.() || 0;
+    let isCritical = Boolean(breakdown.wasCrit);
+
+    if (isCritical && critDamageBonus > 0) {
+      damage = this.applyEnhancedCritMultiplier(damage, breakdown.critMultiplier || 1, critDamageBonus);
+    }
+
+    const pluginCrit = Boolean(messageElement && this.checkCriticalHit(messageElement));
+    const passiveCrit = !pluginCrit && !isCritical && Boolean(this.rollSkillTreeCombatCrit?.());
+
+    if (pluginCrit || passiveCrit) {
+      isCritical = true;
+      damage = this.applyEnhancedCritMultiplier(damage, 2.0, critDamageBonus);
+    }
+
+    const skillDamageMultiplier = Math.max(0.1, Number(skillMultiplier) || 1);
+    if (skillDamageMultiplier !== 1 && damage > 0) {
+      damage = Math.max(1, Math.floor(damage * skillDamageMultiplier));
+    }
+
+    if (passiveDamageBonusKey === 'daggerThrowDamageBonus' && damage > 0) {
+      const throwBonus = this.getUserDaggerThrowDamageBonus?.() || 0;
+      if (throwBonus > 0) {
+        damage = Math.max(1, Math.floor(damage * (1 + throwBonus)));
+      }
+    }
+
+    const threshold = Math.max(0, Number(executeThreshold) || 0);
+    const finisherMultiplier = Math.max(1, Number(executeMultiplier) || 1);
+    const bossHpRatio =
+      Number(dungeon?.boss?.maxHp) > 0 ? Number(dungeon.boss.hp) / Number(dungeon.boss.maxHp) : 1;
+    if (damage > 0 && threshold > 0 && bossHpRatio <= threshold && finisherMultiplier > 1) {
+      damage = Math.max(1, Math.floor(damage * finisherMultiplier));
+    }
+
+    return {
+      damage,
+      isCritical,
+      dodged: Boolean(breakdown.dodged),
+      breakdown,
+      pluginCrit,
+      passiveCrit,
+    };
+  },
+
+  _notifyBossGateLocked(dungeon) {
+    if (!dungeon) return;
+    const now = Date.now();
+    const lastNoticeAt = dungeon._bossGateNoticeAt || 0;
+    if (now - lastNoticeAt <= 15000) return;
+
+    dungeon._bossGateNoticeAt = now;
+    const requiredKills = Number.isFinite(dungeon?.bossGate?.requiredMobKills)
+      ? dungeon.bossGate.requiredMobKills
+      : 25;
+    const currentKills = Number.isFinite(dungeon?.mobs?.killed) ? dungeon.mobs.killed : 0;
+    const remainingKills = Math.max(0, requiredKills - currentKills);
+    this.showToast(`Boss sealed: clear ${remainingKills} more mobs to break the gate.`, 'info');
+  },
+
+  async castDungeonCombatSkill(channelKey, skillId) {
+    const dungeon = this.activeDungeons.get(channelKey);
+    if (!dungeon) {
+      this.showToast('No active dungeon here.', 'error');
+      return false;
+    }
+    if (!dungeon.userParticipating) {
+      this.showToast('Join the dungeon before using combat skills.', 'info');
+      return false;
+    }
+    if (!dungeon.shadowsDeployed) {
+      this.showToast('Deploy shadows before using combat skills.', 'info');
+      return false;
+    }
+    if (dungeon.completed || dungeon.failed || Number(dungeon?.boss?.hp || 0) <= 0) {
+      this.showToast('There is no living boss to target right now.', 'info');
+      return false;
+    }
+
+    const skillTree = this.getSkillTreeInstance?.();
+    if (!skillTree || typeof skillTree.useDungeonCombatSkill !== 'function') {
+      this.showToast('SkillTree combat skills are unavailable right now.', 'error');
+      return false;
+    }
+
+    const snapshot =
+      typeof skillTree.getDungeonCombatSkillRuntimeSnapshot === 'function'
+        ? skillTree.getDungeonCombatSkillRuntimeSnapshot(skillId)
+        : null;
+    if (!snapshot?.def) {
+      this.showToast('Unknown combat skill.', 'error');
+      return false;
+    }
+    if (!snapshot.unlocked) {
+      this.showToast(`${snapshot.def.name} is not unlocked yet.`, 'info');
+      return false;
+    }
+
+    const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
+    if (!bossUnlocked) {
+      this._notifyBossGateLocked(dungeon);
+      return false;
+    }
+
+    const castResult = skillTree.useDungeonCombatSkill(skillId);
+    if (!castResult?.success) {
+      const reason = castResult?.reason || 'Combat skill failed.';
+      const toastType = /mana|unknown/i.test(reason) ? 'error' : 'info';
+      this.showToast(reason, toastType);
+      this.queueHPBarUpdate(channelKey);
+      return false;
+    }
+    this.syncManaFromStats?.();
+
+    const def = castResult.def || snapshot.def;
+    const attackResult = this._resolveUserBossDamage(dungeon, {
+      skillMultiplier: def.damageMultiplier || 1,
+      passiveDamageBonusKey: def.passiveDamageBonusKey || null,
+      executeThreshold: def.executeThreshold || 0,
+      executeMultiplier: def.executeMultiplier || 1,
+    });
+
+    if (attackResult.damage <= 0) {
+      this.syncManaFromStats?.();
+      this.showToast(`${def.name} was evaded.`, 'info');
+      this.queueHPBarUpdate(channelKey);
+      return false;
+    }
+
+    await this.applyDamageToBoss(channelKey, attackResult.damage, 'user', null, attackResult.isCritical);
+    this.syncManaFromStats?.();
+    this.queueHPBarUpdate(channelKey);
+
+    const critText = attackResult.isCritical ? ' Critical hit!' : '';
+    this.showToast(
+      `${def.name} dealt ${attackResult.damage.toLocaleString()} damage.${critText}`,
+      attackResult.isCritical ? 'success' : 'info'
+    );
+    return true;
   }
 };

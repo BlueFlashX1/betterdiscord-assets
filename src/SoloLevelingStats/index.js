@@ -464,6 +464,9 @@ const SoloLevelingStats = class SoloLevelingStats {
       skillTreeBonuses: null,
       skillTreeBonusesTime: 0,
       skillTreeBonusesTTL: 2000, // 2s - skill tree changes rarely
+      hiddenBlessingBonuses: null,
+      hiddenBlessingBonusesTime: 0,
+      hiddenBlessingBonusesTTL: 2000, // 2s - hidden blessings track rank and update infrequently
       activeSkillBuffs: null,
       activeSkillBuffsTime: 0,
       activeSkillBuffsTTL: 1000, // 1s - active skills can expire/activate frequently

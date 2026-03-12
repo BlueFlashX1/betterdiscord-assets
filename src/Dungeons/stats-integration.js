@@ -87,6 +87,159 @@ module.exports = {
     this.cache?.caches?.delete('shadowCount');
   },
 
+  getSkillTreeBonuses() {
+    const now = Date.now();
+    if (
+      this._cache.skillTreeBonuses !== null &&
+      this._cache.skillTreeBonusesTime &&
+      now - this._cache.skillTreeBonusesTime < this._cache.skillTreeBonusesTTL
+    ) {
+      return this._cache.skillTreeBonuses;
+    }
+
+    try {
+      let bonuses = null;
+      const skillTree = this._SLUtils?.getPluginInstance?.('SkillTree');
+      if (skillTree && typeof skillTree.calculateSkillBonuses === 'function') {
+        bonuses = skillTree.calculateSkillBonuses() || null;
+      }
+      if (this.soloLevelingStats && typeof this.soloLevelingStats.getSkillTreeBonuses === 'function') {
+        bonuses = bonuses || this.soloLevelingStats.getSkillTreeBonuses() || null;
+      }
+      if (!bonuses) {
+        bonuses = BdApi.Data.load('SkillTree', 'bonuses') || null;
+      }
+      this._cache.skillTreeBonuses = bonuses;
+      this._cache.skillTreeBonusesTime = now;
+      return bonuses;
+    } catch (error) {
+      this.debugLog('GET_SKILL_TREE_BONUSES', 'Failed to load SkillTree bonuses', error);
+      this._cache.skillTreeBonuses = null;
+      this._cache.skillTreeBonusesTime = now;
+      return null;
+    }
+  },
+
+  getSkillTreeInstance() {
+    return this.validatePluginReference('SkillTree') || this._SLUtils?.getPluginInstance?.('SkillTree') || null;
+  },
+
+  getUserCombatCritChanceBonus() {
+    const bonuses = this.getSkillTreeBonuses() || null;
+    return Math.max(0, Math.min(0.35, Number(bonuses?.critBonus || 0)));
+  },
+
+  getUserCritDamageBonus() {
+    const bonuses = this.getSkillTreeBonuses() || null;
+    return Math.max(0, Number(bonuses?.critDamageBonus || 0));
+  },
+
+  getUserAttackCooldownReduction() {
+    const bonuses = this.getSkillTreeBonuses() || null;
+    return Math.max(0, Math.min(0.35, Number(bonuses?.attackCooldownReduction || 0)));
+  },
+
+  getUserDaggerThrowDamageBonus() {
+    const bonuses = this.getSkillTreeBonuses() || null;
+    return Math.max(0, Number(bonuses?.daggerThrowDamageBonus || 0));
+  },
+
+  rollSkillTreeCombatCrit() {
+    const critChance = this.getUserCombatCritChanceBonus();
+    return critChance > 0 && Math.random() < critChance;
+  },
+
+  applyEnhancedCritMultiplier(damage, baseMultiplier, critDamageBonus = null) {
+    const numericDamage = Number(damage);
+    if (!Number.isFinite(numericDamage) || numericDamage <= 0) return 0;
+
+    const multiplier = Number(baseMultiplier);
+    if (!Number.isFinite(multiplier) || multiplier <= 1) {
+      return Math.max(1, Math.floor(numericDamage));
+    }
+
+    const bonus =
+      critDamageBonus === null || critDamageBonus === undefined
+        ? this.getUserCritDamageBonus()
+        : Math.max(0, Number(critDamageBonus) || 0);
+
+    if (bonus <= 0) {
+      return Math.max(1, Math.floor(numericDamage));
+    }
+
+    const adjustedMultiplier = 1 + (multiplier - 1) * (1 + bonus);
+    const nonCritDamage = numericDamage / multiplier;
+    return Math.max(1, Math.floor(nonCritDamage * adjustedMultiplier));
+  },
+
+  getEffectiveUserAttackCooldownMs(attackInterval, fallbackInterval = 1000) {
+    const fallback =
+      Number.isFinite(Number(fallbackInterval)) && Number(fallbackInterval) > 0
+        ? Number(fallbackInterval)
+        : 1000;
+    const candidate = Number(attackInterval);
+    const baseCooldown = Number.isFinite(candidate) && candidate > 0 ? candidate : fallback;
+    const reduction = this.getUserAttackCooldownReduction();
+    const adjustedCooldown = baseCooldown * (1 - reduction);
+    if (typeof this.getEffectiveAttackCooldownMs === 'function') {
+      return this.getEffectiveAttackCooldownMs(adjustedCooldown, fallback);
+    }
+    return Math.max(800, Math.floor(adjustedCooldown));
+  },
+
+  getDungeonCombatSkillHudState(channelKey) {
+    const dungeon = this.activeDungeons?.get?.(channelKey);
+    if (!dungeon?.userParticipating) return [];
+
+    const skillTree = this.getSkillTreeInstance();
+    if (!skillTree || typeof skillTree.getAvailableDungeonCombatSkillSnapshots !== 'function') {
+      return [];
+    }
+
+    return skillTree
+      .getAvailableDungeonCombatSkillSnapshots()
+      .filter((snapshot) => snapshot?.def && snapshot.unlocked)
+      .map((snapshot) => {
+        const def = snapshot.def;
+        const hasMana = Number(snapshot.mana?.current || 0) >= Number(def.manaCost || 0);
+        const isOnCooldown = snapshot.cooldownRemaining > 0;
+        const needsDeploy = !dungeon.shadowsDeployed;
+        const disabled =
+          isOnCooldown ||
+          !hasMana ||
+          needsDeploy ||
+          dungeon.completed ||
+          dungeon.failed ||
+          Number(dungeon?.boss?.hp || 0) <= 0;
+
+        let stateClass = 'is-ready';
+        let titleText = `${def.name} • ${def.manaCost} Mana • ${Math.ceil(snapshot.effectiveCooldownMs / 1000)}s cooldown`;
+
+        if (isOnCooldown) {
+          stateClass = 'is-cooldown';
+          titleText = `${def.name} ready in ${Math.ceil(snapshot.cooldownRemaining / 1000)}s`;
+        } else if (!hasMana) {
+          stateClass = 'is-starved';
+          titleText = `${def.name} requires ${def.manaCost} Mana`;
+        } else if (needsDeploy) {
+          stateClass = 'is-blocked';
+          titleText = `Deploy shadows before using ${def.name}.`;
+        }
+
+        return {
+          ...snapshot,
+          hasMana,
+          needsDeploy,
+          disabled,
+          stateClass,
+          buttonText: isOnCooldown
+            ? `${def.buttonLabel || def.name.toUpperCase()} ${Math.ceil(snapshot.cooldownRemaining / 1000)}s`
+            : def.buttonLabel || def.name.toUpperCase(),
+          titleText,
+        };
+      });
+  },
+
   validatePluginReference(pluginName, instanceProperty) {
     // Check cache first
     const now = Date.now();

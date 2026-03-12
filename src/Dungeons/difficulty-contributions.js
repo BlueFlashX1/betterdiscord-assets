@@ -414,14 +414,21 @@ module.exports = {
     }
 
     if (totalUserDamage > 0) {
+      const adjustedUserDamage = this.applyStatusAdjustedIncomingDamage(
+        channelKey,
+        'user',
+        'user',
+        totalUserDamage,
+        Date.now()
+      );
       this.syncHPFromStats();
-      this.settings.userHP = Math.max(0, this.settings.userHP - totalUserDamage);
+      this.settings.userHP = Math.max(0, this.settings.userHP - adjustedUserDamage);
       this.pushHPToStats(true);
       this.updateStatsUI();
       this.startRegeneration(); // PERF: restart regen if it was paused
 
       if (userDamageToast && dungeon.userParticipating) {
-        this.showToast(userDamageToast(totalUserDamage), 'error');
+        this.showToast(userDamageToast(adjustedUserDamage), 'error');
       }
 
       if (this.settings.userHP <= 0) {

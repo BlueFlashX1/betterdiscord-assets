@@ -193,6 +193,9 @@ module.exports = {
       pluginInstances: {}, // Cache plugin instances by name
       pluginInstancesTime: {},
       pluginInstancesTTL: 5000, // 5s - plugin instances don't change often
+      skillTreeBonuses: null,
+      skillTreeBonusesTime: 0,
+      skillTreeBonusesTTL: 500, // 500ms - passive bonuses can change on upgrade
       userEffectiveStats: null,
       userEffectiveStatsTime: 0,
       userEffectiveStatsTTL: 500, // 500ms - stats change when stats are allocated

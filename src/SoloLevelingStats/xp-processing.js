@@ -350,11 +350,15 @@ module.exports = {
   _collectXpBonusState(messageLength) {
     const activeBuffs = this.getActiveSkillBuffs();
     const skillBonuses = this.getSkillTreeBonuses();
+    const hiddenBlessings = this.getHiddenBlessingBonuses?.();
 
     let totalPercentageBonus = 0;
     this._skillTreeStatMultiplier = null;
     if (skillBonuses?.xpBonus > 0) {
       totalPercentageBonus += skillBonuses.xpBonus * 100;
+    }
+    if (hiddenBlessings?.xpBonus > 0) {
+      totalPercentageBonus += hiddenBlessings.xpBonus * 100;
     }
     if (messageLength > 200 && skillBonuses?.longMsgBonus > 0) {
       totalPercentageBonus += skillBonuses.longMsgBonus * 100;
@@ -382,6 +386,7 @@ module.exports = {
 
     return {
       activeBuffs,
+      hiddenBlessings,
       skillBonuses,
       totalPercentageBonus,
     };
@@ -459,11 +464,7 @@ module.exports = {
   },
 
   _resolveCritBonusForAward(skillBonuses, activeBuffs) {
-    let activeSkillForcedCrit = false;
-    if (activeBuffs?.guaranteedCrit) {
-      const consumed = this.consumeActiveSkillCharge('mutilate');
-      if (consumed) activeSkillForcedCrit = true;
-    }
+    const activeSkillForcedCrit = activeBuffs?.guaranteedCrit === true;
 
     let critBonus = this.checkCriticalHitBonus();
     const passiveSkillCritChance = Math.min(0.35, Math.max(0, Number(skillBonuses?.critBonus || 0)));

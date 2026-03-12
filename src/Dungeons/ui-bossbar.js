@@ -1,4 +1,59 @@
 module.exports = {
+  _buildBossBarCombatSkillButtonHtml(skillState, channelKey) {
+    if (!skillState?.skillId) return '';
+    const titleText = String(skillState.titleText || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const disabledAttr = skillState.disabled ? ' disabled' : '';
+    return `
+      <button
+        class="dungeon-combat-skill-btn ${skillState.stateClass || ''}"
+        data-channel-key="${channelKey}"
+        data-skill-id="${skillState.skillId}"
+        title="${titleText}"${disabledAttr}
+      >${skillState.buttonText || skillState.skillId.toUpperCase()}</button>
+    `;
+  },
+
+  _buildBossBarCombatSkillsRow(channelKey) {
+    const skillStates = this.getDungeonCombatSkillHudState?.(channelKey) || [];
+    if (!skillStates.length) return '';
+
+    const buttonsHtml = skillStates
+      .map((skillState) => this._buildBossBarCombatSkillButtonHtml(skillState, channelKey))
+      .join('');
+
+    return `
+      <div class="boss-bar-combat-row">
+        <span class="boss-bar-combat-label">Skills:</span>
+        <div class="boss-bar-combat-actions">${buttonsHtml}</div>
+      </div>
+    `;
+  },
+
+  _updateBossBarCombatSkillButtons(hpBar, channelKey) {
+    const skillStates = this.getDungeonCombatSkillHudState?.(channelKey) || [];
+    if (!skillStates.length) return;
+
+    skillStates.forEach((skillState) => {
+      const button = hpBar.querySelector(
+        `.dungeon-combat-skill-btn[data-skill-id="${skillState.skillId}"]`
+      );
+      if (!button) return;
+
+      button.textContent = skillState.buttonText || skillState.skillId.toUpperCase();
+      button.title = skillState.titleText || '';
+      button.className = `dungeon-combat-skill-btn ${skillState.stateClass || ''}`;
+      if (skillState.disabled) {
+        button.setAttribute('disabled', 'disabled');
+      } else {
+        button.removeAttribute('disabled');
+      }
+    });
+  },
+
   _getCurrentChannelKeyFast() {
     if (typeof this.currentChannelKey === 'string' && this.currentChannelKey.includes('_')) {
       return this.currentChannelKey;
@@ -139,6 +194,8 @@ module.exports = {
       // REAL-TIME: Get current boss HP (ensure it's up-to-date)
       const currentBossHP = dungeon.boss?.hp || 0;
       const currentBossMaxHP = dungeon.boss?.maxHp || 0;
+      const combatSkillStates = this.getDungeonCombatSkillHudState?.(channelKey) || [];
+      const combatSignature = combatSkillStates.map((skillState) => skillState.skillId).join('|');
 
       // Boss bar diffing: structural vs numeric split.
       // Structural fields (buttons, badge, name, type) require full innerHTML rebuild.
@@ -150,7 +207,8 @@ module.exports = {
       const prev = this._bossBarCache.get(channelKey);
       const structuralUnchanged = prev &&
         prev.part === dungeon.userParticipating && prev.dep === dungeon.shadowsDeployed &&
-        prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name;
+        prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name &&
+        prev.combatSig === combatSignature;
 
       if (hpBar && structuralUnchanged) {
         // Fast path: update numeric values via targeted textContent (no innerHTML rebuild)
@@ -170,12 +228,13 @@ module.exports = {
         if (mobAliveEl) mobAliveEl.textContent = aliveMobs.toLocaleString();
         const mobTotalEl = hpBar.querySelector('.mob-total');
         if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
+        this._updateBossBarCombatSkillButtons(hpBar, channelKey);
         // Update cache with current numeric values
         this._bossBarCache.set(channelKey, {
           hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
           alive: aliveMobs, total: totalMobs,
           part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
-          type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+          type: dungeon.type, rank: dungeon.rank, name: dungeon.name, combatSig: combatSignature,
         });
         this.scheduleBossBarLayout(hpBar.parentElement);
         return;
@@ -185,7 +244,7 @@ module.exports = {
         hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
         alive: aliveMobs, total: totalMobs,
         part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
-        type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+        type: dungeon.type, rank: dungeon.rank, name: dungeon.name, combatSig: combatSignature,
       });
       // Preserve HP state + CSS var for recovery after React re-render
       const hpContainer = hpBar?.closest('.dungeon-boss-hp-container');
@@ -215,6 +274,7 @@ module.exports = {
       const leaveButtonHTML = dungeon.userParticipating
         ? `<button class="dungeon-leave-btn" data-channel-key="${channelKey}">LEAVE</button>`
         : '';
+      const combatSkillsRowHTML = this._buildBossBarCombatSkillsRow(channelKey);
 
       // Multi-line layout to show all info without truncation
       hpBar.innerHTML = `
@@ -249,6 +309,7 @@ module.exports = {
             <span class="mob-total">${totalMobs.toLocaleString()}</span>
           </div>
         </div>
+        ${combatSkillsRowHTML}
       </div>
 
       <div class="hp-bar-container">

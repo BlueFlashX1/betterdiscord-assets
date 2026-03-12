@@ -7,7 +7,7 @@ function attachStealthStatusPolicyMethods(StealthClass) {
 
   Object.assign(StealthClass.prototype, {
     _syncStatusPolicy() {
-      const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
+      const shouldForceInvisible = this._canSuppress("invisibleStatus");
 
       if (!shouldForceInvisible) {
         if (this._forcedInvisible) {

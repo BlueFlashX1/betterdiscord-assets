@@ -251,6 +251,18 @@ module.exports = {
         damageAlreadyApplied: true, // Boss AOE applies damage per-round for accurate death tracking
       });
 
+      if (dungeon.userParticipating && totalUserDamage > 0 && Number(this.settings?.userHP) > 0) {
+        this.applyEnemyCombatStatusEffects({
+          channelKey,
+          attacker: dungeon.boss,
+          attackerType: 'boss',
+          attacksInSpan,
+          targetType: 'user',
+          targetId: 'user',
+          now,
+        });
+      }
+
       // Advance cadence using elapsed/cooldown carryover (prevents stall/overfire loops).
       dungeon.boss.lastAttackTime = this.getPostAttackTimestamp(
         now,
@@ -642,6 +654,27 @@ module.exports = {
         shadowByIdMap,
       });
 
+      if (dungeon.userParticipating && totalUserDamage > 0 && Number(this.settings?.userHP) > 0) {
+        let representativeMob = null;
+        for (const mob of allActiveMobs) {
+          if (mob && mob.hp > 0) {
+            representativeMob = mob;
+            break;
+          }
+        }
+        if (representativeMob) {
+          this.applyEnemyCombatStatusEffects({
+            channelKey,
+            attacker: representativeMob,
+            attackerType: 'mob',
+            attacksInSpan: totalAttacksAll,
+            targetType: 'user',
+            targetId: 'user',
+            now,
+          });
+        }
+      }
+
       // INTEGRITY-1 (verified FP): deadShadows is the same Set reference from _getDungeonShadowCombatContext
       // (mutated in-place). Write-back is a no-op for existing entries but correctly initializes
       // the Map entry when deadShadows was created via the `|| new Set()` fallback (first combat tick).
@@ -719,20 +752,7 @@ module.exports = {
     if (!bossUnlocked) {
       dungeon.shadowsDeployed && this.ensureDeployedSpawnPipeline(channelKey, 'boss_damage_blocked');
       if (source === 'user') {
-        const now = Date.now();
-        const lastNoticeAt = dungeon._bossGateNoticeAt || 0;
-        if (now - lastNoticeAt > 15000) {
-          dungeon._bossGateNoticeAt = now;
-          const requiredKills = Number.isFinite(dungeon?.bossGate?.requiredMobKills)
-            ? dungeon.bossGate.requiredMobKills
-            : 25;
-          const currentKills = Number.isFinite(dungeon?.mobs?.killed) ? dungeon.mobs.killed : 0;
-          const remainingKills = Math.max(0, requiredKills - currentKills);
-          this.showToast(
-            `Boss sealed: clear ${remainingKills} more mobs to break the gate.`,
-            'info'
-          );
-        }
+        this._notifyBossGateLocked?.(dungeon);
       }
       return;
     }

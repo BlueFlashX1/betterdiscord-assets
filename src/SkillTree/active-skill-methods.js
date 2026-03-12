@@ -1,3 +1,25 @@
+const ACTIVE_SKILL_PHASES = Object.freeze({
+  LOCKED: "LOCKED",
+  IDLE: "IDLE",
+  CHANNELING: "CHANNELING",
+  COOLDOWN: "COOLDOWN",
+});
+
+const ACTIVE_SKILL_EMPTY_STATE = Object.freeze({
+  active: false,
+  expiresAt: 0,
+  cooldownUntil: 0,
+  chargesLeft: 0,
+});
+
+const DUNGEON_COMBAT_SKILL_EMPTY_STATE = Object.freeze({
+  cooldownUntil: 0,
+  lastUsedAt: 0,
+});
+
+const ACTIVE_SKILL_STATE_EVENT = "SkillTree:activeSkillStateChanged";
+const DUNGEON_COMBAT_SKILL_STATE_EVENT = "SkillTree:dungeonCombatSkillStateChanged";
+
 const ActiveSkillMethods = {
   isActiveSkillUnlocked(activeSkillId) {
     const def = this.activeSkillDefs[activeSkillId];
@@ -70,6 +92,14 @@ const ActiveSkillMethods = {
     return true;
   },
 
+  _persistSettingsFast() {
+    try {
+      BdApi?.Data?.save?.("SkillTree", "settings", this.settings);
+    } catch (_) {
+      // Non-critical best-effort persistence for high-frequency mana ticks.
+    }
+  },
+
   getManaInfo() {
     const sharedMana = this._getSharedManaInfo();
     if (sharedMana) {
@@ -85,15 +115,22 @@ const ActiveSkillMethods = {
     return { current, max: maxMana };
   },
 
+  _getManaRegenPerMinute() {
+    const soloData = this.getSoloLevelingData();
+    const intelligence = soloData?.stats?.intelligence || 0;
+    const bonuses =
+      typeof this.calculateSkillBonuses === 'function' ? this.calculateSkillBonuses() || {} : {};
+    const longevityMultiplier = 1 + Math.max(0, Number(bonuses.manaRegenBonus || 0));
+    return (1 + intelligence * 0.1) * longevityMultiplier;
+  },
+
   tickManaRegen() {
     const now = Date.now();
     const lastRegen = this.settings.lastManaRegen || now;
     const elapsedMinutes = (now - lastRegen) / 60000;
     if (elapsedMinutes < 0.5) return;
 
-    const soloData = this.getSoloLevelingData();
-    const intelligence = soloData?.stats?.intelligence || 0;
-    const regenPerMinute = 1 + intelligence * 0.1;
+    const regenPerMinute = this._getManaRegenPerMinute();
     const regenAmount = regenPerMinute * elapsedMinutes;
 
     const manaInfo = this.getManaInfo();
@@ -125,24 +162,94 @@ const ActiveSkillMethods = {
     }
   },
 
+  _cloneActiveSkillState(state) {
+    if (!state || typeof state !== "object") {
+      return { ...ACTIVE_SKILL_EMPTY_STATE };
+    }
+    return {
+      active: Boolean(state.active),
+      expiresAt: Number(state.expiresAt) || 0,
+      cooldownUntil: Number(state.cooldownUntil) || 0,
+      chargesLeft: Math.max(0, Number(state.chargesLeft) || 0),
+    };
+  },
+
   getActiveSkillState(skillId) {
     const states = this.settings.activeSkillStates || {};
-    return states[skillId] || { active: false, expiresAt: 0, cooldownUntil: 0, chargesLeft: 0 };
+    return this._cloneActiveSkillState(states[skillId]);
+  },
+
+  getActiveSkillPhase(skillId, now = Date.now()) {
+    if (!this.isActiveSkillUnlocked(skillId)) return ACTIVE_SKILL_PHASES.LOCKED;
+
+    const state = this.getActiveSkillState(skillId);
+    if (state.active) {
+      const def = this.activeSkillDefs[skillId];
+      if (def?.charges && state.chargesLeft <= 0) {
+        this._deactivateSkill(skillId, "charges_exhausted");
+        return this.getActiveSkillPhase(skillId, now);
+      }
+      if (def?.durationMs && state.expiresAt > 0 && state.expiresAt <= now) {
+        this._deactivateSkill(skillId, "expired");
+        return this.getActiveSkillPhase(skillId, now);
+      }
+      return ACTIVE_SKILL_PHASES.CHANNELING;
+    }
+
+    if (state.cooldownUntil > now) return ACTIVE_SKILL_PHASES.COOLDOWN;
+    return ACTIVE_SKILL_PHASES.IDLE;
+  },
+
+  getActiveSkillRuntimeSnapshot(skillId, now = Date.now()) {
+    const def = this.activeSkillDefs[skillId] || null;
+    const phase = this.getActiveSkillPhase(skillId, now);
+    const state = this.getActiveSkillState(skillId);
+    const mana = this.getManaInfo();
+    const cooldownRemaining = Math.max(0, state.cooldownUntil - now);
+    const expiresIn =
+      phase === ACTIVE_SKILL_PHASES.CHANNELING && state.expiresAt > 0
+        ? Math.max(0, state.expiresAt - now)
+        : 0;
+
+    return {
+      skillId,
+      def,
+      state,
+      phase,
+      unlocked: phase !== ACTIVE_SKILL_PHASES.LOCKED,
+      isRunning: phase === ACTIVE_SKILL_PHASES.CHANNELING,
+      isOnCooldown: phase === ACTIVE_SKILL_PHASES.COOLDOWN,
+      cooldownRemaining,
+      expiresIn,
+      mana,
+    };
+  },
+
+  _emitActiveSkillStateChange(skillId, prevState, nextState, reason, extra = {}) {
+    const snapshot = this.getActiveSkillRuntimeSnapshot(skillId);
+    document.dispatchEvent(
+      new CustomEvent(ACTIVE_SKILL_STATE_EVENT, {
+        detail: {
+          skillId,
+          prevState: prevState || null,
+          nextState: nextState || null,
+          reason: reason || "updated",
+          mana: snapshot.mana.current,
+          cooldownUntil: snapshot.state.cooldownUntil || 0,
+          expiresAt: snapshot.state.expiresAt || 0,
+          timestamp: Date.now(),
+          ...extra,
+        },
+      })
+    );
   },
 
   isActiveSkillRunning(skillId) {
-    const state = this.getActiveSkillState(skillId);
-    if (!state.active) return false;
-    const def = this.activeSkillDefs[skillId];
-    if (def && def.charges && state.chargesLeft > 0) return true;
-    if (state.expiresAt > Date.now()) return true;
-    this._deactivateSkill(skillId);
-    return false;
+    return this.getActiveSkillPhase(skillId) === ACTIVE_SKILL_PHASES.CHANNELING;
   },
 
   isActiveSkillOnCooldown(skillId) {
-    const state = this.getActiveSkillState(skillId);
-    return state.cooldownUntil > Date.now();
+    return this.getActiveSkillPhase(skillId) === ACTIVE_SKILL_PHASES.COOLDOWN;
   },
 
   getActiveSkillCooldownRemaining(skillId) {
@@ -151,19 +258,108 @@ const ActiveSkillMethods = {
     return remaining > 0 ? remaining : 0;
   },
 
+  _clearActiveSkillTimer(skillId) {
+    if (this._activeSkillTimers[skillId]) {
+      clearTimeout(this._activeSkillTimers[skillId]);
+      delete this._activeSkillTimers[skillId];
+    }
+  },
+
+  _clearActiveSkillSustain(skillId) {
+    if (!this._activeSkillSustainIntervals) this._activeSkillSustainIntervals = {};
+    const timerId = this._activeSkillSustainIntervals[skillId];
+    if (!timerId) return;
+    clearInterval(timerId);
+    delete this._activeSkillSustainIntervals[skillId];
+  },
+
+  _startActiveSkillSustain(skillId) {
+    const def = this.activeSkillDefs[skillId];
+    const sustain = def?.sustain;
+    if (!sustain) return;
+
+    const tickMs = Math.max(1000, Number(sustain.tickMs) || 0);
+    const baseManaPerTick = Math.max(0, Number(sustain.manaPerTick) || 0);
+    const policy = String(sustain.policy || "").trim().toLowerCase();
+    const regenSafetyMultiplier = Math.max(
+      0.1,
+      Math.min(0.99, Number(sustain.regenSafetyMultiplier) || 0.9)
+    );
+    const minManaFloor = Math.max(0, Number(sustain.minManaFloor) || 0);
+    const persistEveryTicks = Math.max(1, Math.round(10000 / tickMs));
+    if (!tickMs || !baseManaPerTick) return;
+
+    if (!this._activeSkillSustainIntervals) this._activeSkillSustainIntervals = {};
+    this._clearActiveSkillSustain(skillId);
+    let tickCounter = 0;
+
+    this._activeSkillSustainIntervals[skillId] = setInterval(() => {
+      if (this._isStopped) return;
+      const running = this.isActiveSkillRunning(skillId);
+      if (!running) {
+        this._clearActiveSkillSustain(skillId);
+        return;
+      }
+
+      const manaInfo = this.getManaInfo();
+      let effectiveManaPerTick = baseManaPerTick;
+      if (policy === "never_deplete") {
+        const regenPerMinute = this._getManaRegenPerMinute();
+        const regenPerTick = (regenPerMinute * tickMs) / 60000;
+        const cappedDrain = Math.max(0, regenPerTick * regenSafetyMultiplier);
+        effectiveManaPerTick = Math.min(baseManaPerTick, cappedDrain);
+      }
+
+      if (effectiveManaPerTick <= 0) return;
+
+      if (policy === "never_deplete" && manaInfo.current <= minManaFloor + effectiveManaPerTick) {
+        const flooredMana = Math.max(minManaFloor, manaInfo.current);
+        this.settings.currentMana = flooredMana;
+        this.settings.maxMana = manaInfo.max;
+        this._setSharedMana(flooredMana, manaInfo.max);
+        tickCounter += 1;
+        if (tickCounter >= persistEveryTicks) {
+          tickCounter = 0;
+          this._persistSettingsFast();
+        }
+        return;
+      }
+
+      if (manaInfo.current < effectiveManaPerTick) {
+        this._deactivateSkill(skillId, "mana_depleted");
+        return;
+      }
+
+      const remainingMana = Math.max(0, manaInfo.current - effectiveManaPerTick);
+      this.settings.currentMana = remainingMana;
+      this.settings.maxMana = manaInfo.max;
+      this._setSharedMana(remainingMana, manaInfo.max);
+      tickCounter += 1;
+      if (tickCounter >= persistEveryTicks) {
+        tickCounter = 0;
+        this._persistSettingsFast();
+      }
+
+      if (typeof this._modalForceUpdate === "function") {
+        this._modalForceUpdate();
+      }
+    }, tickMs);
+  },
+
   activateSkill(skillId) {
     const def = this.activeSkillDefs[skillId];
     if (!def) return { success: false, reason: "Unknown skill" };
 
-    if (!this.isActiveSkillUnlocked(skillId)) {
+    const prevPhase = this.getActiveSkillPhase(skillId);
+    if (prevPhase === ACTIVE_SKILL_PHASES.LOCKED) {
       return { success: false, reason: "Skill not unlocked" };
     }
 
-    if (this.isActiveSkillRunning(skillId)) {
+    if (prevPhase === ACTIVE_SKILL_PHASES.CHANNELING) {
       return { success: false, reason: "Already active" };
     }
 
-    if (this.isActiveSkillOnCooldown(skillId)) {
+    if (prevPhase === ACTIVE_SKILL_PHASES.COOLDOWN) {
       const remainMs = this.getActiveSkillCooldownRemaining(skillId);
       const remainMin = Math.ceil(remainMs / 60000);
       return { success: false, reason: `On cooldown (${remainMin}m)` };
@@ -191,38 +387,64 @@ const ActiveSkillMethods = {
     if (def.durationMs) {
       this._setActiveSkillTimer(skillId, def.durationMs);
     }
+    this._startActiveSkillSustain(skillId);
 
     this.saveSettings();
 
-    const durationText = def.durationMs
-      ? `${Math.round(def.durationMs / 60000)}m`
-      : `${def.charges} charge${def.charges > 1 ? "s" : ""}`;
+    let durationText = "Active";
+    if (def.durationMs) {
+      durationText = `${Math.round(def.durationMs / 60000)}m`;
+    } else if (def.charges) {
+      durationText = `${def.charges} charge${def.charges > 1 ? "s" : ""}`;
+    } else if (def.sustain) {
+      durationText = "Sustained";
+    }
     if (BdApi?.UI?.showToast) {
       this._toast(`${def.name} activated! (${durationText})`, "success", 3000);
     }
 
-    document.dispatchEvent(new CustomEvent("SkillTree:activeSkillActivated", {
-      detail: { skillId, effect: def.effect, expiresAt: this.settings.activeSkillStates[skillId].expiresAt },
-    }));
+    document.dispatchEvent(
+      new CustomEvent("SkillTree:activeSkillActivated", {
+        detail: { skillId, effect: def.effect, expiresAt: this.settings.activeSkillStates[skillId].expiresAt },
+      })
+    );
+
+    const nextPhase = this.getActiveSkillPhase(skillId);
+    this._emitActiveSkillStateChange(skillId, prevPhase, nextPhase, "activated", {
+      effect: def.effect || {},
+    });
 
     return { success: true };
   },
 
-  _setActiveSkillTimer(skillId, delayMs) {
-    if (this._activeSkillTimers[skillId]) {
-      clearTimeout(this._activeSkillTimers[skillId]);
+  deactivateSkill(skillId, reason = "manual") {
+    const def = this.activeSkillDefs[skillId];
+    if (!def) return { success: false, reason: "Unknown skill" };
+    if (!this.isActiveSkillRunning(skillId)) {
+      return { success: false, reason: "Not active" };
     }
+    this._deactivateSkill(skillId, reason);
+    return { success: true };
+  },
+
+  _setActiveSkillTimer(skillId, delayMs) {
+    this._clearActiveSkillTimer(skillId);
     this._activeSkillTimers[skillId] = setTimeout(() => {
       delete this._activeSkillTimers[skillId];
       if (this._isStopped) return;
-      this._deactivateSkill(skillId);
+      this._deactivateSkill(skillId, "expired");
     }, delayMs);
   },
 
-  _deactivateSkill(skillId) {
+  _deactivateSkill(skillId, reason = "expired") {
+    const prevPhase = this.getActiveSkillPhase(skillId);
     const state = this.getActiveSkillState(skillId);
     if (!state.active) return;
 
+    this._clearActiveSkillTimer(skillId);
+    this._clearActiveSkillSustain(skillId);
+
+    if (!this.settings.activeSkillStates) this.settings.activeSkillStates = {};
     this.settings.activeSkillStates[skillId] = {
       ...state,
       active: false,
@@ -234,12 +456,20 @@ const ActiveSkillMethods = {
 
     const def = this.activeSkillDefs[skillId];
     if (BdApi?.UI?.showToast && def) {
-      this._toast(`${def.name} expired.`, "info", 2000);
+      let toastText = `${def.name} expired.`;
+      if (reason === "manual") toastText = `${def.name} deactivated.`;
+      if (reason === "mana_depleted") toastText = `${def.name} ended (Mana depleted).`;
+      this._toast(toastText, "info", 2200);
     }
 
-    document.dispatchEvent(new CustomEvent("SkillTree:activeSkillExpired", {
-      detail: { skillId },
-    }));
+    document.dispatchEvent(
+      new CustomEvent("SkillTree:activeSkillExpired", {
+        detail: { skillId, reason },
+      })
+    );
+
+    const nextPhase = this.getActiveSkillPhase(skillId);
+    this._emitActiveSkillStateChange(skillId, prevPhase, nextPhase, reason);
   },
 
   consumeActiveSkillCharge(skillId) {
@@ -247,10 +477,11 @@ const ActiveSkillMethods = {
     if (!state.active || state.chargesLeft <= 0) return false;
 
     state.chargesLeft -= 1;
+    if (!this.settings.activeSkillStates) this.settings.activeSkillStates = {};
     this.settings.activeSkillStates[skillId] = state;
 
     if (state.chargesLeft <= 0) {
-      this._deactivateSkill(skillId);
+      this._deactivateSkill(skillId, "charges_exhausted");
     } else {
       this.saveSettings();
     }
@@ -258,23 +489,178 @@ const ActiveSkillMethods = {
     return true;
   },
 
+  isDungeonCombatSkillUnlocked(skillId) {
+    const def = this.dungeonCombatSkillDefs?.[skillId];
+    if (!def?.unlock) return false;
+    const passiveLevel = this.getSkillLevel(def.unlock.passiveSkill);
+    return passiveLevel >= def.unlock.passiveLevel;
+  },
+
+  _cloneDungeonCombatSkillState(state) {
+    if (!state || typeof state !== "object") {
+      return { ...DUNGEON_COMBAT_SKILL_EMPTY_STATE };
+    }
+    return {
+      cooldownUntil: Math.max(0, Number(state.cooldownUntil) || 0),
+      lastUsedAt: Math.max(0, Number(state.lastUsedAt) || 0),
+    };
+  },
+
+  getDungeonCombatSkillState(skillId) {
+    const states = this.settings.combatSkillStates || {};
+    return this._cloneDungeonCombatSkillState(states[skillId]);
+  },
+
+  getDungeonCombatSkillCooldownRemaining(skillId, now = Date.now()) {
+    const state = this.getDungeonCombatSkillState(skillId);
+    return Math.max(0, state.cooldownUntil - now);
+  },
+
+  _getOffensiveCooldownReduction() {
+    const bonuses =
+      typeof this.calculateSkillBonuses === "function" ? this.calculateSkillBonuses() || {} : {};
+    return Math.max(0, Math.min(0.35, Number(bonuses.attackCooldownReduction || 0)));
+  },
+
+  getEffectiveDungeonCombatSkillCooldownMs(skillId) {
+    const def = this.dungeonCombatSkillDefs?.[skillId];
+    if (!def) return 0;
+
+    const baseCooldown = Math.max(1000, Number(def.cooldownMs) || 0);
+    const minimumCooldown = Math.max(
+      1000,
+      Number(def.minimumCooldownMs || def.minCooldownMs) || 0
+    );
+    const reduction = this._getOffensiveCooldownReduction();
+    return Math.max(minimumCooldown, Math.round(baseCooldown * (1 - reduction)));
+  },
+
+  getDungeonCombatSkillRuntimeSnapshot(skillId, now = Date.now()) {
+    const def = this.dungeonCombatSkillDefs?.[skillId] || null;
+    const unlocked = def ? this.isDungeonCombatSkillUnlocked(skillId) : false;
+    const state = this.getDungeonCombatSkillState(skillId);
+    const mana = this.getManaInfo();
+    const cooldownRemaining = Math.max(0, state.cooldownUntil - now);
+
+    return {
+      skillId,
+      def,
+      unlocked,
+      state,
+      mana,
+      isOnCooldown: cooldownRemaining > 0,
+      cooldownRemaining,
+      effectiveCooldownMs: def ? this.getEffectiveDungeonCombatSkillCooldownMs(skillId) : 0,
+      ready:
+        Boolean(def) &&
+        unlocked &&
+        cooldownRemaining <= 0 &&
+        mana.current >= Number(def?.manaCost || 0),
+    };
+  },
+
+  getAvailableDungeonCombatSkillSnapshots(now = Date.now()) {
+    return (this.dungeonCombatSkillOrder || [])
+      .map((skillId) => this.getDungeonCombatSkillRuntimeSnapshot(skillId, now))
+      .filter((snapshot) => snapshot?.def);
+  },
+
+  _emitDungeonCombatSkillStateChange(skillId, prevState, nextState, reason, extra = {}) {
+    document.dispatchEvent(
+      new CustomEvent(DUNGEON_COMBAT_SKILL_STATE_EVENT, {
+        detail: {
+          skillId,
+          prevState: prevState || null,
+          nextState: nextState || null,
+          reason: reason || "updated",
+          timestamp: Date.now(),
+          ...extra,
+        },
+      })
+    );
+  },
+
+  useDungeonCombatSkill(skillId) {
+    const def = this.dungeonCombatSkillDefs?.[skillId];
+    if (!def) return { success: false, reason: "Unknown combat skill" };
+
+    if (!this.isDungeonCombatSkillUnlocked(skillId)) {
+      return { success: false, reason: "Skill not unlocked" };
+    }
+
+    const now = Date.now();
+    const prevState = this.getDungeonCombatSkillState(skillId);
+    const cooldownRemaining = Math.max(0, prevState.cooldownUntil - now);
+    if (cooldownRemaining > 0) {
+      return {
+        success: false,
+        reason: `On cooldown (${Math.ceil(cooldownRemaining / 1000)}s)`,
+      };
+    }
+
+    const manaInfo = this.getManaInfo();
+    if (manaInfo.current < def.manaCost) {
+      return {
+        success: false,
+        reason: `Not enough Mana (${Math.floor(manaInfo.current)}/${def.manaCost})`,
+      };
+    }
+
+    const cooldownMs = this.getEffectiveDungeonCombatSkillCooldownMs(skillId);
+    const remainingMana = Math.max(0, manaInfo.current - def.manaCost);
+    const nextState = {
+      cooldownUntil: now + cooldownMs,
+      lastUsedAt: now,
+    };
+
+    this.settings.currentMana = remainingMana;
+    this.settings.maxMana = manaInfo.max;
+    this._setSharedMana(remainingMana, manaInfo.max);
+
+    if (!this.settings.combatSkillStates) this.settings.combatSkillStates = {};
+    this.settings.combatSkillStates[skillId] = nextState;
+
+    this.saveSettings();
+    this._emitDungeonCombatSkillStateChange(skillId, prevState, nextState, "used", {
+      cooldownUntil: nextState.cooldownUntil,
+      mana: remainingMana,
+    });
+
+    return {
+      success: true,
+      def,
+      state: nextState,
+      mana: { current: remainingMana, max: manaInfo.max },
+      cooldownMs,
+      cooldownUntil: nextState.cooldownUntil,
+      snapshot: this.getDungeonCombatSkillRuntimeSnapshot(skillId),
+    };
+  },
+
   restoreActiveSkillTimers() {
     const states = this.settings.activeSkillStates || {};
     const now = Date.now();
 
-    Object.entries(states).forEach(([skillId, state]) => {
+    Object.entries(states).forEach(([skillId, rawState]) => {
+      const state = this._cloneActiveSkillState(rawState);
       if (!state.active) return;
       const def = this.activeSkillDefs[skillId];
       if (!def) return;
+
+      this._startActiveSkillSustain(skillId);
 
       if (def.durationMs && state.expiresAt > 0) {
         const remaining = state.expiresAt - now;
         if (remaining > 0) {
           this._setActiveSkillTimer(skillId, remaining);
         } else {
-          this._deactivateSkill(skillId);
+          this._deactivateSkill(skillId, "expired");
+          return;
         }
       }
+
+      const nextPhase = this.getActiveSkillPhase(skillId);
+      this._emitActiveSkillStateChange(skillId, null, nextPhase, "restored");
     });
   },
 
@@ -305,4 +691,4 @@ const ActiveSkillMethods = {
   },
 };
 
-module.exports = { ActiveSkillMethods };
+module.exports = { ActiveSkillMethods, ACTIVE_SKILL_PHASES };

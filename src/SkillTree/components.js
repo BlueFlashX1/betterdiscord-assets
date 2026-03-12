@@ -7,9 +7,35 @@ function buildSkillTreeComponents(pluginInstance) {
     const parts = [];
     if (effect.xpBonus) parts.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
     if (effect.critBonus) parts.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
+    if (effect.critDamageBonus) parts.push(`+${(effect.critDamageBonus * 100).toFixed(1)}% Crit Damage`);
     if (effect.longMsgBonus) parts.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
     if (effect.questBonus) parts.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
     if (effect.allStatBonus) parts.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
+    if (effect.attackCooldownReduction) {
+      parts.push(`-${(effect.attackCooldownReduction * 100).toFixed(1)}% Attack Cooldown`);
+    }
+    if (effect.daggerThrowDamageBonus) {
+      parts.push(`+${(effect.daggerThrowDamageBonus * 100).toFixed(1)}% Dagger Throw Damage`);
+    }
+    if (effect.hpRegenBonus) parts.push(`+${(effect.hpRegenBonus * 100).toFixed(1)}% HP Regen`);
+    if (effect.manaRegenBonus) parts.push(`+${(effect.manaRegenBonus * 100).toFixed(1)}% Mana Regen`);
+    if (effect.debuffDurationReduction) {
+      parts.push(`-${(effect.debuffDurationReduction * 100).toFixed(1)}% Debuff Duration`);
+    }
+    if (effect.debuffResistChance) {
+      parts.push(`+${(effect.debuffResistChance * 100).toFixed(1)}% Debuff Resist`);
+    }
+    if (effect.debuffCleanseChance) {
+      parts.push(`+${(effect.debuffCleanseChance * 100).toFixed(1)}% Cleanse Chance`);
+    }
+    if (effect.tenacityDamageReduction && effect.tenacityThreshold) {
+      parts.push(
+        `-${(effect.tenacityDamageReduction * 100).toFixed(1)}% Incoming Damage below ${(effect.tenacityThreshold * 100).toFixed(0)}% HP`
+      );
+    }
+    if (effect.naturalGrowthMultiplier && effect.naturalGrowthMultiplier > 1) {
+      parts.push(`+${((effect.naturalGrowthMultiplier - 1) * 100).toFixed(1)}% Natural Growth`);
+    }
     return parts.join(" \u2022 ");
   }
 
@@ -25,9 +51,10 @@ function buildSkillTreeComponents(pluginInstance) {
   }
 
   function getActiveSkillDurationText(def) {
-    return def.durationMs
-      ? `${Math.round(def.durationMs / 60000)}m`
-      : `${def.charges} charge${def.charges > 1 ? "s" : ""}`;
+    if (def.durationMs) return `${Math.round(def.durationMs / 60000)}m`;
+    if (def.charges) return `${def.charges} charge${def.charges > 1 ? "s" : ""}`;
+    if (def.sustain) return "Sustain";
+    return "Passive";
   }
 
   function buildActiveSkillStatus(ce, options) {
@@ -54,6 +81,13 @@ function buildSkillTreeComponents(pluginInstance) {
           `ACTIVE - ${state.chargesLeft} charge${state.chargesLeft > 1 ? "s" : ""} left`
         );
       }
+      if (def.sustain) {
+        return ce(
+          "div",
+          { className: "skilltree-active-skill-status active-text" },
+          "ACTIVE - Sustained (regen-safe drain)"
+        );
+      }
       return null;
     }
 
@@ -75,6 +109,7 @@ function buildActiveSkillAction(ce, options) {
     isOnCooldown,
     manaInfo,
     onActivate,
+    onDeactivate,
   } = options;
   if (!isUnlocked) {
       const reqSkillDef = pluginInstance.findSkillAndTier(def.unlock.passiveSkill);
@@ -87,7 +122,14 @@ function buildActiveSkillAction(ce, options) {
     }
 
     if (isRunning) {
-      return ce("button", { className: "skilltree-activate-btn", disabled: true }, "Active");
+      return ce(
+        "button",
+        {
+          className: "skilltree-activate-btn",
+          onClick: () => onDeactivate(skillId),
+        },
+        "Deactivate"
+      );
     }
 
     const canActivate = !isOnCooldown && manaInfo.current >= def.manaCost;
@@ -102,7 +144,7 @@ function buildActiveSkillAction(ce, options) {
     );
   }
 
-  function ActiveSkillCard({ skillId, def, isUnlocked, isRunning, isOnCooldown, cooldownRemaining, state, manaInfo, onActivate }) {
+  function ActiveSkillCard({ skillId, def, isUnlocked, isRunning, isOnCooldown, cooldownRemaining, state, manaInfo, onActivate, onDeactivate }) {
     const cardClasses = ["skilltree-active-skill", isRunning ? "is-active" : "", !isUnlocked ? "is-locked" : ""].filter(Boolean).join(" ");
     const durationText = getActiveSkillDurationText(def);
     const cooldownText = `${Math.round(def.cooldownMs / 60000)}m`;
@@ -121,6 +163,7 @@ function buildActiveSkillAction(ce, options) {
       isOnCooldown,
       manaInfo,
       onActivate,
+      onDeactivate,
     });
 
     return ce("div", { className: cardClasses },
@@ -139,7 +182,7 @@ function buildActiveSkillAction(ce, options) {
     );
   }
 
-  function ActiveSkillsSection({ onActivate }) {
+  function ActiveSkillsSection({ onActivate, onDeactivate }) {
     const manaInfo = pluginInstance.getManaInfo();
     return ce("div", { className: "skilltree-active-section" },
       ce("div", { className: "skilltree-active-section-header" }, ce("span", null, "Active Skills")),
@@ -158,6 +201,7 @@ function buildActiveSkillAction(ce, options) {
           state: pluginInstance.getActiveSkillState(skillId),
           manaInfo,
           onActivate,
+          onDeactivate,
         });
       })
     );
@@ -206,6 +250,45 @@ function buildActiveSkillAction(ce, options) {
           onMaxUpgrade,
         });
       })
+    );
+  }
+
+  function PermanentEffectCard({ item, footerText }) {
+    const effectStr = formatEffectText(item.effect);
+    return ce("div", { className: "skilltree-skill unlocked max-level" },
+      ce("div", { className: "skilltree-skill-name" }, item.name),
+      ce("div", { className: "skilltree-skill-desc" }, item.desc),
+      item.lore ? ce("div", { className: "skilltree-skill-lore" }, item.lore) : null,
+      ce("div", { className: "skilltree-skill-level" }, item.statusText || "Always Active"),
+      item.effect?.sourceRank ? ce("div", { className: "skilltree-skill-level" }, `Current Rank: ${item.effect.sourceRank}`) : null,
+      effectStr ? ce("div", { className: "skilltree-skill-effects" }, `Current Effects: ${effectStr}`) : null,
+      ce("div", { className: "skilltree-skill-max" }, footerText)
+    );
+  }
+
+  function InnatePassivesSection() {
+    const innatePassives = pluginInstance.getInnatePassives?.() || [];
+    if (innatePassives.length === 0) return null;
+
+    return ce("div", { className: "skilltree-tier", id: "st-innate-passives" },
+      ce("div", { className: "skilltree-tier-header" },
+        ce("span", null, "Innate System Passives"),
+        ce("span", { className: "skilltree-tier-badge" }, "Always On")
+      ),
+      innatePassives.map((passive) => ce(PermanentEffectCard, { key: passive.id, item: passive, footerText: "INNATE" }))
+    );
+  }
+
+  function HiddenBlessingsSection() {
+    const hiddenBlessings = pluginInstance.getHiddenBlessings?.() || [];
+    if (hiddenBlessings.length === 0) return null;
+
+    return ce("div", { className: "skilltree-tier", id: "st-hidden-blessings" },
+      ce("div", { className: "skilltree-tier-header" },
+        ce("span", null, "Hidden Blessings"),
+        ce("span", { className: "skilltree-tier-badge" }, "Rank-Scaled")
+      ),
+      hiddenBlessings.map((blessing) => ce(PermanentEffectCard, { key: blessing.id, item: blessing, footerText: "HIDDEN" }))
     );
   }
 
@@ -320,6 +403,12 @@ function buildActiveSkillAction(ce, options) {
       forceUpdate();
     }, []);
 
+    const handleDeactivate = React.useCallback((skillId) => {
+      const result = pluginInstance.deactivateSkill(skillId, "manual");
+      if (!result.success && BdApi?.UI?.showToast) pluginInstance._toast(result.reason, "error", 2500);
+      forceUpdate();
+    }, []);
+
     const handleReset = React.useCallback(() => {
       setIsResetOpen(true);
     }, []);
@@ -341,15 +430,17 @@ function buildActiveSkillAction(ce, options) {
       ce(SkillTreeHeader, { sp: pluginInstance.settings.skillPoints, level: soloData?.level, onReset: handleReset }),
       ce(TierNavigation, { tiers: visibleTiers, currentTier: activeTier, onTierChange: handleTierChange }),
       ce("div", { className: "skilltree-modal-content" },
+        ce(InnatePassivesSection),
+        ce(HiddenBlessingsSection),
         tierData ? ce(PassiveSkillList, { tier: tierData, tierKey: activeTier, onUpgrade: handleUpgrade, onMaxUpgrade: handleMaxUpgrade }) : null,
-        ce(ActiveSkillsSection, { onActivate: handleActivate })
+        ce(ActiveSkillsSection, { onActivate: handleActivate, onDeactivate: handleDeactivate })
       ),
       ce("button", { className: "skilltree-close-btn", onClick: onClose }, "\u00D7"),
       isResetOpen ? ce(ResetConfirmDialog, { onConfirm: handleResetConfirm, onCancel: handleResetCancel, expectedSP, currentLevel: resetSoloData?.level || 0 }) : null
     );
   }
 
-  return { SkillTreeModal, SkillTreeHeader, TierNavigation, PassiveSkillList, SkillCard, ActiveSkillsSection, ActiveSkillCard, ManaBar, ResetConfirmDialog };
+  return { SkillTreeModal, SkillTreeHeader, TierNavigation, PassiveSkillList, SkillCard, ActiveSkillsSection, ActiveSkillCard, ManaBar, ResetConfirmDialog, InnatePassivesSection, HiddenBlessingsSection, PermanentEffectCard };
 }
 
 module.exports = { buildSkillTreeComponents };

@@ -58,6 +58,87 @@ const { _PluginUtils, _ReactUtils, _SLUtils } = require("./shared-utils");
 const { createToast } = require("../shared/toast");
 const { getCreateRoot: _sharedGetCreateRoot } = require("../shared/react-dom");
 
+const PASSIVE_BONUS_TUNING = {
+  xpBonus: { softCap: 0.8, hardCap: 2.2, taperScale: 0.55 },
+  critBonus: { softCap: 0.12, hardCap: 0.35, taperScale: 0.1 },
+  critDamageBonus: { softCap: 0.55, hardCap: 1.75, taperScale: 0.28 },
+  longMsgBonus: { softCap: 0.25, hardCap: 0.9, taperScale: 0.24 },
+  questBonus: { softCap: 0.2, hardCap: 0.65, taperScale: 0.22 },
+  allStatBonus: { softCap: 0.1, hardCap: 0.35, taperScale: 0.16 },
+  attackCooldownReduction: { softCap: 0.18, hardCap: 0.35, taperScale: 0.08 },
+  daggerThrowDamageBonus: { softCap: 0.45, hardCap: 1.2, taperScale: 0.18 },
+  hpRegenBonus: { softCap: 0.4, hardCap: 1.1, taperScale: 0.25 },
+  manaRegenBonus: { softCap: 0.4, hardCap: 1.1, taperScale: 0.25 },
+  debuffDurationReduction: { softCap: 0.45, hardCap: 0.75, taperScale: 0.12 },
+  debuffResistChance: { softCap: 0.22, hardCap: 0.45, taperScale: 0.09 },
+  debuffCleanseChance: { softCap: 0.22, hardCap: 0.5, taperScale: 0.1 },
+};
+
+const PASSIVE_BONUS_KEYS = Object.freeze([
+  'xpBonus',
+  'critBonus',
+  'critDamageBonus',
+  'longMsgBonus',
+  'questBonus',
+  'allStatBonus',
+  'attackCooldownReduction',
+  'daggerThrowDamageBonus',
+  'hpRegenBonus',
+  'manaRegenBonus',
+  'debuffDurationReduction',
+  'debuffResistChance',
+  'debuffCleanseChance',
+]);
+
+const STATIC_PASSIVE_BONUS_KEYS = Object.freeze([
+  'tenacityThreshold',
+  'tenacityDamageReduction',
+]);
+
+const SOLO_RANK_ORDER = Object.freeze([
+  'E',
+  'D',
+  'C',
+  'B',
+  'A',
+  'S',
+  'SS',
+  'SSS',
+  'SSS+',
+  'NH',
+  'Monarch',
+  'Monarch+',
+  'Shadow Monarch',
+]);
+
+const KANDIARU_RANK_EFFECTS = Object.freeze({
+  E: { xpBonus: 0.03, naturalGrowthMultiplier: 1.08 },
+  D: { xpBonus: 0.05, naturalGrowthMultiplier: 1.14 },
+  C: { xpBonus: 0.07, naturalGrowthMultiplier: 1.2 },
+  B: { xpBonus: 0.09, naturalGrowthMultiplier: 1.26 },
+  A: { xpBonus: 0.11, naturalGrowthMultiplier: 1.32 },
+  S: { xpBonus: 0.13, naturalGrowthMultiplier: 1.38 },
+  SS: { xpBonus: 0.15, naturalGrowthMultiplier: 1.44 },
+  SSS: { xpBonus: 0.17, naturalGrowthMultiplier: 1.5 },
+  'SSS+': { xpBonus: 0.18, naturalGrowthMultiplier: 1.55 },
+  NH: { xpBonus: 0.19, naturalGrowthMultiplier: 1.6 },
+  Monarch: { xpBonus: 0.2, naturalGrowthMultiplier: 1.65 },
+  'Monarch+': { xpBonus: 0.22, naturalGrowthMultiplier: 1.72 },
+  'Shadow Monarch': { xpBonus: 0.22, naturalGrowthMultiplier: 1.72 },
+});
+
+// SP curve tuned so full passive maxing is achievable by roughly level 2000.
+// f(x) = round((Q*x^2 + L*x) / D), where x = level - 1.
+// Constraints:
+// - level 1 -> 0 SP
+// - level 2 -> 1 SP
+// - level 2000 -> 175169 SP (current total max cost)
+const SP_CURVE = Object.freeze({
+  quadraticNumerator: 173170,
+  linearNumerator: 3820832,
+  denominator: 3994002,
+});
+
 module.exports = class SkillTree {
   // ============================================================================
   // §1 CONSTRUCTOR & INITIALIZATION
@@ -65,9 +146,13 @@ module.exports = class SkillTree {
   constructor() {
     const data = createSkillTreeData();
     this.defaultSettings = data.defaultSettings;
+    this.innatePassives = data.innatePassives || [];
+    this.hiddenBlessings = data.hiddenBlessings || [];
     this.skillTree = data.skillTree;
     this.activeSkillDefs = data.activeSkillDefs;
     this.activeSkillOrder = data.activeSkillOrder;
+    this.dungeonCombatSkillDefs = data.dungeonCombatSkillDefs || {};
+    this.dungeonCombatSkillOrder = data.dungeonCombatSkillOrder || [];
 
     this._retryTimeouts = new Set();
     this._isStopped = true;
@@ -87,7 +172,8 @@ module.exports = class SkillTree {
     this._windowFocusCleanup = null; // Cleanup function for window focus watcher
     // _composerObserver removed — React patcher handles button persistence
     this._manaRegenInterval = null; // Mana regeneration interval
-    this._activeSkillTimers = {};   // Expiry timers for active skills { skillId: timeoutId }
+    this._activeSkillTimers = {}; // Expiry timers for active skills { skillId: timeoutId }
+    this._activeSkillSustainIntervals = {}; // Sustain mana drain intervals { skillId: intervalId }
 
     // Performance caches
     this._cache = {
@@ -100,6 +186,9 @@ module.exports = class SkillTree {
       skillBonuses: null, // Cache calculated skill bonuses
       skillBonusesTime: 0,
       skillBonusesTTL: 500, // 500ms - bonuses change when skills are upgraded
+      hiddenBlessingBonuses: null,
+      hiddenBlessingBonusesTime: 0,
+      hiddenBlessingBonusesTTL: 500,
     };
   }
 
@@ -142,6 +231,7 @@ module.exports = class SkillTree {
       console.error('[SkillTree] SLUtils not available — toolbar button inactive');
     }
     this.saveSkillBonuses();
+    this.saveHiddenBlessingBonuses();
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -303,7 +393,7 @@ module.exports = class SkillTree {
       const lastLevel = this.settings.lastLevel || 1;
       if (data.newLevel > lastLevel) {
         const levelsGained = data.newLevel - lastLevel;
-        this.awardSPForLevelUp(levelsGained);
+        this.awardSPForLevelUp(levelsGained, lastLevel);
         this.settings.lastLevel = data.newLevel;
         this.saveSettings();
       }
@@ -336,6 +426,8 @@ module.exports = class SkillTree {
     // Clear active skill expiry timers
     Object.values(this._activeSkillTimers).forEach((tid) => clearTimeout(tid));
     this._activeSkillTimers = {};
+    Object.values(this._activeSkillSustainIntervals).forEach((iid) => clearInterval(iid));
+    this._activeSkillSustainIntervals = {};
 
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
@@ -422,7 +514,7 @@ module.exports = class SkillTree {
       if (currentLevel > lastLevel) {
         // Level up detected!
         const levelsGained = currentLevel - lastLevel;
-        this.awardSPForLevelUp(levelsGained);
+        this.awardSPForLevelUp(levelsGained, lastLevel);
         this.settings.lastLevel = currentLevel;
         this.saveSettings();
       }
@@ -432,22 +524,29 @@ module.exports = class SkillTree {
   }
 
   /**
-   * Calculate total SP that should be earned based on level
-   * Fixed gain: 1 SP per level (no diminishing returns)
+   * Calculate total SP that should be earned based on level.
+   * Uses a quadratic growth curve tuned for endgame completion pacing.
    * @param {number} level - Current level
    * @returns {number} - Total SP earned
    */
   calculateSPForLevel(level) {
-    // 1 SP per level (level 1 = 0 SP, level 2 = 1 SP, level 3 = 2 SP, etc.)
-    return Math.max(0, level - 1);
+    const x = Math.max(0, Number(level || 0) - 1);
+    const num = SP_CURVE.quadraticNumerator * x * x + SP_CURVE.linearNumerator * x;
+    return Math.max(0, Math.round(num / SP_CURVE.denominator));
   }
 
   /**
-   * Award SP when leveling up (fixed 1 SP per level)
+   * Award SP when leveling up using the progression curve delta.
    * @param {number} levelsGained - Number of levels gained
+   * @param {number} fromLevel - Previous level before gains
    */
-  awardSPForLevelUp(levelsGained) {
-    const spEarned = levelsGained; // 1 SP per level
+  awardSPForLevelUp(levelsGained, fromLevel = this.settings.lastLevel || 1) {
+    const safeLevelsGained = Math.max(0, Number(levelsGained) || 0);
+    const safeFromLevel = Math.max(1, Number(fromLevel) || 1);
+    const toLevel = safeFromLevel + safeLevelsGained;
+    const spEarned = Math.max(0, this.calculateSPForLevel(toLevel) - this.calculateSPForLevel(safeFromLevel));
+    if (spEarned <= 0) return;
+
     this.settings.skillPoints += spEarned;
     this.settings.totalEarnedSP += spEarned;
     this.saveSettings();
@@ -483,17 +582,16 @@ module.exports = class SkillTree {
 
       // Always update last level to current level (keep in sync)
       if (currentLevel !== lastLevel) {
-        this.settings.lastLevel = currentLevel;
-
         // If level increased, award SP for the level difference
         if (currentLevel > lastLevel) {
           const levelsGained = currentLevel - lastLevel;
-          this.awardSPForLevelUp(levelsGained);
+          this.awardSPForLevelUp(levelsGained, lastLevel);
         }
+        this.settings.lastLevel = currentLevel;
       }
 
-      // Always ensure totalEarnedSP matches expected SP for current level
-      if (this.settings.totalEarnedSP < expectedSP) {
+      // Always ensure totalEarnedSP matches expected SP for current level.
+      if (this.settings.totalEarnedSP !== expectedSP) {
         this.settings.totalEarnedSP = expectedSP;
       }
 
@@ -607,32 +705,157 @@ module.exports = class SkillTree {
           (this.settings.unlockedSkills = []),
           this.saveSettings()));
 
-      // v2.5 skill ID rename migration (lore-accurate names)
-      const renameMap = {
+      // Unified lore/canon ID migration for passives + active skills.
+      const skillIdRenameMap = {
+        // Legacy title-based IDs (pre-v2.5)
         shadow_storage: 'shadow_preservation',
-        basic_combat: 'daggers_dance',
-        dagger_throw: 'dagger_rush',
-        instant_dungeon: 'gate_creation',
-        mana_sense: 'kandiarus_blessing',
-        domain_expansion: 'monarchs_domain',
-        absolute_ruler: 'rulers_domain',
-        void_mastery: 'shadow_realm',
-        dimension_ruler: 'gate_ruler',
+        shadow_preservation: 'shadow_preservation',
+        basic_combat: 'advanced_dagger_techniques',
+        dagger_throw: 'dagger_throw',
+        instant_dungeon: 'vital_points_targeting',
+        mana_sense: 'blessing_of_kandiaru',
+        domain_expansion: 'domain_of_the_monarch',
+        absolute_ruler: 'black_heart_awakened',
+        void_mastery: 'shadow_senses',
+        dimension_ruler: 'shadow_exchange',
         omnipotent_presence: 'dragons_fear',
         eternal_shadow: 'ashborns_will',
-        true_monarch: 'shadow_sovereign',
+        true_monarch: 'eternal_shadow_monarch',
+        // Previous internal IDs (v2.5-v3.0)
+        daggers_dance: 'advanced_dagger_techniques',
+        advanced_dagger_arts: 'advanced_dagger_techniques',
+        kandiarus_blessing: 'blessing_of_kandiaru',
+        indomitable_spirit: 'tenacity',
+        gate_creation: 'vital_points_targeting',
+        dagger_rush: 'dagger_throw',
+        ruler_authority: 'rulers_authority',
+        monarchs_domain: 'domain_of_the_monarch',
+        shadow_army: 'shadow_army_expansion',
+        monarch_power: 'black_heart_awakened',
+        shadow_monarch: 'black_heart_awakened',
+        shadow_monarch_awakening: 'black_heart_awakened',
+        arise: 'shadow_extraction',
+        ashborn_legacy: 'ashborns_will',
+        ashborn_inheritance: 'ashborns_will',
+        rulers_domain: 'black_heart_awakened',
+        shadow_realm: 'shadow_senses',
+        shadow_storage_dominion: 'shadow_senses',
+        monarchs_vessel_completion: 'black_heart_awakened',
+        commander_of_shadows: 'shadow_army_expansion',
+        gate_ruler: 'shadow_exchange',
+        shadow_sovereign: 'eternal_shadow_monarch',
       };
-      if (this.settings.skillLevels) {
-        let migrated = false;
-        for (const [oldId, newId] of Object.entries(renameMap)) {
-          if (this.settings.skillLevels[oldId] !== undefined) {
-            this.settings.skillLevels[newId] = this.settings.skillLevels[oldId];
-            delete this.settings.skillLevels[oldId];
-            migrated = true;
-          }
-        }
-        if (migrated) this.saveSettings();
+      const activeSkillIdRenameMap = {
+        stealth_active: 'stealth_technique',
+        mutilate: 'mutilation',
+        rulers_authority: 'rulers_authority_active',
+        shadow_exchange_active: 'shadow_exchange_technique',
+        arise_active: 'arise_command',
+        monarchs_domain_active: 'monarchs_domain_release',
+        dragons_fear_active: 'dragons_fear_release',
+      };
+
+      let migrated = false;
+
+      if (this.settings.skillLevels && typeof this.settings.skillLevels === 'object') {
+        const nextSkillLevels = {};
+        Object.entries(this.settings.skillLevels).forEach(([skillId, rawLevel]) => {
+          const targetId = skillIdRenameMap[skillId] || skillId;
+          const level = Number(rawLevel) || 0;
+          nextSkillLevels[targetId] = Math.max(Number(nextSkillLevels[targetId] || 0), level);
+          if (targetId !== skillId) migrated = true;
+        });
+        this.settings.skillLevels = nextSkillLevels;
       }
+
+      const maxLevelBySkillId = new Map();
+      Object.values(this.skillTree).forEach((tier) => {
+        const tierMaxLevel = Number(tier?.maxLevel || 0);
+        (tier?.skills || []).forEach((skill) => {
+          if (!skill?.id) return;
+          maxLevelBySkillId.set(skill.id, tierMaxLevel);
+        });
+      });
+
+      if (this.settings.skillLevels && typeof this.settings.skillLevels === 'object') {
+        const normalizedSkillLevels = {};
+        Object.entries(this.settings.skillLevels).forEach(([skillId, rawLevel]) => {
+          const maxLevel = maxLevelBySkillId.get(skillId);
+          if (!maxLevel) {
+            migrated = true;
+            return;
+          }
+
+          const numericLevel = Math.max(0, Number(rawLevel) || 0);
+          const clampedLevel = Math.min(maxLevel, numericLevel);
+          if (clampedLevel !== numericLevel) migrated = true;
+          if (clampedLevel > 0) {
+            normalizedSkillLevels[skillId] = clampedLevel;
+          }
+        });
+        this.settings.skillLevels = normalizedSkillLevels;
+      }
+
+      if (Array.isArray(this.settings.unlockedSkills) && this.settings.unlockedSkills.length > 0) {
+        const migratedUnlocked = [
+          ...new Set(this.settings.unlockedSkills.map((skillId) => skillIdRenameMap[skillId] || skillId)),
+        ];
+        const filteredUnlocked = migratedUnlocked.filter((skillId) => maxLevelBySkillId.has(skillId));
+        if (
+          filteredUnlocked.length !== this.settings.unlockedSkills.length ||
+          filteredUnlocked.some((skillId, index) => skillId !== this.settings.unlockedSkills[index])
+        ) {
+          migrated = true;
+        }
+        this.settings.unlockedSkills = filteredUnlocked;
+      }
+
+      if (this.settings.activeSkillStates && typeof this.settings.activeSkillStates === 'object') {
+        const nextActiveStates = {};
+        Object.entries(this.settings.activeSkillStates).forEach(([skillId, state]) => {
+          const targetId = activeSkillIdRenameMap[skillId] || skillId;
+          if (targetId !== skillId) migrated = true;
+          if (!this.activeSkillDefs[targetId]) {
+            migrated = true;
+            return;
+          }
+
+          if (!nextActiveStates[targetId]) {
+            nextActiveStates[targetId] = state;
+            return;
+          }
+
+          const existing = nextActiveStates[targetId] || {};
+          const existingScore = Math.max(
+            Number(existing.cooldownUntil || 0),
+            Number(existing.expiresAt || 0),
+            Number(existing.chargesLeft || 0)
+          );
+          const candidateScore = Math.max(
+            Number(state?.cooldownUntil || 0),
+            Number(state?.expiresAt || 0),
+            Number(state?.chargesLeft || 0)
+          );
+          if (candidateScore > existingScore) {
+            nextActiveStates[targetId] = state;
+          }
+        });
+        this.settings.activeSkillStates = nextActiveStates;
+      }
+
+      if (this.settings.combatSkillStates && typeof this.settings.combatSkillStates === 'object') {
+        const nextCombatStates = {};
+        Object.entries(this.settings.combatSkillStates).forEach(([skillId, state]) => {
+          if (!this.dungeonCombatSkillDefs[skillId]) {
+            migrated = true;
+            return;
+          }
+          nextCombatStates[skillId] = state;
+        });
+        this.settings.combatSkillStates = nextCombatStates;
+      }
+
+      if (migrated) this.saveSettings();
     } catch (error) {
       console.error('SkillTree: Error loading settings', error);
     }
@@ -642,6 +865,7 @@ module.exports = class SkillTree {
     try {
       BdApi.Data.save('SkillTree', 'settings', this.settings);
       this.saveSkillBonuses(); // Update bonuses in shared storage
+      this.saveHiddenBlessingBonuses(); // Update hidden blessing effects in shared storage
       this.saveActiveBuffs();  // Update active buff effects in shared storage
     } catch (error) {
       console.error('SkillTree: Error saving settings', error);
@@ -663,6 +887,15 @@ module.exports = class SkillTree {
     }
   }
 
+  saveHiddenBlessingBonuses() {
+    try {
+      const blessings = this.getHiddenBlessingBonuses();
+      BdApi.Data.save('SkillTree', 'hiddenBlessings', blessings);
+    } catch (error) {
+      console.error('SkillTree: Error saving hidden blessing bonuses', error);
+    }
+  }
+
   /**
    * Save active skill buff effects to shared storage for SoloLevelingStats to read
    * SLS reads this via BdApi.Data.load('SkillTree', 'activeBuffs')
@@ -676,9 +909,120 @@ module.exports = class SkillTree {
     }
   }
 
+  _applyPassiveBonusCurve(statKey, rawValue) {
+    const value = Math.max(0, Number(rawValue) || 0);
+    const tuning = PASSIVE_BONUS_TUNING[statKey];
+    if (!tuning) return value;
+
+    const softCap = Math.max(0, Number(tuning.softCap || 0));
+    const hardCap = Math.max(softCap, Number(tuning.hardCap || softCap));
+    const taperScale = Math.max(0.0001, Number(tuning.taperScale || 0.1));
+
+    if (value <= softCap) return value;
+    if (hardCap <= softCap) return Math.min(value, hardCap);
+
+    const overflow = value - softCap;
+    const capSpan = hardCap - softCap;
+    const taperedOverflow = capSpan * (1 - Math.exp(-overflow / taperScale));
+    return Math.min(hardCap, softCap + taperedOverflow);
+  }
+
+  _getRankProgress(rank) {
+    const index = SOLO_RANK_ORDER.indexOf(rank);
+    if (index <= 0) return 0;
+    return index / Math.max(1, SOLO_RANK_ORDER.length - 1);
+  }
+
+  _getKandiaruRankEffects(rank) {
+    return KANDIARU_RANK_EFFECTS[rank] || KANDIARU_RANK_EFFECTS.E;
+  }
+
+  getInnatePassiveBonuses() {
+    const soloData = this.getSoloLevelingData() || {};
+    const level = Math.max(1, Number(soloData.level || 1));
+    const levelProgress = Math.min(1, Math.max(0, (level - 1) / 1999));
+    const rankProgress = this._getRankProgress(soloData.rank || '');
+    const progression = Math.min(1, 0.08 + levelProgress * 0.72 + rankProgress * 0.2);
+
+    return {
+      debuffDurationReduction: Math.min(0.7, 0.12 + progression * 0.5),
+      debuffResistChance: Math.min(0.42, 0.04 + progression * 0.3),
+      debuffCleanseChance: Math.min(0.4, 0.08 + progression * 0.32),
+      tenacityThreshold: 0.3,
+      tenacityDamageReduction: 0.5,
+    };
+  }
+
+  getInnatePassiveEffect(passiveId) {
+    const innateBonuses = this.getInnatePassiveBonuses();
+    switch (passiveId) {
+      case 'detoxification':
+        return {
+          debuffDurationReduction: innateBonuses.debuffDurationReduction,
+          debuffResistChance: innateBonuses.debuffResistChance,
+          debuffCleanseChance: innateBonuses.debuffCleanseChance,
+        };
+      case 'tenacity':
+        return {
+          tenacityThreshold: innateBonuses.tenacityThreshold,
+          tenacityDamageReduction: innateBonuses.tenacityDamageReduction,
+        };
+      default:
+        return null;
+    }
+  }
+
+  getInnatePassives() {
+    return (this.innatePassives || []).map((passive) => ({
+      ...passive,
+      effect: this.getInnatePassiveEffect(passive.id),
+    }));
+  }
+
+  getHiddenBlessingBonuses() {
+    const now = Date.now();
+    if (
+      this._cache.hiddenBlessingBonuses &&
+      this._cache.hiddenBlessingBonusesTime &&
+      now - this._cache.hiddenBlessingBonusesTime < this._cache.hiddenBlessingBonusesTTL
+    ) {
+      return this._cache.hiddenBlessingBonuses;
+    }
+
+    const soloData = this.getSoloLevelingData() || {};
+    const sourceRank = KANDIARU_RANK_EFFECTS[soloData.rank] ? soloData.rank : 'E';
+    const rankEffects = this._getKandiaruRankEffects(sourceRank);
+    const bonuses = {
+      sourceRank,
+      xpBonus: Number(rankEffects.xpBonus || 0),
+      naturalGrowthMultiplier: Number(rankEffects.naturalGrowthMultiplier || 1),
+    };
+
+    this._cache.hiddenBlessingBonuses = bonuses;
+    this._cache.hiddenBlessingBonusesTime = now;
+    return bonuses;
+  }
+
+  getHiddenBlessingEffect(blessingId) {
+    switch (blessingId) {
+      case 'blessing_of_kandiaru':
+        return this.getHiddenBlessingBonuses();
+      default:
+        return null;
+    }
+  }
+
+  getHiddenBlessings() {
+    return (this.hiddenBlessings || []).map((blessing) => ({
+      ...blessing,
+      effect: this.getHiddenBlessingEffect(blessing.id),
+    }));
+  }
+
   /**
-   * Calculate total bonuses from all unlocked and upgraded skills
-   * @returns {Object} - Object with xpBonus, critBonus, longMsgBonus, questBonus, allStatBonus
+   * Calculate total bonuses from all unlocked and upgraded skills.
+   * Includes both general progression buffs and Detoxification's anti-debuff profile.
+   * @returns {Object} Passive bonus bundle shared across plugins.
    */
   calculateSkillBonuses() {
     // Check cache first
@@ -691,13 +1035,17 @@ module.exports = class SkillTree {
       return this._cache.skillBonuses;
     }
 
-    const bonuses = {
-      xpBonus: 0,
-      critBonus: 0,
-      longMsgBonus: 0,
-      questBonus: 0,
-      allStatBonus: 0,
-    };
+    const bonuses = PASSIVE_BONUS_KEYS.reduce((acc, key) => {
+      acc[key] = 0;
+      return acc;
+    }, {});
+    STATIC_PASSIVE_BONUS_KEYS.forEach((key) => {
+      bonuses[key] = 0;
+    });
+    const rawBonuses = PASSIVE_BONUS_KEYS.reduce((acc, key) => {
+      acc[key] = 0;
+      return acc;
+    }, {});
 
     // Calculate bonuses from all skills at their current levels
     Object.values(this.skillTree).forEach((tier) => {
@@ -706,13 +1054,23 @@ module.exports = class SkillTree {
       tier.skills.forEach((skill) => {
         const effect = this.getSkillEffect(skill, tier);
         if (effect) {
-          if (effect.xpBonus) bonuses.xpBonus += effect.xpBonus;
-          if (effect.critBonus) bonuses.critBonus += effect.critBonus;
-          if (effect.longMsgBonus) bonuses.longMsgBonus += effect.longMsgBonus;
-          if (effect.questBonus) bonuses.questBonus += effect.questBonus;
-          if (effect.allStatBonus) bonuses.allStatBonus += effect.allStatBonus;
+          PASSIVE_BONUS_KEYS.forEach((statKey) => {
+            if (effect[statKey]) rawBonuses[statKey] += effect[statKey];
+          });
         }
       });
+    });
+
+    const innateBonuses = this.getInnatePassiveBonuses();
+    PASSIVE_BONUS_KEYS.forEach((statKey) => {
+      if (innateBonuses[statKey]) rawBonuses[statKey] += innateBonuses[statKey];
+    });
+
+    PASSIVE_BONUS_KEYS.forEach((statKey) => {
+      bonuses[statKey] = this._applyPassiveBonusCurve(statKey, rawBonuses[statKey]);
+    });
+    STATIC_PASSIVE_BONUS_KEYS.forEach((statKey) => {
+      bonuses[statKey] = Number(innateBonuses[statKey] || 0);
     });
 
     // Cache the result

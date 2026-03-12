@@ -75,6 +75,27 @@ module.exports = {
     } catch (_) {}
   
     try {
+      const hiddenBlessings = this.getHiddenBlessingBonuses?.() || null;
+      const blessingEntries = [];
+      if (hiddenBlessings) {
+        Number(hiddenBlessings.xpBonus || 0) > 0 &&
+          blessingEntries.push({ label: 'XP', value: this.formatSignedPercent(hiddenBlessings.xpBonus, 1) });
+        Number(hiddenBlessings.naturalGrowthMultiplier || 1) > 1 &&
+          blessingEntries.push({
+            label: 'Natural Growth',
+            value: this.formatMultiplierDelta(hiddenBlessings.naturalGrowthMultiplier, 1),
+          });
+      }
+      if (blessingEntries.length > 0) {
+        const rankSuffix = hiddenBlessings?.sourceRank ? ` (${hiddenBlessings.sourceRank})` : '';
+        groups.push({
+          source: `Hidden Blessings — Blessing of Kandiaru${rankSuffix}`,
+          entries: blessingEntries,
+        });
+      }
+    } catch (_) {}
+
+    try {
       const bonuses = this.getSkillTreeBonuses() || null;
       const passiveEntries = [];
       if (bonuses) {
@@ -82,12 +103,52 @@ module.exports = {
           passiveEntries.push({ label: 'XP', value: this.formatSignedPercent(bonuses.xpBonus, 1) });
         Number(bonuses.critBonus || 0) > 0 &&
           passiveEntries.push({ label: 'Crit', value: this.formatSignedPercent(bonuses.critBonus, 1) });
+        Number(bonuses.critDamageBonus || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Crit Damage',
+            value: this.formatSignedPercent(bonuses.critDamageBonus, 1),
+          });
         Number(bonuses.questBonus || 0) > 0 &&
           passiveEntries.push({ label: 'Quest', value: this.formatSignedPercent(bonuses.questBonus, 1) });
         Number(bonuses.longMsgBonus || 0) > 0 &&
           passiveEntries.push({ label: 'Long Msg', value: this.formatSignedPercent(bonuses.longMsgBonus, 1) });
         Number(bonuses.allStatBonus || 0) > 0 &&
           passiveEntries.push({ label: 'All Stats', value: this.formatSignedPercent(bonuses.allStatBonus, 1) });
+        Number(bonuses.attackCooldownReduction || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Attack Cooldown',
+            value: `-${(Number(bonuses.attackCooldownReduction) * 100).toFixed(1)}%`,
+          });
+        Number(bonuses.daggerThrowDamageBonus || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Dagger Throw',
+            value: this.formatSignedPercent(bonuses.daggerThrowDamageBonus, 1),
+          });
+        Number(bonuses.hpRegenBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'HP Regen', value: this.formatSignedPercent(bonuses.hpRegenBonus, 1) });
+        Number(bonuses.manaRegenBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'Mana Regen', value: this.formatSignedPercent(bonuses.manaRegenBonus, 1) });
+        Number(bonuses.debuffDurationReduction || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Debuff Duration',
+            value: `-${(Number(bonuses.debuffDurationReduction) * 100).toFixed(1)}%`,
+          });
+        Number(bonuses.debuffResistChance || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Debuff Resist',
+            value: this.formatSignedPercent(bonuses.debuffResistChance, 1),
+          });
+        Number(bonuses.debuffCleanseChance || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Cleanse Chance',
+            value: this.formatSignedPercent(bonuses.debuffCleanseChance, 1),
+          });
+        Number(bonuses.tenacityDamageReduction || 0) > 0 &&
+          Number(bonuses.tenacityThreshold || 0) > 0 &&
+          passiveEntries.push({
+            label: 'Tenacity',
+            value: `-${(Number(bonuses.tenacityDamageReduction) * 100).toFixed(0)}% damage <${Math.round(Number(bonuses.tenacityThreshold) * 100)}% HP`,
+          });
       }
       if (passiveEntries.length > 0) {
         groups.push({ source: 'Skill Tree (Passive)', entries: passiveEntries });

@@ -123,6 +123,20 @@ module.exports = {
         return;
       }
 
+      const combatSkillBtn = target.closest?.('.dungeon-combat-skill-btn');
+      if (combatSkillBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (combatSkillBtn.hasAttribute('disabled')) return;
+        const channelKey = combatSkillBtn.getAttribute('data-channel-key');
+        const skillId = combatSkillBtn.getAttribute('data-skill-id');
+        if (!channelKey || !skillId) return;
+        runGuardedDungeonAction(`combat:${skillId}`, channelKey, () =>
+          this.castDungeonCombatSkill(channelKey, skillId)
+        );
+        return;
+      }
+
       const ariseBtn = target.closest?.('.dungeon-arise-button');
       if (ariseBtn) {
         e.preventDefault();

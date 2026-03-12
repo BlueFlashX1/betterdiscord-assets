@@ -482,12 +482,17 @@ module.exports = {
       : 1;
   },
 
-  calculateDamage(attackerStats, defenderStats, attackerRank, defenderRank) {
+  calculateDamageBreakdown(attackerStats, defenderStats, attackerRank, defenderRank) {
     // Perception dodge: defender's perception grants dodge chance (max 30%)
     const defenderPerception = defenderStats.perception || 0;
     const dodgeChance = Math.min(30, defenderPerception * 0.15); // 0.15% per perception, cap 30%
     if (dodgeChance > 0 && Math.random() * 100 < dodgeChance) {
-      return 0; // Dodged — no damage dealt
+      return {
+        damage: 0,
+        dodged: true,
+        wasCrit: false,
+        critMultiplier: 1,
+      };
     }
 
     const attackerStrength = attackerStats.strength || 0;
@@ -505,9 +510,9 @@ module.exports = {
 
     // Critical hit chance from agility (better scaling)
     const critChance = Math.min(40, attackerAgility * 0.3); // Max 40% crit, 0.3% per agility
-    if (Math.random() * 100 < critChance) {
-      damage *= 2.5; // Critical hit! (increased from 2x to 2.5x)
-    }
+    const wasCrit = Math.random() * 100 < critChance;
+    const critMultiplier = wasCrit ? 2.5 : 1;
+    if (wasCrit) damage *= critMultiplier;
 
     // Defense reduction from defender's stats (reduced effectiveness)
     const defenderStrength = defenderStats.strength || 0;
@@ -518,12 +523,30 @@ module.exports = {
     const defenseReduction = Math.min(0.7, defense / (defense + 100)); // Max 70% reduction
     damage = damage * (1 - defenseReduction);
 
-    return Math.max(1, Math.floor(damage));
+    return {
+      damage: Math.max(1, Math.floor(damage)),
+      dodged: false,
+      wasCrit,
+      critMultiplier,
+    };
+  },
+
+  calculateDamage(attackerStats, defenderStats, attackerRank, defenderRank) {
+    return this.calculateDamageBreakdown(
+      attackerStats,
+      defenderStats,
+      attackerRank,
+      defenderRank
+    ).damage;
   },
 
   calculateUserDamage(enemyStats, enemyRank) {
+    return this.calculateUserDamageBreakdown(enemyStats, enemyRank).damage;
+  },
+
+  calculateUserDamageBreakdown(enemyStats, enemyRank) {
     if (!this.soloLevelingStats?.settings) {
-      return this.calculateDamage(
+      return this.calculateDamageBreakdown(
         { strength: 10, agility: 5, intelligence: 5 },
         enemyStats,
         'E',
@@ -538,7 +561,7 @@ module.exports = {
       {};
     const userRank = this.soloLevelingStats.settings.rank || 'E';
 
-    return this.calculateDamage(userStats, enemyStats, userRank, enemyRank);
+    return this.calculateDamageBreakdown(userStats, enemyStats, userRank, enemyRank);
   },
 
   _getMobStatReferenceForRank(rankIndex) {
