@@ -26,11 +26,8 @@ function buildCSS() {
   // dc.sel.userSettings   → ".standardSidebarView_abc"  or  '[class*="userSettings_"]'
   //
   // Selectors NOT in the shared resolver (no stable Webpack module found):
-  //   comment, thread, reply  — still wildcard (toolbar child icons)
-  //   name                    — channel name span, still wildcard
+  //   comment, reply          — still wildcard (toolbar child icons)
   //   layer / baseLayer       — Discord layer stack, still wildcard
-  //   settingsContainer       — still wildcard
-  //   standardSidebarView     — covered by dc.sel.userSettings
   //
   // For the :has() combos we substitute dc.sel.userSettings for both
   //   [class*='userSettings'] and [class*='standardSidebarView'] since the
@@ -91,7 +88,7 @@ function buildCSS() {
 
 /* Hide comment/thread buttons when dungeon HP bar is active (CSS-based, survives re-renders) */
 .dungeon-boss-hp-container ~ ${sel.toolbar} [class*="comment"],
-.dungeon-boss-hp-container ~ ${sel.toolbar} [class*="thread"],
+.dungeon-boss-hp-container ~ ${sel.toolbar} ${sel.thread},
 .dungeon-boss-hp-container ~ ${sel.toolbar} [class*="reply"] {
   display: none !important;
 }
@@ -99,12 +96,12 @@ function buildCSS() {
 .dungeon-indicator { cursor: pointer; }
 
 /* CSS-based dungeon channel indicator — SVG icon inside channel name (survives React re-renders) */
-[data-dungeon-active] [class*="name"] {
+[data-dungeon-active] ${sel.name} {
   display: flex !important;
   align-items: center !important;
   gap: 8px;
 }
-[data-dungeon-active] [class*="name"]::before {
+[data-dungeon-active] ${sel.name}::before {
   content: '';
   display: inline-block;
   flex-shrink: 0;

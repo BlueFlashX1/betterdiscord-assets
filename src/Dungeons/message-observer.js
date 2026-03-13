@@ -374,7 +374,7 @@ module.exports = {
     const botBadge =
       messageElement.querySelector('svg[aria-label*="bot" i]') ||
       dc.query(messageElement, "botTag") ||
-      messageElement.querySelector('[class*="bot"]');
+      dc.query(messageElement, "bot");
     if (botBadge) return false;
 
     // Reject system messages (join, boost, pin, etc.) — they have [class*="systemMessage"]

@@ -393,7 +393,7 @@ module.exports = {
     // Strategy 3: Find by channel content area
     if (!container) {
       container =
-        document.querySelector('[class*="channel"] [class*="content"]') ||
+        document.querySelector(`${dc.sel.channel} ${dc.sel.content}`) ||
         document.querySelector(`${dc.sel.chat} ${dc.sel.content}`);
     }
 

@@ -778,7 +778,7 @@ module.exports = {
       const hasText =
         messageElement.textContent?.trim().length > 0 ||
         dc.query(messageElement, 'content')?.textContent?.trim().length > 0 ||
-        messageElement.querySelector('[class*="text"]')?.textContent?.trim().length > 0;
+        dc.query(messageElement, 'text')?.textContent?.trim().length > 0;
 
       if (!hasText) return;
 

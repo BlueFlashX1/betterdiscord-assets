@@ -131,6 +131,16 @@ const DEFS = {
   numberBadge:         [["numberBadge"],           "numberBadge",         '[class*="numberBadge_"]'],
   mentionsBadge:       [["mentionsBadge"],         "mentionsBadge",       '[class*="mentionsBadge_"]'],
   pill:                [["pill"],                  "pill",                '[class*="pill_"]'],
+
+  // ── Probed 2026-03-13 (8 new stems) ──
+  app:                 [null,                      "app",                 '[class*="app_"]'],
+  bot:                 [["bot"],                   "bot",                 '[class*="bot_"]'],
+  botText:             [["botText"],               "botText",             '[class*="botText_"]'],
+  channel:             [["channel"],               "channel",             '[class*="channel_"]'],
+  header:              [["header"],                "header",              '[class*="header_"]'],
+  name:                [null,                      "name",                '[class*="name_"]'],
+  text:                [["text"],                  "text",                '[class*="text_"]'],
+  thread:              [["thread"],                "thread",              '[class*="thread_"]'],
 };
 
 // ─── Resolver ────────────────────────────────────────────────────────────────

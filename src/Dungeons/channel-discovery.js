@@ -1,3 +1,5 @@
+const dc = require("../shared/discord-classes");
+
 module.exports = {
   getAllGuildChannels(guildId) {
     try {
@@ -190,7 +192,7 @@ module.exports = {
       }
 
       // Method 3: React fiber traversal
-      const channelElement = document.querySelector('[class*="channel"]');
+      const channelElement = dc.query(document, "channel");
       if (channelElement) {
         const reactKey = Object.keys(channelElement).find(
           (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')

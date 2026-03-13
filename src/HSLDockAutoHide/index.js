@@ -8,6 +8,7 @@
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createWarnOnce } = require("../shared/warn-once");
+const dc = require("../shared/discord-classes");
 
 let _PluginUtils;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
@@ -22,7 +23,7 @@ const STYLE_ID_AUTOHIDE  = "HSLDockAutoHide-autohide";
 
 const PANEL_SELECTORS = [
   "section[aria-label='User status and settings']",
-  `section${dc.sel.panels} > section`,  // panels_ has no DEFS entry — keep wildcard
+  `section${dc.sel.panels} > section`,
 ];
 const PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
 
@@ -171,7 +172,6 @@ module.exports = class HSLDockAutoHide {
       this._fallbackTimer = null;
       if (this._isStopped || this._engineMounted) return;
 
-      const dc = require("../shared/discord-classes");
       const dockProbe = () => document.querySelector(
         `nav[aria-label='Servers sidebar'], nav[aria-label='Servers'], nav${dc.sel.guilds}`
       );

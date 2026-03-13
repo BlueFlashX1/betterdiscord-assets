@@ -52,7 +52,7 @@ const HEADER_CLASS_PATTERNS = [
   'topSection', 'messageHeader', 'messageGroup', 'messageGroupWrapper',
 ];
 const HEADER_SELECTORS = [
-  '[class*="header"]', dc.sel.username, dc.sel.timestamp, dc.sel.author,
+  dc.sel.header, dc.sel.username, dc.sel.timestamp, dc.sel.author,
   '[class*="topSection"]', '[class*="messageHeader"]', '[class*="messageGroup"]', dc.sel.messageGroupWrapper,
 ];
 
@@ -72,7 +72,7 @@ const SYSTEM_MESSAGE_SELECTORS = Object.freeze([
   dc.sel.systemMessage, '[class*="systemText"]', '[class*="joinMessage"]',
   '[class*="leaveMessage"]', '[class*="pinnedMessage"]', '[class*="boostMessage"]',
 ]);
-const BOT_SELECTORS = Object.freeze([dc.sel.botTag, '[class*="bot"]', '[class*="botText"]']);
+const BOT_SELECTORS = Object.freeze([dc.sel.botTag, dc.sel.bot, dc.sel.botText]);
 
 // ============================================================================
 // TIMING / THRESHOLD CONSTANTS
@@ -122,7 +122,7 @@ const ELEMENT_POSITION_TOLERANCE = 100;
 
 const SCREEN_SHAKE_CLASS = 'cha-screen-shake-active';
 const SCREEN_SHAKE_KEYFRAME = 'chaShake';
-const DISCORD_APP_SELECTOR = '[class*="app"]';
+const DISCORD_APP_SELECTOR = dc.sel.app;
 
 // ============================================================================
 // CRIT SYSTEM CONSTANTS
