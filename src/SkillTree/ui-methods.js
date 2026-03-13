@@ -1,11 +1,12 @@
 const { _PluginUtils } = require("./shared-utils");
+const dc = require('../shared/discord-classes');
 
 const SkillTreeUiMethods = {
   _getComposerRoot() {
     const primaryChat = this._getPrimaryChatContainer();
     const roots = [
-      ...(primaryChat?.querySelectorAll?.('[class*="channelTextArea"]') || []),
-      ...document.querySelectorAll('[class*="channelTextArea"]'),
+      ...(primaryChat?.querySelectorAll?.(dc.sel.channelTextArea) || []),
+      ...document.querySelectorAll(dc.sel.channelTextArea),
     ];
 
     const uniqueRoots = Array.from(new Set(roots));
@@ -13,7 +14,7 @@ const SkillTreeUiMethods = {
       if (!this._isElementVisible(root)) continue;
       const formRoot = root.closest("form") || root;
       const editor = formRoot.querySelector(
-        '[role="textbox"], textarea, [contenteditable="true"], [class*="slateTextArea"]'
+        `[role="textbox"], textarea, [contenteditable="true"], ${dc.sel.slateTextArea}`
       );
       if (!editor) continue;
       return formRoot;
@@ -23,11 +24,12 @@ const SkillTreeUiMethods = {
   },
 
   _getPrimaryChatContainer() {
+    const cc = dc.sel.chatContent;
     return (
-      document.querySelector('main[class*="chatContent"]') ||
-      document.querySelector('section[class*="chatContent"][role="main"]') ||
-      document.querySelector('section[class*="chatContent"]:not([role="complementary"])') ||
-      document.querySelector('div[class*="chatContent"]:not([role="complementary"])')
+      document.querySelector(`main${cc}`) ||
+      document.querySelector(`section${cc}[role="main"]`) ||
+      document.querySelector(`section${cc}:not([role="complementary"])`) ||
+      document.querySelector(`div${cc}:not([role="complementary"])`)
     );
   },
 

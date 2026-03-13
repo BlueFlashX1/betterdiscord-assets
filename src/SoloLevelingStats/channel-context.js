@@ -1,3 +1,5 @@
+const dc = require("../shared/discord-classes");
+
 module.exports = {
   extractMentionCountFromText(messageText = '') {
     if (!messageText) return 0;
@@ -294,10 +296,9 @@ module.exports = {
     }
   
     const el =
-      document.querySelector('main[class*="chatContent"]') ||
-      document.querySelector('section[class*="chatContent"][role="main"]') ||
-      document.querySelector('div[class*="chatContent"]:not([role="complementary"])') ||
-      document.querySelector('main[class*="chatContent-"]') ||
+      document.querySelector(`main${dc.sel.chatContent}`) ||
+      document.querySelector(`section${dc.sel.chatContent}[role="main"]`) ||
+      document.querySelector(`div${dc.sel.chatContent}:not([role="complementary"])`) ||
       document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
       document.querySelector('div[class*="chat-"]:not([class*="chatLayerWrapper"])');
   
@@ -313,11 +314,9 @@ module.exports = {
     if (!mainChat) return null;
   
     const messageInputArea =
-      mainChat.querySelector('[class*="channelTextArea_"]') ||
-      mainChat.querySelector('[class*="channelTextArea-"]') ||
-      mainChat.querySelector('[class*="channelTextArea"]') ||
-      mainChat.querySelector('[class*="textArea"]')?.parentElement ||
-      mainChat.querySelector('[class*="slateTextArea"]')?.parentElement;
+      mainChat.querySelector(dc.sel.channelTextArea) ||
+      mainChat.querySelector(dc.sel.textArea)?.parentElement ||
+      mainChat.querySelector(dc.sel.slateTextArea)?.parentElement;
   
     if (!messageInputArea || !messageInputArea.parentElement) return null;
   
@@ -352,10 +351,10 @@ module.exports = {
     const cached = this._messageContainerEl;
     if (cached && cached.isConnected) return cached;
     const el =
-      document.querySelector('[class*="messagesWrapper"]') ||
-      document.querySelector('[class*="scrollerInner"]') ||
+      document.querySelector(dc.sel.messagesWrapper) ||
+      document.querySelector(dc.sel.scrollerInner) ||
       document.querySelector('[class*="messageList"]') ||
-      document.querySelector('[class*="scroller"]');
+      document.querySelector(dc.sel.scroller);
     this._messageContainerEl = el || null;
     return this._messageContainerEl;
   },
@@ -369,8 +368,8 @@ module.exports = {
       this._messageInputSelectors = [
         'div[contenteditable="true"][role="textbox"]', // Modern Discord uses contenteditable divs
         'div[contenteditable="true"]',
-        '[class*="slateTextArea"]',
-        '[class*="textArea"]',
+        dc.sel.slateTextArea,
+        dc.sel.textArea,
         '[class*="textValue"]',
         'textarea[placeholder*="Message"]',
         'textarea[placeholder*="message"]',
@@ -403,9 +402,9 @@ module.exports = {
   getMessageContainerElementForObserving() {
     if (!this._messageContainerSelectors) {
       this._messageContainerSelectors = [
-        '[class*="messagesWrapper"]',
-        '[class*="scrollerInner"]',
-        '[class*="scroller"]',
+        dc.sel.messagesWrapper,
+        dc.sel.scrollerInner,
+        dc.sel.scroller,
       ];
     }
   
@@ -441,7 +440,7 @@ module.exports = {
   
       // Method 2: Fallback to React fiber traversal (if webpack unavailable)
       const userElement =
-        document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
+        document.querySelector(dc.sel.avatar) || document.querySelector('[class*="user"]');
       if (userElement) {
         const reactKey = this.getReactFiberKey(userElement);
         if (reactKey) {
@@ -533,7 +532,7 @@ module.exports = {
       }
   
       // Method 2: Try to find timestamp element in DOM
-      const timestampElement = messageElement.querySelector('[class*="timestamp"]');
+      const timestampElement = messageElement.querySelector(dc.sel.timestamp);
       if (timestampElement) {
         const timeAttr =
           timestampElement.getAttribute('datetime') || timestampElement.getAttribute('title');
@@ -583,7 +582,7 @@ module.exports = {
   
       // PRIMARY METHOD 2: Check for explicit "You" indicator (RELIABLE)
       const usernameElement =
-        messageElement.querySelector('[class*="username"]') ||
+        messageElement.querySelector(dc.sel.username) ||
         messageElement.querySelector('[class*="author"]') ||
         messageElement.querySelector('[class*="usernameInner"]');
   
@@ -605,7 +604,7 @@ module.exports = {
       const hasCozyClass = messageClasses.includes('cozy');
       const hasRightAligned = messageClasses.includes('right');
       const hasOwnTimestamp = messageElement
-        .querySelector('[class*="timestamp"]')
+        .querySelector(dc.sel.timestamp)
         ?.classList?.toString()
         .includes('own');
   

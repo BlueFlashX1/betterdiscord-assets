@@ -21,6 +21,11 @@ const ACTIVE_SKILL_STATE_EVENT = "SkillTree:activeSkillStateChanged";
 const DUNGEON_COMBAT_SKILL_STATE_EVENT = "SkillTree:dungeonCombatSkillStateChanged";
 
 const ActiveSkillMethods = {
+  _getEffectiveManaCost(baseManaCost) {
+    const reduction = this.calculateSkillBonuses?.()?.manaCostReduction || 0;
+    return Math.max(1, Math.ceil(baseManaCost * (1 - reduction)));
+  },
+
   isActiveSkillUnlocked(activeSkillId) {
     const def = this.activeSkillDefs[activeSkillId];
     if (!def || !def.unlock) return false;
@@ -366,11 +371,12 @@ const ActiveSkillMethods = {
     }
 
     const manaInfo = this.getManaInfo();
-    if (manaInfo.current < def.manaCost) {
-      return { success: false, reason: `Not enough Mana (${Math.floor(manaInfo.current)}/${def.manaCost})` };
+    const effectiveManaCost = this._getEffectiveManaCost(def.manaCost);
+    if (manaInfo.current < effectiveManaCost) {
+      return { success: false, reason: `Not enough Mana (${Math.floor(manaInfo.current)}/${effectiveManaCost})` };
     }
 
-    const remainingMana = Math.max(0, manaInfo.current - def.manaCost);
+    const remainingMana = Math.max(0, manaInfo.current - effectiveManaCost);
     this.settings.currentMana = remainingMana;
     this.settings.maxMana = manaInfo.max;
     this._setSharedMana(remainingMana, manaInfo.max);
@@ -449,6 +455,7 @@ const ActiveSkillMethods = {
       ...state,
       active: false,
       expiresAt: 0,
+      cooldownUntil: reason === "manual" ? 0 : state.cooldownUntil,
       chargesLeft: 0,
     };
 
@@ -551,11 +558,12 @@ const ActiveSkillMethods = {
       isOnCooldown: cooldownRemaining > 0,
       cooldownRemaining,
       effectiveCooldownMs: def ? this.getEffectiveDungeonCombatSkillCooldownMs(skillId) : 0,
+      effectiveManaCost: def ? this._getEffectiveManaCost(def.manaCost) : 0,
       ready:
         Boolean(def) &&
         unlocked &&
         cooldownRemaining <= 0 &&
-        mana.current >= Number(def?.manaCost || 0),
+        mana.current >= (def ? this._getEffectiveManaCost(def.manaCost) : 0),
     };
   },
 
@@ -599,15 +607,16 @@ const ActiveSkillMethods = {
     }
 
     const manaInfo = this.getManaInfo();
-    if (manaInfo.current < def.manaCost) {
+    const effectiveManaCost = this._getEffectiveManaCost(def.manaCost);
+    if (manaInfo.current < effectiveManaCost) {
       return {
         success: false,
-        reason: `Not enough Mana (${Math.floor(manaInfo.current)}/${def.manaCost})`,
+        reason: `Not enough Mana (${Math.floor(manaInfo.current)}/${effectiveManaCost})`,
       };
     }
 
     const cooldownMs = this.getEffectiveDungeonCombatSkillCooldownMs(skillId);
-    const remainingMana = Math.max(0, manaInfo.current - def.manaCost);
+    const remainingMana = Math.max(0, manaInfo.current - effectiveManaCost);
     const nextState = {
       cooldownUntil: now + cooldownMs,
       lastUsedAt: now,
@@ -670,8 +679,6 @@ const ActiveSkillMethods = {
       critChanceBonus: 0,
       guaranteedCrit: false,
       allStatMultiplier: 1.0,
-      questRewardMultiplier: 1.0,
-      shadowBuffMultiplier: 1.0,
       globalMultiplier: 1.0,
     };
 
@@ -682,8 +689,6 @@ const ActiveSkillMethods = {
       if (eff.critChanceBonus) effects.critChanceBonus += eff.critChanceBonus;
       if (eff.guaranteedCrit) effects.guaranteedCrit = true;
       if (eff.allStatMultiplier) effects.allStatMultiplier *= eff.allStatMultiplier;
-      if (eff.questRewardMultiplier) effects.questRewardMultiplier *= eff.questRewardMultiplier;
-      if (eff.shadowBuffMultiplier) effects.shadowBuffMultiplier *= eff.shadowBuffMultiplier;
       if (eff.globalMultiplier) effects.globalMultiplier *= eff.globalMultiplier;
     });
 

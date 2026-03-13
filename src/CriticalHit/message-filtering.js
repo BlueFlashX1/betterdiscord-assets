@@ -5,6 +5,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 
 module.exports = {
   /**
@@ -23,8 +24,8 @@ module.exports = {
 
     // Check if element contains username/timestamp/author elements as children
     if (
-      element.querySelector('[class*="username"]') ||
-      element.querySelector('[class*="timestamp"]') ||
+      dc.query(element, 'username') ||
+      dc.query(element, 'timestamp') ||
       element.querySelector('[class*="author"]')
     ) {
       return true;
@@ -139,7 +140,7 @@ module.exports = {
     // Method 2: Check for reply wrapper/container
     if (
       messageElement.closest('[class*="reply"]') !== null ||
-      messageElement.closest('[class*="repliedMessage"]') !== null
+      messageElement.closest(dc.sel.repliedMessage) !== null
     ) {
       return true;
     }
@@ -190,7 +191,7 @@ module.exports = {
 
     // Check author/username area
     const authorElement =
-      messageElement.querySelector('[class*="username"]') ||
+      dc.query(messageElement, 'username') ||
       messageElement.querySelector('[class*="author"]');
 
     return this._hasBotAuthorClasses(authorElement);
@@ -206,8 +207,8 @@ module.exports = {
     if (textContent.length > 0) return true;
 
     const contentElement =
-      messageElement.querySelector('[class*="messageContent"]') ||
-      messageElement.querySelector('[class*="content"]');
+      dc.query(messageElement, 'messageContent') ||
+      dc.query(messageElement, 'content');
     return (contentElement?.textContent?.trim().length || 0) > 0;
   },
 

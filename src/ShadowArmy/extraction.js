@@ -70,6 +70,57 @@ module.exports = {
   },
 
   // ============================================================================
+  // SKILLTREE GATING
+  // ============================================================================
+
+  /**
+   * Check if a SkillTree passive skill is unlocked (level >= 1).
+   * @param {string} skillId - Skill ID to check
+   * @returns {boolean}
+   */
+  _isSkillTreeSkillUnlocked(skillId) {
+    try {
+      const plugin = BdApi.Plugins.get('SkillTree');
+      const instance = plugin?.instance || null;
+      if (!instance || typeof instance.getSkillLevel !== 'function') return false;
+      return instance.getSkillLevel(skillId) >= 1;
+    } catch {
+      return false;
+    }
+  },
+
+  _getSkillTreeBonuses() {
+    try {
+      const plugin = BdApi.Plugins.get('SkillTree');
+      const instance = plugin?.instance || null;
+      if (!instance || typeof instance.calculateSkillBonuses !== 'function') return null;
+      return instance.calculateSkillBonuses();
+    } catch {
+      return null;
+    }
+  },
+
+  _hasGuaranteedArise() {
+    const bonuses = this._getSkillTreeBonuses();
+    return bonuses && bonuses.ariseChanceOverride >= 1.0;
+  },
+
+  /**
+   * Get the Shadow Monarch's (user's) combat strength.
+   * Used to cap shadow growth — no shadow may exceed the monarch.
+   * Mirrors calculateShadowStrength: sum of all stats.
+   * @returns {number} Monarch strength, or 0 if unavailable
+   */
+  _getMonarchStrength() {
+    const soloData = this.getSoloLevelingData();
+    if (!soloData || !soloData.stats) return 0;
+    const stats = soloData.stats;
+    const total = (stats.strength || 0) + (stats.agility || 0) +
+      (stats.intelligence || 0) + (stats.vitality || 0) + (stats.perception || 0);
+    return Math.floor(total);
+  },
+
+  // ============================================================================
   // SHADOW EXTRACTION PIPELINE
   // ============================================================================
 
@@ -79,6 +130,8 @@ module.exports = {
    * @returns {Object|null} Extracted shadow or null
    */
   async attemptShadowExtraction() {
+    if (!this._isSkillTreeSkillUnlocked('shadow_extraction')) return null;
+
     const soloData = this.getSoloLevelingData();
     if (!soloData) return null;
 
@@ -287,8 +340,11 @@ module.exports = {
         intelligence, perception, strength,
       });
 
+      // True Shadow Monarch: 100% arise chance override
+      const monarchGuaranteed = guaranteedExtraction || this._hasGuaranteedArise();
+
       // Tier 1: Guaranteed extraction
-      if (guaranteedExtraction) {
+      if (monarchGuaranteed) {
         this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - Guaranteed extraction (user outranks mob)`, {
           attemptNum, targetRank, guaranteedExtraction: true,
         });
@@ -337,7 +393,7 @@ module.exports = {
 
         const shadowId = getShadowKey(shadow);
 
-        if (this.storageManager) {
+        if (this.storageManager && this._isSkillTreeSkillUnlocked('shadow_preservation')) {
           try {
             // Ensure shadow has strength calculated before saving
             if (!shadow.strength || shadow.strength === 0) {
@@ -522,6 +578,11 @@ module.exports = {
     mobRank, mobStats, mobStrength,
     beastFamilies = null, isBoss = true
   ) {
+    // SkillTree gate: shadow_extraction must be unlocked
+    if (!this._isSkillTreeSkillUnlocked('shadow_extraction')) {
+      return { success: false, shadow: null, error: 'Shadow Extraction skill not unlocked' };
+    }
+
     // Boss attempt limit check
     if (isBoss) {
       const canExtract = this.canExtractFromBoss(bossId);
@@ -590,6 +651,9 @@ module.exports = {
    * Peak memory stays flat regardless of pile size.
    */
   async bulkDungeonExtraction(corpsePile, userRank, userLevel, userStats, beastFamilies = []) {
+    if (!this._isSkillTreeSkillUnlocked('shadow_extraction')) {
+      return { extracted: 0, attempted: 0, error: 'Shadow Extraction skill not unlocked' };
+    }
     if (!corpsePile || corpsePile.length === 0) {
       return { extracted: 0, attempted: 0 };
     }
@@ -687,10 +751,11 @@ module.exports = {
 
         if (!shadow) continue;
 
-        // RNG extraction roll
+        // RNG extraction roll (True Shadow Monarch overrides to 100%)
+        const monarchOverride = guaranteedExtraction || this._hasGuaranteedArise();
         let extracted = false;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          if (guaranteedExtraction) { extracted = true; break; }
+          if (monarchOverride) { extracted = true; break; }
           const extractionChance = this.calculateExtractionChance(
             userRank, userStats, mobRank,
             shadow.strength || corpse.strength,
@@ -722,7 +787,7 @@ module.exports = {
       }
 
       // Persist this chunk's successes in tiny IDB write batches
-      if (chunkShadows.length > 0 && this.storageManager) {
+      if (chunkShadows.length > 0 && this.storageManager && this._isSkillTreeSkillUnlocked('shadow_preservation')) {
         try {
           let savedCount = 0;
           if (typeof this.storageManager.saveShadowsChunked === 'function') {

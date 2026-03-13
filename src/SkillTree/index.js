@@ -88,11 +88,15 @@ const PASSIVE_BONUS_KEYS = Object.freeze([
   'debuffDurationReduction',
   'debuffResistChance',
   'debuffCleanseChance',
+  'flatMana',
+  'manaCostReduction',
 ]);
 
 const STATIC_PASSIVE_BONUS_KEYS = Object.freeze([
   'tenacityThreshold',
   'tenacityDamageReduction',
+  'ariseChanceOverride',
+  'shadowGrowthMultiplier',
 ]);
 
 const SOLO_RANK_ORDER = Object.freeze([
@@ -132,11 +136,11 @@ const KANDIARU_RANK_EFFECTS = Object.freeze({
 // Constraints:
 // - level 1 -> 0 SP
 // - level 2 -> 1 SP
-// - level 2000 -> 175169 SP (current total max cost)
+// - level 2000 -> 36229 SP (current total max cost)
 const SP_CURVE = Object.freeze({
-  quadraticNumerator: 173170,
-  linearNumerator: 3820832,
-  denominator: 3994002,
+  quadraticNumerator: 5705,
+  linearNumerator: 659962,
+  denominator: 665667,
 });
 
 module.exports = class SkillTree {
@@ -254,6 +258,26 @@ module.exports = class SkillTree {
 
     // Start mana regeneration
     this.startManaRegen();
+
+    // Broadcast current skill levels so plugins that started before us
+    // (e.g. RulersAuthority, HSLDockAutoHide) can activate their gated resources.
+    this._broadcastCurrentSkillLevels();
+  }
+
+  _broadcastCurrentSkillLevels() {
+    const levels = this.settings?.skillLevels;
+    if (!levels) return;
+    for (const [skillId, level] of Object.entries(levels)) {
+      if ((level || 0) >= 1) {
+        try {
+          document.dispatchEvent(
+            new CustomEvent('SkillTree:skillLevelChanged', {
+              detail: { skillId, level },
+            })
+          );
+        } catch (_) { /* ignore dispatch errors */ }
+      }
+    }
   }
 
   _setTrackedTimeout(callback, delayMs) {
@@ -659,6 +683,25 @@ module.exports = class SkillTree {
       const currentLevel = soloData.level;
       const expectedSP = this.calculateSPForLevel(currentLevel);
 
+      // Deactivate all running active skills before reset
+      const activeStates = this.settings.activeSkillStates || {};
+      Object.keys(activeStates).forEach((skillId) => {
+        if (activeStates[skillId]?.active) {
+          try {
+            this._deactivateSkill(skillId, 'skill_reset');
+          } catch (_) { /* ignore deactivation errors during reset */ }
+        }
+      });
+      this.settings.activeSkillStates = {};
+
+      // Collect previously unlocked skills to broadcast level changes.
+      // NOTE: unlockedSkills is emptied by the start() migration (line ~729) which
+      // moves entries into skillLevels. So after any restart, unlockedSkills is [].
+      // We must read from skillLevels (authoritative source) instead.
+      const previouslyUnlocked = Object.keys(this.settings.skillLevels || {}).filter(
+        (id) => (this.settings.skillLevels[id] || 0) >= 1
+      );
+
       // Reset all skills
       this.settings.skillLevels = {};
       this.settings.unlockedSkills = [];
@@ -667,8 +710,24 @@ module.exports = class SkillTree {
       this.settings.totalEarnedSP = expectedSP;
       this.settings.lastLevel = currentLevel;
 
+      // Clear skill bonus cache so bonuses recompute to zero
+      this._cache.skillBonuses = null;
+      this._cache.skillBonusesTime = 0;
+
       this.saveSettings();
       this.saveSkillBonuses();
+
+      // Broadcast level=0 for all previously unlocked skills so listeners can react
+      // (e.g. Stealth locks itself, ShadowArmy tears down extraction resources)
+      previouslyUnlocked.forEach((skillId) => {
+        try {
+          document.dispatchEvent(
+            new CustomEvent('SkillTree:skillLevelChanged', {
+              detail: { skillId, level: 0 },
+            })
+          );
+        } catch (_) { /* ignore dispatch errors */ }
+      });
 
       BdApi?.showToast?.(`Skills Reset! You have ${expectedSP} SP for level ${currentLevel}`, {
         type: 'success',
@@ -748,11 +807,6 @@ module.exports = class SkillTree {
       const activeSkillIdRenameMap = {
         stealth_active: 'stealth_technique',
         mutilate: 'mutilation',
-        rulers_authority: 'rulers_authority_active',
-        shadow_exchange_active: 'shadow_exchange_technique',
-        arise_active: 'arise_command',
-        monarchs_domain_active: 'monarchs_domain_release',
-        dragons_fear_active: 'dragons_fear_release',
       };
 
       let migrated = false;
@@ -1020,6 +1074,41 @@ module.exports = class SkillTree {
   }
 
   /**
+   * Get shadow army count from ShadowArmy plugin (synchronous, snapshot-based).
+   * @returns {number} Shadow count (0 if unavailable)
+   */
+  _getShadowArmyCount() {
+    try {
+      const plugin = BdApi.Plugins.get('ShadowArmy');
+      const instance = plugin?.instance || null;
+      if (!instance) return 0;
+      // Prefer synchronous snapshot (2s TTL cache in ShadowArmy)
+      const snapshot = instance.getShadowSnapshot?.();
+      if (Array.isArray(snapshot)) return snapshot.length;
+      // Fallback: check settings-based count
+      return instance.settings?.shadowCount || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Calculate army-scaled bonuses for Shadow Army Expansion.
+   * Bonuses scale with sqrt(shadowCount) for natural diminishing returns.
+   * @returns {Object} Bonus object with xpBonus and allStatBonus
+   */
+  _getShadowArmyScaledBonuses() {
+    const count = this._getShadowArmyCount();
+    if (count <= 0) return {};
+    // sqrt scaling: 100 shadows → 0.05 allStat/xp, 400 → 0.10, 900 → 0.15
+    const sqrtCount = Math.sqrt(count);
+    return {
+      xpBonus: 0.005 * sqrtCount,
+      allStatBonus: 0.005 * sqrtCount,
+    };
+  }
+
+  /**
    * Calculate total bonuses from all unlocked and upgraded skills.
    * Includes both general progression buffs and Detoxification's anti-debuff profile.
    * @returns {Object} Passive bonus bundle shared across plugins.
@@ -1066,11 +1155,35 @@ module.exports = class SkillTree {
       if (innateBonuses[statKey]) rawBonuses[statKey] += innateBonuses[statKey];
     });
 
+    // Shadow Army Expansion: army-scaled bonuses (binary unlock, scales with shadow count)
+    if (this.getSkillLevel('shadow_army_expansion') >= 1) {
+      const armyBonuses = this._getShadowArmyScaledBonuses();
+      PASSIVE_BONUS_KEYS.forEach((statKey) => {
+        if (armyBonuses[statKey]) rawBonuses[statKey] += armyBonuses[statKey];
+      });
+    }
+
     PASSIVE_BONUS_KEYS.forEach((statKey) => {
       bonuses[statKey] = this._applyPassiveBonusCurve(statKey, rawBonuses[statKey]);
     });
+    // Static keys: use highest value from innate bonuses OR skill effects (override, not additive)
+    const skillStaticValues = {};
+    Object.values(this.skillTree).forEach((tier) => {
+      if (!tier.skills) return;
+      tier.skills.forEach((skill) => {
+        const effect = this.getSkillEffect(skill, tier);
+        if (!effect) return;
+        STATIC_PASSIVE_BONUS_KEYS.forEach((statKey) => {
+          if (effect[statKey] != null) {
+            skillStaticValues[statKey] = Math.max(skillStaticValues[statKey] || 0, Number(effect[statKey]));
+          }
+        });
+      });
+    });
     STATIC_PASSIVE_BONUS_KEYS.forEach((statKey) => {
-      bonuses[statKey] = Number(innateBonuses[statKey] || 0);
+      const innateVal = Number(innateBonuses[statKey] || 0);
+      const skillVal = Number(skillStaticValues[statKey] || 0);
+      bonuses[statKey] = Math.max(innateVal, skillVal);
     });
 
     // Cache the result
@@ -1113,6 +1226,7 @@ module.exports = class SkillTree {
       const result = {
         stats: instance.settings?.stats || {},
         level: instance.settings?.level || 1,
+        rank: instance.settings?.rank || 'E',
         totalXP: instance.settings?.totalXP || 0,
         userMana: instance.settings?.userMana,
         userMaxMana: instance.settings?.userMaxMana,

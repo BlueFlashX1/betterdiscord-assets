@@ -169,16 +169,6 @@ module.exports = {
             label: 'All Stats',
             value: this.formatMultiplierDelta(activeBuffs.allStatMultiplier, 1),
           });
-        Number(activeBuffs.questRewardMultiplier || 1) > 1 &&
-          activeEntries.push({
-            label: 'Quest Rewards',
-            value: this.formatMultiplierDelta(activeBuffs.questRewardMultiplier, 1),
-          });
-        Number(activeBuffs.shadowBuffMultiplier || 1) > 1 &&
-          activeEntries.push({
-            label: 'Shadow Buffs',
-            value: this.formatMultiplierDelta(activeBuffs.shadowBuffMultiplier, 1),
-          });
         Number(activeBuffs.globalMultiplier || 1) > 1 &&
           activeEntries.push({
             label: 'Global Multiplier',

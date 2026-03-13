@@ -1,3 +1,5 @@
+const dc = require('../shared/discord-classes');
+
 module.exports = {
   _ensureMessageProcessTimeoutSet() {
     if (!this._messageProcessTimeouts) {
@@ -105,12 +107,12 @@ module.exports = {
   _extractMutationMessageElement(node) {
     const className = node?.className || '';
     const isMessageNode = typeof className === 'string' && className.includes('message');
-    return isMessageNode ? node : node?.closest?.('[class*="message"]') || null;
+    return isMessageNode ? node : node?.closest?.(dc.sel.message) || null;
   },
 
   _hasExplicitYouIndicator(messageElement) {
     const usernameElement =
-      messageElement.querySelector('[class*="username"]') ||
+      dc.query(messageElement, 'username') ||
       messageElement.querySelector('[class*="author"]');
     if (!usernameElement) return false;
 
@@ -121,7 +123,7 @@ module.exports = {
   _extractMutationMessageText(messageElement) {
     return (
       messageElement.textContent?.trim() ||
-      messageElement.querySelector('[class*="messageContent"]')?.textContent?.trim() ||
+      dc.query(messageElement, 'messageContent')?.textContent?.trim() ||
       messageElement.querySelector('[class*="textValue"]')?.textContent?.trim() ||
       ''
     );

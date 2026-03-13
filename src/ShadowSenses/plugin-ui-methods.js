@@ -70,7 +70,8 @@ const ShadowSensesUiMethods = {
         this._cachedMembersWrapTs = 0;
       }
 
-      const wraps = document.querySelectorAll('[class^="membersWrap_"], [class*=" membersWrap_"]');
+      const dc = require('../shared/discord-classes');
+      const wraps = document.querySelectorAll(dc.sel.membersWrap);
       for (const wrap of wraps) {
         if (wrap.offsetParent !== null) {
           this._cachedMembersWrap = wrap;
@@ -111,7 +112,7 @@ const ShadowSensesUiMethods = {
       }
 
       // Find innermost content target: membersList > membersContent (or first child)
-      const membersList = membersWrap.querySelector('[class^="members_"], [class*=" members_"]');
+      const membersList = membersWrap.querySelector(dc.sel.members);
       const target = membersList || membersWrap;
 
       const createRoot = this._getCreateRoot();

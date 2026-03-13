@@ -1,6 +1,7 @@
-import STYLES from "./styles.css";
+const { buildCSS } = require("./build-styles");
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createToast } = require("../shared/toast");
+const dc = require("../shared/discord-classes");
 
 /**
  * TABLE OF CONTENTS
@@ -104,7 +105,7 @@ module.exports = class SystemWindow {
       }
     } catch (_) {}
 
-    const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
+    const scroller = document.querySelector(`ol[role="list"]${dc.sel.scrollerInner}`);
     if (!scroller) return;
     if (scroller !== this._lastScrollerEl) {
       this._lastScrollerEl = scroller;
@@ -119,7 +120,7 @@ module.exports = class SystemWindow {
   }
 
   _findAndObserve(retryCount = 0) {
-    const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
+    const scroller = document.querySelector(`ol[role="list"]${dc.sel.scrollerInner}`);
     if (scroller) {
       this._lastScrollerEl = scroller;
       this._classifyVersion += 1;
@@ -238,10 +239,10 @@ module.exports = class SystemWindow {
   _classifyMessages() {
     const scroller =
       this._lastScrollerEl ||
-      document.querySelector('ol[role="list"][class*="scrollerInner_"]');
+      document.querySelector(`ol[role="list"]${dc.sel.scrollerInner}`);
     if (!scroller) return;
 
-    const items = scroller.querySelectorAll(':scope > li[class*="messageListItem_"]');
+    const items = scroller.querySelectorAll(`:scope > li${dc.sel.messageListItem}`);
     if (!items.length) return;
 
     const ver = String(this._classifyVersion || 1);
@@ -320,7 +321,7 @@ module.exports = class SystemWindow {
 
   _injectCSS() {
     BdApi.DOM.removeStyle(this._STYLE_ID);
-    BdApi.DOM.addStyle(this._STYLE_ID, STYLES);
+    BdApi.DOM.addStyle(this._STYLE_ID, buildCSS());
   }
 
   /* ═══════════════════════════════════════════════

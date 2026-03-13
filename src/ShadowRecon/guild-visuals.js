@@ -1,11 +1,13 @@
+const dc = require('../shared/discord-classes');
+
 function getGuildsTarget(plugin) {
   if (plugin._guildsTargetCache && plugin._guildsTargetCache.isConnected) {
     return plugin._guildsTargetCache;
   }
   const target =
     document.querySelector('[data-list-id="guildsnav"]') ||
-    document.querySelector('[class*="guilds_"] [class*="scroller_"]') ||
-    document.querySelector('[class*="guilds_"]');
+    document.querySelector(`${dc.sel.guilds} ${dc.sel.scroller}`) ||
+    document.querySelector(dc.sel.guilds);
   plugin._guildsTargetCache = target;
   return target;
 }

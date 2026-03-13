@@ -5,6 +5,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 
 module.exports = {
   /**
@@ -55,7 +56,7 @@ module.exports = {
 
     // Fallback: Search message elements scoped to container to reduce DOM scanning cost
     const container = this._cachedMessageContainer || this._findMessageContainer?.() || document;
-    const candidates = container.querySelectorAll?.('[class*="message"]') || [];
+    const candidates = container.querySelectorAll?.(dc.sel.message) || [];
     let foundElement = null;
     for (const el of candidates) {
       const id = this.getMessageIdentifier(el);
@@ -192,7 +193,7 @@ module.exports = {
       }
 
       // Method 3: Extract from message elements in DOM
-      const messageElement = document.querySelector('[class*="message"]');
+      const messageElement = document.querySelector(dc.sel.message);
       const channelIdAttr = messageElement?.getAttribute('data-channel-id');
       const result = channelIdAttr || null;
 
@@ -259,7 +260,7 @@ module.exports = {
    */
   _extractChannelIdFromContainer(container) {
     if (!container) return null;
-    const firstMessage = container.querySelector('[class*="message"]');
+    const firstMessage = dc.query(container, 'message');
     return (
       firstMessage?.getAttribute('data-channel-id') ||
       firstMessage?.closest('[data-channel-id]')?.getAttribute('data-channel-id') ||

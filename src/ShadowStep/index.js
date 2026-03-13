@@ -81,6 +81,16 @@ module.exports = class ShadowStep {
     this._components = null;
     this._statsCache = _ttl(STATS_CACHE_TTL);
     this._settingsSaveTimer = null;
+    this._stepResourcesActive = false;
+    this._onSkillLevelChanged = null;
+  }
+
+  // ── SkillTree gate helpers ──────────────────────────────────
+
+  _isShadowExchangeUnlocked() {
+    try {
+      return (BdApi.Plugins.get("SkillTree")?.instance?.getSkillLevel("shadow_exchange") || 0) >= 1;
+    } catch (_) { return false; }
   }
 
   // ── Lifecycle ───────────────────────────────────────────────
@@ -88,6 +98,29 @@ module.exports = class ShadowStep {
   start() {
     this.stop(false);
     this._toast = _PluginUtils?.createToastHelper?.("shadowStep") || createToast();
+
+    // ── SkillTree gate: shadow_exchange >= 1 ──
+    this._onSkillLevelChanged = (e) => {
+      if (e.detail?.skillId !== "shadow_exchange") return;
+      const level = e.detail.level || 0;
+      if (level >= 1 && !this._stepResourcesActive) {
+        this._activateStepResources();
+      } else if (level < 1 && this._stepResourcesActive) {
+        this._deactivateStepResources();
+      }
+    };
+    document.addEventListener("SkillTree:skillLevelChanged", this._onSkillLevelChanged);
+
+    if (this._isShadowExchangeUnlocked()) {
+      this._activateStepResources();
+    } else {
+      this._toast("ShadowStep awaiting Shadow Exchange unlock", "info");
+    }
+  }
+
+  _activateStepResources() {
+    if (this._stepResourcesActive) return;
+    this._stepResourcesActive = true;
     this.loadSettings();
     this.initWebpack();
     this._components = buildComponents(BdApi, this);
@@ -98,51 +131,50 @@ module.exports = class ShadowStep {
     this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadows ready`, "info");
   }
 
+  _deactivateStepResources() {
+    if (!this._stepResourcesActive) return;
+    this._stepResourcesActive = false;
+    this._teardownStepRuntime();
+    this._toast("Shadow Exchange revoked \u2014 anchors dormant", "info");
+  }
+
+  _teardownStepRuntime() {
+    this.closePanel();
+    if (this._unpatchContextMenu) {
+      try { this._unpatchContextMenu(); } catch (_) {}
+      this._unpatchContextMenu = null;
+    }
+    this._unregisterHotkey();
+    _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+    if (this._transitionNavTimeout) { clearTimeout(this._transitionNavTimeout); this._transitionNavTimeout = null; }
+    if (this._transitionCleanupTimeout) { clearTimeout(this._transitionCleanupTimeout); this._transitionCleanupTimeout = null; }
+    _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+    if (this._navigateRetryTimers?.size) { for (const t of this._navigateRetryTimers) clearTimeout(t); this._navigateRetryTimers.clear(); }
+    _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+    if (this._channelFadeResetTimer) { clearTimeout(this._channelFadeResetTimer); this._channelFadeResetTimer = null; }
+    this.removeCSS();
+    this._components = null;
+    this._NavigationUtils = null;
+    this._ChannelStore = null;
+    this._GuildStore = null;
+    this._SelectedGuildStore = null;
+    this._statsCache.invalidate();
+    this._cssCache = null;
+    this._flushScheduledSettingsSave();
+  }
+
   stop(showToast = true) {
     try {
-      // 1. Close panel
-      this.closePanel();
-
-      // 2. Unpatch context menu
-      if (this._unpatchContextMenu) {
-        try {
-          this._unpatchContextMenu();
-        } catch (error) {
-          this.debugError("ContextMenu", "Failed to unpatch context menu", error);
-        }
-        this._unpatchContextMenu = null;
+      // Remove skill listener
+      if (this._onSkillLevelChanged) {
+        document.removeEventListener("SkillTree:skillLevelChanged", this._onSkillLevelChanged);
+        this._onSkillLevelChanged = null;
       }
-
-      // 3. Unregister hotkey
-      this._unregisterHotkey();
-
-      // 4. Stop and remove any active transition
-      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
-      // Fallback timer cleanup if TransitionCleanupUtils unavailable
-      if (this._transitionNavTimeout) { clearTimeout(this._transitionNavTimeout); this._transitionNavTimeout = null; }
-      if (this._transitionCleanupTimeout) { clearTimeout(this._transitionCleanupTimeout); this._transitionCleanupTimeout = null; }
-
-      // 5. Clear any queued navigation retries
-      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
-      // Fallback: clear retry timers directly
-      if (this._navigateRetryTimers?.size) { for (const t of this._navigateRetryTimers) clearTimeout(t); this._navigateRetryTimers.clear(); }
-
-      // 6. Clear channel view fade state
-      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
-      if (this._channelFadeResetTimer) { clearTimeout(this._channelFadeResetTimer); this._channelFadeResetTimer = null; }
-
-      // 7. Remove CSS
-      this.removeCSS();
-
-      // 8. Clear refs
-      this._components = null;
-      this._NavigationUtils = null;
-      this._ChannelStore = null;
-      this._GuildStore = null;
-      this._SelectedGuildStore = null;
-      this._statsCache.invalidate();
-      this._cssCache = null;
-      this._flushScheduledSettingsSave();
+      // Tear down resources if active
+      if (this._stepResourcesActive) {
+        this._stepResourcesActive = false;
+      }
+      this._teardownStepRuntime();
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }

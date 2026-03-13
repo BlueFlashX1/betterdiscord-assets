@@ -3,6 +3,8 @@
  * Mixed onto CriticalHit.prototype via Object.assign.
  */
 
+const dc = require('../shared/discord-classes');
+
 module.exports = {
   /**
    * Normalizes an ID to string and trims whitespace
@@ -348,7 +350,7 @@ module.exports = {
     if (!messageId) {
       const content = messageElement.textContent?.trim() || '';
       const author =
-        messageElement.querySelector('[class*="username"]')?.textContent?.trim() ||
+        dc.query(messageElement, 'username')?.textContent?.trim() ||
         messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
         '';
       const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
@@ -433,7 +435,7 @@ module.exports = {
 
       const authorElement =
         messageElement.querySelector('[class*="author"]') ||
-        messageElement.querySelector('[class*="username"]') ||
+        dc.query(messageElement, 'username') ||
         messageElement.querySelector('[class*="messageAuthor"]');
 
       if (authorElement) {

@@ -1,4 +1,4 @@
-const DUNGEONS_CSS = require('./styles.css');
+const { buildCSS } = require('./build-styles');
 
 module.exports = {
   removeCSSById(styleId) {
@@ -53,9 +53,9 @@ module.exports = {
   injectCSS() {
     const styleId = 'dungeons-plugin-styles';
 
-    const cssContent = typeof DUNGEONS_CSS === 'string' ? DUNGEONS_CSS : '';
+    const cssContent = buildCSS();
     if (!cssContent.trim()) {
-      this.errorLog?.('CSS', 'styles.css payload missing; skipping style injection');
+      this.errorLog?.('CSS', 'buildCSS() returned empty string; skipping style injection');
       return;
     }
 

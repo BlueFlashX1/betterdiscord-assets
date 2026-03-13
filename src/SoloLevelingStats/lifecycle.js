@@ -1,4 +1,5 @@
 const buildChatUIComponents = require('./components');
+const dc = require('../shared/discord-classes');
 
 module.exports = {
   _loadSLUtils() {
@@ -384,8 +385,8 @@ module.exports = {
     if (this.messageInputHandler) {
       const messageInput =
         this.messageInputHandler.element ||
-        document.querySelector('[class*="slateTextArea"]') ||
-        document.querySelector('[class*="textArea"]') ||
+        document.querySelector(dc.sel.slateTextArea) ||
+        document.querySelector(dc.sel.textArea) ||
         document.querySelector('textarea[placeholder*="Message"]');
 
       if (messageInput && this.messageInputHandler.handleKeyDown) {

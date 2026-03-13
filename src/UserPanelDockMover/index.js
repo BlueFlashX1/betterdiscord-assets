@@ -138,11 +138,8 @@ module.exports = class UserPanelDockMover {
   // 2) STYLING
   // =========================================================================
   injectStyles() {
-    // HSLDockAutoHide already injects the identical .sl-userpanel-docked CSS
-    // ruleset. Skip duplicate injection when it's active to avoid redundancy.
-    const hslActive = BdApi.Plugins.isEnabled("HSLDockAutoHide");
-    if (hslActive) return;
-
+    // Always inject own CSS — HSLDockAutoHide defers its CSS behind a skill
+    // gate, so we can't rely on it being present. Duplicate rules are harmless.
     if (BdApi?.DOM?.addStyle) BdApi.DOM.addStyle(this.pluginId, STYLES);
   }
 

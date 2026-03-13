@@ -1,5 +1,4 @@
 const fs = require("fs");
-const https = require("https");
 const path = require("path");
 const {
   DEFAULT_SETTINGS,
@@ -401,6 +400,20 @@ module.exports = class ShadowSenses {
     this._startupReportTimer = null;
   }
 
+  /**
+   * Check if a SkillTree skill is unlocked (level >= 1).
+   */
+  _isSkillTreeSkillUnlocked(skillId) {
+    try {
+      const plugin = BdApi.Plugins.get('SkillTree');
+      const instance = plugin?.instance || null;
+      if (!instance || typeof instance.getSkillLevel !== 'function') return false;
+      return instance.getSkillLevel(skillId) >= 1;
+    } catch {
+      return false;
+    }
+  }
+
   start() {
     try {
       if (!this._stopped) {
@@ -412,6 +425,7 @@ module.exports = class ShadowSenses {
       }
       this.loadSettings();
       this._stopped = false;
+      this._sensesResourcesActive = false;
       this._widgetDirty = true;
       this._panelOpen = false;
       this._transitionNavTimeout = null;
@@ -424,109 +438,208 @@ module.exports = class ShadowSenses {
       this._channelFadeResetTimer = null;
       this._startupReportTimer = null;
 
-      // DeploymentManager
-      this.deploymentManager = new DeploymentManager(
-        (...args) => this.debugLog(...args),
-        (...args) => this.debugError(...args)
-      );
-      this.deploymentManager.load();
+      // Listen for SkillTree skill changes (activate/deactivate on unlock/reset)
+      this._onSkillLevelChanged = (event) => {
+        if (this._stopped) return;
+        const { skillId, level } = event.detail || {};
+        if (skillId !== 'shadow_senses') return;
+        if (level >= 1 && !this._sensesResourcesActive) {
+          this.debugLog('SKILL_GATE', 'shadow_senses unlocked — activating senses resources');
+          this._activateSensesResources();
+        } else if (level < 1 && this._sensesResourcesActive) {
+          this.debugLog('SKILL_GATE', 'shadow_senses reset — tearing down senses resources');
+          this._deactivateSensesResources();
+        }
+      };
+      document.addEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
 
-      // Webpack modules
-      this.initWebpack();
-
-      // SensesEngine
-      this.sensesEngine = new SensesEngine(this);
-
-      // Subscribe immediately if Dispatcher ready, otherwise poll until available
-      if (this._Dispatcher) {
-        this.sensesEngine.subscribe();
+      // Only activate heavy resources if shadow_senses skill is unlocked
+      if (this._isSkillTreeSkillUnlocked('shadow_senses')) {
+        this._activateSensesResources();
       } else {
-        this._startDispatcherWait();
+        this.debugLog("SKILL_GATE", "shadow_senses not unlocked — senses dormant, waiting for skill event");
+        this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Awaiting Shadow Senses skill`);
       }
-
-      // CSS
-      this.injectCSS();
-
-      // React components
-      this._components = buildComponents(this);
-
-      // Widget
-      this.injectWidget();
-      this.setupWidgetObserver();
-
-      // ESC handler + context menu
-      this.registerEscHandler();
-      this.patchContextMenu();
-
-      this.debugLog("Lifecycle", "Started successfully");
-      this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadow deployment online`);
-      this._scheduleStartupShadowReport();
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] FATAL: start() crashed:`, err);
       this._toast(`${PLUGIN_NAME} failed to start: ${err.message}`, "error");
     }
   }
 
+  /**
+   * Activate all heavy resources (Dispatcher, SensesEngine, CSS, widget, etc.).
+   * Called when shadow_senses skill is confirmed unlocked.
+   */
+  _activateSensesResources() {
+    if (this._sensesResourcesActive) return;
+    this._sensesResourcesActive = true;
+
+    // DeploymentManager
+    this.deploymentManager = new DeploymentManager(
+      (...args) => this.debugLog(...args),
+      (...args) => this.debugError(...args)
+    );
+    this.deploymentManager.load();
+
+    // Webpack modules
+    this.initWebpack();
+
+    // SensesEngine
+    this.sensesEngine = new SensesEngine(this);
+
+    // Subscribe immediately if Dispatcher ready, otherwise poll until available
+    if (this._Dispatcher) {
+      this.sensesEngine.subscribe();
+    } else {
+      this._startDispatcherWait();
+    }
+
+    // CSS
+    this.injectCSS();
+
+    // React components
+    this._components = buildComponents(this);
+
+    // Widget
+    this.injectWidget();
+    this.setupWidgetObserver();
+
+    // ESC handler + context menu
+    this.registerEscHandler();
+    this.patchContextMenu();
+
+    this.debugLog("Lifecycle", "Senses resources activated");
+    this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadow deployment online`);
+    this._scheduleStartupShadowReport();
+  }
+
+  /**
+   * Tear down all heavy resources without fully stopping the plugin.
+   * The skill listener stays active so resources re-activate on skill unlock.
+   */
+  _deactivateSensesResources() {
+    if (!this._sensesResourcesActive) return;
+    this._sensesResourcesActive = false;
+
+    // Dispatcher retry
+    if (this._dispatcherRetryTimer) {
+      clearTimeout(this._dispatcherRetryTimer);
+      this._dispatcherRetryTimer = null;
+    }
+    if (this._startupReportTimer) {
+      clearTimeout(this._startupReportTimer);
+      this._startupReportTimer = null;
+    }
+
+    // SensesEngine
+    if (this.sensesEngine) {
+      this.sensesEngine.unsubscribe();
+      this.sensesEngine = null;
+    }
+
+    // Context menu
+    if (this._unpatchContextMenu) {
+      try { this._unpatchContextMenu(); } catch (_) {}
+      this._unpatchContextMenu = null;
+    }
+
+    // Panel
+    this.closePanel();
+
+    // Widget + observer
+    if (this._layoutBusUnsub) {
+      this._layoutBusUnsub();
+      this._layoutBusUnsub = null;
+    }
+    clearTimeout(this._widgetReinjectTimeout);
+    this._widgetReinjectTimeout = null;
+    this.removeWidget();
+    try {
+      const spacer = document.getElementById(WIDGET_SPACER_ID);
+      if (spacer) spacer.remove();
+    } catch (_) {}
+
+    // ESC handler
+    if (this._escHandler) {
+      document.removeEventListener("keydown", this._escHandler);
+      this._escHandler = null;
+    }
+
+    // Transitions
+    _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+    _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+    _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+
+    // CSS + refs
+    this.removeCSS();
+    this._components = null;
+    this.deploymentManager = null;
+
+    this.debugLog("SKILL_GATE", "Senses resources deactivated");
+    this._toast(`${PLUGIN_NAME} \u2014 Shadows recalled (skill reset)`);
+  }
+
   stop(showToast = true) {
     try {
-      // 0. Mark stopped + clear Dispatcher retry timer if still pending
       this._stopped = true;
-      if (this._dispatcherRetryTimer) {
-        clearTimeout(this._dispatcherRetryTimer);
-        this._dispatcherRetryTimer = null;
-      }
-      if (this._startupReportTimer) {
-        clearTimeout(this._startupReportTimer);
-        this._startupReportTimer = null;
+
+      // Remove skill listener
+      if (this._onSkillLevelChanged) {
+        document.removeEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
+        this._onSkillLevelChanged = null;
       }
 
-      // 1. Unsubscribe Dispatcher + final flush (persists feeds to disk)
-      if (this.sensesEngine) {
-        this.sensesEngine.unsubscribe();
-        this.sensesEngine = null;
+      // Tear down resources if active
+      if (this._sensesResourcesActive) {
+        this._sensesResourcesActive = false;
+
+        if (this._dispatcherRetryTimer) {
+          clearTimeout(this._dispatcherRetryTimer);
+          this._dispatcherRetryTimer = null;
+        }
+        if (this._startupReportTimer) {
+          clearTimeout(this._startupReportTimer);
+          this._startupReportTimer = null;
+        }
+
+        if (this.sensesEngine) {
+          this.sensesEngine.unsubscribe();
+          this.sensesEngine = null;
+        }
+
+        if (this._unpatchContextMenu) {
+          try { this._unpatchContextMenu(); } catch (_) {}
+          this._unpatchContextMenu = null;
+        }
+
+        this.closePanel();
+
+        if (this._layoutBusUnsub) {
+          this._layoutBusUnsub();
+          this._layoutBusUnsub = null;
+        }
+        clearTimeout(this._widgetReinjectTimeout);
+        this._widgetReinjectTimeout = null;
+        this.removeWidget();
+
+        try {
+          const spacer = document.getElementById(WIDGET_SPACER_ID);
+          if (spacer) spacer.remove();
+        } catch (_) {}
+
+        if (this._escHandler) {
+          document.removeEventListener("keydown", this._escHandler);
+          this._escHandler = null;
+        }
+
+        _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+        _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+        _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+
+        this.removeCSS();
+        this._components = null;
+        this.deploymentManager = null;
       }
-
-      // 2. Unpatch context menu
-      if (this._unpatchContextMenu) {
-        try { this._unpatchContextMenu(); } catch (_) { this.debugLog?.('CLEANUP', 'Context menu unpatch error', _); }
-        this._unpatchContextMenu = null;
-      }
-
-      // 3. Close panel
-      this.closePanel();
-
-      // 4. Widget + observer — PERF(P5-4): Unsubscribe from shared LayoutObserverBus
-      if (this._layoutBusUnsub) {
-        this._layoutBusUnsub();
-        this._layoutBusUnsub = null;
-      }
-      clearTimeout(this._widgetReinjectTimeout);
-      this._widgetReinjectTimeout = null;
-      this.removeWidget();
-
-      // 4b. Direct spacer cleanup (in case removeWidget didn't run)
-      try {
-        const spacer = document.getElementById(WIDGET_SPACER_ID);
-        if (spacer) spacer.remove();
-      } catch (_) { this.debugLog?.('CLEANUP', 'Spacer cleanup error', _); }
-
-      // 5. ESC handler
-      if (this._escHandler) {
-        document.removeEventListener("keydown", this._escHandler);
-        this._escHandler = null;
-      }
-
-      // 6. Stop and remove any active transition
-      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
-      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
-      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
-
-      // 7. CSS
-      this.removeCSS();
-
-      // 7. Clear refs
-      this._components = null;
-      this.deploymentManager = null;
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
@@ -550,9 +663,9 @@ module.exports = class ShadowSenses {
     return safeHours * 60 * 60 * 1000;
   }
 
-  _formatStartupTopList(items, emptyLabel = "None") {
+  _formatStartupTopList(items, emptyLabel = "None", prefix = "") {
     if (!Array.isArray(items) || items.length === 0) return emptyLabel;
-    return items.map((item) => `${item.name} ${item.count}`).join(", ");
+    return items.map((item) => `${prefix}${item.name} (${item.count})`).join(", ");
   }
 
   _formatStartupChannelLabel(channelName) {
@@ -790,60 +903,39 @@ module.exports = class ShadowSenses {
     return { apiKey, model };
   }
 
-  _requestOpenAiChatCompletion({ apiKey, model, messages, maxTokens = 260, temperature = 0.45, timeoutMs = 8000 }) {
-    return new Promise((resolve, reject) => {
-      const payload = JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        response_format: { type: "json_object" },
-      });
-
-      const req = https.request(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Length": Buffer.byteLength(payload),
-          },
+  async _requestOpenAiChatCompletion({ apiKey, model, messages, maxTokens = 260, temperature = 0.45, timeoutMs = 8000 }) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
         },
-        (res) => {
-          let raw = "";
-          res.on("data", (chunk) => {
-            raw += chunk;
-          });
-          res.on("end", () => {
-            const status = Number(res.statusCode) || 0;
-            if (status >= 400) {
-              const safeText = String(raw || "").slice(0, 200).replace(/\s+/g, " ");
-              reject(new Error(`openai_http_${status}:${safeText}`));
-              return;
-            }
-            try {
-              const parsed = JSON.parse(raw || "{}");
-              const content = parsed?.choices?.[0]?.message?.content;
-              if (!content) {
-                reject(new Error("openai_empty_response"));
-                return;
-              }
-              resolve(String(content));
-            } catch (error) {
-              reject(new Error(`openai_parse_error:${error.message}`));
-            }
-          });
-        }
-      );
-
-      req.on("error", (error) => reject(error));
-      req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error("openai_timeout"));
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+          response_format: { type: "json_object" },
+        }),
+        signal: controller.signal,
       });
-      req.write(payload);
-      req.end();
-    });
+      clearTimeout(timer);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(`openai_http_${res.status}:${errText.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content) throw new Error("openai_empty_response");
+      return String(content);
+    } catch (error) {
+      clearTimeout(timer);
+      if (error?.name === "AbortError") throw new Error("openai_timeout");
+      throw error;
+    }
   }
 
   _buildStartupReportFallbackNarration(summary, windowHours, recentEntries = []) {
@@ -884,7 +976,7 @@ module.exports = class ShadowSenses {
     const attentionDigest = this._buildStartupAttentionDigest(summary, recentEntries);
     const fallback = this._buildStartupReportFallbackNarration(summary, windowHours, recentEntries);
     const aiConfig = this._resolveStartupAiConfig();
-    if (!aiConfig?.apiKey) return fallback;
+    if (!aiConfig?.apiKey) return { narration: fallback, signalBreakdown: "" };
 
     const promptPayload = {
       windowHours,
@@ -908,7 +1000,7 @@ module.exports = class ShadowSenses {
           : [],
       },
       recentSignals: Array.isArray(recentEntries)
-        ? recentEntries.slice(0, 8).map((entry) => ({
+        ? recentEntries.slice(0, 16).map((entry) => ({
           when: new Date(Number(entry.timestamp) || Date.now()).toISOString(),
           guild: entry.guildName,
           channel: entry.channelName,
@@ -922,18 +1014,23 @@ module.exports = class ShadowSenses {
 
     const systemPrompt = [
       "You are Igris, a loyal shadow retainer reporting to the Shadow Monarch.",
-      "Write a concise startup catch-up report in plain text.",
-      "Tone: respectful, direct, tactical, calm.",
-      "Always begin with 'My liege,'.",
-      "Sentence flow requirement:",
-      "1) Total events over the time window.",
-      "2) Most active channel and its signal count.",
-      "3) 'X of Y signals require your attention' and list up to 2 channels with key speakers and brief message topics.",
-      "Do not use markdown, emojis, or bullet lists.",
+      "You must return TWO pieces in a single JSON response.",
+      "",
+      "1) \"report\" — a concise 3-5 sentence startup catch-up narration in plain text.",
+      "   Tone: respectful, direct, tactical, calm. Always begin with 'My liege,'.",
+      "   Flow: total events → most active channel → actionable signal count and key channels/speakers.",
+      "",
+      "2) \"signalBreakdown\" — a detailed tactical briefing on the attention-worthy signals (priority >= 2).",
+      "   Group by channel. For each channel: name the speakers, summarize what they discussed or what triggered the alert.",
+      "   Include priority context (P4 = direct mention of the Monarch, P3 = reply/@everyone, P2 = role mention/keyword).",
+      "   Use numbered entries. Keep each entry to 1-2 lines. Cover up to 10 entries.",
+      "   If no actionable signals exist, write a single line: 'No signals require your attention in this window.'",
+      "   Plain text only, no markdown or emojis.",
+      "",
+      "Do not use markdown, emojis, or bullet lists in either field.",
       "Never invent events; use only provided data.",
-      "Keep to 3-5 sentences and stay readable.",
-      "Return JSON only: {\"report\":\"...\"}.",
-    ].join(" ");
+      "Return JSON only: {\"report\":\"...\",\"signalBreakdown\":\"...\"}.",
+    ].join("\n");
 
     try {
       const raw = await this._requestOpenAiChatCompletion({
@@ -943,29 +1040,42 @@ module.exports = class ShadowSenses {
           { role: "system", content: systemPrompt },
           { role: "user", content: JSON.stringify(promptPayload) },
         ],
+        maxTokens: 700,
+        timeoutMs: 12000,
       });
+      this.debugLog("StartupReport", "AI raw response", { rawLength: raw?.length, raw: String(raw || "").slice(0, 500) });
       let report = "";
+      let signalBreakdown = "";
       try {
         const parsed = JSON.parse(raw);
         report = String(parsed?.report || "").trim();
-      } catch (_) {
+        signalBreakdown = String(parsed?.signalBreakdown || "").trim();
+        this.debugLog("StartupReport", "AI parsed fields", {
+          reportLength: report.length,
+          signalBreakdownLength: signalBreakdown.length,
+          hasSignalBreakdown: signalBreakdown.length > 0,
+          signalBreakdownPreview: signalBreakdown.slice(0, 200),
+        });
+      } catch (parseErr) {
+        this.debugLog("StartupReport", "AI JSON parse failed", { error: parseErr?.message });
         report = String(raw || "").trim();
       }
       report = report.replace(/```/g, "").replace(/\s+/g, " ").trim();
-      if (!report) return fallback;
+      signalBreakdown = signalBreakdown.replace(/```/g, "").trim();
+      if (!report) return { narration: fallback, signalBreakdown: "" };
       if (!/^My liege,/i.test(report)) {
         report = `My liege, ${report.charAt(0).toLowerCase()}${report.slice(1)}`;
       }
-      return report.slice(0, 700);
+      return { narration: report.slice(0, 700), signalBreakdown: signalBreakdown.slice(0, 1200) };
     } catch (error) {
       this.debugLog("StartupReport", "AI summary fallback", {
         reason: error?.message || String(error),
       });
-      return fallback;
+      return { narration: fallback, signalBreakdown: "" };
     }
   }
 
-  _showStartupShadowReportModal({ summary, windowHours, narration, recentEntries }) {
+  _showStartupShadowReportModal({ summary, windowHours, narration, recentEntries, signalBreakdown }) {
     const React = BdApi.React;
     const title = `Igris Report \u2022 ${windowHours}h`;
     const safeNarration = String(
@@ -979,24 +1089,55 @@ module.exports = class ShadowSenses {
         if (rightPriority !== leftPriority) return rightPriority - leftPriority;
         return (Number(right?.timestamp) || 0) - (Number(left?.timestamp) || 0);
       })
-      .slice(0, 6);
+      .slice(0, 12);
     const detailLine =
       `Urgent: ${Number(summary?.urgentCount || 0)} \u2022 ` +
       `High: ${Number(summary?.highCount || 0)} \u2022 ` +
       `Medium: ${Number(summary?.mediumCount || 0)} \u2022 ` +
       `Guilds active: ${Number(summary?.activeGuildCount || 0)}`;
     const topTargetsLine = `Top targets: ${this._formatStartupTopList(summary?.topTargets, "None")}`;
-    const topChannelsLine = `Top channels: ${this._formatStartupTopList(summary?.topChannels, "None")}`;
+    const topChannelsLine = `Top channels: ${this._formatStartupTopList(summary?.topChannels, "None", "#")}`;
     const artworkUrl = this._resolveStartupReportArtworkUrl();
-    const attentionSignalText = attentionEntries.length
-      ? attentionEntries
+    const summaryActionableCount =
+      Number(summary?.urgentCount || 0) +
+      Number(summary?.highCount || 0) +
+      Number(summary?.mediumCount || 0);
+    let attentionSignalText;
+    const aiBreakdown = typeof signalBreakdown === "string" ? signalBreakdown.trim() : "";
+    if (aiBreakdown) {
+      // AI-powered signal breakdown from Igris
+      attentionSignalText = aiBreakdown;
+    } else if (attentionEntries.length) {
+      attentionSignalText = attentionEntries
         .map((entry, idx) => {
           const when = new Date(Number(entry.timestamp) || Date.now()).toLocaleString();
           const countLabel = Number(entry.messageCount) > 1 ? ` x${entry.messageCount}` : "";
           return `${idx + 1}. [P${Number(entry.priority) || 1}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}\n${entry.content}\n${when}`;
         })
-        .join("\n\n")
-      : "No urgent, high, or medium-priority signals require your attention in this window.";
+        .join("\n\n");
+    } else if (summaryActionableCount > 0) {
+      const lines = [];
+      const urgent = Number(summary?.urgentCount || 0);
+      const high = Number(summary?.highCount || 0);
+      const medium = Number(summary?.mediumCount || 0);
+      lines.push(`${summaryActionableCount} signal${summaryActionableCount === 1 ? "" : "s"} detected:`);
+      if (urgent > 0) lines.push(`  \u2022 ${urgent} urgent (direct mentions of you)`);
+      if (high > 0) lines.push(`  \u2022 ${high} high (replies to you, @everyone, name matches)`);
+      if (medium > 0) lines.push(`  \u2022 ${medium} medium (role mentions, keyword triggers)`);
+      const topTargets = summary?.topTargets;
+      if (Array.isArray(topTargets) && topTargets.length > 0) {
+        const targetList = topTargets.map((t) => `${t.name} (${t.count})`).join(", ");
+        lines.push(`\nMost active targets: ${targetList}`);
+      }
+      const topChannels = summary?.topChannels;
+      if (Array.isArray(topChannels) && topChannels.length > 0) {
+        const channelList = topChannels.map((c) => `#${c.name} (${c.count})`).join(", ");
+        lines.push(`Hottest channels: ${channelList}`);
+      }
+      attentionSignalText = lines.join("\n");
+    } else {
+      attentionSignalText = "No urgent, high, or medium-priority signals require your attention in this window.";
+    }
 
     if (!React || !BdApi.UI?.showConfirmationModal) {
       const fallbackText =
@@ -1051,8 +1192,22 @@ module.exports = class ShadowSenses {
       ),
       React.createElement(
         "div",
-        { style: { color: "#a3a3a3", fontSize: "12px", lineHeight: 1.45 } },
-        `${detailLine}\n${topTargetsLine}\n${topChannelsLine}`
+        { style: { display: "flex", flexDirection: "column", gap: "4px" } },
+        React.createElement(
+          "div",
+          { style: { color: "#a3a3a3", fontSize: "12px", lineHeight: 1.45 } },
+          detailLine
+        ),
+        React.createElement(
+          "div",
+          { style: { color: "#8a8a8a", fontSize: "11px", lineHeight: 1.45 } },
+          topTargetsLine
+        ),
+        React.createElement(
+          "div",
+          { style: { color: "#8a8a8a", fontSize: "11px", lineHeight: 1.45 } },
+          topChannelsLine
+        )
       ),
       React.createElement(
         "div",
@@ -1094,16 +1249,19 @@ module.exports = class ShadowSenses {
     const summary = this.sensesEngine.getStartupSummary(windowMs, 3, 2);
     if (!summary) return;
     const recentEntries = this.sensesEngine.getStartupEntries
-      ? this.sensesEngine.getStartupEntries(windowMs, 12)
+      ? this.sensesEngine.getStartupEntries(windowMs, 50)
       : [];
 
     const windowHours = Math.max(1, Math.round(summary.windowMs / (60 * 60 * 1000)));
-    const narration = await this._generateAiStartupNarration(summary, recentEntries, windowHours);
+    const aiResult = await this._generateAiStartupNarration(summary, recentEntries, windowHours);
+    const narration = aiResult?.narration || aiResult;
+    const signalBreakdown = aiResult?.signalBreakdown || "";
     this._showStartupShadowReportModal({
       summary,
       windowHours,
       narration,
       recentEntries,
+      signalBreakdown,
     });
 
     this.debugLog("Lifecycle", "Startup shadow report emitted", {

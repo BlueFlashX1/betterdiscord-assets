@@ -29,12 +29,25 @@ function buildSkillTreeComponents(pluginInstance) {
       parts.push(`+${(effect.debuffCleanseChance * 100).toFixed(1)}% Cleanse Chance`);
     }
     if (effect.tenacityDamageReduction && effect.tenacityThreshold) {
+      const thresholdLabel = effect.tenacityThreshold >= 1.0 ? "Always Active" : `below ${(effect.tenacityThreshold * 100).toFixed(0)}% HP`;
       parts.push(
-        `-${(effect.tenacityDamageReduction * 100).toFixed(1)}% Incoming Damage below ${(effect.tenacityThreshold * 100).toFixed(0)}% HP`
+        `-${(effect.tenacityDamageReduction * 100).toFixed(1)}% Incoming Damage (${thresholdLabel})`
       );
     }
     if (effect.naturalGrowthMultiplier && effect.naturalGrowthMultiplier > 1) {
       parts.push(`+${((effect.naturalGrowthMultiplier - 1) * 100).toFixed(1)}% Natural Growth`);
+    }
+    if (effect.flatMana) {
+      parts.push(`+${Number(effect.flatMana).toLocaleString()} Mana`);
+    }
+    if (effect.manaCostReduction) {
+      parts.push(`-${(effect.manaCostReduction * 100).toFixed(1)}% Mana Costs`);
+    }
+    if (effect.ariseChanceOverride >= 1.0) {
+      parts.push("100% Arise Chance");
+    }
+    if (effect.shadowGrowthMultiplier && effect.shadowGrowthMultiplier > 1) {
+      parts.push(`${effect.shadowGrowthMultiplier.toFixed(1)}x Shadow Growth`);
     }
     return parts.join(" \u2022 ");
   }
@@ -147,7 +160,9 @@ function buildActiveSkillAction(ce, options) {
   function ActiveSkillCard({ skillId, def, isUnlocked, isRunning, isOnCooldown, cooldownRemaining, state, manaInfo, onActivate, onDeactivate }) {
     const cardClasses = ["skilltree-active-skill", isRunning ? "is-active" : "", !isUnlocked ? "is-locked" : ""].filter(Boolean).join(" ");
     const durationText = getActiveSkillDurationText(def);
-    const cooldownText = `${Math.round(def.cooldownMs / 60000)}m`;
+    const cooldownText = def.sustain
+      ? `${Math.round(def.cooldownMs / 60000)}m (only on mana depletion)`
+      : `${Math.round(def.cooldownMs / 60000)}m`;
     const statusEl = buildActiveSkillStatus(ce, {
       def,
       isRunning,
@@ -208,23 +223,26 @@ function buildActiveSkillAction(ce, options) {
   }
 
   function SkillCard({ skill, level, maxLevel, canUpgrade, nextCost, effect, onUpgrade, onMaxUpgrade }) {
-    const canMax = level < maxLevel && canUpgrade;
-    const classes = `skilltree-skill ${level > 0 ? "unlocked" : ""} ${level >= maxLevel ? "max-level" : ""}`;
+    const isUnlockOnly = Boolean(skill.unlockOnly);
+    const effectiveMaxLevel = isUnlockOnly ? 1 : maxLevel;
+    const canMax = !isUnlockOnly && level < effectiveMaxLevel && canUpgrade;
+    const classes = `skilltree-skill ${level > 0 ? "unlocked" : ""} ${level >= effectiveMaxLevel ? "max-level" : ""}`;
     const effectStr = formatEffectText(effect);
 
     return ce("div", { className: classes },
       ce("div", { className: "skilltree-skill-name" }, skill.name),
       ce("div", { className: "skilltree-skill-desc" }, skill.desc),
       skill.lore ? ce("div", { className: "skilltree-skill-lore" }, skill.lore) : null,
-      level > 0 ? ce("div", { className: "skilltree-skill-level" }, `Level ${level}/${maxLevel}`) : null,
+      level > 0 && !isUnlockOnly ? ce("div", { className: "skilltree-skill-level" }, `Level ${level}/${effectiveMaxLevel}`) : null,
+      level > 0 && isUnlockOnly ? ce("div", { className: "skilltree-skill-level" }, "UNLOCKED") : null,
       level > 0 && effectStr ? ce("div", { className: "skilltree-skill-effects" }, `Current Effects: ${effectStr}`) : null,
-      level < maxLevel ? ce(React.Fragment, null,
+      level < effectiveMaxLevel ? ce(React.Fragment, null,
         ce("div", { className: "skilltree-skill-cost" }, `Cost: ${nextCost || "N/A"} SP`),
         ce("div", { className: "skilltree-btn-group" },
-          ce("button", { className: "skilltree-upgrade-btn", disabled: !canUpgrade, onClick: canUpgrade ? () => onUpgrade(skill.id) : undefined }, level === 0 ? "Unlock" : "Upgrade"),
-          ce("button", { className: "skilltree-max-btn", disabled: !canMax, onClick: canMax ? () => onMaxUpgrade(skill.id) : undefined }, "Max")
+          ce("button", { className: "skilltree-upgrade-btn", disabled: !canUpgrade, onClick: canUpgrade ? () => onUpgrade(skill.id) : undefined }, "Unlock"),
+          isUnlockOnly ? null : ce("button", { className: "skilltree-max-btn", disabled: !canMax, onClick: canMax ? () => onMaxUpgrade(skill.id) : undefined }, "Max")
         )
-      ) : ce("div", { className: "skilltree-skill-max" }, "MAX LEVEL")
+      ) : ce("div", { className: "skilltree-skill-max" }, isUnlockOnly ? "UNLOCKED" : "MAX LEVEL")
     );
   }
 
@@ -237,7 +255,7 @@ function buildActiveSkillAction(ce, options) {
       ),
       tier.skills.map((skill) => {
         const level = pluginInstance.getSkillLevel(skill.id);
-        const maxLevel = tier.maxLevel || 10;
+        const maxLevel = skill.unlockOnly ? 1 : (skill.maxLevel || tier.maxLevel || 10);
         return ce(SkillCard, {
           key: skill.id,
           skill,

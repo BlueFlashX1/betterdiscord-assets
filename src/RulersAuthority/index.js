@@ -78,7 +78,6 @@ import {
   setupHoverHandlers,
   setupSettingsGuard,
   setupGuildChangeListener,
-  setupSkillTreeListeners,
   setupChannelObserver,
   setupDMObserver,
   setupToolbarObserver,
@@ -209,6 +208,29 @@ module.exports = class RulersAuthority {
     this._channelChangeHandler = null;
     this._guildChangeApplyTimer = null;
     this._channelObserverRetryTimer = null;
+
+    // SkillTree gate state
+    this._authorityResourcesActive = false;
+    this._currentGateLevel = 0;
+    this._onAuthorityLevelChanged = null;
+  }
+
+  // ── SkillTree gate helpers ──────────────────────────────────
+
+  _getRulersAuthorityLevel() {
+    try {
+      return BdApi.Plugins.get("SkillTree")?.instance?.getSkillLevel("rulers_authority") || 0;
+    } catch (_) { return 0; }
+  }
+
+  /**
+   * Whether a panel is allowed at the current Ruler's Authority skill level.
+   * Lv 2+: members, profile, search panels active
+   * Lv 3:  sidebar panel also active
+   */
+  isPanelGated(panelName) {
+    if (panelName === "sidebar") return this._currentGateLevel < 3;
+    return false; // members, profile, search all available at lv 2+
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -217,26 +239,39 @@ module.exports = class RulersAuthority {
     this._toast = _PluginUtils?.createToastHelper?.("rulersAuthority") || createToast();
     try {
       if (this._controller) this.stop({ silent: true });
-      this._controller = new AbortController();
+
+      // ── SkillTree gate: rulers_authority >= 2 for core, >= 3 for sidebar ──
+      this._onAuthorityLevelChanged = (e) => {
+        if (e.detail?.skillId !== "rulers_authority") return;
+        const level = e.detail.level || 0;
+        this._handleAuthorityLevelChange(level);
+      };
+      document.addEventListener("SkillTree:skillLevelChanged", this._onAuthorityLevelChanged);
+
+      // Always inject CSS — cosmetic rules (members bg, scrollbar, toolbar, animations)
+      // apply immediately. Functional rules (push/collapse, hover-expand) are gated behind
+      // body classes (ra-*-pushed, ra-*-hover-reveal) that only get set by JS below.
       this.loadSettings();
       this.initWebpack();
-      setupSettingsGuard(this);
       injectCSS(this);
       updateCSSVars(this);
-      restorePanelStates(this);
-      injectToolbarIcon(this);
-      setupToolbarObserver(this);
-      patchContextMenus(this);
-      this.setupHotkeyListener();
-      setupHoverHandlers(this);
-      setupResizeHandlers(this);
-      setupChannelObserver(this);
-      setupGuildChangeListener(this);
-      setupSkillTreeListeners(this);
-      applyMicroStateForCurrentGuild(this);
-      applyDMGripping(this);
-      setupDMObserver(this);
-      this._toast("Ruler's Authority \u2014 Active", "info");
+
+      const level = this._getRulersAuthorityLevel();
+      if (level >= 2) {
+        this._activateAuthorityResources(level);
+      } else {
+        // SkillTree may not have started yet — retry after a delay as fallback.
+        // The primary path is the SkillTree:skillLevelChanged event (above), but
+        // this covers the race where SkillTree starts late or the event is missed.
+        this._skillTreeRetryTimer = setTimeout(() => {
+          this._skillTreeRetryTimer = null;
+          const retryLevel = this._getRulersAuthorityLevel();
+          if (retryLevel >= 2 && !this._authorityResourcesActive) {
+            this._activateAuthorityResources(retryLevel);
+          }
+        }, 4000);
+        this._toast("Ruler's Authority awaiting skill level 2", "info");
+      }
     } catch (err) {
       this.debugError("Lifecycle", "Error during start:", err);
       try { this.stop({ silent: true }); } catch (_) {}
@@ -244,9 +279,124 @@ module.exports = class RulersAuthority {
     }
   }
 
+  _handleAuthorityLevelChange(level) {
+    if (level >= 2 && !this._authorityResourcesActive) {
+      // Activate full plugin
+      this._activateAuthorityResources(level);
+    } else if (level < 2 && this._authorityResourcesActive) {
+      // Deactivate full plugin
+      this._deactivateAuthorityResources();
+    } else if (this._authorityResourcesActive && level !== this._currentGateLevel) {
+      // Level changed while active — toggle sidebar features
+      const hadSidebar = this._currentGateLevel >= 3;
+      const hasSidebar = level >= 3;
+      this._currentGateLevel = level;
+
+      if (!hadSidebar && hasSidebar) {
+        // Sidebar just unlocked — restore sidebar pushed state
+        this.debugLog("SkillGate", "Sidebar panel unlocked at level 3");
+        if (this.settings.panels.sidebar?.pushed) {
+          document.body.classList.add("ra-sidebar-pushed");
+        }
+        this._toast("Sidebar control unlocked — Level 3", "success");
+      } else if (hadSidebar && !hasSidebar) {
+        // Sidebar revoked — un-push sidebar and remove hover
+        this.debugLog("SkillGate", "Sidebar panel revoked (below level 3)");
+        document.body.classList.remove("ra-sidebar-pushed", "ra-sidebar-hover-reveal");
+        clearTimeout(this._sidebarRevealTimer);
+        clearTimeout(this._sidebarHideTimer);
+        this._sidebarRevealTimer = null;
+        this._sidebarHideTimer = null;
+        this._toast("Sidebar control revoked", "info");
+      }
+    }
+  }
+
+  _activateAuthorityResources(level) {
+    if (this._authorityResourcesActive) return;
+    this._authorityResourcesActive = true;
+    this._currentGateLevel = level;
+
+    this._controller = new AbortController();
+    // Settings + webpack + CSS already loaded in start() — refresh CSS vars
+    // in case settings changed while gated
+    setupSettingsGuard(this);
+    updateCSSVars(this);
+
+    // Restore panel states — isPanelGated() automatically skips sidebar if level < 3
+    restorePanelStates(this);
+
+    injectToolbarIcon(this);
+    setupToolbarObserver(this);
+    patchContextMenus(this);
+    this.setupHotkeyListener();
+
+    // Hover + resize handlers — isPanelGated() enforces per-panel gates
+    setupHoverHandlers(this);
+    setupResizeHandlers(this);
+
+    setupChannelObserver(this);
+    setupGuildChangeListener(this);
+    applyMicroStateForCurrentGuild(this);
+    applyDMGripping(this);
+    setupDMObserver(this);
+
+    const desc = level >= 3 ? "Full Authority (sidebar + members)" : "Members control active";
+    this._toast(`Ruler's Authority — ${desc}`, "info");
+  }
+
+  _deactivateAuthorityResources() {
+    if (!this._authorityResourcesActive) return;
+    this._authorityResourcesActive = false;
+    this._currentGateLevel = 0;
+
+    // Full teardown (mirrors stop() internals without removing skill listener)
+    this._clearLifecycleTimers();
+    if (this._controller) {
+      this._controller.abort();
+      this._controller = null;
+    }
+    this._resetBodyVisualState();
+    // CSS stays injected — cosmetic rules (members bg, scrollbar, toolbar) should
+    // persist even when functional gating is active. Only stop() removes CSS.
+    const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+    if (icon) icon.remove();
+    const raTip = document.getElementById("sl-toolbar-tip-ra");
+    if (raTip) raTip.remove();
+    teardownToolbarObserver(this);
+    if (this._unpatchChannelCtx) { this._unpatchChannelCtx(); this._unpatchChannelCtx = null; }
+    this._disconnectObserversAndGuards();
+    this._detachSkillTreeListeners();
+    this._detachStoreListeners();
+    restoreAllHiddenChannels();
+    restoreAllCrushedCategories();
+    removeAllResizeStyles(this);
+    document.body.classList.remove(RA_SETTINGS_OPEN_CLASS);
+    this._resetRuntimeReferences();
+    this._toast("Ruler's Authority — Power revoked", "info");
+  }
+
   stop(options = {}) {
     const { silent = false } = options;
     try {
+      // Remove skill gate listener
+      if (this._onAuthorityLevelChanged) {
+        document.removeEventListener("SkillTree:skillLevelChanged", this._onAuthorityLevelChanged);
+        this._onAuthorityLevelChanged = null;
+      }
+
+      // Tear down resources if active
+      if (this._authorityResourcesActive) {
+        this._authorityResourcesActive = false;
+        this._currentGateLevel = 0;
+      }
+
+      // 0. Clear SkillTree retry timer if pending.
+      if (this._skillTreeRetryTimer) {
+        clearTimeout(this._skillTreeRetryTimer);
+        this._skillTreeRetryTimer = null;
+      }
+
       // 1. Clear all timers first (prevents callbacks on stopped plugin).
       this._clearLifecycleTimers();
 
@@ -324,7 +474,7 @@ module.exports = class RulersAuthority {
     for (const panelName of Object.keys(PANEL_DEFS)) {
       document.body.classList.remove(`ra-${panelName}-pushed`, `ra-${panelName}-hover-reveal`);
     }
-    document.body.classList.remove("ra-amplified", "ra-pushing", "ra-pulling", "ra-channels-hover-reveal");
+    document.body.classList.remove("ra-pushing", "ra-pulling", "ra-channels-hover-reveal");
     this._channelsHoverRevealActive = false;
   }
 

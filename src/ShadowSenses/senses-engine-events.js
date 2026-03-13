@@ -4,6 +4,8 @@ const {
   STARTUP_TOAST_GRACE_MS,
 } = require("./constants");
 
+const { resolvePresenceUpdateStatus } = require("./senses-engine-utils");
+
 const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 const MAX_ACTIVITY_SEED_SCAN_ENTRIES = 6000;
 const LAST_SEEN_FALLBACK_MS = 24 * 60 * 60 * 1000;
@@ -532,6 +534,9 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
     typeof update.status === "string" && update.status.trim().length > 0
       ? ctx._normalizeStatus(update.status)
       : null;
+  if (!nextStatus && update.clientStatus) {
+    nextStatus = resolvePresenceUpdateStatus(update, ctx._normalizeStatus.bind(ctx));
+  }
   if (!nextStatus) {
     const presenceStore = ctx._resolvePresenceStore();
     const liveStatus = presenceStore?.getStatus?.(userId);
@@ -590,6 +595,9 @@ function mergePresenceUpdatesWithStoreSnapshot(ctx, updates, monitoredIds) {
     for (const monitoredId of monitoredIds) {
       const normalizedUserId = String(monitoredId || "").trim();
       if (!normalizedUserId) continue;
+      // Skip store reads for users already present from the dispatcher payload —
+      // the dispatcher data is fresher and should not be overwritten by a potentially stale store.
+      if (mergedByUserId.has(normalizedUserId)) continue;
       let liveStatus = null;
       try {
         const rawStatus = presenceStore.getStatus(normalizedUserId);
@@ -663,8 +671,8 @@ function pollMonitoredPresenceStatuses(source = "interval") {
           const missCount = (Number(this._presenceStatusMissCount.get(userId)) || 0) + 1;
           this._presenceStatusMissCount.set(userId, missCount);
 
-          // Presence store can briefly omit users; require two misses before coercing to offline.
-          if (missCount >= 2) nextStatus = "offline";
+          // With 5s poll interval, a single miss is sufficient to detect offline.
+          if (missCount >= 1) nextStatus = "offline";
         }
       } catch (_) {}
 

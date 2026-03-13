@@ -307,7 +307,11 @@ module.exports = {
     if (!shadow.lastNaturalGrowth) shadow.lastNaturalGrowth = Date.now();
     if (!shadow.growthVarianceSeed) shadow.growthVarianceSeed = Math.random();
 
-    const baseGrowthPerHour = rankMultiplier * 10;
+    // True Shadow Monarch: accelerated shadow growth
+    const bonuses = typeof this._getSkillTreeBonuses === 'function' ? this._getSkillTreeBonuses() : null;
+    const growthMult = (bonuses && bonuses.shadowGrowthMultiplier > 1) ? bonuses.shadowGrowthMultiplier : 1;
+
+    const baseGrowthPerHour = rankMultiplier * 10 * growthMult;
     if (combatTimeHours <= 0) return false;
 
     const stats = C.STAT_KEYS;
@@ -327,6 +331,14 @@ module.exports = {
     const effectiveStats = this.getShadowEffectiveStats(shadow);
     shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
 
+    // Monarch cap: no shadow can exceed the Shadow Monarch's own strength
+    if (growthMult > 1) {
+      const monarchStrength = this._getMonarchStrength();
+      if (monarchStrength > 0 && shadow.strength > monarchStrength) {
+        shadow.strength = monarchStrength;
+      }
+    }
+
     return true;
   },
 
@@ -343,6 +355,10 @@ module.exports = {
     if (!shadow.growthVarianceSeed) {
       shadow.growthVarianceSeed = Math.random();
     }
+
+    // True Shadow Monarch: accelerated shadow level-up growth
+    const bonuses = typeof this._getSkillTreeBonuses === 'function' ? this._getSkillTreeBonuses() : null;
+    const growthMult = (bonuses && bonuses.shadowGrowthMultiplier > 1) ? bonuses.shadowGrowthMultiplier : 1;
 
     const stats = C.STAT_KEYS;
 
@@ -366,10 +382,20 @@ module.exports = {
       const roleWeight = roleWeights[stat] || 1.0;
       const baseGrowth = getBaseGrowth(roleWeight);
       const levelVariance = 0.9 + Math.random() * 0.2;
-      const growth = baseGrowth * rankGrowthMultiplier * seedVariance * levelVariance;
+      const growth = baseGrowth * rankGrowthMultiplier * seedVariance * levelVariance * growthMult;
       const roundedGrowth = Math.max(1, Math.round(growth));
       growthStats[stat] = (growthStats[stat] || 0) + roundedGrowth;
       return growthStats;
     }, shadow.growthStats);
+
+    // Monarch cap: no shadow can exceed the Shadow Monarch's own strength
+    if (growthMult > 1) {
+      const effectiveStats = this.getShadowEffectiveStats(shadow);
+      const currentStrength = this.calculateShadowStrength(effectiveStats, 1);
+      const monarchStrength = typeof this._getMonarchStrength === 'function' ? this._getMonarchStrength() : 0;
+      if (monarchStrength > 0 && currentStrength > monarchStrength) {
+        shadow.strength = monarchStrength;
+      }
+    }
   },
 };

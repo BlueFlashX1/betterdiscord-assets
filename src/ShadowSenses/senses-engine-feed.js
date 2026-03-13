@@ -595,9 +595,11 @@ function getStartupEntries(windowMs = 24 * 60 * 60 * 1000, limit = 12) {
     }
   }
 
+  // Sort by priority first (highest first) so urgent/high entries always surface,
+  // then by timestamp (most recent first) within the same priority tier.
   collected.sort((left, right) => {
-    if (right.timestamp !== left.timestamp) return right.timestamp - left.timestamp;
     if (right.priority !== left.priority) return right.priority - left.priority;
+    if (right.timestamp !== left.timestamp) return right.timestamp - left.timestamp;
     return left.authorName.localeCompare(right.authorName);
   });
 

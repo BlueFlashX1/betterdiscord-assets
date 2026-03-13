@@ -8,12 +8,13 @@
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createWarnOnce } = require("../shared/warn-once");
 const { createToast } = require("../shared/toast");
+const dc = require("../shared/discord-classes");
 
 // Scroller selectors — primary + fallbacks for Discord class name changes
 const HSL_SCROLLER_SELECTORS = [
-  "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']",
-  "nav[aria-label='Servers'] ul[role='tree'] [class*='scroller_']",
-  "nav[class*='guilds_'] [class*='scroller_'][class*='scrollerBase_']",
+  `nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_']${dc.sel.scroller}${dc.sel.scrollerBase}`,
+  `nav[aria-label='Servers'] ul[role='tree'] ${dc.sel.scroller}`,
+  `nav${dc.sel.guilds} ${dc.sel.scroller}${dc.sel.scrollerBase}`,
 ];
 
 // TTL cache for scroller lookups — avoids 1-3 querySelector calls per render

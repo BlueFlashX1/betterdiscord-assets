@@ -1,9 +1,11 @@
+const dc = require('../shared/discord-classes');
+
 module.exports = {
   _getChannelHeaderToolbar() {
     const selectors = [
-      '[aria-label="Channel header"] [class*="toolbar_"]',
-      '[class*="titleWrapper_"] [class*="toolbar_"]',
-      'header [class*="toolbar_"]',
+      `[aria-label="Channel header"] ${dc.sel.toolbar}`,
+      `${dc.sel.titleWrapper} ${dc.sel.toolbar}`,
+      `header ${dc.sel.toolbar}`,
     ];
     for (const selector of selectors) {
       const toolbar = document.querySelector(selector);
@@ -344,11 +346,12 @@ module.exports = {
   
         // PERF(P5-7): Narrowed selector — '[class*="chat"]' was too broad (matches any
         // element with "chat" in any class), risking a wide-scope subtree observer
+        const cc = dc.sel.chatContent;
         const chatContainer =
-          document.querySelector('main[class*="chatContent"]') ||
-          document.querySelector('section[class*="chatContent"]') ||
+          document.querySelector(`main${cc}`) ||
+          document.querySelector(`section${cc}`) ||
           document.querySelector('main[class*="chatContent-"]') ||
-          document.querySelector('div[class*="messagesWrapper"]') ||
+          document.querySelector(`div${dc.sel.messagesWrapper}`) ||
           document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
           null;
   

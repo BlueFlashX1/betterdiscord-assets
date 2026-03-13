@@ -22,6 +22,7 @@ import {
   _PluginUtils,
 } from "./constants";
 import { applyChannelContextMenuPatch } from "./context-menu-helpers";
+import dc from "../shared/discord-classes";
 // ── Helper: find channel sidebar element ──
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
@@ -38,7 +39,8 @@ export function togglePanel(ctx, panelName) {
   const def = PANEL_DEFS[panelName];
   if (!def) return;
 
-  // No tier gating — all panels available immediately
+  // SkillTree gate check — skip gated panels
+  if (ctx.isPanelGated?.(panelName)) return;
   const isPushed = ctx.settings.panels[panelName].pushed;
   ctx.settings.panels[panelName].pushed = !isPushed;
 
@@ -64,11 +66,32 @@ export function togglePanel(ctx, panelName) {
 }
 
 export function restorePanelStates(ctx) {
-  for (const [panelName, config] of Object.entries(ctx.settings.panels)) {
-    if (config.pushed) {
-      document.body.classList.add(`ra-${panelName}-pushed`);
+  const apply = () => {
+    for (const [panelName, config] of Object.entries(ctx.settings.panels)) {
+      if (ctx.isPanelGated?.(panelName)) continue;
+      if (config.pushed) {
+        document.body.classList.add(`ra-${panelName}-pushed`);
+      }
     }
-  }
+  };
+
+  // Discord's DOM may not be ready yet on first load — defer until a panel
+  // element exists so CSS transitions have a target to collapse.
+  const probe = () => ctx._findPanelElement("members") || ctx._findPanelElement("sidebar");
+  if (probe()) { apply(); return; }
+
+  let attempts = 0;
+  const poller = setInterval(() => {
+    attempts++;
+    if (probe() || attempts >= 40) {   // ~4s max wait
+      clearInterval(poller);
+      apply();
+    }
+  }, 100);
+
+  // Cleanup if plugin stops before poller finishes
+  const origAbort = ctx._controller?.signal;
+  if (origAbort) origAbort.addEventListener("abort", () => clearInterval(poller), { once: true });
 }
 
 export function getPushedPanelCount(ctx) {
@@ -215,16 +238,16 @@ function getHoverRuntime(ctx, e) {
 }
 
 function handleSidebarHover(ctx, runtime) {
+  // SkillTree gate — sidebar requires rulers_authority level 3
+  if (ctx.isPanelGated?.("sidebar")) { clearPanelHoverState(ctx, "sidebar"); return; }
   if (!(runtime.sidebarHoverEnabled && ctx.settings.panels.sidebar.pushed)) {
     clearPanelHoverState(ctx, "sidebar");
     return;
   }
-  const sidebarEl = ctx._findPanelElement("sidebar");
   const revealActive = document.body.classList.contains("ra-sidebar-hover-reveal");
   const inEdgeZone = runtime.event.clientX <= runtime.edgeZonePx;
-  const inPanel = revealActive && sidebarEl
-    ? ctx._isInsideElement(runtime.event, sidebarEl, runtime.fudge)
-    : false;
+  const sidebarWidth = ctx.settings.panels.sidebar.width || ctx.settings.defaultWidths?.sidebar || 240;
+  const inPanel = revealActive && runtime.event.clientX <= (sidebarWidth + runtime.fudge);
   applyHoverRevealState(ctx, {
     name: "sidebar",
     inZone: inEdgeZone || inPanel,
@@ -238,13 +261,11 @@ function handleMembersHover(ctx, runtime) {
     clearPanelHoverState(ctx, "members");
     return;
   }
-  const membersEl = ctx._findPanelElement("members");
   const distFromRight = runtime.viewportWidth - runtime.event.clientX;
   const revealActive = document.body.classList.contains("ra-members-hover-reveal");
   const inEdgeZone = distFromRight <= runtime.edgeZonePx;
-  const inPanel = revealActive && membersEl
-    ? ctx._isInsideElement(runtime.event, membersEl, runtime.fudge)
-    : false;
+  const membersWidth = ctx.settings.panels.members.width || ctx.settings.defaultWidths?.members || 245;
+  const inPanel = revealActive && distFromRight <= (membersWidth + runtime.fudge);
   applyHoverRevealState(ctx, {
     name: "members",
     inZone: inEdgeZone || inPanel,
@@ -255,12 +276,10 @@ function handleMembersHover(ctx, runtime) {
 
 function handleProfileHover(ctx, runtime) {
   if (!(runtime.profileHoverEnabled && ctx.settings.panels.profile.pushed)) return;
-  const profileEl = ctx._findPanelElement("profile");
-  const revealActive = document.body.classList.contains("ra-profile-hover-reveal");
-  const inPanel = revealActive && profileEl
-    ? ctx._isInsideElement(runtime.event, profileEl, runtime.fudge)
-    : false;
   const distFromRight = runtime.viewportWidth - runtime.event.clientX;
+  const revealActive = document.body.classList.contains("ra-profile-hover-reveal");
+  const profileWidth = ctx.settings.panels.profile.width || ctx.settings.defaultWidths?.profile || 340;
+  const inPanel = revealActive && distFromRight <= (profileWidth + runtime.fudge);
   const inZone =
     distFromRight <= runtime.edgeZonePx && !document.body.classList.contains("ra-members-hover-reveal");
   applyHoverRevealState(ctx, {
@@ -378,9 +397,9 @@ export function getChannelHoverElement() {
   const channelTree =
     document.querySelector('ul[aria-label="Channels"]') ||
     document.querySelector('[role="tree"][aria-label="Channels"]') ||
-    document.querySelector('[class*="sidebar_"] [role="tree"]');
+    document.querySelector(`${dc.sel.sidebar} [role="tree"]`);
   if (!channelTree) { _channelHoverEl = null; return null; }
-  _channelHoverEl = channelTree.closest('[class*="sidebar_"]') || channelTree;
+  _channelHoverEl = channelTree.closest(dc.sel.sidebar) || channelTree;
   _channelHoverElTime = now;
   return _channelHoverEl;
 }
@@ -624,7 +643,7 @@ export function applyDMGripping(ctx) {
   const header = dmList.querySelector('[class*="searchBar_"]') ||
                  dmList.querySelector('[class*="privateChannelsHeaderContainer_"]') ||
                  dmList.querySelector("h2");
-  const insertAfterEl = header?.closest('[class*="listItem_"]') || header?.parentElement || null;
+  const insertAfterEl = header?.closest(dc.sel.listItem) || header?.parentElement || null;
 
   for (const { channelId } of [...ctx.settings.grippedDMs].reverse()) {
     const dmEl = dmList.querySelector(`[data-list-item-id*="${channelId}"]`) ||
@@ -691,7 +710,7 @@ export function getChannelHeaderToolbar(ctx) {
     const nodes = document.querySelectorAll(selector);
     for (const node of nodes) {
       if (!node || node.offsetParent === null) continue;
-      const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
+      const host = node.closest(`[aria-label="Channel header"], ${dc.sel.titleWrapper}, header`);
       if (host && host.offsetParent === null) continue;
       return node;
     }
@@ -874,43 +893,6 @@ export function getSoloLevelingData(ctx) {
   return data;
 }
 
-export function setupSkillTreeListeners(ctx) {
-  ctx._onSkillActivated = (e) => {
-    if (e.detail?.skillId === "rulers_authority_active") {
-      ctx._amplifiedMode = true;
-      ctx._amplifiedExpiresAt = e.detail.expiresAt || 0;
-      onAmplifiedModeChange(ctx, true);
-    }
-  };
-  ctx._onSkillExpired = (e) => {
-    if (e.detail?.skillId === "rulers_authority_active") {
-      ctx._amplifiedMode = false;
-      onAmplifiedModeChange(ctx, false);
-    }
-  };
-  document.addEventListener("SkillTree:activeSkillActivated", ctx._onSkillActivated);
-  document.addEventListener("SkillTree:activeSkillExpired", ctx._onSkillExpired);
-
-  // Check if skill is already active on start
-  if (BdApi.Plugins.isEnabled("SkillTree")) {
-    const stInstance = BdApi.Plugins.get("SkillTree")?.instance;
-    if (stInstance?.isActiveSkillRunning?.("rulers_authority_active")) {
-      ctx._amplifiedMode = true;
-      ctx.debugLog("SkillTree", "rulers_authority_active already active on start");
-    }
-  }
-}
-
-export function onAmplifiedModeChange(ctx, active) {
-  if (active) {
-    document.body.classList.add("ra-amplified");
-    ctx._toast("Ruler's Authority AMPLIFIED \u2014 Full telekinetic power!", "success", 4000);
-  } else {
-    document.body.classList.remove("ra-amplified");
-    ctx._toast("Ruler's Authority amplification expired.", "info");
-  }
-  updateToolbarIcon(ctx);
-}
 
 export function setupGuildChangeListener(ctx) {
   if (!ctx._SelectedGuildStore) return;
@@ -954,8 +936,8 @@ export function setupChannelObserver(ctx, retries = 0) {
   const m = ctx._modules;
   const channelList =
     (m?.sidebar?.sidebarList && document.querySelector(`.${m.sidebar.sidebarList} [role="tree"]`)) ||
-    document.querySelector('[class*="sidebar_"] [role="tree"]') ||
-    document.querySelector('[class*="sidebar_"] [class*="scroller_"]');
+    document.querySelector(`${dc.sel.sidebar} [role="tree"]`) ||
+    document.querySelector(`${dc.sel.sidebar} ${dc.sel.scroller}`);
 
   if (!channelList) {
     // Retry with increasing delay — DOM may not be ready after guild/channel switch

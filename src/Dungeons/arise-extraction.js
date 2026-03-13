@@ -77,6 +77,13 @@ module.exports = {
   },
 
   async attemptBossExtraction(channelKey) {
+    // ── SkillTree gate: shadow_extraction must be unlocked ──
+    const skillTree = this.getSkillTreeInstance?.();
+    if (!skillTree || typeof skillTree.getSkillLevel !== 'function' || skillTree.getSkillLevel('shadow_extraction') < 1) {
+      this.showToast('Shadow Extraction skill not unlocked. Unlock it in the Skill Tree.', 'error');
+      return;
+    }
+
     // ── Mutex: block concurrent extraction on same channel ──
     if (this.extractionInProgress.has(channelKey)) return;
 
@@ -87,7 +94,15 @@ module.exports = {
     }
 
     // Generate unique boss ID early so we can guard against duplicate arise
-    const bossId = `dungeon_${bossData.dungeon.id}_boss_${bossData.boss.name
+    const bossName = bossData.boss?.name;
+    if (!bossName) {
+      this.errorLog('Boss has no name — skipping extraction to prevent undefined arise', bossData.boss);
+      this.showToast('Boss data corrupted — cannot extract.', 'error');
+      this._removeAriseButton(channelKey);
+      this.defeatedBosses.delete(channelKey);
+      return;
+    }
+    const bossId = `dungeon_${bossData.dungeon.id}_boss_${bossName
       .toLowerCase()
       .replace(/\s+/g, '_')}`;
 
@@ -157,6 +172,10 @@ module.exports = {
         success: async () => {
           // ── Mark boss as arose — permanently blocks re-extraction ──
           this._arisedBossIds.add(bossId);
+          // Immediately remove from defeatedBosses to prevent the combat loop's
+          // UI guard (needsUiGuard) from re-creating the ARISE button during cleanup delay.
+          this.defeatedBosses.delete(channelKey);
+          this._removeAriseButton(channelKey);
           // Use ShadowArmy's SVG ARISE animation if available, fallback to Dungeons overlay
           const sa = this.shadowArmy;
           if (sa?.triggerArise && sa?.settings?.ariseAnimation?.enabled) {
@@ -380,8 +399,11 @@ module.exports = {
       Boolean(currentDungeon && bossData?.dungeonId && currentDungeon.id !== bossData.dungeonId);
 
     // INTEGRITY-7: Remove ARISE block for this channel's boss to prevent collisions with future dungeon runs.
-    if (bossData?.boss?.id && this._arisedBossIds) {
-      this._arisedBossIds.delete(bossData.boss.id);
+    // Must reconstruct the same bossId key used in attemptBossExtraction (dungeon_<id>_boss_<name>).
+    if (bossData?.boss?.name && bossData?.dungeon?.id && this._arisedBossIds) {
+      const bossId = `dungeon_${bossData.dungeon.id}_boss_${bossData.boss.name
+        .toLowerCase().replace(/\s+/g, '_')}`;
+      this._arisedBossIds.delete(bossId);
     }
     this.defeatedBosses.delete(channelKey);
     this.extractionInProgress.delete(channelKey); // Clear stale mutex if any

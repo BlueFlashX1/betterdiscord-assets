@@ -308,9 +308,9 @@ const methods = {
       "#app-mount main",
       "main",
       "#app-mount [role='main']",
-      "#app-mount [class*='chatContent']",
+      `#app-mount ${require("../shared/discord-classes").sel.chatContent}`,
       "#app-mount [class*='chat']",
-      "#app-mount [class*='content_']",
+      `#app-mount ${require("../shared/discord-classes").sel.content}`,
     ];
     for (const selector of selectors) {
       const node = document.querySelector(selector);

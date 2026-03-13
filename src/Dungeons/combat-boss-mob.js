@@ -43,6 +43,13 @@ module.exports = {
       }
 
       const now = Date.now();
+
+      // Boss stunned by Ruler's Authority Force, Dragon's Fear, or Bloodlust — skip attacks
+      if (this._getActiveDebuff(dungeon, 'rulers_force') || this._getActiveDebuff(dungeon, 'dragons_fear_boss') || this._getActiveDebuff(dungeon, 'bloodlust_boss')) {
+        dungeon.boss.lastAttackTime = now;
+        return;
+      }
+
       const bossRole = this.ensureMonsterRole(dungeon.boss);
       const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
       if (!bossUnlocked) {
@@ -83,11 +90,14 @@ module.exports = {
         roleCombatContext
       );
 
+      // Bloodlust debuff: reduce all boss stats while active
+      const bloodlustReduction = this._getBloodlustStatReduction(dungeon);
+      const statMult = bloodlustReduction > 0 ? (1 - bloodlustReduction) : 1;
       const bossStats = {
-        strength: dungeon.boss.strength,
-        agility: dungeon.boss.agility,
-        intelligence: dungeon.boss.intelligence,
-        vitality: dungeon.boss.vitality,
+        strength: Math.floor(dungeon.boss.strength * statMult),
+        agility: Math.floor(dungeon.boss.agility * statMult),
+        intelligence: Math.floor(dungeon.boss.intelligence * statMult),
+        vitality: Math.floor(dungeon.boss.vitality * statMult),
       };
 
       const { assignedShadows, shadowHP, deadShadows } = this._getDungeonShadowCombatContext(
@@ -370,6 +380,17 @@ module.exports = {
         const attacks = this.calculateAttacksInSpan(timeSince, cooldown, cyclesMultiplier);
         mobAttackState.set(mob, { timeSince, cooldown, attacks });
         if (attacks > 0) totalAttacksAll += attacks;
+      }
+
+      // Ruler's Authority Force: disable a % of mobs while debuff active
+      const rulersDebuff = this._getActiveDebuff(dungeon, 'rulers_force');
+      if (rulersDebuff && rulersDebuff.mobDisablePercent > 0) {
+        totalAttacksAll = Math.floor(totalAttacksAll * (1 - Math.min(1, rulersDebuff.mobDisablePercent)));
+      }
+
+      // Dragon's Fear or Bloodlust: ALL mobs paralyzed — zero attacks while active
+      if (this._getActiveDebuff(dungeon, 'dragons_fear_mobs') || this._getActiveDebuff(dungeon, 'bloodlust_mobs')) {
+        totalAttacksAll = 0;
       }
 
       // Phase 2: Stride-sample mobs for actual damage calculation
@@ -765,6 +786,12 @@ module.exports = {
         damage,
         Date.now()
       );
+    }
+
+    // Ruler's Authority Force: resist reduction amplifies all incoming boss damage
+    const resistReduction = this._getRulersForceResistReduction(dungeon);
+    if (damage > 0 && resistReduction > 0) {
+      damage = Math.floor(damage * (1 / (1 - resistReduction)));
     }
 
     dungeon.boss.hp = Math.max(0, dungeon.boss.hp - damage);

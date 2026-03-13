@@ -4,6 +4,8 @@
  * Mixin: Object.assign(ShadowArmy.prototype, require('./watchers'))
  */
 
+const dc = require('../shared/discord-classes');
+
 module.exports = {
   // ============================================================================
   // CHANNEL & MEMBER LIST WATCHERS
@@ -87,10 +89,11 @@ module.exports = {
   },
 
   _findMainChatContainer() {
+    const cc = dc.sel.chatContent;
     const selectors = [
-      'main[class*="chatContent"]',
-      'section[class*="chatContent"][role="main"]',
-      'div[class*="chatContent"]:not([role="complementary"])',
+      `main${cc}`,
+      `section${cc}[role="main"]`,
+      `div${cc}:not([role="complementary"])`,
       'div[class*="chat_"]:not([class*="chatLayerWrapper"])',
     ];
     for (const selector of selectors) {
@@ -103,9 +106,9 @@ module.exports = {
   _findMessageInputArea(mainChat) {
     if (!mainChat) return null;
     return (
-      mainChat.querySelector('[class*="channelTextArea"]') ||
-      mainChat.querySelector('[class*="textArea"]')?.parentElement ||
-      mainChat.querySelector('[class*="slateTextArea"]')?.parentElement ||
+      mainChat.querySelector(dc.sel.channelTextArea) ||
+      mainChat.querySelector(dc.sel.textArea)?.parentElement ||
+      mainChat.querySelector(dc.sel.slateTextArea)?.parentElement ||
       null
     );
   },
@@ -132,7 +135,7 @@ module.exports = {
       '[role="textbox"]',
       'textarea',
       '[contenteditable="true"]',
-      '[class*="slateTextArea"]',
+      dc.sel.slateTextArea,
     ];
     const editor = editorCandidates
       .map((selector) => inputArea.querySelector(selector))
@@ -197,7 +200,7 @@ module.exports = {
   getMemberListElements() {
     if (typeof document === 'undefined') return null;
 
-    const allCandidates = document.querySelectorAll('[class^="membersWrap_"], [class*="membersWrap"]');
+    const allCandidates = document.querySelectorAll(dc.sel.membersWrap);
     const membersWrap = Array.from(allCandidates).find((candidate) => {
       if (!candidate?.isConnected) return false;
       if (candidate.closest('[id^="chat-messages-"]')) return false;
@@ -210,18 +213,14 @@ module.exports = {
     if (!membersWrap) return null;
 
     const membersList =
-      membersWrap.querySelector(':scope > [class^="members_"]') ||
-      membersWrap.querySelector(':scope > [class*="members"]') ||
-      membersWrap.querySelector('[class^="members_"]') ||
-      membersWrap.querySelector('[class*="members"]');
+      membersWrap.querySelector(`:scope > ${dc.sel.members}`) ||
+      membersWrap.querySelector(dc.sel.members);
 
     if (!membersList || membersList.closest('[id^="chat-messages-"]')) return null;
 
     const membersContent =
-      membersList.querySelector(':scope > [class^="content_"]') ||
-      membersList.querySelector(':scope > [class*="content"]') ||
-      membersList.querySelector('[class^="content_"]') ||
-      membersList.querySelector('[class*="content"]');
+      membersList.querySelector(`:scope > ${dc.sel.content}`) ||
+      membersList.querySelector(dc.sel.content);
 
     return { membersWrap, membersList, membersContent };
   },
@@ -229,7 +228,7 @@ module.exports = {
   isWidgetInValidMemberList(widget) {
     if (!widget || typeof widget.closest !== 'function') return false;
     if (widget.closest('[id^="chat-messages-"]')) return false;
-    return !!widget.closest('[class^="membersWrap_"], [class*="membersWrap"]');
+    return !!widget.closest(dc.sel.membersWrap);
   },
 
   _scheduleWatcherRetry(callback, delayMs = 0) {
@@ -309,7 +308,7 @@ module.exports = {
               break;
             }
           }
-          if (!hasMemberListMutation && target?.closest?.('[class*="membersWrap"]')) {
+          if (!hasMemberListMutation && target?.closest?.(dc.sel.membersWrap)) {
             hasMemberListMutation = true;
             break;
           }

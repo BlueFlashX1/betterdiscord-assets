@@ -72,18 +72,6 @@ module.exports = {
   },
 
   getEffectiveShadowArmyBuffs() {
-    const baseBuffs = this.getShadowArmyBuffs();
-    const activeBuffs = this.getActiveSkillBuffs();
-    if (!activeBuffs || activeBuffs.shadowBuffMultiplier <= 1.0) return baseBuffs;
-  
-    // Apply Arise multiplier to all shadow buff values
-    const multiplier = activeBuffs.shadowBuffMultiplier;
-    const scaled = this.createEmptyStatBlock();
-    const statKeys = this.getStatKeys();
-    for (let i = 0; i < statKeys.length; i++) {
-      const key = statKeys[i];
-      scaled[key] = this.normalizeNumber(baseBuffs?.[key], 0) * multiplier;
-    }
-    return scaled;
+    return this.getShadowArmyBuffs();
   }
 };

@@ -1,11 +1,12 @@
 const { getNavigationUtils } = require('../shared/navigation');
+const dc = require("../shared/discord-classes");
 
 const HEADER_WIDGET_ID = 'dungeons-header-widget';
 const HEADER_POPUP_ID = 'dungeons-header-popup';
 const HEADER_TOOLBAR_SELECTORS = [
-  '[aria-label="Channel header"] [class*="toolbar_"]',
-  '[class*="titleWrapper_"] [class*="toolbar_"]',
-  'header [class*="toolbar_"]',
+  `[aria-label="Channel header"] ${dc.sel.toolbar}`,
+  `${dc.sel.titleWrapper} ${dc.sel.toolbar}`,
+  `header ${dc.sel.toolbar}`,
 ];
 
 function escapeHtml(value) {

@@ -1,6 +1,7 @@
 /**
  * CriticalHit plugin constants — extracted from class getters for reuse across modules.
  */
+const dc = require('../shared/discord-classes');
 
 // ============================================================================
 // DEFAULT SETTINGS
@@ -50,25 +51,28 @@ const HEADER_CLASS_PATTERNS = [
   'header', 'username', 'timestamp', 'author',
   'topSection', 'messageHeader', 'messageGroup', 'messageGroupWrapper',
 ];
-const HEADER_SELECTORS = HEADER_CLASS_PATTERNS.map((p) => `[class*="${p}"]`);
+const HEADER_SELECTORS = [
+  '[class*="header"]', dc.sel.username, dc.sel.timestamp, '[class*="author"]',
+  '[class*="topSection"]', '[class*="messageHeader"]', '[class*="messageGroup"]', '[class*="messageGroupWrapper"]',
+];
 
-const MESSAGE_CONTENT_SELECTORS = ['[class*="messageContent"]', '[class*="markup"]', '[class*="textContainer"]'];
-const CONTENT_SELECTORS = ['[class*="messageContent"]', '[class*="markup"]', '[class*="textContainer"]'];
+const MESSAGE_CONTENT_SELECTORS = [dc.sel.messageContent, dc.sel.markup, '[class*="textContainer"]'];
+const CONTENT_SELECTORS = [dc.sel.messageContent, dc.sel.markup, '[class*="textContainer"]'];
 const TEXT_ELEMENT_SELECTORS = ['span', 'div', 'p'];
-const MESSAGE_SELECTORS = ['[class*="message"]', '[data-list-item-id]', '[data-message-id]'];
+const MESSAGE_SELECTORS = [dc.sel.message, '[data-list-item-id]', '[data-message-id]'];
 
 const CHANNEL_URL_PATTERN = /channels\/(?:@me|\d+)\/(\d+)(?:\/threads\/(\d+))?/;
 const GUILD_CHANNEL_URL_PATTERN = /channels\/(\d+)\/(\d+)/;
 
 const REPLY_SELECTORS = Object.freeze([
-  '[class*="reply"]', '[class*="repliedMessage"]', '[class*="messageReference"]',
+  '[class*="reply"]', dc.sel.repliedMessage, '[class*="messageReference"]',
   '[class*="repliedText"]', '[class*="replyMessage"]',
 ]);
 const SYSTEM_MESSAGE_SELECTORS = Object.freeze([
-  '[class*="systemMessage"]', '[class*="systemText"]', '[class*="joinMessage"]',
+  dc.sel.systemMessage, '[class*="systemText"]', '[class*="joinMessage"]',
   '[class*="leaveMessage"]', '[class*="pinnedMessage"]', '[class*="boostMessage"]',
 ]);
-const BOT_SELECTORS = Object.freeze(['[class*="botTag"]', '[class*="bot"]', '[class*="botText"]']);
+const BOT_SELECTORS = Object.freeze([dc.sel.botTag, '[class*="bot"]', '[class*="botText"]']);
 
 // ============================================================================
 // TIMING / THRESHOLD CONSTANTS

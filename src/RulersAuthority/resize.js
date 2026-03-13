@@ -19,6 +19,7 @@ function shouldSkipPanelResizeStart(panelName) {
 }
 
 function tryStartPanelDrag(ctx, event, target, panelName) {
+  if (ctx.isPanelGated?.(panelName)) return false;
   if (shouldSkipPanelResizeStart(panelName)) return false;
   const panelEl = ctx._findPanelElement(panelName);
   if (!panelEl) return false;

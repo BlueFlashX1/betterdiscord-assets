@@ -1,3 +1,8 @@
+// Duplicated from index.js — kept in sync for rank requirement checks
+const SOLO_RANK_ORDER = Object.freeze([
+  'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch',
+]);
+
 const SkillTreeUpgradeMethods = {
   _syncUnlockedSkillState(skillId) {
     if (!Array.isArray(this.settings.unlockedSkills)) {
@@ -18,6 +23,16 @@ const SkillTreeUpgradeMethods = {
 
     this.saveSettings();
     this.updateButtonText();
+
+    // Broadcast skill level change so other plugins can react (e.g. defer resource init)
+    const newLevel = this.getSkillLevel(skillId);
+    try {
+      document.dispatchEvent(
+        new CustomEvent('SkillTree:skillLevelChanged', {
+          detail: { skillId, level: newLevel },
+        })
+      );
+    } catch (_) { /* ignore dispatch errors */ }
   },
 
   /**
@@ -73,7 +88,7 @@ const SkillTreeUpgradeMethods = {
       return tier.baseCost || 1;
     }
 
-    const maxLevel = tier.maxLevel || 10;
+    const maxLevel = skill.unlockOnly ? 1 : (skill.maxLevel || tier.maxLevel || 10);
     if (currentLevel >= maxLevel) {
       return null; // Already max level
     }
@@ -155,6 +170,14 @@ const SkillTreeUpgradeMethods = {
     return requirementSkills.every((prereqId) => this.getSkillLevel(prereqId) > 0);
   },
 
+  _meetsRankRequirement(requiredRank, currentRank) {
+    if (!requiredRank) return true;
+    const reqIdx = SOLO_RANK_ORDER.indexOf(requiredRank);
+    const curIdx = SOLO_RANK_ORDER.indexOf(currentRank);
+    if (reqIdx === -1 || curIdx === -1) return false;
+    return curIdx >= reqIdx;
+  },
+
   /**
    * Check if skill can be unlocked/upgraded
    * @param {Object} skill - Skill definition
@@ -167,7 +190,7 @@ const SkillTreeUpgradeMethods = {
       if (!soloData) return false;
 
       const currentLevel = this.getSkillLevel(skill.id);
-      const maxLevel = tier.maxLevel || 10;
+      const maxLevel = skill.unlockOnly ? 1 : (skill.maxLevel || tier.maxLevel || 10);
 
       // Early returns for invalid states
       if (currentLevel >= maxLevel) return false;
@@ -184,6 +207,9 @@ const SkillTreeUpgradeMethods = {
       // Check stat requirements
       const stats = soloData.stats || {};
       if (!this._meetsStatRequirements(requirement, stats)) return false;
+
+      // Check rank requirement
+      if (!this._meetsRankRequirement(requirement.rank, soloData.rank)) return false;
 
       // Check prerequisite skills
       if (!this._hasRequiredSkills(requirement.skills)) return false;
@@ -239,8 +265,8 @@ const SkillTreeUpgradeMethods = {
     }
   },
 
-  _buildMaxUpgradePlan(tier, currentLevel, availableSP) {
-    const maxLevel = tier.maxLevel || 10;
+  _buildMaxUpgradePlan(tier, currentLevel, availableSP, skill = null) {
+    const maxLevel = (skill && skill.unlockOnly) ? 1 : (skill?.maxLevel || tier.maxLevel || 10);
     const baseCost = tier.baseCost || 1;
     const multiplier = tier.upgradeCostMultiplier || 1.5;
 
@@ -280,7 +306,7 @@ const SkillTreeUpgradeMethods = {
 
       const { skill, tier } = result;
       const currentLevel = this.getSkillLevel(skillId);
-      const plan = this._buildMaxUpgradePlan(tier, currentLevel, this.settings.skillPoints);
+      const plan = this._buildMaxUpgradePlan(tier, currentLevel, this.settings.skillPoints, skill);
 
       // Early returns
       if (currentLevel >= plan.maxLevel) return false;

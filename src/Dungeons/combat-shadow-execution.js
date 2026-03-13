@@ -423,10 +423,17 @@ module.exports = {
 
           // Calculate attacks with shared cadence helpers to stay consistent with boss/mob timing.
           const timeSinceLastAttack = Math.max(0, now - (finalCombatData.lastAttackTime || 0));
-          const effectiveCooldown = this.getEffectiveAttackCooldownMs(
+          let effectiveCooldown = this.getEffectiveAttackCooldownMs(
             finalCombatData.attackInterval || finalCombatData.cooldown || 2000,
             activeInterval
           );
+
+          // Apply sprint buff (attack cooldown reduction)
+          const sprintReduction = this._getSprintCooldownReduction(dungeon);
+          if (sprintReduction > 0) {
+            effectiveCooldown = Math.max(800, Math.floor(effectiveCooldown * (1 - sprintReduction)));
+          }
+
           const attacksInSpan = this.calculateAttacksInTimeSpan(
             timeSinceLastAttack,
             effectiveCooldown,
@@ -596,6 +603,14 @@ module.exports = {
             bossAlive: bossAliveNow,
             now,
           });
+
+          // Domain buff: multiply shadow damage while active
+          if (totalBossDamage > 0) {
+            const domainMultiplier = this._getDomainShadowMultiplier(dungeon);
+            if (domainMultiplier > 1) {
+              totalBossDamage = Math.floor(totalBossDamage * domainMultiplier);
+            }
+          }
 
           // AGGREGATE boss damage (apply once after loop instead of per-shadow)
           if (totalBossDamage > 0) {

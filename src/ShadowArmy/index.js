@@ -171,7 +171,7 @@ const ShadowArmy = class ShadowArmy {
     this._pendingAriseShadow = null;
     this._ariseDrainTimeout = null;
 
-    this._widgetComponents = buildWidgetComponents(this);
+    this._widgetResourcesActive = false;
     this._setupDiscordMediaErrorSuppression();
 
     // Get user ID for storage isolation
@@ -259,16 +259,59 @@ const ShadowArmy = class ShadowArmy {
 
     await this.loadSettings();
 
-    // Load font for arise animation
-    this.loadAriseAnimationFont();
-    // Initialize ARISE animation system
-    this.initializeAriseAnimationSystem();
-
     this.injectCSS();
-    this.injectWidgetCSS();
     this.integrateWithSoloLeveling();
-    this.setupMessageListener();
-    this.setupChannelWatcher();
+
+    // Defer extraction-only resources until shadow_extraction skill is unlocked.
+    // Prevents message listener, queue machinery, and ARISE animation from
+    // consuming resources when the player hasn't progressed far enough.
+    this._extractionResourcesActive = false;
+    if (this._isSkillTreeSkillUnlocked('shadow_extraction')) {
+      this._activateExtractionResources();
+    } else {
+      this.debugLog('START', 'shadow_extraction skill not unlocked — extraction resources deferred');
+    }
+
+    // Defer widget resources (React components, CSS, MutationObserver, refresh interval)
+    // until both shadow_extraction AND shadow_preservation are unlocked.
+    const _bothShadowSkillsUnlocked = () =>
+      this._isSkillTreeSkillUnlocked('shadow_extraction') &&
+      this._isSkillTreeSkillUnlocked('shadow_preservation');
+
+    if (_bothShadowSkillsUnlocked()) {
+      this._activateWidgetResources();
+    } else {
+      this.debugLog('START', 'Shadow skills not fully unlocked — widget resources deferred');
+    }
+
+    // Listen for SkillTree skill level changes to activate/deactivate features dynamically
+    this._onSkillLevelChanged = (event) => {
+      if (this._isStopped) return;
+      const { skillId, level } = event.detail || {};
+
+      // Extraction resources: gate on shadow_extraction
+      if (skillId === 'shadow_extraction') {
+        if (level >= 1 && !this._extractionResourcesActive) {
+          this.debugLog('SKILL_GATE', 'shadow_extraction unlocked — activating extraction resources');
+          this._activateExtractionResources();
+        } else if (level < 1 && this._extractionResourcesActive) {
+          this.debugLog('SKILL_GATE', 'shadow_extraction reset — tearing down extraction resources');
+          this._deactivateExtractionResources();
+        }
+      }
+
+      // Widget resources: gate on both shadow_extraction AND shadow_preservation
+      if (skillId === 'shadow_extraction' || skillId === 'shadow_preservation') {
+        if (_bothShadowSkillsUnlocked() && !this._widgetResourcesActive) {
+          this.debugLog('SKILL_GATE', 'Both shadow skills unlocked — activating widget resources');
+          this._activateWidgetResources();
+        } else if (!_bothShadowSkillsUnlocked() && this._widgetResourcesActive) {
+          this.debugLog('SKILL_GATE', 'Shadow skill reset — tearing down widget resources');
+          this._deactivateWidgetResources();
+        }
+      }
+    };
+    document.addEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
 
     // Run all data migrations
     try {
@@ -279,6 +322,116 @@ const ShadowArmy = class ShadowArmy {
 
     // Start natural growth processing
     this.startNaturalGrowthInterval();
+  }
+
+  /**
+   * Activate extraction-only resources (message listener, ARISE animation).
+   * Called immediately if shadow_extraction is already unlocked, or deferred
+   * until the SkillTree:skillLevelChanged event fires.
+   */
+  _activateExtractionResources() {
+    if (this._extractionResourcesActive) return;
+    this._extractionResourcesActive = true;
+
+    this.loadAriseAnimationFont();
+    this.initializeAriseAnimationSystem();
+    this.setupMessageListener();
+
+    this.debugLog('SKILL_GATE', 'Extraction resources activated (message listener + ARISE)');
+  }
+
+  /**
+   * Tear down extraction resources when shadow_extraction skill is reset.
+   * Removes message listener and ARISE animation to free resources.
+   */
+  _deactivateExtractionResources() {
+    if (!this._extractionResourcesActive) return;
+    this._extractionResourcesActive = false;
+
+    this.removeMessageListener();
+    this.cleanupAriseAnimationSystem();
+
+    this.debugLog('SKILL_GATE', 'Extraction resources deactivated (skill reset)');
+  }
+
+  /**
+   * Activate widget resources (React components, CSS, channel watcher, refresh interval).
+   * Deferred until both shadow_extraction AND shadow_preservation are unlocked.
+   */
+  _activateWidgetResources() {
+    if (this._widgetResourcesActive) return;
+    this._widgetResourcesActive = true;
+
+    // Build React components for the widget
+    this._widgetComponents = buildWidgetComponents(this);
+
+    // Inject widget CSS
+    this.injectWidgetCSS();
+
+    // Setup channel/member list watcher (MutationObserver + NavigationBus)
+    this.setupChannelWatcher();
+
+    // Initial widget injection (slight delay for DOM readiness)
+    const widgetStartupTimeoutId = setTimeout(() => {
+      this._retryTimeouts.delete(widgetStartupTimeoutId);
+      if (this._isStopped) return;
+      this.injectShadowRankWidget();
+    }, 100);
+    this._retryTimeouts.add(widgetStartupTimeoutId);
+
+    // 30s refresh interval (only fires when data changed and window visible)
+    if (this.widgetUpdateInterval) {
+      clearInterval(this.widgetUpdateInterval);
+    }
+    this.widgetUpdateInterval = setInterval(() => {
+      if (document.hidden) return;
+      if (!this._widgetDirty) return;
+      this.scheduleWidgetRefresh({ reason: 'interval', delayMs: 0 });
+    }, 30000);
+
+    this.debugLog('SKILL_GATE', 'Widget resources activated (components + CSS + watchers + interval)');
+  }
+
+  /**
+   * Tear down widget resources when shadow skills are reset.
+   * Removes widget, CSS, watchers, and refresh interval.
+   */
+  _deactivateWidgetResources() {
+    if (!this._widgetResourcesActive) return;
+    this._widgetResourcesActive = false;
+
+    // Remove widget from DOM
+    this.removeShadowRankWidget();
+
+    // Clear refresh interval
+    if (this.widgetUpdateInterval) {
+      clearInterval(this.widgetUpdateInterval);
+      this.widgetUpdateInterval = null;
+    }
+
+    // Disconnect member list MutationObserver
+    if (this.memberListObserver) {
+      this.memberListObserver.disconnect();
+      this.memberListObserver = null;
+    }
+    if (this._memberListHealthCheck) {
+      clearInterval(this._memberListHealthCheck);
+      this._memberListHealthCheck = null;
+    }
+
+    // Unsubscribe NavigationBus
+    if (typeof this._navBusUnsub === 'function') {
+      this._navBusUnsub();
+      this._navBusUnsub = null;
+    }
+
+    // Remove widget CSS
+    this.removeWidgetCSS();
+
+    // Clear widget components
+    this._widgetComponents = null;
+
+    this.debugLog('SKILL_GATE', 'Widget resources deactivated (skill reset)');
   }
 
   // ============================================================================
@@ -302,25 +455,6 @@ const ShadowArmy = class ShadowArmy {
     this.naturalGrowthInterval = setInterval(() => {
       this.processShadowCompression();
     }, 60 * 60 * 1000);
-
-    // Shadow rank widget for member list display
-    const widgetStartupTimeoutId = setTimeout(() => {
-      this._retryTimeouts.delete(widgetStartupTimeoutId);
-      if (this._isStopped) return;
-      this.injectShadowRankWidget();
-    }, 100);
-    this._retryTimeouts.add(widgetStartupTimeoutId);
-
-    // Update widget every 30 seconds (only if data changed and window visible)
-    if (this.widgetUpdateInterval) {
-      clearInterval(this.widgetUpdateInterval);
-      this.widgetUpdateInterval = null;
-    }
-    this.widgetUpdateInterval = setInterval(() => {
-      if (document.hidden) return;
-      if (!this._widgetDirty) return;
-      this.scheduleWidgetRefresh({ reason: 'interval', delayMs: 0 });
-    }, 30000);
 
     // Listen for Dungeons essence awards
     if (typeof BdApi?.Events?.on === 'function') {
@@ -383,6 +517,14 @@ const ShadowArmy = class ShadowArmy {
 
   stop() {
     this._isStopped = true;
+
+    // Remove SkillTree skill gate listener
+    if (this._onSkillLevelChanged) {
+      document.removeEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
+      this._onSkillLevelChanged = null;
+    }
+    this._extractionResourcesActive = false;
+    this._widgetResourcesActive = false;
 
     // Flush any pending debounced save immediately
     if (this._saveSettingsTimer) {

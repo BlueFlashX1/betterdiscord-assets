@@ -134,7 +134,7 @@ module.exports = {
         dungeon.successfulResurrections === 500
       ) {
         const percent = Math.floor((manaAfter / this.settings.userMaxMana) * 100);
-        console.log(
+        this.settings.debug && console.log(
           `[Dungeons] ${dungeon.successfulResurrections} shadows resurrected. Mana: ${manaAfter}/${this.settings.userMaxMana} (${percent}%)`
         );
       }

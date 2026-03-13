@@ -141,6 +141,52 @@ module.exports = class ShadowExchange {
     this._NavigationUtils = null;
   }
 
+  /**
+   * Check if a SkillTree skill is unlocked (level >= minLevel).
+   */
+  _getSkillTreeSkillLevel(skillId) {
+    try {
+      const plugin = BdApi.Plugins.get('SkillTree');
+      const instance = plugin?.instance || null;
+      if (!instance || typeof instance.getSkillLevel !== 'function') return 0;
+      return instance.getSkillLevel(skillId) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Get teleport cooldown in ms based on shadow_exchange skill level.
+   * Lv1: 3h, Lv2: 1.5h, Lv3: 45min, Lv4: 22.5min, Lv5: ~11.25min
+   */
+  _getTeleportCooldownMs() {
+    const level = this._getSkillTreeSkillLevel('shadow_exchange');
+    if (level <= 0) return Infinity; // skill not unlocked
+    const BASE_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours
+    return Math.round(BASE_COOLDOWN_MS / Math.pow(2, level - 1));
+  }
+
+  /**
+   * Check if teleport is on cooldown. Returns { onCooldown, remainingMs, remainingText }.
+   */
+  _checkTeleportCooldown() {
+    const cooldownMs = this._getTeleportCooldownMs();
+    const lastTeleport = this._lastTeleportTime || 0;
+    const elapsed = Date.now() - lastTeleport;
+    const remaining = cooldownMs - elapsed;
+    if (remaining <= 0) return { onCooldown: false, remainingMs: 0, remainingText: '' };
+    // Format remaining time
+    const totalSec = Math.ceil(remaining / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const parts = [];
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}m`);
+    if (h === 0 && s > 0) parts.push(`${s}s`);
+    return { onCooldown: true, remainingMs: remaining, remainingText: parts.join(' ') };
+  }
+
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("shadowExchange") || createToast();
     try {
@@ -151,6 +197,8 @@ module.exports = class ShadowExchange {
       this.fallbackIdx = 0;
       this.fileBackupPath = null;
       this._resetRuntimeState();
+      this._exchangeResourcesActive = false;
+      this._lastTeleportTime = BdApi.Data.load(SE_PLUGIN_ID, '_lastTeleportTime') || 0;
       this.defaultSettings = {
         waypoints: [],
         sortBy: "created",
@@ -162,22 +210,23 @@ module.exports = class ShadowExchange {
       };
       this.settings = { ...this.defaultSettings, waypoints: [] };
 
-      this.initWebpack();
-      this.initBackupPath();
-      this.loadSettings();
-      this.injectCSS();
+      // Listen for SkillTree skill changes
+      this._onSkillLevelChanged = (event) => {
+        const { skillId, level } = event.detail || {};
+        if (skillId !== 'shadow_exchange') return;
+        if (level >= 1 && !this._exchangeResourcesActive) {
+          this._activateExchangeResources();
+        } else if (level < 1 && this._exchangeResourcesActive) {
+          this._deactivateExchangeResources();
+        }
+      };
+      document.addEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
 
-      // Build React components (cached for this plugin instance)
-      this._components = buildPanelComponents(BdApi, this);
-
-      // Swirl icon — anchored to the channel header toolbar.
-      this.injectSwirlIcon();
-      this.setupSwirlObserver();
-
-      // Right-click context menu on messages → "Shadow Mark"
-      this.patchContextMenu();
-
-      this._toast(`ShadowExchange v${SE_VERSION} active`, "success");
+      if (this._getSkillTreeSkillLevel('shadow_exchange') >= 1) {
+        this._activateExchangeResources();
+      } else {
+        this._toast(`ShadowExchange v${SE_VERSION} \u2014 Awaiting Shadow Exchange skill`);
+      }
     } catch (err) {
       console.error("[ShadowExchange] start() failed:", err);
       try {
@@ -188,11 +237,45 @@ module.exports = class ShadowExchange {
     }
   }
 
+  _activateExchangeResources() {
+    if (this._exchangeResourcesActive) return;
+    this._exchangeResourcesActive = true;
+
+    this.initWebpack();
+    this.initBackupPath();
+    this.loadSettings();
+    this.injectCSS();
+    this._components = buildPanelComponents(BdApi, this);
+    this.injectSwirlIcon();
+    this.setupSwirlObserver();
+    this.patchContextMenu();
+
+    const level = this._getSkillTreeSkillLevel('shadow_exchange');
+    const cd = this._getTeleportCooldownMs();
+    const cdText = cd >= 3600000 ? `${cd / 3600000}h` : `${Math.round(cd / 60000)}min`;
+    this._toast(`ShadowExchange v${SE_VERSION} active (Lv${level}, cooldown ${cdText})`, "success");
+  }
+
+  _deactivateExchangeResources() {
+    if (!this._exchangeResourcesActive) return;
+    this._exchangeResourcesActive = false;
+    this._flushPendingSave();
+    this._teardownRuntime();
+    this._resetRuntimeState();
+    this._toast("ShadowExchange \u2014 Shadow Exchange skill reset", "info");
+  }
+
   stop() {
+    // Remove skill listener
+    if (this._onSkillLevelChanged) {
+      document.removeEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
+      this._onSkillLevelChanged = null;
+    }
     this._flushPendingSave();
     try {
       this._teardownRuntime();
       this._resetRuntimeState();
+      this._exchangeResourcesActive = false;
     } catch (err) {
       console.error("[ShadowExchange] stop() failed:", err);
     }
@@ -663,6 +746,13 @@ module.exports = class ShadowExchange {
     const wp = this.settings.waypoints.find((w) => w.id === waypointId);
     if (!wp) return;
 
+    // Cooldown check
+    const cdCheck = this._checkTeleportCooldown();
+    if (cdCheck.onCooldown) {
+      this._toast(`Shadow Exchange on cooldown \u2014 ${cdCheck.remainingText} remaining`, "error", 3000);
+      return;
+    }
+
     let url = "/channels/";
     url += wp.guildId || "@me";
     url += `/${wp.channelId}`;
@@ -674,6 +764,10 @@ module.exports = class ShadowExchange {
     wp.lastVisited = Date.now();
     wp.visitCount = (wp.visitCount || 0) + 1;
     this.saveSettings();
+
+    // Stamp teleport time for cooldown tracking
+    this._lastTeleportTime = Date.now();
+    BdApi.Data.save(SE_PLUGIN_ID, '_lastTeleportTime', this._lastTeleportTime);
 
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       _ensureShadowPortalCoreApplied(this.constructor);
@@ -719,10 +813,11 @@ module.exports = class ShadowExchange {
 
   _getChannelHeaderToolbar() {
     // PERF: find visible channel header host first, then query toolbar inside it.
-    const hosts = document.querySelectorAll('[aria-label="Channel header"], [class*="titleWrapper_"], header');
+    const dc = require("../shared/discord-classes");
+    const hosts = document.querySelectorAll(`[aria-label="Channel header"], ${dc.sel.titleWrapper}, header`);
     for (const host of hosts) {
       if (host.offsetParent === null) continue;
-      const node = host.querySelector('[class*="toolbar_"]');
+      const node = host.querySelector(dc.sel.toolbar);
       if (!node || node.offsetParent === null) continue;
       return node;
     }

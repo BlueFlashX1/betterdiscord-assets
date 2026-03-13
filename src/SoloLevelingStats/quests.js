@@ -47,14 +47,6 @@ module.exports = {
     const vitalityBonus = 1 + enhancedVitalityBonus;
     let xpReward = Math.round(def.xp * vitalityBonus);
   
-    // Active skill: Shadow Exchange — boosted next quest reward (charge-based)
-    const questActiveBuffs = this.getActiveSkillBuffs();
-    if (questActiveBuffs?.questRewardMultiplier > 1.0) {
-      xpReward = Math.round(xpReward * questActiveBuffs.questRewardMultiplier);
-      // Consume the charge
-      this.consumeActiveSkillCharge('shadow_exchange_technique');
-    }
-  
     // Award rewards
     const oldLevel = this.settings.level;
     this.settings.xp += xpReward;

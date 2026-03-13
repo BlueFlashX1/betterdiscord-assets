@@ -5,6 +5,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 
 module.exports = {
   // ----------------------------------------------------------------------------
@@ -84,7 +85,7 @@ module.exports = {
     }
     if (!messageElement) {
       messageElement = node.querySelector(
-        '[class*="message"]:not([class*="messageContent"]):not([class*="messageGroup"])'
+        `${dc.sel.message}:not(${dc.sel.messageContent}):not([class*="messageGroup"])`
       );
     }
     return messageElement;
@@ -536,7 +537,7 @@ module.exports = {
         // Calculate content hash for matching
         const messageContent = messageElement.textContent?.trim() || '';
         const author =
-          messageElement.querySelector('[class*="username"]')?.textContent?.trim() ||
+          dc.query(messageElement, 'username')?.textContent?.trim() ||
           messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
           '';
         const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
@@ -670,7 +671,7 @@ module.exports = {
                   const target = m.target;
                   if (
                     target.classList?.contains('bd-crit-hit') ||
-                    target.querySelector?.('[class*="message"]')?.classList?.contains('bd-crit-hit')
+                    dc.query(target, 'message')?.classList?.contains('bd-crit-hit')
                   ) {
                     return true;
                   }

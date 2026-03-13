@@ -54,6 +54,8 @@ const SKILL_TREE_CSS = `
         max-width: 900px;
         width: 90vw;
         max-height: 85vh;
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
         z-index: 10001;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
@@ -76,9 +78,10 @@ const SKILL_TREE_CSS = `
       /* Modal Content */
       .skilltree-modal-content {
         padding: 30px;
-        padding-bottom: 80px;
+        padding-bottom: 100px;
         overflow-y: auto;
-        max-height: calc(85vh - 200px);
+        flex: 1;
+        min-height: 0;
         background: linear-gradient(180deg, #0a0a0f 0%, #08080d 100%);
       }
 
@@ -89,7 +92,8 @@ const SKILL_TREE_CSS = `
         border-bottom: 2px solid rgba(138, 43, 226, 0.3);
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         position: relative;
-        overflow: hidden;
+        overflow: visible;
+        flex-shrink: 0;
       }
       .skilltree-header::before {
         content: '';
@@ -100,6 +104,8 @@ const SKILL_TREE_CSS = `
         height: 100%;
         background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
         animation: shimmer 3s infinite;
+        pointer-events: none;
+        clip-path: inset(0);
       }
       @keyframes shimmer {
         0% { left: -100%; }
@@ -316,6 +322,7 @@ const SKILL_TREE_CSS = `
         background: linear-gradient(135deg, #12091e 0%, #0e0716 100%);
         border-bottom: 2px solid rgba(138, 43, 226, 0.2);
         overflow-x: auto;
+        flex-shrink: 0;
         scrollbar-width: none !important;
         -ms-overflow-style: none !important;
       }
@@ -336,12 +343,15 @@ const SKILL_TREE_CSS = `
       }
 
       .skilltree-tier-nav-btn {
-        padding: 10px 20px;
+        padding: 10px 18px;
+        min-width: 80px;
+        text-align: center;
+        flex-shrink: 0;
         background: linear-gradient(135deg, #0d0d14 0%, #08080d 100%);
         border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 2px;
         color: rgba(255, 255, 255, 0.9);
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         outline: none;
@@ -350,6 +360,8 @@ const SKILL_TREE_CSS = `
         white-space: nowrap;
         text-transform: uppercase;
         letter-spacing: 0.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .skilltree-tier-nav-btn:hover {

@@ -1,3 +1,5 @@
+const dc = require("../shared/discord-classes");
+
 module.exports = {
   startMessageObserver() {
     if (this.messageObserver) {
@@ -12,11 +14,11 @@ module.exports = {
       const selectors = [
         // Stable data-attribute selector first (survives class name changes)
         'div[data-list-id="chat-messages"]',
-        'main[class*="chatContent"] > div[class*="messagesWrapper"]',
-        'div[class*="messagesWrapper"]',
-        'div[class*="scrollerInner"]',
-        'ol[class*="scrollerInner"]',
-        '[class*="messagesWrapper"]',
+        `main${dc.sel.chatContent} > div${dc.sel.messagesWrapper}`,
+        `div${dc.sel.messagesWrapper}`,
+        `div${dc.sel.scrollerInner}`,
+        `ol${dc.sel.scrollerInner}`,
+        dc.sel.messagesWrapper,
         '[class*="chat"] > [class*="content"]',
         '[class*="messages"]',
         '[class*="messageList"]',
@@ -25,7 +27,7 @@ module.exports = {
       for (const sel of selectors) {
         const element = document.querySelector(sel);
         if (element) {
-          const hasMessages = element.querySelector('[data-list-item-id^="chat-messages"], [role="article"], [class*="message"]') !== null;
+          const hasMessages = element.querySelector(`[data-list-item-id^="chat-messages"], [role="article"], ${dc.sel.message}`) !== null;
           const hasMessageId =
             element.querySelector('[data-list-item-id^="chat-messages"]') !== null;
           if (
@@ -40,10 +42,10 @@ module.exports = {
       }
 
       // Fallback: Find scroller that contains actual message elements
-      const scrollers = document.querySelectorAll('[class*="scroller"]');
+      const scrollers = document.querySelectorAll(dc.sel.scroller);
       let scrollerWithMessages = null;
       for (const scroller of scrollers) {
-        const hasMessage = scroller.querySelector('[data-list-item-id^="chat-messages"], [role="article"], [class*="message"]') !== null;
+        const hasMessage = scroller.querySelector(`[data-list-item-id^="chat-messages"], [role="article"], ${dc.sel.message}`) !== null;
         const hasMessageId =
           scroller.querySelector('[data-list-item-id^="chat-messages"]') !== null;
         if (hasMessage || hasMessageId) {
@@ -363,21 +365,21 @@ module.exports = {
     const authorElement =
       messageElement.querySelector('span[role="heading"]') ||
       messageElement.querySelector('[class*="author"]') ||
-      messageElement.querySelector('[class*="username"]') ||
-      messageElement.querySelector('[class*="headerText"]');
+      dc.query(messageElement, "username") ||
+      dc.query(messageElement, "headerText");
 
     if (!authorElement) return false;
 
     // Reject bot messages
     const botBadge =
       messageElement.querySelector('svg[aria-label*="bot" i]') ||
-      messageElement.querySelector('[class*="botTag"]') ||
+      dc.query(messageElement, "botTag") ||
       messageElement.querySelector('[class*="bot"]');
     if (botBadge) return false;
 
     // Reject system messages (join, boost, pin, etc.) — they have [class*="systemMessage"]
-    if (messageElement.querySelector('[class*="systemMessage"]') ||
-        messageElement.closest('[class*="systemMessage"]')) return false;
+    if (dc.query(messageElement, "systemMessage") ||
+        messageElement.closest(dc.sel.systemMessage)) return false;
 
     return true;
   }

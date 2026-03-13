@@ -12,6 +12,15 @@ BD_PLUGINS_DIR="$HOME/Library/Application Support/BetterDiscord/plugins"
 BLOCKED_PLUGINS=(
     "HSLDockNametagBridge.plugin.js"
     "HSLDockLocalDebug.plugin.js"
+    "AnimateTest.plugin.js"
+    "CustomEventsTest.plugin.js"
+    "DraggableTest.plugin.js"
+    "EventDelegationTest.plugin.js"
+    "HotkeysTest.plugin.js"
+    "MutationScannerTest.plugin.js"
+    "ScrollSpyTest.plugin.js"
+    "TestPlugin.plugin.js"
+    "TooltipTest.plugin.js"
 )
 
 echo "🔗 Linking BetterDiscord plugins..."

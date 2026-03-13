@@ -98,6 +98,14 @@ module.exports = {
    */
   async injectShadowRankWidget() {
     if (this._isStopped) return;
+
+    // Widget requires both shadow_extraction and shadow_preservation unlocked
+    if (!this._isSkillTreeSkillUnlocked('shadow_extraction') ||
+        !this._isSkillTreeSkillUnlocked('shadow_preservation')) {
+      this.removeShadowRankWidget();
+      return;
+    }
+
     if (!this.canInjectWidgetInCurrentView()) {
       this.removeShadowRankWidget();
       return;

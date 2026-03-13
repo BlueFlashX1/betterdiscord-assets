@@ -1,3 +1,5 @@
+const dc = require('../shared/discord-classes');
+
 module.exports = {
   checkDailyReset() {
     const today = new Date().toDateString();
@@ -48,7 +50,7 @@ module.exports = {
         const container = getMessageContainerElement();
         if (!container) return null;
   
-        const nodes = Array.from(container.querySelectorAll?.('[class*="message"]') || []);
+        const nodes = Array.from(container.querySelectorAll?.(dc.sel.message) || []);
         if (!nodes.length) return null;
   
         const currentUserId = this.currentUserId || this.settings?.ownUserId || null;

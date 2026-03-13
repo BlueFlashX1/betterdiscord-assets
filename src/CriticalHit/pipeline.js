@@ -6,6 +6,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 
 // Hoisted once — avoids closure recreation on every processNode call
 const _scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
@@ -153,8 +154,8 @@ module.exports = {
       // Check for message in children if node itself isn't a message
       if (!messageElement && node.querySelectorAll) {
         // PERF: Only search depth 1-2 for messages to avoid heavy recursion
-        messageElement = node.querySelector(':scope > [class*="message"]:not([class*="Content"]):not([class*="Group"])') ||
-                         node.querySelector(':scope > * > [class*="message"]:not([class*="Content"]):not([class*="Group"])');
+        messageElement = node.querySelector(`:scope > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`) ||
+                         node.querySelector(`:scope > * > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`);
       }
 
 
@@ -364,7 +365,7 @@ module.exports = {
           // Fallback: try closest with more specific selector (same as applyCritStyle)
           if (elementWithClass === messageElement) {
             elementWithClass =
-              messageElement.closest('[class*="messageListItem"]') ||
+              messageElement.closest(dc.sel.messageListItem) ||
               messageElement.closest('[class*="messageGroup"]') ||
               messageElement.closest('[data-message-id]');
 
@@ -432,7 +433,7 @@ module.exports = {
                           const contentHash = this.calculateContentHash(contentAuthor, contentText);
                           // Search recent messages in DOM for matching content
                           const container = this._cachedMessageContainer || document;
-                          const candidates = container.querySelectorAll?.('[class*="message"]') || [];
+                          const candidates = container ? dc.queryAll(container, 'message') : [];
                           for (const el of candidates) {
                             if (!el?.isConnected || !el.offsetParent) continue;
                             const elContent = this.findMessageContentElement(el);
@@ -776,7 +777,7 @@ module.exports = {
       // Verify it's actually a message (has some text content)
       const hasText =
         messageElement.textContent?.trim().length > 0 ||
-        messageElement.querySelector('[class*="content"]')?.textContent?.trim().length > 0 ||
+        dc.query(messageElement, 'content')?.textContent?.trim().length > 0 ||
         messageElement.querySelector('[class*="text"]')?.textContent?.trim().length > 0;
 
       if (!hasText) return;
@@ -789,7 +790,7 @@ module.exports = {
       // Get message info
       const messageContent = messageElement.textContent?.trim() || '';
       const author =
-        messageElement.querySelector('[class*="username"]')?.textContent?.trim() ||
+        dc.query(messageElement, 'username')?.textContent?.trim() ||
         messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
         '';
 

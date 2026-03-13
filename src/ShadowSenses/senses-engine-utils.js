@@ -52,10 +52,11 @@ function inferStatusFromClientStatus(clientStatus, normalizer) {
         : null
     )
     .filter(Boolean);
-  if (statuses.length === 0) return null;
+  // Empty clientStatus object means all platforms logged out → offline.
+  if (statuses.length === 0) return "offline";
   if (statuses.includes("dnd")) return "dnd";
-  if (statuses.includes("idle")) return "idle";
   if (statuses.includes("online")) return "online";
+  if (statuses.includes("idle")) return "idle";
   if (statuses.includes("offline")) return "offline";
   if (statuses.includes("invisible")) return "invisible";
   return statuses[0];
@@ -376,6 +377,7 @@ module.exports = {
   isOnlineStatus,
   normalizeStatus,
   resolvePresenceStore,
+  resolvePresenceUpdateStatus,
   resolveRelationshipStore,
   resolveUserAvatarUrl,
   resolveUserName,

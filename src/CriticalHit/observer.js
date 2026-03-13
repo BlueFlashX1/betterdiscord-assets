@@ -6,6 +6,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 
 module.exports = {
 
@@ -33,16 +34,16 @@ module.exports = {
    */
   _getMessageContainerSelectors() {
     return [
-      'main[class*="chatContent"] [class*="messagesWrapper"]',
-      'section[class*="chatContent"] [class*="messagesWrapper"]',
-      '[class*="chatContent"] [class*="messagesWrapper"]',
-      '[class*="messagesWrapper"]',
+      `main${dc.sel.chatContent} ${dc.sel.messagesWrapper}`,
+      `section${dc.sel.chatContent} ${dc.sel.messagesWrapper}`,
+      `${dc.sel.chatContent} ${dc.sel.messagesWrapper}`,
+      dc.sel.messagesWrapper,
       'ol[role="list"][aria-label^="Messages in"]',
       '[id^="chat-messages-"]',
       '[class*="messageList"]',
       '[class*="messageContainer"]',
-      '[class*="scrollerInner"]',
-      '[class*="scroller"]'
+      dc.sel.scrollerInner,
+      dc.sel.scroller,
     ];
   },
 
@@ -53,7 +54,7 @@ module.exports = {
    */
   _isMessageContainer(element) {
     if (!element) return false;
-    const hasMessages = element.querySelector('[class*="message"]') !== null;
+    const hasMessages = dc.query(element, 'message') !== null;
     const hasMessageList = element.querySelector('ol[role="list"][aria-label^="Messages in"]');
     const hasChatMessageAnchor = element.querySelector('[id^="chat-messages-"]');
     const isMessageList =
@@ -67,10 +68,10 @@ module.exports = {
    * @returns {HTMLElement|null} Message container or null
    */
   _findMessageContainerFallback() {
-    const msgEl = document.querySelector('[class*="message"]');
+    const msgEl = document.querySelector(dc.sel.message);
     if (!msgEl) return null;
 
-    const container = msgEl.closest('[class*="scroller"]') || msgEl.parentElement?.parentElement;
+    const container = msgEl.closest(dc.sel.scroller) || msgEl.parentElement?.parentElement;
     if (container) {
       const now = Date.now();
       this._cachedMessageContainer = container;
@@ -106,9 +107,9 @@ module.exports = {
     const foundElement =
       candidates
         .map((element) => {
-          const messageCount = element.querySelectorAll('[class*="message"]').length;
+          const messageCount = dc.queryAll(element, 'message').length;
           const inChatContent = !!element.closest(
-            'main[class*="chatContent"], section[class*="chatContent"]'
+            `main${dc.sel.chatContent}, section${dc.sel.chatContent}`
           );
           const hasMessagesList =
             element.matches('ol[role="list"][aria-label^="Messages in"]') ||
@@ -226,7 +227,7 @@ module.exports = {
             if (n.nodeType === 1) {
               const cn = n.className;
               if ((typeof cn === 'string' && cn.includes('message')) ||
-                  n.querySelector?.('[class*="message"]')) {
+                  dc.query(n, 'message')) {
                 markChannelLoaded('mutation');
                 return; // Found messages — stop checking
               }
@@ -237,7 +238,7 @@ module.exports = {
     );
 
     messageContainer && loadObserver.observe(messageContainer, { childList: true, subtree: true });
-    const initialMessageCount = messageContainer?.querySelectorAll?.('[class*="message"]')?.length ?? 0;
+    const initialMessageCount = messageContainer ? dc.queryAll(messageContainer, 'message')?.length ?? 0 : 0;
     if (initialMessageCount > 0) {
       markChannelLoaded('initial');
     } else {

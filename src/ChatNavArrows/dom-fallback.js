@@ -1,15 +1,16 @@
+const dc = require('../shared/discord-classes');
 const EDGE_THRESHOLD = 100;
 const POLL_INTERVAL_MS = 2000;
 
 function getScrollerPair() {
   const wrapper =
-    document.querySelector('div[class*="messagesWrapper_"]') ||
+    document.querySelector(`div${dc.sel.messagesWrapper}`) ||
     document.querySelector('div[class*="messagesWrapper-"]') ||
-    document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')?.parentElement;
+    document.querySelector(`main${dc.sel.chatContent} > div > div${dc.sel.scroller}`)?.parentElement;
   const scroller =
-    wrapper?.querySelector('div[class*="scroller_"]') ||
+    wrapper?.querySelector(`div${dc.sel.scroller}`) ||
     wrapper?.querySelector('div[class*="scroller-"]') ||
-    wrapper?.querySelector('[class*="scrollerInner_"]')?.parentElement ||
+    wrapper?.querySelector(dc.sel.scrollerInner)?.parentElement ||
     null;
   return { wrapper: wrapper || null, scroller };
 }

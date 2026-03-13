@@ -38,6 +38,7 @@ const {
   snapshotState,
   writeDebugEntry,
 } = require("./debug");
+const dc = require("../shared/discord-classes");
 
 // ─── Selector Configuration ─────────────────────────────────────────────────
 // Centralized for easy updating when Discord changes class names.
@@ -45,8 +46,8 @@ const {
 const DOCK_SELECTORS = [
   "nav[aria-label='Servers sidebar']",
   "nav[aria-label='Servers']",
-  "nav[class*='guilds_']",
-  "[class*='guilds_'][class*='wrapper_']",
+  `nav${dc.sel.guilds}`,
+  `${dc.sel.guilds}${dc.sel.wrapper}`,
 ];
 const DOCK_SELECTOR_STR = DOCK_SELECTORS.join(", ");
 
@@ -57,16 +58,16 @@ const PANEL_SELECTORS = [
 const PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
 
 const COMPOSER_CONTAINER_SELECTORS = [
-  "form[class*='form_']",
+  `form${dc.sel.form}`,
   "div[class*='channelBottomBarArea_']",
-  "div[class*='channelTextArea_']",
+  `div${dc.sel.channelTextArea}`,
   "div[class*='scrollableContainer_']",
   "div[class*='inner_']",
-  "div[class*='textArea_']",
+  `div${dc.sel.textArea}`,
   "div[class*='slateContainer_']",
-  "div[class*='slateTextArea_']",
+  `div${dc.sel.slateTextArea}`,
   "div[class*='editor_']",
-  "div[class*='markup_']",
+  `div${dc.sel.markup}`,
 ].join(", ");
 
 const COMPOSER_EDITABLE_SELECTORS = [
@@ -81,12 +82,12 @@ const COMPOSER_EDITABLE_SELECTORS = [
 ].join(", ");
 
 const ALERT_SELECTORS = [
-  "[class*='listItem'] [class*='mentionsBadge']",
-  "[class*='listItem'] [aria-label*='mention' i]",
-  "[class*='pill'] [class*='mentionsBadge']",
-  "[class*='pill'] [aria-label*='mention' i]",
-  "[class*='numberBadge']",
-  "[class*='mentionsBadge']",
+  `${dc.sel.listItem} ${dc.sel.mentionsBadge}`,
+  `${dc.sel.listItem} [aria-label*='mention' i]`,
+  `${dc.sel.pill} ${dc.sel.mentionsBadge}`,
+  `${dc.sel.pill} [aria-label*='mention' i]`,
+  dc.sel.numberBadge,
+  dc.sel.mentionsBadge,
 ];
 const ALERT_SELECTOR_STR = ALERT_SELECTORS.join(",");
 const DIGITS_RE = /\d+/;
@@ -261,18 +262,10 @@ class DockEngine {
     this.removeRail();
     this.stopRailFollow();
 
-    // User panel
+    // User panel — unbind hover events only.  The sl-userpanel-docked class
+    // and CSS are managed by the always-on poller in index.js, so the engine
+    // must NOT remove the class on unmount (nameplate stays positioned).
     this.unbindUserPanelHover();
-    if (this.userPanel) {
-      this.userPanel.classList.remove("sl-userpanel-docked");
-      this.userPanel.style.removeProperty("right");
-      this.userPanel.style.removeProperty("left");
-    }
-    if (this._origPanelsHeight) {
-      document.body.style.setProperty("--custom-app-panels-height", this._origPanelsHeight);
-    } else {
-      document.body.style.removeProperty("--custom-app-panels-height");
-    }
 
     // Debug
     this.removeDebugApi();

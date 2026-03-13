@@ -695,6 +695,166 @@ module.exports = {
     this.syncManaFromStats?.();
 
     const def = castResult.def || snapshot.def;
+    const combatEffect = def.combatEffect || 'damage';
+    const passiveLevel = Math.max(1, this.getSkillTreeInstance?.()?.getSkillLevel?.(def.unlock?.passiveSkill) || 1);
+
+    // ── Debuff: Ruler's Authority Force ──────────────────────────────
+    if (combatEffect === 'debuff' && def.debuff) {
+      const db = def.debuff;
+      const baseDuration = db.disableAttacksDurationMs || 5000;
+      const duration = db.durationScaling === 'double_per_level'
+        ? baseDuration * Math.pow(2, passiveLevel - 1)
+        : baseDuration;
+      const resistReduction = (db.damageResistReduction || 0) + (db.resistReductionPerLevel || 0) * (passiveLevel - 1);
+      const mobPercent = Math.min(1, (db.mobTargetPercent || 0) + (db.mobTargetPercentPerLevel || 0) * (passiveLevel - 1));
+
+      if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
+      dungeon.activeDebuffs.rulers_force = {
+        expiresAt: Date.now() + duration,
+        resistReduction: Math.min(0.9, resistReduction),
+        mobDisablePercent: mobPercent,
+        disableAttacksDurationMs: duration,
+      };
+
+      this.syncManaFromStats?.();
+      this.queueHPBarUpdate(channelKey);
+      const durationSec = (duration / 1000).toFixed(1);
+      const resistPct = Math.round(resistReduction * 100);
+      const mobPct = Math.round(mobPercent * 100);
+      this.showToast(
+        `${def.name}: Boss stunned ${durationSec}s, -${resistPct}% resist, ${mobPct}% mobs disabled.`,
+        'success'
+      );
+      return true;
+    }
+
+    // ── Shadow Buff: Domain Expansion ────────────────────────────────
+    if (combatEffect === 'shadow_buff' && def.shadowBuff) {
+      const sb = def.shadowBuff;
+      const duration = (sb.durationMs || 30000) + (sb.durationPerLevel || 0) * (passiveLevel - 1);
+      const multiplier = (sb.allStatMultiplier || 1.25) + (sb.allStatMultiplierPerLevel || 0) * (passiveLevel - 1);
+
+      if (!dungeon.activeBuffs) dungeon.activeBuffs = {};
+      dungeon.activeBuffs.domain = {
+        expiresAt: Date.now() + duration,
+        statMultiplier: multiplier,
+      };
+
+      this.syncManaFromStats?.();
+      this.queueHPBarUpdate(channelKey);
+      const durationSec = (duration / 1000).toFixed(0);
+      const buffPct = Math.round((multiplier - 1) * 100);
+      this.showToast(
+        `${def.name}: All shadows +${buffPct}% stats for ${durationSec}s!`,
+        'success'
+      );
+      return true;
+    }
+
+    // ── Fear: Dragon's Fear ────────────────────────────────────────────
+    if (combatEffect === 'fear' && def.fear) {
+      const fr = def.fear;
+      const mobDuration = (fr.baseDurationMs || 8000) + (fr.durationPerLevel || 0) * (passiveLevel - 1);
+
+      // Boss: reduced duration based on rank difference (weaker = longer fear)
+      const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+      const userRankIdx = this.getRankIndexValue(userRank);
+      const bossRankIdx = this.getRankIndexValue(dungeon.boss?.rank || 'E');
+      const rankDiff = Math.max(0, bossRankIdx - userRankIdx);
+      const bossResist = Math.min(1, (fr.bossResistPerRankAbove || 0.35) * rankDiff);
+      const bossDuration = Math.floor(mobDuration * (fr.bossDurationMultiplier || 0.4) * (1 - bossResist));
+
+      if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
+
+      // Mob fear: full paralysis for duration
+      dungeon.activeDebuffs.dragons_fear_mobs = {
+        expiresAt: Date.now() + mobDuration,
+      };
+
+      // Boss fear: shorter duration, immune if boss rank far exceeds player
+      const bossToastParts = [];
+      if (bossDuration > 500) {
+        dungeon.activeDebuffs.dragons_fear_boss = {
+          expiresAt: Date.now() + bossDuration,
+        };
+        bossToastParts.push(`Boss paralyzed ${(bossDuration / 1000).toFixed(1)}s`);
+      } else {
+        bossToastParts.push('Boss resisted');
+      }
+
+      this.syncManaFromStats?.();
+      this.queueHPBarUpdate(channelKey);
+      const mobSec = (mobDuration / 1000).toFixed(1);
+      this.showToast(
+        `${def.name}: All mobs paralyzed ${mobSec}s! ${bossToastParts.join('. ')}.`,
+        'success'
+      );
+      return true;
+    }
+
+    // ── Bloodlust: AoE fear + boss stat reduction ────────────────────
+    if (combatEffect === 'bloodlust' && def.bloodlust) {
+      const bl = def.bloodlust;
+      const mobDuration = (bl.baseDurationMs || 60000) + (bl.durationPerLevel || 0) * (passiveLevel - 1);
+      const bossParalysisDuration = Math.floor(mobDuration * (bl.bossDurationMultiplier || 0.5));
+      const bossReduction = Math.min(0.80, (bl.bossStatReduction || 0.50) + (bl.bossStatReductionPerLevel || 0) * (passiveLevel - 1));
+
+      if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
+
+      // Mob fear: full paralysis for duration
+      dungeon.activeDebuffs.bloodlust_mobs = {
+        expiresAt: Date.now() + mobDuration,
+      };
+
+      // Boss paralysis: shorter duration (bossDurationMultiplier)
+      dungeon.activeDebuffs.bloodlust_boss = {
+        expiresAt: Date.now() + bossParalysisDuration,
+      };
+
+      // Boss stat reduction: lasts full mob duration (persists after paralysis ends)
+      dungeon.activeDebuffs.bloodlust_stats = {
+        expiresAt: Date.now() + mobDuration,
+        statReduction: bossReduction,
+      };
+
+      this.syncManaFromStats?.();
+      this.queueHPBarUpdate(channelKey);
+      const mobSec = (mobDuration / 1000).toFixed(0);
+      const paralysisSec = (bossParalysisDuration / 1000).toFixed(0);
+      const reductionPct = Math.round(bossReduction * 100);
+      this.showToast(
+        `${def.name}: All mobs paralyzed ${mobSec}s! Boss stunned ${paralysisSec}s, -${reductionPct}% stats for ${mobSec}s.`,
+        'success'
+      );
+      return true;
+    }
+
+    // ── Speed Boost (Sprint): attack cooldown reduction ─────────────
+    if (combatEffect === 'speed_boost' && def.speedBoost) {
+      const sb = def.speedBoost;
+      const duration = (sb.durationMs || 180000) + (sb.durationPerLevel || 0) * (passiveLevel - 1);
+      const reduction = Math.min(0.50,
+        (sb.attackCooldownReduction || 0.20) + (sb.attackCooldownReductionPerLevel || 0) * (passiveLevel - 1)
+      );
+
+      if (!dungeon.activeBuffs) dungeon.activeBuffs = {};
+      dungeon.activeBuffs.sprint = {
+        expiresAt: Date.now() + duration,
+        cooldownReduction: reduction,
+      };
+
+      this.syncManaFromStats?.();
+      this.queueHPBarUpdate(channelKey);
+      const durationMin = (duration / 60000).toFixed(1);
+      const reductionPct = Math.round(reduction * 100);
+      this.showToast(
+        `${def.name}: Shadows attack ${reductionPct}% faster for ${durationMin}m!`,
+        'success'
+      );
+      return true;
+    }
+
+    // ── Default: Direct damage ───────────────────────────────────────
     const attackResult = this._resolveUserBossDamage(dungeon, {
       skillMultiplier: def.damageMultiplier || 1,
       passiveDamageBonusKey: def.passiveDamageBonusKey || null,
@@ -719,5 +879,50 @@ module.exports = {
       attackResult.isCritical ? 'success' : 'info'
     );
     return true;
-  }
+  },
+
+  // ── Combat buff/debuff helpers ──────────────────────────────────────
+  _getActiveDebuff(dungeon, key) {
+    const debuff = dungeon?.activeDebuffs?.[key];
+    if (!debuff) return null;
+    if (Date.now() > debuff.expiresAt) {
+      delete dungeon.activeDebuffs[key];
+      return null;
+    }
+    return debuff;
+  },
+
+  _getActiveBuff(dungeon, key) {
+    const buff = dungeon?.activeBuffs?.[key];
+    if (!buff) return null;
+    if (Date.now() > buff.expiresAt) {
+      delete dungeon.activeBuffs[key];
+      return null;
+    }
+    return buff;
+  },
+
+  _getDomainShadowMultiplier(dungeon) {
+    const buff = this._getActiveBuff(dungeon, 'domain');
+    return buff ? buff.statMultiplier : 1;
+  },
+
+  _getRulersForceResistReduction(dungeon) {
+    const debuff = this._getActiveDebuff(dungeon, 'rulers_force');
+    return debuff ? debuff.resistReduction : 0;
+  },
+
+  _isBossStunned(dungeon) {
+    return !!this._getActiveDebuff(dungeon, 'rulers_force');
+  },
+
+  _getBloodlustStatReduction(dungeon) {
+    const debuff = this._getActiveDebuff(dungeon, 'bloodlust_stats');
+    return debuff?.statReduction || 0;
+  },
+
+  _getSprintCooldownReduction(dungeon) {
+    const buff = this._getActiveBuff(dungeon, 'sprint');
+    return buff ? buff.cooldownReduction : 0;
+  },
 };

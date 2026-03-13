@@ -1,3 +1,5 @@
+const dc = require("../shared/discord-classes");
+
 module.exports = {
   _buildBossBarCombatSkillButtonHtml(skillState, channelKey) {
     if (!skillState?.skillId) return '';
@@ -348,7 +350,7 @@ module.exports = {
     // Strategy 2: Use semantic class fragments
     if (!header) {
       header =
-        document.querySelector('[class*="title"][class*="container"]') ||
+        document.querySelector(`${dc.sel.title}${dc.sel.container}`) ||
         document.querySelector('[class*="channelHeader"]');
     }
 
@@ -384,7 +386,7 @@ module.exports = {
         document.querySelector('[class*="messageList"]') ||
         document.querySelector('[class*="messages"]');
       if (messageList) {
-        container = messageList.closest('[class*="container"]') || messageList.parentElement;
+        container = messageList.closest(dc.sel.container) || messageList.parentElement;
       }
     }
 
@@ -530,7 +532,7 @@ module.exports = {
 
       // Also check for buttons with SVG icons that might be comment buttons
       const hasIcon = button.querySelector('svg');
-      const isInToolbar = button.closest('[class*="toolbar"]');
+      const isInToolbar = button.closest(dc.sel.toolbar);
 
       if (isCommentButton || (hasIcon && isInToolbar && ariaLabel)) {
         commentElements.push(button);
@@ -633,8 +635,7 @@ module.exports = {
 
     const value = Boolean(
       document.querySelector("nav[aria-label*='Settings' i]") ||
-        document.querySelector("[class*='standardSidebarView']") ||
-        document.querySelector("[class*='userSettings']") ||
+        document.querySelector(dc.sel.userSettings) ||
         document.querySelector("[class*='settingsContainer']")
     );
     this._settingsLayerOpenCache = { value, ts: now };
@@ -648,8 +649,8 @@ module.exports = {
     // Cache member list width briefly to avoid repeated reflows
     const memberWrap =
       document.querySelector("aside[aria-label*='Members' i]") ||
-      document.querySelector("[class*='membersWrap']") ||
-      document.querySelector("[class*='membersWrap-']");
+      document.querySelector(dc.sel.membersWrap) ||
+      document.querySelector(dc.sel.membersWrap);
     const memberVisible = this.isElementVisible(memberWrap);
 
     let memberWidth = 0;

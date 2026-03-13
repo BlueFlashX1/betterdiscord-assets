@@ -17,6 +17,8 @@ import {
   SEARCH_FALLBACKS,
 } from "./constants";
 
+const dc = require("../shared/discord-classes");
+
 /**
  * Updates CSS custom properties on :root.
  * Called whenever settings change (transition speed, panel widths).
@@ -116,27 +118,27 @@ ${buildCollapsedPushRule(searchPush)}
 /* ── Members Column Surface (transparent) ──────────────────────── */
 
 ${membersSel},
-${membersSel} > div[class*="members_"],
-${membersSel} > div[class*="container_"] {
+${membersSel} > div${dc.sel.members},
+${membersSel} > div${dc.sel.container} {
   background: var(--ra-members-bg) !important;
   position: relative !important;
   overflow: visible !important;
 }
 
 ${membersSel},
-${membersSel} [class*="members_"],
-${membersSel} [class*="scroller_"],
-${membersSel} [class*="thin_"],
-${membersSel} [class*="scrollerBase_"] {
+${membersSel} ${dc.sel.members},
+${membersSel} ${dc.sel.scroller},
+${membersSel} ${dc.sel.thin},
+${membersSel} ${dc.sel.scrollerBase} {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
 
 ${membersSel}::-webkit-scrollbar,
-${membersSel} [class*="members_"]::-webkit-scrollbar,
-${membersSel} [class*="scroller_"]::-webkit-scrollbar,
-${membersSel} [class*="thin_"]::-webkit-scrollbar,
-${membersSel} [class*="scrollerBase_"]::-webkit-scrollbar {
+${membersSel} ${dc.sel.members}::-webkit-scrollbar,
+${membersSel} ${dc.sel.scroller}::-webkit-scrollbar,
+${membersSel} ${dc.sel.thin}::-webkit-scrollbar,
+${membersSel} ${dc.sel.scrollerBase}::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
   display: none !important;
@@ -371,26 +373,6 @@ ${sidebarHandleDisable.join(",\n")} {
   display: none !important;
 }
 
-/* ── Amplified Mode ─────────────────────────────────────────────── */
-
-.ra-toolbar-icon--amplified svg {
-  filter: drop-shadow(0 0 8px rgba(138, 43, 226, 0.8)) !important;
-  animation: ra-amplified-glow 2s ease-in-out infinite;
-}
-
-@keyframes ra-amplified-glow {
-  0%, 100% { filter: drop-shadow(0 0 8px rgba(138, 43, 226, 0.8)); }
-  50% { filter: drop-shadow(0 0 16px rgba(180, 60, 255, 1.0)); }
-}
-
-body.ra-amplified [data-ra-crushed="true"] {
-  border-left-color: rgba(180, 60, 255, 0.6);
-}
-
-body.ra-amplified .ra-grip-indicator {
-  background: radial-gradient(circle, #c78dff 0%, rgba(180, 60, 255, 0.5) 100%);
-}
-
 /* ── Push/Pull Animation ────────────────────────────────────────── */
 
 @keyframes ra-push-ripple {
@@ -405,13 +387,11 @@ body.ra-amplified .ra-grip-indicator {
   100% { transform: scaleX(1); }
 }
 
-body.ra-pushing ${chatSel},
-body.ra-pushing [class*="chatContent_"] {
+body.ra-pushing ${chatSel} {
   animation: ra-push-ripple 500ms ease-out;
 }
 
-body.ra-pulling ${chatSel},
-body.ra-pulling [class*="chatContent_"] {
+body.ra-pulling ${chatSel} {
   animation: ra-pull-bounce 350ms ease-out;
 }
   `.trim();

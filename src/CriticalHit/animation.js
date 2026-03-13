@@ -6,6 +6,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 
 module.exports = {
   // --------------------------------------------------------------------------
@@ -674,10 +675,10 @@ module.exports = {
   getMessageAreaPosition() {
     // Use cached selectors if available
     if (!this._cachedChatInput || !document.contains(this._cachedChatInput)) {
-      this._cachedChatInput = document.querySelector('[class*="channelTextArea"]');
+      this._cachedChatInput = document.querySelector(dc.sel.channelTextArea);
     }
     if (!this._cachedMessageList || !document.contains(this._cachedMessageList)) {
-      this._cachedMessageList = document.querySelector('[class*="messagesWrapper"]');
+      this._cachedMessageList = document.querySelector(dc.sel.messagesWrapper);
     }
 
     const target = this._cachedChatInput || this._cachedMessageList;

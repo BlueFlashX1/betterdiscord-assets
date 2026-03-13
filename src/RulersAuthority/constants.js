@@ -1,4 +1,5 @@
 import bdModuleLoader from "../shared/bd-module-loader.js";
+import dc from "../shared/discord-classes";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // §1  Constants + Fallback Selectors
@@ -21,8 +22,8 @@ export const RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
 export const SIDEBAR_FALLBACKS = [
   'nav[aria-label="Channels sidebar"]',
   'nav[aria-label="Channels"]',
-  '[class*="sidebar_"][class*="container_"]',
-  '[class*="sidebar_"]',
+  `${dc.sel.sidebar}${dc.sel.container}`,
+  dc.sel.sidebar,
 ];
 
 // CSS-safe subset — excludes the broad [class*="sidebar_"] which also matches
@@ -31,30 +32,28 @@ export const SIDEBAR_FALLBACKS = [
 export const SIDEBAR_CSS_SAFE = SIDEBAR_FALLBACKS.slice(0, -1);
 
 export const MEMBERS_FALLBACKS = [
-  '[class^="membersWrap_"]',
-  '[class*=" membersWrap_"]',
-  '[class*="membersWrap"]',
+  dc.sel.membersWrap,
 ];
 
 export const PROFILE_FALLBACKS = [
-  '[class*="userProfileOuter_"]',
+  dc.sel.userProfileOuter,
   '[class*="userPanelOuter_"]',
   '[class*="profilePanel_"]',
 ];
 
 export const SEARCH_FALLBACKS = [
-  '[class*="searchResultsWrap_"]',
+  dc.sel.searchResultsWrap,
 ];
 
 export const TOOLBAR_FALLBACKS = [
-  '[aria-label="Channel header"] [class*="toolbar_"]',
-  '[class*="titleWrapper_"] [class*="toolbar_"]',
-  'header [class*="toolbar_"]',
+  `[aria-label="Channel header"] ${dc.sel.toolbar}`,
+  `${dc.sel.titleWrapper} ${dc.sel.toolbar}`,
+  `header ${dc.sel.toolbar}`,
 ];
 
 export const DM_LIST_FALLBACKS = [
-  '[class*="privateChannels_"] [class*="scroller_"]',
-  '[class*="privateChannels_"] [role="list"]',
+  `${dc.sel.privateChannels} ${dc.sel.scroller}`,
+  `${dc.sel.privateChannels} [role="list"]`,
 ];
 
 // Panel definition — label, hover support, which Webpack module + property to use

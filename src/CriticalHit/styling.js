@@ -5,6 +5,7 @@
  */
 
 const C = require('./constants');
+const dc = require('../shared/discord-classes');
 const { FRIENDORFOEBB_WOFF2_DATA, SPEEDYSPACEGOATODDITY_WOFF2_DATA } = require('./font-data');
 const STATIC_CSS = require('./styles.css');
 
@@ -38,19 +39,21 @@ module.exports = {
     const selC = `[data-list-item-id*="${messageId}"]`;
     // Direct content targeting (no descendant selector needed for this one)
     const directContentSel = `#message-content-${messageId}`;
+    const mcSel = dc.sel.messageContent;
+    const mkSel = dc.sel.markup;
     const contentSel = [
-      `${selA} [class*="messageContent"]`, `${selA} [class*="markup"]`,
-      `${selB} [class*="messageContent"]`, `${selB} [class*="markup"]`,
-      `${selC} [class*="messageContent"]`, `${selC} [class*="markup"]`,
+      `${selA} ${mcSel}`, `${selA} ${mkSel}`,
+      `${selB} ${mcSel}`, `${selB} ${mkSel}`,
+      `${selC} ${mcSel}`, `${selC} ${mkSel}`,
       directContentSel,
     ].join(', ');
     const childSel = [
-      `${selA} [class*="messageContent"] *:not(code):not(pre):not(pre *)`,
-      `${selA} [class*="markup"] *:not(code):not(pre):not(pre *)`,
-      `${selB} [class*="messageContent"] *:not(code):not(pre):not(pre *)`,
-      `${selB} [class*="markup"] *:not(code):not(pre):not(pre *)`,
-      `${selC} [class*="messageContent"] *:not(code):not(pre):not(pre *)`,
-      `${selC} [class*="markup"] *:not(code):not(pre):not(pre *)`,
+      `${selA} ${mcSel} *:not(code):not(pre):not(pre *)`,
+      `${selA} ${mkSel} *:not(code):not(pre):not(pre *)`,
+      `${selB} ${mcSel} *:not(code):not(pre):not(pre *)`,
+      `${selB} ${mkSel} *:not(code):not(pre):not(pre *)`,
+      `${selC} ${mcSel} *:not(code):not(pre):not(pre *)`,
+      `${selC} ${mkSel} *:not(code):not(pre):not(pre *)`,
       `${directContentSel} *:not(code):not(pre):not(pre *)`,
     ].join(', ');
 
@@ -220,8 +223,8 @@ ${childSel} {
       if (!textEl.textContent || textEl.textContent.trim().length === 0) return best;
       if (this.isInHeaderArea(textEl)) return best;
       if (
-        textEl.querySelector('[class*="username"]') ||
-        textEl.querySelector('[class*="timestamp"]')
+        dc.query(textEl, 'username') ||
+        dc.query(textEl, 'timestamp')
       ) {
         return best;
       }
@@ -248,8 +251,8 @@ ${childSel} {
     if (!parent) return false;
 
     const hasUsernameInParent =
-      parent.querySelector('[class*="username"]') !== null ||
-      parent.querySelector('[class*="timestamp"]') !== null ||
+      dc.query(parent, 'username') !== null ||
+      dc.query(parent, 'timestamp') !== null ||
       parent.querySelector('[class*="author"]') !== null;
 
     if (hasUsernameInParent) return true;
@@ -286,7 +289,7 @@ ${childSel} {
           const textElement = this._findTextElementInContent(found);
           if (textElement) return textElement;
 
-          const markupElement = found.querySelector('[class*="markup"]');
+          const markupElement = dc.query(found, 'markup');
           if (markupElement && !this.isInHeaderArea(markupElement)) {
             return markupElement;
           }
@@ -324,7 +327,7 @@ ${childSel} {
       if (this._isContentElement(messageElement)) {
         actualMessageElement =
           messageElement.closest('[data-message-id]') ||
-          messageElement.closest('[class*="messageListItem"]') ||
+          messageElement.closest(dc.sel.messageListItem) ||
           messageElement.closest('[class*="messageGroup"]') ||
           messageElement;
       }
