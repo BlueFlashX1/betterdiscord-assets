@@ -710,7 +710,7 @@ export function getChannelHeaderToolbar(ctx) {
     const nodes = document.querySelectorAll(selector);
     for (const node of nodes) {
       if (!node || node.offsetParent === null) continue;
-      const host = node.closest(`[aria-label="Channel header"], ${dc.sel.titleWrapper}, header`);
+      const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
       if (host && host.offsetParent === null) continue;
       return node;
     }

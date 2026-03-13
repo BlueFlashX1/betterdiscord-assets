@@ -812,12 +812,12 @@ module.exports = class ShadowExchange {
   // ── Swirl Icon (channel-header anchored) ───────────────────────────────
 
   _getChannelHeaderToolbar() {
-    // PERF: find visible channel header host first, then query toolbar inside it.
-    const dc = require("../shared/discord-classes");
-    const hosts = document.querySelectorAll(`[aria-label="Channel header"], ${dc.sel.titleWrapper}, header`);
+    // Find visible channel header host, then query toolbar inside it.
+    // Use wildcards for toolbar — dc.sel.toolbar can resolve to wrong module.
+    const hosts = document.querySelectorAll('[aria-label="Channel header"], [class*="titleWrapper_"], header');
     for (const host of hosts) {
       if (host.offsetParent === null) continue;
-      const node = host.querySelector(dc.sel.toolbar);
+      const node = host.querySelector('[class*="toolbar_"]');
       if (!node || node.offsetParent === null) continue;
       return node;
     }
