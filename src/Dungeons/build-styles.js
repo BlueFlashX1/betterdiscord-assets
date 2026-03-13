@@ -415,14 +415,14 @@ function buildCSS() {
 /* Hide boss HP bar when settings/modals are open */
 /* When user settings open */
 [class*='layer']:has(${sel.userSettings}) .dungeon-boss-hp-container,
-[class*='layer']:has([class*='settingsContainer']) .dungeon-boss-hp-container,
-[class*='layer']:has([class*='standardSidebarView']) .dungeon-boss-hp-container,
+[class*='layer']:has(${sel.settingsContainer}) .dungeon-boss-hp-container,
+[class*='layer']:has(${sel.standardSidebarView}) .dungeon-boss-hp-container,
 /* When any layer above base layer */
 [class*='layer'][class*='baseLayer'] ~ [class*='layer'] .dungeon-boss-hp-container,
 /* When settings layer exists */
 body:has(${sel.userSettings}) .dungeon-boss-hp-container,
-body:has([class*='settingsContainer']) .dungeon-boss-hp-container,
-body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
+body:has(${sel.settingsContainer}) .dungeon-boss-hp-container,
+body:has(${sel.standardSidebarView}) .dungeon-boss-hp-container {
   display: none !important;
   visibility: hidden !important;
 }
@@ -434,7 +434,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 /* Ensure it stays below settings layers */
 ${sel.userSettings},
-[class*='settingsContainer'] {
+${sel.settingsContainer} {
   z-index: 1000 !important;
 }
 
