@@ -3,9 +3,9 @@ const dc = require('../shared/discord-classes');
 module.exports = {
   _getChannelHeaderToolbar() {
     const selectors = [
-      `[aria-label="Channel header"] ${dc.sel.toolbar}`,
-      `${dc.sel.titleWrapper} ${dc.sel.toolbar}`,
-      `header ${dc.sel.toolbar}`,
+      '[aria-label="Channel header"] [class*="toolbar_"]',
+      '[class*="titleWrapper_"] [class*="toolbar_"]',
+      'header [class*="toolbar_"]',
     ];
     for (const selector of selectors) {
       const toolbar = document.querySelector(selector);

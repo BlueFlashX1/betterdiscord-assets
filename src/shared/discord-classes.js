@@ -69,7 +69,7 @@ const DEFS = {
   botTag:              [["botTag"],               "botTag",             '[class*="botTag_"]'],
 
   // ── Header / Toolbar ──
-  toolbar:             [["toolbar"],              "toolbar",            '[class*="toolbar_"]'],
+  toolbar:             [["updateIconForeground", "search", "toolbar"], "toolbar", '[class*="toolbar_"]'],
   titleWrapper:        [["titleWrapper"],         "titleWrapper",       '[class*="titleWrapper_"]'],
   title:               [["title", "lineClamp"],    "title",             '[class*="title_"]'],
   channelHeader:       [["channelHeader"],        "channelHeader",      '[class*="channelHeader_"]'],

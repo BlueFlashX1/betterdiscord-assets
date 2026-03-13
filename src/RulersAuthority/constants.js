@@ -46,9 +46,9 @@ export const SEARCH_FALLBACKS = [
 ];
 
 export const TOOLBAR_FALLBACKS = [
-  `[aria-label="Channel header"] ${dc.sel.toolbar}`,
-  `${dc.sel.titleWrapper} ${dc.sel.toolbar}`,
-  `header ${dc.sel.toolbar}`,
+  '[aria-label="Channel header"] [class*="toolbar_"]',
+  '[class*="titleWrapper_"] [class*="toolbar_"]',
+  'header [class*="toolbar_"]',
 ];
 
 export const DM_LIST_FALLBACKS = [

@@ -347,11 +347,18 @@ module.exports = {
       document.querySelector('section[aria-label="Channel header"]') ||
       document.querySelector('section[aria-label*="Channel header"]');
 
-    // Strategy 2: Use semantic class fragments
+    // Strategy 2: Use resolved class selectors (fast, exact)
     if (!header) {
       header =
         document.querySelector(`${dc.sel.title}${dc.sel.container}`) ||
         document.querySelector(dc.sel.channelHeader);
+    }
+
+    // Strategy 3: Wildcard fallbacks (always correct even if Webpack resolved wrong)
+    if (!header) {
+      header =
+        document.querySelector('[class*="title_"][class*="container_"]') ||
+        document.querySelector('[class*="channelHeader_"]');
     }
 
     // Cache result
@@ -390,11 +397,19 @@ module.exports = {
       }
     }
 
-    // Strategy 3: Find by channel content area
+    // Strategy 3: Find by channel content area (resolved selectors)
     if (!container) {
       container =
         document.querySelector(`${dc.sel.channel} ${dc.sel.content}`) ||
         document.querySelector(`${dc.sel.chat} ${dc.sel.content}`);
+    }
+
+    // Strategy 4: Wildcard fallbacks (safety net if Webpack resolved wrong)
+    if (!container) {
+      container =
+        document.querySelector('[class*="channel_"] [class*="content_"]') ||
+        document.querySelector('[class*="chat_"] [class*="content_"]') ||
+        document.querySelector('[class*="chatContent_"]');
     }
 
     // Cache result

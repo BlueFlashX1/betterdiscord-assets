@@ -87,9 +87,13 @@ function buildCSS() {
 }
 
 /* Hide comment/thread buttons when dungeon HP bar is active (CSS-based, survives re-renders) */
+/* Use both resolved + wildcard toolbar selector for reliability */
 .dungeon-boss-hp-container ~ ${sel.toolbar} [class*="comment"],
 .dungeon-boss-hp-container ~ ${sel.toolbar} ${sel.thread},
-.dungeon-boss-hp-container ~ ${sel.toolbar} [class*="reply"] {
+.dungeon-boss-hp-container ~ ${sel.toolbar} [class*="reply"],
+.dungeon-boss-hp-container ~ [class*="toolbar_"] [class*="comment"],
+.dungeon-boss-hp-container ~ [class*="toolbar_"] ${sel.thread},
+.dungeon-boss-hp-container ~ [class*="toolbar_"] [class*="reply"] {
   display: none !important;
 }
 

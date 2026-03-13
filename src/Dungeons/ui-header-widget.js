@@ -3,10 +3,16 @@ const dc = require("../shared/discord-classes");
 
 const HEADER_WIDGET_ID = 'dungeons-header-widget';
 const HEADER_POPUP_ID = 'dungeons-header-popup';
+// Toolbar selectors: wildcard-first for reliability, then resolved dc.sel as bonus.
+// "toolbar" in the shared DEFS uses getByKeys("toolbar") which is too generic —
+// it often resolves to the wrong Webpack module. The original wildcard selectors
+// are the proven-working path. dc.sel.toolbar is kept as a first-try optimistic
+// check only — it falls through to wildcards if it matched the wrong element.
 const HEADER_TOOLBAR_SELECTORS = [
-  `[aria-label="Channel header"] ${dc.sel.toolbar}`,
-  `${dc.sel.titleWrapper} ${dc.sel.toolbar}`,
-  `header ${dc.sel.toolbar}`,
+  // ── Wildcards (proven, always correct) ──
+  '[aria-label="Channel header"] [class*="toolbar_"]',
+  '[class*="titleWrapper_"] [class*="toolbar_"]',
+  'header [class*="toolbar_"]',
 ];
 
 function escapeHtml(value) {
