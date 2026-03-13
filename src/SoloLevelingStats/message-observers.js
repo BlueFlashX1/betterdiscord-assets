@@ -113,7 +113,7 @@ module.exports = {
   _hasExplicitYouIndicator(messageElement) {
     const usernameElement =
       dc.query(messageElement, 'username') ||
-      messageElement.querySelector('[class*="author"]');
+      messageElement.querySelector(dc.sel.author);
     if (!usernameElement) return false;
 
     const usernameText = usernameElement.textContent?.trim().toLowerCase() || '';

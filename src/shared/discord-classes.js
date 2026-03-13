@@ -26,6 +26,8 @@ const _fb  = {};   // fallback selectors (e.g. '[class*="chatContent_"]')
 // ─── Module definitions ──────────────────────────────────────────────────────
 // Each entry: [webpackFilterKeys, propertyName, fallbackSelector]
 // webpackFilterKeys: passed to Webpack.getByKeys() to find the module
+//   — use null to fall back to getModule() scan (for stems where getByKeys
+//     returns the wrong module, e.g. "author")
 // propertyName: the export on that module containing the CSS class string
 // fallbackSelector: attribute wildcard selector used when Webpack fails
 
@@ -56,10 +58,13 @@ const DEFS = {
   mentioned:           [["mentioned"],            "mentioned",          '[class*="mentioned_"]'],
 
   // ── Message parts ──
+  author:              [null,                     "author",             '[class*="author_"]'],
   username:            [["username"],             "username",           '[class*="username_"]'],
   timestamp:           [["timestamp"],            "timestamp",          '[class*="timestamp_"]'],
   avatar:              [["avatar", "wrapper"],     "avatar",            '[class*="avatar_"]'],
   repliedMessage:      [["repliedMessage"],       "repliedMessage",     '[class*="repliedMessage_"]'],
+  embed:               [["embed"],               "embed",              '[class*="embed_"]'],
+  attachment:          [["attachment"],           "attachment",         '[class*="attachment_"]'],
   embedWrapper:        [["embedWrapper"],         "embedWrapper",       '[class*="embedWrapper_"]'],
   botTag:              [["botTag"],               "botTag",             '[class*="botTag_"]'],
 
@@ -67,11 +72,19 @@ const DEFS = {
   toolbar:             [["toolbar"],              "toolbar",            '[class*="toolbar_"]'],
   titleWrapper:        [["titleWrapper"],         "titleWrapper",       '[class*="titleWrapper_"]'],
   title:               [["title", "lineClamp"],    "title",             '[class*="title_"]'],
+  channelHeader:       [["channelHeader"],        "channelHeader",      '[class*="channelHeader_"]'],
 
-  // ── Input ──
+  // ── Input / Composer ──
   channelTextArea:     [["channelTextArea"],      "channelTextArea",    '[class*="channelTextArea_"]'],
+  textContainer:       [["textContainer"],        "textContainer",      '[class*="textContainer_"]'],
+  slateContainer:      [["slateContainer"],       "slateContainer",     '[class*="slateContainer_"]'],
+  editor:              [["editor"],               "editor",             '[class*="editor_"]'],
+  channelBottomBarArea:[["channelBottomBarArea"], "channelBottomBarArea",'[class*="channelBottomBarArea_"]'],
+  scrollableContainer: [["scrollableContainer"],  "scrollableContainer",'[class*="scrollableContainer_"]'],
+  inner:               [["inner"],                "inner",              '[class*="inner_"]'],
 
-  // ── User panel ──
+  // ── User panel / profile ──
+  user:                [["user"],                 "user",               '[class*="user_"]'],
   nameTag:             [["nameTag"],              "nameTag",            '[class*="nameTag_"]'],
   withTagAsButton:     [["withTagAsButton"],      "withTagAsButton",    '[class*="withTagAsButton_"]'],
   panelSubtextContainer: [["panelSubtextContainer"], "panelSubtextContainer", '[class*="panelSubtextContainer_"]'],
@@ -81,15 +94,27 @@ const DEFS = {
   base:                [["base", "content"],       "base",              '[class*="base_"]'],
   content:             [["base", "content"],       "content",           '[class*="content_"]'],
   layers:              [["layers"],               "layers",             '[class*="layers_"]'],
+  chat:                [["chat"],                 "chat",               '[class*="chat_"]'],
+  chatLayerWrapper:    [["chatLayerWrapper"],     "chatLayerWrapper",    '[class*="chatLayerWrapper_"]'],
+  layerContainer:      [["layerContainer"],       "layerContainer",      '[class*="layerContainer_"]'],
+  panels:              [["panels"],               "panels",              '[class*="panels_"]'],
 
   // ── Settings ──
   userSettings:        [["standardSidebarView"],  "standardSidebarView", '[class*="userSettings_"]'],
+  standardSidebarView: [["standardSidebarView"],  "standardSidebarView", '[class*="standardSidebarView_"]'],
+  settingsContainer:   [["settingsContainer"],    "settingsContainer",   '[class*="settingsContainer_"]'],
+  searchBar:           [["searchBar"],            "searchBar",           '[class*="searchBar_"]'],
+  privateChannelsHeaderContainer: [["privateChannelsHeaderContainer"], "privateChannelsHeaderContainer", '[class*="privateChannelsHeaderContainer_"]'],
 
   // ── Messages (extended) ──
-  messagesWrapper:     [["messagesWrapper"],       "messagesWrapper",     '[class*="messagesWrapper_"]'],
-  scrollerInner:       [["scrollerInner"],         "scrollerInner",       '[class*="scrollerInner_"]'],
-  systemMessage:       [["systemMessage"],         "systemMessage",       '[class*="systemMessage_"]'],
-  headerText:          [["headerText"],            "headerText",          '[class*="headerText_"]'],
+  messageList:         [["messageList"],            "messageList",         '[class*="messageList_"]'],
+  messageContainer:    [["messageContainer"],       "messageContainer",    '[class*="messageContainer_"]'],
+  messageGroupWrapper: [["messageGroupWrapper"],    "messageGroupWrapper", '[class*="messageGroupWrapper_"]'],
+  messages:            [["messages"],               "messages",            '[class*="messages_"]'],
+  messagesWrapper:     [["messagesWrapper"],        "messagesWrapper",     '[class*="messagesWrapper_"]'],
+  scrollerInner:       [["scrollerInner"],          "scrollerInner",       '[class*="scrollerInner_"]'],
+  systemMessage:       [["systemMessage"],          "systemMessage",       '[class*="systemMessage_"]'],
+  headerText:          [["headerText"],             "headerText",          '[class*="headerText_"]'],
 
   // ── Guilds / Dock ──
   guilds:              [["guilds", "wrapper"],      "guilds",             '[class*="guilds_"]'],
@@ -100,7 +125,8 @@ const DEFS = {
   textArea:            [["textArea"],              "textArea",            '[class*="textArea_"]'],
   slateTextArea:       [["slateTextArea"],         "slateTextArea",       '[class*="slateTextArea_"]'],
 
-  // ── Alerts / Badges ──
+  // ── Alerts / Badges / UI ──
+  button:              [["button"],               "button",              '[class*="button_"]'],
   listItem:            [["listItem"],              "listItem",            '[class*="listItem_"]'],
   numberBadge:         [["numberBadge"],           "numberBadge",         '[class*="numberBadge_"]'],
   mentionsBadge:       [["mentionsBadge"],         "mentionsBadge",       '[class*="mentionsBadge_"]'],
@@ -116,16 +142,29 @@ function _resolve() {
 
   for (const [name, [filterKeys, prop, fallback]] of Object.entries(DEFS)) {
     _fb[name] = fallback;
-    const cacheKey = filterKeys.join("|");
 
-    let mod = moduleCache.get(cacheKey);
-    if (mod === undefined) {
+    let mod;
+    if (filterKeys === null) {
+      // Scan mode: getByKeys returns wrong module for this stem.
+      // Use getModule with a property value test instead.
       try {
-        mod = Webpack.getByKeys(...filterKeys) || null;
+        mod = Webpack.getModule(m =>
+          m?.[prop] && typeof m[prop] === "string" && /^\w+_\w{4,}/.test(m[prop])
+        ) || null;
       } catch (_) {
         mod = null;
       }
-      moduleCache.set(cacheKey, mod);
+    } else {
+      const cacheKey = filterKeys.join("|");
+      mod = moduleCache.get(cacheKey);
+      if (mod === undefined) {
+        try {
+          mod = Webpack.getByKeys(...filterKeys) || null;
+        } catch (_) {
+          mod = null;
+        }
+        moduleCache.set(cacheKey, mod);
+      }
     }
 
     const cls = mod?.[prop];

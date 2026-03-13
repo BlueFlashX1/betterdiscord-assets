@@ -791,7 +791,7 @@ module.exports = {
       const messageContent = messageElement.textContent?.trim() || '';
       const author =
         dc.query(messageElement, 'username')?.textContent?.trim() ||
-        messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
+        messageElement.querySelector(dc.sel.author)?.textContent?.trim() ||
         '';
 
       // Extract author ID (user ID) from message element

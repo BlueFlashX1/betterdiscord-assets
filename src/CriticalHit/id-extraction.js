@@ -351,7 +351,7 @@ module.exports = {
       const content = messageElement.textContent?.trim() || '';
       const author =
         dc.query(messageElement, 'username')?.textContent?.trim() ||
-        messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
+        messageElement.querySelector(dc.sel.author)?.textContent?.trim() ||
         '';
       const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
 
@@ -434,7 +434,7 @@ module.exports = {
       }
 
       const authorElement =
-        messageElement.querySelector('[class*="author"]') ||
+        messageElement.querySelector(dc.sel.author) ||
         dc.query(messageElement, 'username') ||
         messageElement.querySelector('[class*="messageAuthor"]');
 

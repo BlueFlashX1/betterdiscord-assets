@@ -19,9 +19,9 @@ module.exports = {
         `div${dc.sel.scrollerInner}`,
         `ol${dc.sel.scrollerInner}`,
         dc.sel.messagesWrapper,
-        '[class*="chat"] > [class*="content"]',
-        '[class*="messages"]',
-        '[class*="messageList"]',
+        `${dc.sel.chat} > ${dc.sel.content}`,
+        dc.sel.messages,
+        dc.sel.messageList,
       ];
 
       for (const sel of selectors) {
@@ -364,7 +364,7 @@ module.exports = {
     // System messages (joins, boosts, pins, etc.) lack author headings and must NOT spawn dungeons.
     const authorElement =
       messageElement.querySelector('span[role="heading"]') ||
-      messageElement.querySelector('[class*="author"]') ||
+      messageElement.querySelector(dc.sel.author) ||
       dc.query(messageElement, "username") ||
       dc.query(messageElement, "headerText");
 

@@ -309,7 +309,7 @@ const methods = {
       "main",
       "#app-mount [role='main']",
       `#app-mount ${require("../shared/discord-classes").sel.chatContent}`,
-      "#app-mount [class*='chat']",
+      `#app-mount ${dc.sel.chat}`,
       `#app-mount ${require("../shared/discord-classes").sel.content}`,
     ];
     for (const selector of selectors) {

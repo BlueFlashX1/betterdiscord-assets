@@ -299,7 +299,7 @@ module.exports = {
       document.querySelector(`main${dc.sel.chatContent}`) ||
       document.querySelector(`section${dc.sel.chatContent}[role="main"]`) ||
       document.querySelector(`div${dc.sel.chatContent}:not([role="complementary"])`) ||
-      document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
+      document.querySelector(`div${dc.sel.chat}:not(${dc.sel.chatLayerWrapper})`) ||
       document.querySelector('div[class*="chat-"]:not([class*="chatLayerWrapper"])');
   
     if (el) {
@@ -323,7 +323,7 @@ module.exports = {
     // Safety: don't inject inside dialogs/modals (Forward To, etc.)
     if (
       messageInputArea.closest('[role="dialog"]') ||
-      messageInputArea.closest('[class*="layerContainer_"]')
+      messageInputArea.closest(dc.sel.layerContainer)
     ) {
       return null;
     }
@@ -353,7 +353,7 @@ module.exports = {
     const el =
       document.querySelector(dc.sel.messagesWrapper) ||
       document.querySelector(dc.sel.scrollerInner) ||
-      document.querySelector('[class*="messageList"]') ||
+      document.querySelector(dc.sel.messageList) ||
       document.querySelector(dc.sel.scroller);
     this._messageContainerEl = el || null;
     return this._messageContainerEl;
@@ -440,7 +440,7 @@ module.exports = {
   
       // Method 2: Fallback to React fiber traversal (if webpack unavailable)
       const userElement =
-        document.querySelector(dc.sel.avatar) || document.querySelector('[class*="user"]');
+        document.querySelector(dc.sel.avatar) || document.querySelector(dc.sel.user);
       if (userElement) {
         const reactKey = this.getReactFiberKey(userElement);
         if (reactKey) {
@@ -583,7 +583,7 @@ module.exports = {
       // PRIMARY METHOD 2: Check for explicit "You" indicator (RELIABLE)
       const usernameElement =
         messageElement.querySelector(dc.sel.username) ||
-        messageElement.querySelector('[class*="author"]') ||
+        messageElement.querySelector(dc.sel.author) ||
         messageElement.querySelector('[class*="usernameInner"]');
   
       if (usernameElement) {

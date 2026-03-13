@@ -253,7 +253,7 @@ ${childSel} {
     const hasUsernameInParent =
       dc.query(parent, 'username') !== null ||
       dc.query(parent, 'timestamp') !== null ||
-      parent.querySelector('[class*="author"]') !== null;
+      parent.querySelector(dc.sel.author) !== null;
 
     if (hasUsernameInParent) return true;
 

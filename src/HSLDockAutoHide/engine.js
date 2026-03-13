@@ -53,20 +53,20 @@ const DOCK_SELECTOR_STR = DOCK_SELECTORS.join(", ");
 
 const PANEL_SELECTORS = [
   "section[aria-label='User status and settings']",
-  "section[class*='panels_'] > section",
+  `section${dc.sel.panels} > section`,
 ];
 const PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
 
 const COMPOSER_CONTAINER_SELECTORS = [
   `form${dc.sel.form}`,
-  "div[class*='channelBottomBarArea_']",
+  `div${dc.sel.channelBottomBarArea}`,
   `div${dc.sel.channelTextArea}`,
-  "div[class*='scrollableContainer_']",
-  "div[class*='inner_']",
+  `div${dc.sel.scrollableContainer}`,
+  `div${dc.sel.inner}`,
   `div${dc.sel.textArea}`,
-  "div[class*='slateContainer_']",
+  `div${dc.sel.slateContainer}`,
   `div${dc.sel.slateTextArea}`,
-  "div[class*='editor_']",
+  `div${dc.sel.editor}`,
   `div${dc.sel.markup}`,
 ].join(", ");
 

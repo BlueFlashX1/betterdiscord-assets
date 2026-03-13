@@ -640,8 +640,8 @@ export function applyDMGripping(ctx) {
   const dmList = ctx._findElement(DM_LIST_FALLBACKS);
   if (!dmList) return;
 
-  const header = dmList.querySelector('[class*="searchBar_"]') ||
-                 dmList.querySelector('[class*="privateChannelsHeaderContainer_"]') ||
+  const header = dmList.querySelector(dc.sel.searchBar) ||
+                 dmList.querySelector(dc.sel.privateChannelsHeaderContainer) ||
                  dmList.querySelector("h2");
   const insertAfterEl = header?.closest(dc.sel.listItem) || header?.parentElement || null;
 
@@ -989,7 +989,7 @@ export function setupSettingsGuard(ctx) {
 }
 
 export function isSettingsModalOpen() {
-  return !!document.querySelector('[class*="standardSidebarView_"]');
+  return !!document.querySelector(dc.sel.standardSidebarView);
 }
 
 export function syncSettingsGuardState(ctx, forceOpen) {

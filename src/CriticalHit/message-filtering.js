@@ -26,7 +26,7 @@ module.exports = {
     if (
       dc.query(element, 'username') ||
       dc.query(element, 'timestamp') ||
-      element.querySelector('[class*="author"]')
+      element.querySelector(dc.sel.author)
     ) {
       return true;
     }
@@ -192,7 +192,7 @@ module.exports = {
     // Check author/username area
     const authorElement =
       dc.query(messageElement, 'username') ||
-      messageElement.querySelector('[class*="author"]');
+      messageElement.querySelector(dc.sel.author);
 
     return this._hasBotAuthorClasses(authorElement);
   },
@@ -218,8 +218,8 @@ module.exports = {
    * @returns {boolean} True if has embeds/attachments
    */
   _hasEmbedsOrAttachments(messageElement) {
-    const hasEmbed = messageElement.querySelector('[class*="embed"]') !== null;
-    const hasAttachment = messageElement.querySelector('[class*="attachment"]') !== null;
+    const hasEmbed = messageElement.querySelector(dc.sel.embed) !== null;
+    const hasAttachment = messageElement.querySelector(dc.sel.attachment) !== null;
     return hasEmbed || hasAttachment;
   },
 

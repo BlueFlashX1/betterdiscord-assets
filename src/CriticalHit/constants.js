@@ -52,12 +52,12 @@ const HEADER_CLASS_PATTERNS = [
   'topSection', 'messageHeader', 'messageGroup', 'messageGroupWrapper',
 ];
 const HEADER_SELECTORS = [
-  '[class*="header"]', dc.sel.username, dc.sel.timestamp, '[class*="author"]',
-  '[class*="topSection"]', '[class*="messageHeader"]', '[class*="messageGroup"]', '[class*="messageGroupWrapper"]',
+  '[class*="header"]', dc.sel.username, dc.sel.timestamp, dc.sel.author,
+  '[class*="topSection"]', '[class*="messageHeader"]', '[class*="messageGroup"]', dc.sel.messageGroupWrapper,
 ];
 
-const MESSAGE_CONTENT_SELECTORS = [dc.sel.messageContent, dc.sel.markup, '[class*="textContainer"]'];
-const CONTENT_SELECTORS = [dc.sel.messageContent, dc.sel.markup, '[class*="textContainer"]'];
+const MESSAGE_CONTENT_SELECTORS = [dc.sel.messageContent, dc.sel.markup, dc.sel.textContainer];
+const CONTENT_SELECTORS = [dc.sel.messageContent, dc.sel.markup, dc.sel.textContainer];
 const TEXT_ELEMENT_SELECTORS = ['span', 'div', 'p'];
 const MESSAGE_SELECTORS = [dc.sel.message, '[data-list-item-id]', '[data-message-id]'];
 

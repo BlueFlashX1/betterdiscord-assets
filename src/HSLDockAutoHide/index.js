@@ -22,7 +22,7 @@ const STYLE_ID_AUTOHIDE  = "HSLDockAutoHide-autohide";
 
 const PANEL_SELECTORS = [
   "section[aria-label='User status and settings']",
-  "section[class*='panels_'] > section",  // panels_ has no DEFS entry — keep wildcard
+  `section${dc.sel.panels} > section`,  // panels_ has no DEFS entry — keep wildcard
 ];
 const PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
 

@@ -351,8 +351,8 @@ module.exports = {
     const authorId = this.getAuthorId(messageElement);
     const authorName =
       messageElement.querySelector?.('[id^="message-username-"]')?.textContent?.trim() ||
-      messageElement.querySelector?.('[class*="username"]')?.textContent?.trim() ||
-      messageElement.querySelector?.('[class*="author"]')?.textContent?.trim() ||
+      messageElement.querySelector?.(dc.sel.username)?.textContent?.trim() ||
+      messageElement.querySelector?.(dc.sel.author)?.textContent?.trim() ||
       null;
     const contentText = content?.textContent?.trim();
     if (!contentText) return false;
@@ -538,7 +538,7 @@ module.exports = {
         const messageContent = messageElement.textContent?.trim() || '';
         const author =
           dc.query(messageElement, 'username')?.textContent?.trim() ||
-          messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
+          messageElement.querySelector(dc.sel.author)?.textContent?.trim() ||
           '';
         const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
         const contentHash = this.calculateContentHash(author, messageContent, timestamp);

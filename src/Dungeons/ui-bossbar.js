@@ -351,7 +351,7 @@ module.exports = {
     if (!header) {
       header =
         document.querySelector(`${dc.sel.title}${dc.sel.container}`) ||
-        document.querySelector('[class*="channelHeader"]');
+        document.querySelector(dc.sel.channelHeader);
     }
 
     // Cache result
@@ -383,8 +383,8 @@ module.exports = {
     // Strategy 2: Find by structure - look for message list container
     if (!container) {
       const messageList =
-        document.querySelector('[class*="messageList"]') ||
-        document.querySelector('[class*="messages"]');
+        document.querySelector(dc.sel.messageList) ||
+        document.querySelector(dc.sel.messages);
       if (messageList) {
         container = messageList.closest(dc.sel.container) || messageList.parentElement;
       }
@@ -394,7 +394,7 @@ module.exports = {
     if (!container) {
       container =
         document.querySelector('[class*="channel"] [class*="content"]') ||
-        document.querySelector('[class*="chat"] [class*="content"]');
+        document.querySelector(`${dc.sel.chat} ${dc.sel.content}`);
     }
 
     // Cache result
@@ -511,7 +511,7 @@ module.exports = {
     if (!channelHeader) return;
 
     // Look for comment buttons/elements using multiple strategies
-    const allButtons = channelHeader.querySelectorAll('button[class*="button"]');
+    const allButtons = channelHeader.querySelectorAll(`button${dc.sel.button}`);
     const commentElements = [];
 
     allButtons.forEach((button) => {
@@ -636,7 +636,7 @@ module.exports = {
     const value = Boolean(
       document.querySelector("nav[aria-label*='Settings' i]") ||
         document.querySelector(dc.sel.userSettings) ||
-        document.querySelector("[class*='settingsContainer']")
+        document.querySelector(dc.sel.settingsContainer)
     );
     this._settingsLayerOpenCache = { value, ts: now };
     return value;

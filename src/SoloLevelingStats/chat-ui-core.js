@@ -352,7 +352,7 @@ module.exports = {
           document.querySelector(`section${cc}`) ||
           document.querySelector('main[class*="chatContent-"]') ||
           document.querySelector(`div${dc.sel.messagesWrapper}`) ||
-          document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
+          document.querySelector(`div${dc.sel.chat}:not(${dc.sel.chatLayerWrapper})`) ||
           null;
   
         // IMPORTANT: Never observe document.body; Discord mutates it constantly and can peg CPU.

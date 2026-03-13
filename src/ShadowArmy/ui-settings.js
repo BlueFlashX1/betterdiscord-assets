@@ -44,7 +44,7 @@ module.exports = {
 
       try {
         const userElement =
-          document.querySelector(dc.sel.avatar) || document.querySelector('[class*="user"]');
+          document.querySelector(dc.sel.avatar) || document.querySelector(dc.sel.user);
         if (userElement) {
           const reactKey = Object.keys(userElement).find(
             (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')

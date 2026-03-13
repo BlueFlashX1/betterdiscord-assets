@@ -76,7 +76,7 @@ export function buildCSS(ctx) {
     : SEARCH_FALLBACKS.join(", ");
   const chatSel = m.guilds?.chatContent
     ? `.${m.guilds.chatContent}`
-    : '[class*="chatContent_"]';
+    : dc.sel.chatContent;
 
   // Build push selectors with body class qualifier
   // Use SIDEBAR_CSS_SAFE to avoid matching the settings modal's nav sidebar

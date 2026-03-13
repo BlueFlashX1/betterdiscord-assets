@@ -94,7 +94,7 @@ module.exports = {
       `main${cc}`,
       `section${cc}[role="main"]`,
       `div${cc}:not([role="complementary"])`,
-      'div[class*="chat_"]:not([class*="chatLayerWrapper"])',
+      `div${dc.sel.chat}:not(${dc.sel.chatLayerWrapper})`,
     ];
     for (const selector of selectors) {
       const container = document.querySelector(selector);

@@ -40,8 +40,8 @@ module.exports = {
       dc.sel.messagesWrapper,
       'ol[role="list"][aria-label^="Messages in"]',
       '[id^="chat-messages-"]',
-      '[class*="messageList"]',
-      '[class*="messageContainer"]',
+      dc.sel.messageList,
+      dc.sel.messageContainer,
       dc.sel.scrollerInner,
       dc.sel.scroller,
     ];
