@@ -1,3 +1,5 @@
+const C = require('./constants');
+
 module.exports = {
   async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, shadowBudget = 250) {
     try {
@@ -145,29 +147,26 @@ module.exports = {
           }
         }
 
-        // PERIODIC RESURRECTION CHECK: Attempt to resurrect shadows at 0 HP if mana is available
-        // Shadows stay in dungeon at 0 HP until mana regenerates or dungeon ends
-        // Shadows are stored in DB and persist - they only leave dungeon when it completes/ends
-        // PERIODIC RESURRECTION CHECK: Capped at 5 per tick to prevent sequential-await stall.
+        // RESURRECTION: Resurrect ALL dead shadows each tick (no budget cap).
+        // With rank-scaled HP buff, shadow deaths are manageable — no longer thousands per tick.
+        // attemptAutoResurrection is essentially synchronous (mana check + deduct), so no I/O stall.
+        // Loop breaks early when mana runs out (budgetAvailable < manaCost check inside).
         // PERFORMANCE: Skip resurrection checks when window is hidden
         if (isWindowVisible) {
           if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
           const nowResurrection = Date.now();
-          let resurrectionBudget = 5; // Max resurrections per tick — prevents 1000+ sequential awaits
 
           for (const shadow of assignedShadows) {
-            if (resurrectionBudget <= 0) break;
             const shadowId = this.getShadowIdValue(shadow);
             if (!shadowId) continue;
             const hpData = shadowHP.get(shadowId);
             if (!hpData || hpData.hp > 0) continue;
 
-            // Skip if resurrection was already attempted this tick (within 2s window)
+            // Skip if resurrection was already attempted recently (within 2s window)
             const lastAttempt = dungeon._lastResurrectionAttempt[shadowId] || 0;
             if (nowResurrection - lastAttempt < 2000) continue;
 
             dungeon._lastResurrectionAttempt[shadowId] = nowResurrection;
-            resurrectionBudget--;
             const resurrected = await this.attemptAutoResurrection(shadow, channelKey);
             if (resurrected) {
               if (!hpData.maxHp || hpData.maxHp <= 0) {
@@ -179,6 +178,9 @@ module.exports = {
               deadShadows.delete(shadowId);
               if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
               delete dungeon._lastResurrectionAttempt[shadowId];
+            } else {
+              // Mana ran out — stop trying, remaining dead shadows wait for regen
+              break;
             }
           }
         }
@@ -192,11 +194,14 @@ module.exports = {
           perception: dungeon.boss.perception,
         };
 
-        // PERFORMANCE: Limit mobs processed based on window visibility
-        // Reuse isWindowVisible from function start
+        // Scale mob visibility with dungeon capacity — shadows must SEE mobs to kill them.
+        // Old: hard cap at 400 mobs meant 50k-mob SSS dungeons were unkillable.
+        // New: scale with dungeon capacity, capped at 5000 visible to keep iteration bounded.
+        const dungeonMobCap = Number(dungeon.mobs?.mobCapacity) || 200;
+        const scaledMobCap = Math.max(200, Math.min(5000, Math.floor(dungeonMobCap * 0.1)));
         const maxMobsToProcess = isWindowVisible
-          ? Math.min(400, Math.max(120, Math.floor(shadowBudget * 1.6)))
-          : 80; // Adaptive cap keeps combat fluid while reducing CPU spikes under heavy load
+          ? Math.max(120, scaledMobCap)
+          : Math.max(80, Math.floor(scaledMobCap * 0.2));
         const aliveMobs = [];
         for (const m of dungeon.mobs.activeMobs) {
           if (aliveMobs.length >= maxMobsToProcess) break;
@@ -292,7 +297,9 @@ module.exports = {
             : 1;
         const powerScale =
           totalPowerAll && sampledPower > 0 ? totalPowerAll / sampledPower : countScale;
-        const scaleFactor = this.clampNumber(powerScale, 0.25, 25);
+        // Scale factor cap raised — 25 was silently discarding 43%+ of army damage at 11k shadows.
+        // New cap of 200 handles armies up to ~50k with 250-sample budget.
+        const scaleFactor = this.clampNumber(powerScale, 0.25, 200);
 
         // TRACE: Log combat state every 10th tick
         if (this._combatTickCount % 10 === 0) {
@@ -314,6 +321,8 @@ module.exports = {
             : 1;
         const roleCombatContext = this.getRoleCombatTickContext(channelKey);
         const rolePressure = this.buildRolePressureBucket();
+        // HOISTED: Domain buff applies to ALL shadow damage (boss + mob), not per-shadow
+        const domainMultiplier = this._getDomainShadowMultiplier(dungeon);
 
         // HOISTED: Rank-stratified mob targets — one representative per rank for accurate damage calc.
         // Instead of averaging ALL mobs into one fake entity (inaccurate when rank-E and rank-S mix),
@@ -499,7 +508,12 @@ module.exports = {
               roleCombatContext,
             });
             const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier));
-            totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier);
+            // Domain buff applied inline (same as mob path) for consistency
+            totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier * domainMultiplier);
+            // Shadow vs boss damage reduction — shadows deal reduced damage to bosses
+            // Mirrors the boss→shadow 0.6x reduction (lore: bosses are tougher than mobs)
+            const shadowBossReduction = C.SHADOW_VS_BOSS_DAMAGE_MULT || 0.35;
+            totalBossDamage = Math.max(1, Math.floor(totalBossDamage * shadowBossReduction));
             totalBossDamage > 0 && analytics.shadowsAttackedBoss++;
           }
 
@@ -531,7 +545,8 @@ module.exports = {
                 roleCombatContext,
               });
               const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier));
-              const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier);
+              // Domain buff applied here so it flows into the mob damage spread (not just analytics)
+              const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier * domainMultiplier);
               if (unscaledDamage <= 0) continue;
 
               const totalScaledDamage = Math.floor(unscaledDamage * scaleFactor);
@@ -542,8 +557,10 @@ module.exports = {
               // Initialize round-robin pointer on first use (persists across shadows within this tick)
               if (rankGroup._rrIdx == null) rankGroup._rrIdx = 0;
 
-              // Hard cap: don't iterate more than (scaleFactor + 5) mobs OR the group size, whichever is smaller
-              const maxIter = Math.min(groupLen, Math.ceil(scaleFactor) + 5);
+              // Spread damage across enough mobs to be realistic — scale with both scaleFactor and group size.
+              // Old: scaleFactor+5 = 30 at SSS. With 5000 visible mobs, damage concentrated on 30 = most survive.
+              // New: up to 10% of group or scaleFactor×2, whichever is larger.
+              const maxIter = Math.min(groupLen, Math.max(Math.ceil(scaleFactor) * 2, Math.floor(groupLen * 0.1), 30));
               let iter = 0;
               let fullLoopWithoutHit = false;
 
@@ -603,14 +620,6 @@ module.exports = {
             bossAlive: bossAliveNow,
             now,
           });
-
-          // Domain buff: multiply shadow damage while active
-          if (totalBossDamage > 0) {
-            const domainMultiplier = this._getDomainShadowMultiplier(dungeon);
-            if (domainMultiplier > 1) {
-              totalBossDamage = Math.floor(totalBossDamage * domainMultiplier);
-            }
-          }
 
           // AGGREGATE boss damage (apply once after loop instead of per-shadow)
           if (totalBossDamage > 0) {

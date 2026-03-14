@@ -16,7 +16,7 @@ module.exports = {
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
-      mobMaxActiveCap: 2000, // Hard limit on simultaneously active mobs per dungeon
+      mobMaxActiveCap: Infinity, // No artificial cap — dungeon mob capacity (MOB_COUNT_BY_RANK) is the limit
       mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
       mobWaveVariancePercent: 0.2, // ±20% organic wave variance
       mobTierNormalShare: 0.7, // Spawn mix: normal mobs
@@ -499,17 +499,10 @@ module.exports = {
     // Use active-vs-cap fill ratio (not active-vs-targetCount) so large dungeons
     // don't stay permanently in rapid mode while capped by runtime mob capacity.
     const mobCount = dungeonState?.mobs?.activeMobs?.length || 0;
-    const globalCapRaw = Number(this.settings?.mobMaxActiveCap);
-    const globalCap =
-      Number.isFinite(globalCapRaw) && globalCapRaw > 0
-        ? globalCapRaw
-        : this.defaultSettings.mobMaxActiveCap;
     const dungeonCapRaw = Number(dungeonState?.mobs?.mobCapacity);
-    const effectiveCap =
-      Number.isFinite(dungeonCapRaw) && dungeonCapRaw > 0
-        ? Math.min(dungeonCapRaw, globalCap)
-        : globalCap;
-    const mobCap = this.clampNumber(Math.floor(effectiveCap), 50, 2000);
+    const mobCap = Number.isFinite(dungeonCapRaw) && dungeonCapRaw > 0
+      ? Math.max(50, Math.floor(dungeonCapRaw))
+      : 200;
     const fillRatio = mobCap > 0 ? this.clampNumber(mobCount / mobCap, 0, 1) : 1;
 
     let baseInterval;

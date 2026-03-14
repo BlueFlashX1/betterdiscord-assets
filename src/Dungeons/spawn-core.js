@@ -1,3 +1,5 @@
+const C = require('./constants');
+
 module.exports = {
   getChannelInfoFromLocation() {
     try {
@@ -298,13 +300,14 @@ module.exports = {
     const bossVitality = bossBaseStats.vitality;
     const bossPerception = bossBaseStats.perception;
 
-    // Boss HP: static lore HP (base + vitality + rank bonus) times rank multiplier.
-    // No runtime scaling from shadow counts.
+    // Boss HP: static lore HP (base + vitality + rank bonus) times rank multiplier,
+    // then scaled by army multiplier to survive sustained shadow army DPS.
     const rankBonus = this._bossHPBonusTable?.[rankIndex] || 0;
     const staticBossHpMultiplier = this.getStaticBossHpMultiplier(rankIndex);
+    const armyMultiplier = C.BOSS_HP_ARMY_MULTIPLIER || 8;
     const finalBossHP = Math.max(
       1,
-      Math.floor((100 + bossVitality * 10 + rankBonus) * staticBossHpMultiplier)
+      Math.floor((100 + bossVitality * 10 + rankBonus) * staticBossHpMultiplier * armyMultiplier)
     );
 
     // BOSS MAGIC BEAST TYPE (biome-appropriate)

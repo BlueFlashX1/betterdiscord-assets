@@ -32,19 +32,7 @@ module.exports = {
     if (channelInfo) {
       const currentChannelKey = `${channelInfo.guildId}_${channelInfo.channelId}`;
 
-      // If user is in a different channel, verify the active dungeon still exists
-      if (currentChannelKey !== channelKey) {
-        // User is in different channel - verify active dungeon still exists
-        if (!dungeon) {
-          // Active dungeon doesn't exist - clear status
-          this.debugLog(
-            `Active dungeon ${channelKey} not found in active dungeons. Clearing active status.`
-          );
-          this.settings.userActiveDungeon = null;
-          this.saveSettings();
-          return false;
-        }
-      }
+      // Note: no need to re-check !dungeon here — line 11 already exits if dungeon is falsy.
     }
 
     return true; // Status is valid
@@ -465,9 +453,14 @@ module.exports = {
       );
     }
 
-    // Update HP bar after modal closes so header re-render isn't gated by transient overlay state.
-    this.queueHPBarUpdate(channelKey);
-    this._setTrackedTimeout(() => this.queueHPBarUpdate(channelKey), 34);
+    // Force-invalidate boss bar cache so the next render triggers a STRUCTURAL rebuild
+    // (not fast-path) and renders the shadow info section with the correct allocation count.
+    // Without this, a stale cache entry with dep:false → dep:true might be skipped if an
+    // intermediate render already cached dep:true with 0 shadows during async allocation.
+    this._bossBarCache?.delete?.(channelKey);
+    // Update HP bar immediately (bypass throttle) — shadow count must reflect deploy instantly.
+    this.updateBossHPBar(channelKey);
+    this._setTrackedTimeout(() => this.updateBossHPBar(channelKey), 34);
   },
 
   async recallShadows(channelKey) {
@@ -600,7 +593,7 @@ module.exports = {
     let isCritical = forceCritical || Boolean(breakdown.wasCrit);
 
     if (isCritical && critDamageBonus > 0) {
-      const critMult = forceCritical ? 2.0 : (breakdown.critMultiplier || 1);
+      const critMult = forceCritical ? 2.5 : (breakdown.critMultiplier || 1);
       damage = this.applyEnhancedCritMultiplier(damage, critMult, critDamageBonus);
     }
 
@@ -723,7 +716,14 @@ module.exports = {
 
     const def = castResult.def || snapshot.def;
     const combatEffect = def.combatEffect || 'damage';
-    const passiveLevel = Math.max(1, this.getSkillTreeInstance?.()?.getSkillLevel?.(def.unlock?.passiveSkill) || 1);
+    // Multi-skill unlock: use max level among required passives for scaling
+    let passiveLevel = 1;
+    const st = this.getSkillTreeInstance?.();
+    if (Array.isArray(def.unlock?.passiveSkills) && st) {
+      passiveLevel = Math.max(1, ...def.unlock.passiveSkills.map((sid) => st.getSkillLevel?.(sid) || 0));
+    } else {
+      passiveLevel = Math.max(1, st?.getSkillLevel?.(def.unlock?.passiveSkill) || 1);
+    }
 
     // ── Boss debuff resistance ────────────────────────────────────────
     // Two competing forces:
@@ -785,6 +785,40 @@ module.exports = {
         disableAttacksDurationMs: bossTargetable ? bossDuration : mobDuration,
       };
 
+      // Ruler's Authority inflicts armorBreak — telekinetic crush shatters defenses
+      if (def.statusEffect?.name && Math.random() < Number(def.statusEffect.chance ?? 1.0)) {
+        const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+        const userStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+        const srcPower = this._computeSourcePower?.(userRank, userStats);
+        if (bossTargetable) {
+          this._applyCombatStatusToEntity?.({
+            channelKey, targetType: 'boss', targetId: 'boss',
+            effectName: def.statusEffect.name,
+            stackDelta: Number(def.statusEffect.stacks || 1),
+            now: Date.now(), sourcePower: srcPower,
+          });
+        }
+        // Apply to disabled mobs too
+        const rawMobs = dungeon.mobs?.activeMobs || [];
+        const aliveMobCount = rawMobs.filter(m => m && m.hp > 0).length;
+        const disableCount = Math.max(1, Math.floor(aliveMobCount * mobPercent));
+        let applied = 0;
+        for (let i = 0; i < rawMobs.length && applied < disableCount; i++) {
+          const mob = rawMobs[i];
+          if (!mob || mob.hp <= 0) continue;
+          const mobId = this.getEnemyKey(mob, 'mob');
+          if (mobId) {
+            this._applyCombatStatusToEntity?.({
+              channelKey, targetType: 'mob', targetId: mobId,
+              effectName: def.statusEffect.name,
+              stackDelta: Number(def.statusEffect.stacks || 1),
+              now: Date.now(), sourcePower: srcPower,
+            });
+            applied++;
+          }
+        }
+      }
+
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
       const mobPct = Math.round(mobPercent * 100);
@@ -811,6 +845,7 @@ module.exports = {
       dungeon.activeBuffs.domain = {
         expiresAt: Date.now() + duration,
         statMultiplier: multiplier,
+        statusImmunity: Boolean(sb.statusImmunity), // Shadows immune to status effects in domain
       };
 
       this.syncManaFromStats?.();
@@ -908,6 +943,49 @@ module.exports = {
       return true;
     }
 
+    // ── DOT AOE: Dagger Rush ─────────────────────────────────────────
+    if (combatEffect === 'dot_aoe' && def.dot) {
+      const dt = def.dot;
+
+      // Ruler's Authority level scales damage
+      const rulersLevel = Math.max(0, this.getSkillTreeInstance?.()?.getSkillLevel?.('rulers_authority') || 0);
+      const rulersBonus = rulersLevel * (dt.rulersAuthorityBonusPerLevel || 0.12);
+
+      const baseDuration = (dt.durationMs || 12000) + (dt.durationPerLevel || 0) * (passiveLevel - 1);
+      const baseDmgMult = (dt.damageMultiplier || 0.65) + (dt.damagePerLevel || 0) * (passiveLevel - 1);
+      const dmgMultiplier = baseDmgMult * (1 + rulersBonus);
+      const maxTargets = Math.min(500, (dt.maxMobTargets || 150) + (dt.maxMobTargetsPerLevel || 0) * (passiveLevel - 1));
+      const tickInterval = dt.tickIntervalMs || 2000;
+
+      // Store DOT state on the dungeon
+      if (!dungeon.activeDots) dungeon.activeDots = {};
+      dungeon.activeDots.dagger_rush = {
+        expiresAt: Date.now() + baseDuration,
+        nextTickAt: Date.now() + tickInterval,
+        tickIntervalMs: tickInterval,
+        damageMultiplier: dmgMultiplier,
+        maxMobTargets: maxTargets,
+        forceCritical: false,
+        sourceSkillId: 'dagger_rush',
+        rulersLevel,
+        hasDaggerThrowBonus: true,
+        canCrit: true,
+        statusEffect: def.statusEffect || null, // Bleed per tick from blade storm
+      };
+
+      this.syncManaFromStats?.();
+      this.queueHPBarUpdate(channelKey);
+      const durationSec = (baseDuration / 1000).toFixed(0);
+      const dmgPct = Math.round(dmgMultiplier * 100);
+      const rulersBonusPct = Math.round(rulersBonus * 100);
+      const rulersSuffix = rulersLevel > 0 ? ` (+${rulersBonusPct}% from Ruler's Authority Lv${rulersLevel})` : '';
+      this.showToast(
+        `${def.name}: Blade storm active! ${dmgPct}% damage to ${maxTargets} mobs every ${tickInterval / 1000}s for ${durationSec}s.${rulersSuffix}`,
+        'success'
+      );
+      return true;
+    }
+
     // ── Speed Boost (Sprint): attack cooldown reduction ─────────────
     if (combatEffect === 'speed_boost' && def.speedBoost) {
       const sb = def.speedBoost;
@@ -952,6 +1030,25 @@ module.exports = {
       }
 
       await this.applyDamageToBoss(channelKey, attackResult.damage, 'user', null, attackResult.isCritical);
+
+      // Apply skill status effect to boss (bleed from Mutilation, armorBreak from Dagger Throw)
+      if (def.statusEffect?.name) {
+        const seChance = Number(def.statusEffect.chance ?? 1.0);
+        if (Math.random() < seChance) {
+          const userStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+          const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+          this._applyCombatStatusToEntity?.({
+            channelKey,
+            targetType: 'boss',
+            targetId: 'boss',
+            effectName: def.statusEffect.name,
+            stackDelta: Number(def.statusEffect.stacks || 1),
+            now: Date.now(),
+            sourcePower: this._computeSourcePower?.(userRank, userStats),
+          });
+        }
+      }
+
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
 
@@ -964,7 +1061,26 @@ module.exports = {
     }
 
     // ── Mob targeting: skill hits live mobs when boss isn't targetable ──
-    let aliveMobs = (dungeon.mobs?.activeMobs || []).filter((m) => m && m.hp > 0);
+    // PERF: Don't .filter() the entire array — collect alive mobs up to the targeting cap.
+    const isPiercing = def.targeting === 'piercing';
+    const isSingleTarget = def.targeting === 'single';
+
+    // Piercing cap: scales with agility + level. Base 50, +2 per agility, +3 per level, max 500.
+    // Lore: dagger pierces through a LINE of enemies, not the whole battlefield.
+    const pStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+    const playerLevel = this.soloLevelingStats?.settings?.level || 1;
+    const piercingCap = isPiercing
+      ? Math.min(500, Math.max(50, 50 + Math.floor((pStats.agility || 0) * 2) + Math.floor(playerLevel * 3)))
+      : Infinity;
+    const targetCap = isSingleTarget ? 1 : piercingCap;
+
+    let aliveMobs = [];
+    const rawActiveMobs = dungeon.mobs?.activeMobs || [];
+    for (let i = 0; i < rawActiveMobs.length && aliveMobs.length < targetCap; i++) {
+      const m = rawActiveMobs[i];
+      if (m && m.hp > 0) aliveMobs.push(m);
+    }
+
     if (!aliveMobs.length) {
       this.syncManaFromStats?.();
       this.showToast('No enemies to target.', 'info');
@@ -973,7 +1089,6 @@ module.exports = {
     }
 
     // Single-target skills (e.g. Mutilation) focus the strongest mob
-    const isSingleTarget = def.targeting === 'single';
     if (isSingleTarget) {
       aliveMobs.sort((a, b) => (b.maxHp || 0) - (a.maxHp || 0));
       aliveMobs = [aliveMobs[0]];
@@ -1011,7 +1126,7 @@ module.exports = {
 
       if (isCritical) {
         const critDmgBonus = this.getUserCritDamageBonus?.() || 0;
-        const critMult = forceCrit ? 2.0 : (breakdown.critMultiplier || 1);
+        const critMult = forceCrit ? 2.5 : (breakdown.critMultiplier || 1);
         damage = this.applyEnhancedCritMultiplier(damage, critMult, critDmgBonus);
         anyCrit = true;
       }
@@ -1041,6 +1156,24 @@ module.exports = {
       mob.hp = Math.max(0, mob.hp - adjDamage);
       totalDamage += adjDamage;
       mobsHit++;
+
+      // Apply skill status effect to mob (bleed from Mutilation, armorBreak from Dagger Throw)
+      if (mob.hp > 0 && def.statusEffect?.name) {
+        const seChance = Number(def.statusEffect.chance ?? 1.0);
+        if (Math.random() < seChance) {
+          const userStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+          const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+          this._applyCombatStatusToEntity?.({
+            channelKey,
+            targetType: 'mob',
+            targetId: mobId,
+            effectName: def.statusEffect.name,
+            stackDelta: Number(def.statusEffect.stacks || 1),
+            now: Date.now(),
+            sourcePower: this._computeSourcePower?.(userRank, userStats),
+          });
+        }
+      }
 
       if (mob.hp <= 0) {
         this._onMobKilled(channelKey, dungeon, mob.rank);
@@ -1084,6 +1217,188 @@ module.exports = {
       return null;
     }
     return buff;
+  },
+
+  _processDotTicks(channelKey, dungeon, now) {
+    const dots = dungeon?.activeDots;
+    if (!dots) return;
+
+    const keysToRemove = [];
+    for (const [dotKey, dot] of Object.entries(dots)) {
+      // Expired?
+      if (now >= dot.expiresAt) {
+        keysToRemove.push(dotKey);
+        continue;
+      }
+      // Not due yet?
+      if (now < dot.nextTickAt) continue;
+
+      // Schedule next tick
+      dot.nextTickAt = now + dot.tickIntervalMs;
+
+      // Gather targets
+      const rawActiveMobs = dungeon.mobs?.activeMobs || [];
+      const maxTargets = dot.maxMobTargets || 150;
+      const aliveMobs = [];
+      for (let i = 0; i < rawActiveMobs.length && aliveMobs.length < maxTargets; i++) {
+        const m = rawActiveMobs[i];
+        if (m && m.hp > 0) aliveMobs.push(m);
+      }
+
+      if (aliveMobs.length === 0) continue;
+
+      const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+      const userRankIdx = this.getRankIndexValue(userRank);
+      let totalDamage = 0;
+      let mobsKilled = 0;
+
+      for (const mob of aliveMobs) {
+        const mobRankIdx = this.getRankIndexValue(mob.rank || 'E');
+        const rankAbove = Math.max(0, mobRankIdx - userRankIdx);
+        const rankPenalty = Math.min(0.9, rankAbove * 0.25);
+
+        const mobStats = {
+          strength: mob.strength || 0,
+          agility: mob.agility || 0,
+          intelligence: mob.intelligence || 0,
+          vitality: mob.vitality || 0,
+        };
+
+        const breakdown =
+          typeof this.calculateUserDamageBreakdown === 'function'
+            ? this.calculateUserDamageBreakdown(mobStats, mob.rank)
+            : { damage: this.calculateUserDamage(mobStats, mob.rank), dodged: false, wasCrit: false };
+
+        let damage = Math.max(0, Number(breakdown.damage) || 0);
+
+        // DOT crit chance: natural crit from breakdown or passive skill tree crit roll
+        let dotCrit = Boolean(breakdown.wasCrit);
+        if (!dotCrit && dot.canCrit) {
+          dotCrit = Boolean(this.rollSkillTreeCombatCrit?.());
+        }
+        if (dotCrit) {
+          const critDmgBonus = this.getUserCritDamageBonus?.() || 0;
+          damage = this.applyEnhancedCritMultiplier(damage, breakdown.critMultiplier || 2.5, critDmgBonus);
+        }
+
+        // Apply DOT multiplier
+        damage = Math.max(1, Math.floor(damage * dot.damageMultiplier));
+
+        // Dagger throw passive synergy: DOT from dagger skills benefits from dagger_throw tree investment
+        if (dot.hasDaggerThrowBonus && damage > 0) {
+          const throwBonus = this.getUserDaggerThrowDamageBonus?.() || 0;
+          if (throwBonus > 0) damage = Math.max(1, Math.floor(damage * (1 + throwBonus)));
+        }
+
+        // Domain buff
+        const domainMultiplier = this._getDomainShadowMultiplier?.(dungeon) || 1;
+        if (domainMultiplier > 1) {
+          damage = Math.max(1, Math.floor(damage * domainMultiplier));
+        }
+
+        // Rank penalty
+        if (rankPenalty > 0) {
+          damage = Math.max(1, Math.floor(damage * (1 - rankPenalty)));
+        }
+
+        // Status-adjusted damage
+        const mobId = this.getEnemyKey(mob, 'mob');
+        const adjDamage = this.applyStatusAdjustedIncomingDamage(channelKey, 'mob', mobId, damage, now);
+        mob.hp = Math.max(0, mob.hp - adjDamage);
+        totalDamage += adjDamage;
+
+        // Apply DOT status effect per tick (bleed from Dagger Rush blade storm)
+        if (mob.hp > 0 && dot.statusEffect?.name) {
+          const seChance = Number(dot.statusEffect.chance ?? 1.0);
+          if (Math.random() < seChance) {
+            const dotUserRank = this.soloLevelingStats?.settings?.rank || 'E';
+            const dotUserStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+            this._applyCombatStatusToEntity?.({
+              channelKey,
+              targetType: 'mob',
+              targetId: mobId,
+              effectName: dot.statusEffect.name,
+              stackDelta: Number(dot.statusEffect.stacksPerTick || dot.statusEffect.stacks || 1),
+              now,
+              sourcePower: this._computeSourcePower?.(dotUserRank, dotUserStats),
+            });
+          }
+        }
+
+        if (mob.hp <= 0) {
+          this._onMobKilled(channelKey, dungeon, mob.rank);
+          this._addToCorpsePile(channelKey, mob, false);
+          mobsKilled++;
+        }
+      }
+
+      // Also damage boss if gate unlocked
+      const bossAlive = Number(dungeon?.boss?.hp || 0) > 0;
+      const bossTargetable = bossAlive && Boolean(
+        dungeon.bossGate?.unlockedAt &&
+        Number.isFinite(dungeon.bossGate.unlockedAt) &&
+        dungeon.bossGate.unlockedAt > 0
+      );
+
+      if (bossTargetable) {
+        const bossResult = this._resolveUserBossDamage?.(dungeon, {
+          skillMultiplier: dot.damageMultiplier,
+          passiveDamageBonusKey: dot.hasDaggerThrowBonus ? 'daggerThrowDamageBonus' : null,
+          executeThreshold: 0,
+          executeMultiplier: 1,
+          forceCritical: false,
+        });
+        if (bossResult && bossResult.damage > 0) {
+          // Apply domain buff to boss DOT damage too
+          const domainMultiplier = this._getDomainShadowMultiplier?.(dungeon) || 1;
+          const bossDotDmg = Math.max(1, Math.floor(bossResult.damage * domainMultiplier));
+          this.applyDamageToBoss(channelKey, bossDotDmg, 'user', null, bossResult.isCritical);
+          totalDamage += bossDotDmg;
+
+          // Apply DOT status effect to boss per tick (bleed from Dagger Rush)
+          if (dungeon.boss.hp > 0 && dot.statusEffect?.name) {
+            const seChance = Number(dot.statusEffect.chance ?? 1.0);
+            if (Math.random() < seChance) {
+              const dotUserRank = this.soloLevelingStats?.settings?.rank || 'E';
+              const dotUserStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+              this._applyCombatStatusToEntity?.({
+                channelKey,
+                targetType: 'boss',
+                targetId: 'boss',
+                effectName: dot.statusEffect.name,
+                stackDelta: Number(dot.statusEffect.stacksPerTick || dot.statusEffect.stacks || 1),
+                now,
+                sourcePower: this._computeSourcePower?.(dotUserRank, dotUserStats),
+              });
+            }
+          }
+        }
+      }
+
+      // Clean up dead mobs
+      if (mobsKilled > 0 && dungeon.mobs?.activeMobs) {
+        dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter((m) => m && m.hp > 0);
+      }
+
+      // Debug log
+      if (totalDamage > 0) {
+        this.debugLog(
+          `DOT TICK [${dotKey}]: ${totalDamage.toLocaleString()} dmg to ${aliveMobs.length} mobs` +
+          (mobsKilled > 0 ? ` (${mobsKilled} killed)` : '') +
+          (bossTargetable ? ' + boss' : '') +
+          ` | ${Math.max(0, Math.ceil((dot.expiresAt - now) / 1000))}s remaining`
+        );
+      }
+    }
+
+    // Cleanup expired
+    for (const key of keysToRemove) {
+      delete dots[key];
+      this.debugLog(`DOT expired: ${key}`);
+    }
+    if (Object.keys(dots).length === 0) {
+      delete dungeon.activeDots;
+    }
   },
 
   _getDomainShadowMultiplier(dungeon) {

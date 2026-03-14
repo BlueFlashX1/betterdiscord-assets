@@ -38,6 +38,7 @@ module.exports = {
     this.stopAllMobSpawning();
     if (this.dungeonCleanupInterval) {
       clearInterval(this.dungeonCleanupInterval);
+      this._intervals.delete(this.dungeonCleanupInterval);
       this.dungeonCleanupInterval = null;
     }
   },

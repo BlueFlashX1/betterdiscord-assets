@@ -178,22 +178,24 @@ module.exports = {
             continue;
           }
 
-          // FIX: Early cap check BEFORE calling spawnMobs — prevents wasteful no-op spawn ticks
-          // and misleading "SPAWNING" logs when mobs are already at cap.
-          const _preCheckAlive = dungeon.mobs?.activeMobs?.length || 0;
-          const _preCheckCap = Math.min(
-            Number.isFinite(Number(dungeon.mobs?.mobCapacity)) && Number(dungeon.mobs.mobCapacity) > 0
-              ? Number(dungeon.mobs.mobCapacity) : Infinity,
-            Number.isFinite(Number(this.settings?.mobMaxActiveCap)) && Number(this.settings.mobMaxActiveCap) > 0
-              ? Number(this.settings.mobMaxActiveCap) : this.defaultSettings.mobMaxActiveCap
-          );
+          // Quick alive-count pre-check — if at concurrent cap, short backoff (2.5s) to retry
+          // as shadows kill mobs. No permanent stop — spawning continues until boss dies.
+          const _preCheckCap = this._getMobActiveCap(dungeon);
+          let _preCheckAlive = 0;
+          const _pcCache = this._mobCleanupCache.get(channelKey);
+          if (_pcCache && (now - _pcCache.time < 1000)) {
+            _preCheckAlive = _pcCache.alive || 0;
+          } else {
+            const _pcMobs = dungeon.mobs?.activeMobs;
+            if (_pcMobs) for (let _i = 0; _i < _pcMobs.length; _i++) _pcMobs[_i]?.hp > 0 && _preCheckAlive++;
+          }
           if (_preCheckAlive >= _preCheckCap) {
-            // At cap — back off with a longer delay instead of hot-looping every 2.5s
-            this._mobSpawnNextAt.set(channelKey, now + 10000);
+            // At concurrent cap — short backoff, will retry once shadows kill mobs
+            this._mobSpawnNextAt.set(channelKey, now + 2500);
             continue;
           }
 
-          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${_preCheckAlive}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
+          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${_preCheckAlive}/${_preCheckCap}, total=${dungeon.mobs?.total || 0}`);
           this.spawnMobs(channelKey);
           const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
           this._mobSpawnNextAt.set(channelKey, now + nextDelay);
@@ -507,7 +509,8 @@ module.exports = {
       const statusDue = this.isCombatStatusTickDue(channelKey, now);
 
       // Fast path: no due attacks and no periodic maintenance work.
-      if (!needsDeployGuard && !needsUiGuard && !shadowDue && !bossDue && !mobDue && !statusDue) return;
+      const hasDots = dungeon.activeDots && Object.keys(dungeon.activeDots).length > 0;
+      if (!needsDeployGuard && !needsUiGuard && !shadowDue && !bossDue && !mobDue && !statusDue && !hasDots) return;
 
       // React re-render guard: every 5th tick, verify injected UI is still in DOM
       if (needsUiGuard) {
@@ -537,6 +540,11 @@ module.exports = {
           );
           this.ensureDeployedSpawnPipeline(channelKey, 'stuck_deploy_heal');
         }
+      }
+
+      // ── DOT tick processing (Dagger Rush etc.) ──
+      if (dungeon.activeDots && Object.keys(dungeon.activeDots).length > 0) {
+        this._processDotTicks(channelKey, dungeon, now);
       }
 
       if (statusDue) {

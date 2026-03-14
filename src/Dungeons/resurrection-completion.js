@@ -1,16 +1,20 @@
 module.exports = {
   getResurrectionCost(shadowRank) {
     // Flat mana cost per shadow rank (from precomputed lookup table).
-    // Higher user rank = up to 50% discount. Never free — prevents trivializing mana economy.
+    // Higher user rank = steeper discount. At Monarch+ ranks, resurrection is nearly free.
+    // E=0% → A=25% → S=40% → SS=55% → SSS=65% → NH=75% → Monarch=82% → Monarch+=88% → SM=92%
     const rankIndex = this.getRankIndexValue(shadowRank);
     const flatCost = this._flatResCostTable?.[rankIndex] ?? 10;
 
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
     const userRankIndex = this.getRankIndexValue(userRank);
     const maxRankIndex = (this.settings.dungeonRanks?.length || 12) - 1;
-    const discount = maxRankIndex > 0 ? userRankIndex / maxRankIndex : 0;
+    // Exponential discount curve: ramps slowly at low ranks, aggressively at high ranks
+    // ratio^0.6 × 0.92 → Monarch(10/12)^0.6 × 0.92 = 0.82 (82% off), SM = 0.92 (92% off)
+    const ratio = maxRankIndex > 0 ? userRankIndex / maxRankIndex : 0;
+    const discount = Math.pow(ratio, 0.6) * 0.92;
 
-    return Math.max(1, Math.ceil(flatCost * (1 - discount * 0.5)));
+    return Math.max(1, Math.ceil(flatCost * (1 - discount)));
   },
 
   async attemptAutoResurrection(shadow, channelKey) {

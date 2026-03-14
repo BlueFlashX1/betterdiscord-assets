@@ -252,11 +252,8 @@ module.exports = {
       : this.defaultSettings.mobWaveVariancePercent;
     setIfChanged('mobWaveVariancePercent', mobWaveVariancePercent);
 
-    const mobMaxActiveCapRaw = Number(this.settings?.mobMaxActiveCap);
-    const mobMaxActiveCap = Number.isFinite(mobMaxActiveCapRaw)
-      ? this.clampNumber(Math.floor(mobMaxActiveCapRaw), 50, 2000)
-      : this.defaultSettings.mobMaxActiveCap;
-    setIfChanged('mobMaxActiveCap', mobMaxActiveCap);
+    // mobMaxActiveCap is no longer enforced — dungeon mob capacity from MOB_COUNT_BY_RANK is the cap.
+    // Kept for backward compat but no longer clamped to 2000.
 
     const defaultRankList = Array.isArray(this.defaultSettings?.dungeonRanks)
       ? this.defaultSettings.dungeonRanks

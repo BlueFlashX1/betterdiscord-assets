@@ -161,17 +161,12 @@ module.exports = {
   },
 
   _getMobActiveCap(dungeon) {
-    const globalCapCandidate = Number(this.settings?.mobMaxActiveCap);
-    const globalCap =
-      Number.isFinite(globalCapCandidate) && globalCapCandidate > 0
-        ? globalCapCandidate
-        : this.defaultSettings.mobMaxActiveCap;
+    // No artificial ceiling — dungeon's total mob capacity (from MOB_COUNT_BY_RANK) IS the cap.
+    // E=50, SS=25000, SSS=50000, Shadow Monarch=1000000.
     const dungeonMobCapacity = Number(dungeon?.mobs?.mobCapacity);
-    const effectiveCap =
-      Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
-        ? Math.min(dungeonMobCapacity, globalCap)
-        : globalCap;
-    return this.clampNumber(Math.floor(effectiveCap), 50, 2000);
+    return Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
+      ? Math.max(50, Math.floor(dungeonMobCapacity))
+      : 200; // Fallback for dungeons without capacity data
   },
 
   processMobSpawnQueue(channelKey) {
@@ -229,11 +224,8 @@ module.exports = {
       }
     }
 
+    // Concurrent alive cap — flush up to remaining capacity, re-queue overflow
     const mobCap = this._getMobActiveCap(dungeon);
-
-    // IMPORTANT: Always use a direct live scan for cap enforcement here.
-    // Queue flushes can happen back-to-back inside 500-1000ms, and a fresh-but-stale
-    // cached alive count can cause overfill above cap during those rapid retries.
     let aliveMobs = 0;
     for (let i = 0; i < dungeon.mobs.activeMobs.length; i++) {
       dungeon.mobs.activeMobs[i]?.hp > 0 && aliveMobs++;
@@ -241,10 +233,10 @@ module.exports = {
     this._mobCleanupCache.set(channelKey, { alive: aliveMobs, time: Date.now() });
     const capacityRemaining = Math.max(0, mobCap - aliveMobs);
     if (capacityRemaining <= 0) {
+      // Queue stays — will flush next tick when shadows kill some mobs
       this._mobSpawnQueue.set(channelKey, validQueuedMobs);
       return validQueuedMobs.length;
     }
-
     const mobsToFlush = validQueuedMobs.slice(0, capacityRemaining);
     const queuedOverflow =
       validQueuedMobs.length > mobsToFlush.length ? validQueuedMobs.slice(mobsToFlush.length) : [];
@@ -293,20 +285,12 @@ module.exports = {
     if (!dungeon.mobs || typeof dungeon.mobs !== 'object') dungeon.mobs = {};
     if (!Array.isArray(dungeon.mobs.activeMobs)) dungeon.mobs.activeMobs = [];
 
-    // CONTINUOUS SPAWN: Dynamic rate based on current mob count (prevents infinite growth)
-    // Stop spawning once total spawned mobs reaches targetCount
-    if (dungeon.mobs.targetCount && dungeon.mobs.total >= dungeon.mobs.targetCount) {
-      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — TARGET REACHED (total=${dungeon.mobs.total} >= target=${dungeon.mobs.targetCount}), stopping`);
-      this.stopMobSpawning(channelKey);
-      return;
-    }
+    // NO targetCount stop — mobs spawn continuously until boss dies.
+    // mobCapacity is a CONCURRENT alive limit: as shadows kill mobs, new ones spawn to refill.
     if (dungeon.boss.hp > 0) {
       const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
 
-      // DYNAMIC SPAWN RATE WITH VARIANCE: Self-balancing with randomness
-      // NO HARD CAPS - uses soft scaling that gradually slows down
-      // PERF: Use throttled alive-count cache when fresh (populated by HP bar updater at 500ms cadence).
-      // Falls back to O(n) scan for brand-new dungeons or when cache is stale (>1s).
+      // Count alive mobs (cached when fresh, O(n) scan otherwise)
       let _aliveMobs = 0;
       const _mobCacheEntry = this._mobCleanupCache.get(channelKey);
       if (_mobCacheEntry && (Date.now() - _mobCacheEntry.time < 1000)) {
@@ -317,49 +301,39 @@ module.exports = {
         }
       }
 
-      // ACTIVE MOB CAP: Settings cap is the hard ceiling; per-dungeon capacity can only be lower.
-      const mobCap = this._getMobActiveCap(dungeon);
-      // Verbose spawn stats stripped — use MOB_CAP debugLog for capacity warnings
-      if (_aliveMobs >= mobCap) {
-        // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
+      // Concurrent alive cap from MOB_COUNT_BY_RANK (E=50, Monarch=250k, etc.)
+      const activeMobCap = this._getMobActiveCap(dungeon);
+
+      // If alive mobs are at cap, skip this tick — wait for shadows to kill some
+      if (_aliveMobs >= activeMobCap) {
         if (!this._mobCapWarningShown[channelKey]) {
-          this.debugLog('MOB_CAP', 'Active mobs at cap, skipping spawn', {
-            channelKey,
-            mobCap,
-            dungeonCapacity: dungeon.mobs.mobCapacity,
-            alive: _aliveMobs,
-            rank: dungeon.rank,
-            biome: dungeon.type,
+          this.debugLog('MOB_CAP', 'Alive mobs at concurrent cap, waiting for kills', {
+            channelKey, activeMobCap, alive: _aliveMobs, rank: dungeon.rank,
           });
           this._mobCapWarningShown[channelKey] = true;
-
-          // Reset warning after 30 seconds
           this._setTrackedTimeout(() => {
-            if (this._mobCapWarningShown) {
-              delete this._mobCapWarningShown[channelKey];
-            }
+            if (this._mobCapWarningShown) delete this._mobCapWarningShown[channelKey];
           }, 30000);
         }
         return;
       }
 
-      // Rank/capacity-aware wave sizing:
-      // - Higher dungeon ranks + higher mob caps can spawn larger waves.
-      // - Near-cap active mobs shrink waves to reduce queue/flush spikes.
-      // - Per-tick cap scales with rank: E=50, S=500, Monarch+=2000
+      // Rank/capacity-aware wave sizing
       const { baseSpawnCount, variancePercent } = this.getMobWaveRuntimeConfig();
-      const rankCapacityBase = mobCap * (0.04 + dungeonRankIndex * 0.005);
-      const blendedBase = Number.isFinite(baseSpawnCount) && baseSpawnCount > 0
-        ? baseSpawnCount * 0.35 + rankCapacityBase * 0.65
-        : rankCapacityBase;
-      const deficitRatio = mobCap > 0
-        ? this.clampNumber((mobCap - _aliveMobs) / mobCap, 0, 1)
+      const totalMobCapacity = Math.max(activeMobCap, Number(dungeon.mobs?.mobCapacity) || activeMobCap);
+      const spawnFraction = 0.05 + dungeonRankIndex * 0.005;
+      const rankCapacityBase = Math.floor(totalMobCapacity * spawnFraction);
+      const effectiveBase = Math.max(
+        Number.isFinite(baseSpawnCount) && baseSpawnCount > 0 ? baseSpawnCount : 1,
+        rankCapacityBase
+      );
+      // Deficit-based scaling: spawn faster when more room, slower near cap
+      const deficitRatio = activeMobCap > 0
+        ? this.clampNumber((activeMobCap - _aliveMobs) / activeMobCap, 0, 1)
         : 0;
-      const deficitBoost = 0.6 + deficitRatio * 0.8; // 0.6x near cap, up to 1.4x when empty
-      // Rank-scaled spawn cap: low ranks spawn small waves, high ranks spawn armies
-      // E(50)→3, S(10k)→500, Monarch(250k)→5000, Shadow Monarch(1M)→10000
-      const rankSpawnCap = Math.max(10, Math.min(10000, Math.floor(mobCap * 0.01 + dungeonRankIndex * 200)));
-      const dynamicBaseSpawn = this.clampNumber(Math.floor(blendedBase * deficitBoost), 1, rankSpawnCap);
+      const deficitBoost = 0.8 + deficitRatio * 0.6; // 0.8x near cap → 1.4x when empty
+      const rankSpawnCap = Math.max(10, Math.min(50000, Math.floor(totalMobCapacity * 0.1)));
+      const dynamicBaseSpawn = this.clampNumber(Math.floor(effectiveBase * deficitBoost), 1, rankSpawnCap);
 
       // Apply variance around dynamic target
       const variance = dynamicBaseSpawn * variancePercent;
@@ -369,32 +343,9 @@ module.exports = {
         rankSpawnCap
       );
 
-      // Respect remaining capacity
-      const capacityRemaining = Math.max(0, mobCap - _aliveMobs);
-      const actualSpawnCount =
-        capacityRemaining > 0 ? Math.max(1, Math.min(capacityRemaining, plannedSpawn)) : 0;
-
-      // Verbose planned/capacity log stripped — use MOB_CAP debugLog for capacity warnings
-      if (actualSpawnCount <= 0) {
-        // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
-        if (!this._mobCapWarningShown[channelKey]) {
-          this.debugLog('MOB_CAP', 'No capacity remaining for new spawns', {
-            channelKey,
-            mobCap,
-            alive: _aliveMobs,
-            plannedSpawn,
-          });
-          this._mobCapWarningShown[channelKey] = true;
-
-          // Reset warning after 30 seconds
-          this._setTrackedTimeout(() => {
-            if (this._mobCapWarningShown) {
-              delete this._mobCapWarningShown[channelKey];
-            }
-          }, 30000);
-        }
-        return;
-      }
+      // Clamp to remaining concurrent capacity (don't overshoot alive cap)
+      const capacityRemaining = Math.max(0, activeMobCap - _aliveMobs);
+      const actualSpawnCount = Math.max(1, Math.min(capacityRemaining, plannedSpawn));
 
       const pressureMobFactor = this.getShadowPressureMobFactor(dungeon);
       const pressureBucket = Math.round(pressureMobFactor * 100);
@@ -432,6 +383,7 @@ module.exports = {
         // Generate new mobs and cache them
         // BATCH MOB GENERATION with INDIVIDUAL VARIANCE
         // PERF: avoid Array.from allocation/closure in a hot path.
+        const spawnedAt = Date.now();
         newMobs = [];
         for (let i = 0; i < actualSpawnCount; i++) {
           // Mob rank: dungeon rank ± 1 (can be 1 rank weaker, same, or 1 rank stronger)
@@ -507,7 +459,7 @@ module.exports = {
           );
           newMobs.push({
             // Core mob identity
-            id: `mob_${Date.now()}_${this._mobIdCounter++}`,
+            id: `mob_${spawnedAt}_${this._mobIdCounter++}`,
             rank: mobRank,
 
             // MAGIC BEAST IDENTITY (for shadow extraction)
@@ -551,13 +503,13 @@ module.exports = {
             extractionData: {
               dungeonRank: dungeon.rank,
               dungeonType: dungeon.type,
-              biome: dungeon.biome.name,
+              biome: dungeon.biome?.name || dungeon.type || 'Unknown',
               beastFamilies: dungeon.beastFamilies,
-              spawnedAt: Date.now(),
+              spawnedAt,
             },
 
             // Magic beast description (for display/debugging)
-            description: `${mobRank}-rank ${magicBeastType.name} (${mobTier}) from ${dungeon.biome.name}`,
+            description: `${mobRank}-rank ${magicBeastType.name} (${mobTier}) from ${dungeon.biome?.name || dungeon.type || 'Unknown'}`,
           });
         }
 

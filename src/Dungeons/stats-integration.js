@@ -140,6 +140,8 @@ module.exports = {
     return Math.max(0, Number(bonuses?.daggerThrowDamageBonus || 0));
   },
 
+
+
   rollSkillTreeCombatCrit() {
     const critChance = this.getUserCombatCritChanceBonus();
     return critChance > 0 && Math.random() < critChance;

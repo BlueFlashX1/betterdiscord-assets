@@ -577,6 +577,8 @@ module.exports = {
 
           const afterCount = (this.shadowAllocations.get(channelKey) || []).length;
           this.ensureDeployedSpawnPipeline(channelKey, 'deploy_async_rebalance');
+          // Force structural rebuild so shadow count reflects rebalanced allocation
+          this._bossBarCache?.delete?.(channelKey);
           this.queueHPBarUpdate(channelKey);
 
           this.settings.debug && console.log(
@@ -653,7 +655,7 @@ module.exports = {
     }
   },
 
-  _cleanupDungeonActiveMobs(dungeon, maxSize = 3000, trimTo = 500) {
+  _cleanupDungeonActiveMobs(dungeon) {
     // NUMPY-STYLE IN-PLACE COMPACTION: Swap-remove dead mobs without allocating a new array.
     // Old pattern allocated a full copy every tick (10,000 objects → GC pressure).
     // New pattern: scan forward, swap live mobs to write position, truncate once at end.
@@ -670,9 +672,13 @@ module.exports = {
     }
     mobs.length = writeIdx; // Truncate dead tail in-place (no new array)
 
-    // Emergency trim if still over capacity
+    // Scale emergency trim to dungeon capacity — don't destroy mobs before combat processes them.
+    // E(50)→50, B(1200)→1200, Monarch(250k)→250k — no artificial ceiling.
+    const dungeonCap = this._getMobActiveCap?.(dungeon) || 3000;
+    const maxSize = Math.max(3000, dungeonCap);
     if (mobs.length > maxSize) {
-      mobs.length = trimTo;
+      // Trim to 80% of cap (keep most alive mobs, just prevent runaway growth beyond cap)
+      mobs.length = Math.max(500, Math.floor(maxSize * 0.8));
     }
   },
 

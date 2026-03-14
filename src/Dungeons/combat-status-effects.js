@@ -1,25 +1,14 @@
 const C = require('./constants');
 
 const DEFAULT_STATUS_EFFECTS = C.COMBAT_STATUS_EFFECTS || {
-  poison: {
-    maxStacks: 4,
-    durationMs: 9000,
-    tickMs: 1000,
-    damagePctPerStack: 0.0025,
-    maxDamagePct: 0.018,
-  },
-  armorBreak: {
-    maxStacks: 3,
-    durationMs: 7000,
-    damageAmpPerStack: 0.06,
-    maxDamageAmp: 0.2,
-  },
-  slow: {
-    maxStacks: 3,
-    durationMs: 7000,
-    slowPerStack: 0.08,
-    maxSlow: 0.3,
-  },
+  poison: { maxStacks: 4, durationMs: 9000, tickMs: 1000, damagePctPerStack: 0.0025, maxDamagePct: 0.018 },
+  armorBreak: { maxStacks: 3, durationMs: 7000, damageAmpPerStack: 0.06, maxDamageAmp: 0.2 },
+  slow: { maxStacks: 3, durationMs: 7000, slowPerStack: 0.08, maxSlow: 0.3 },
+  bleed: { maxStacks: 5, durationMs: 8000, tickMs: 1000, damagePctPerStack: 0.003, maxDamagePct: 0.02 },
+  burn: { maxStacks: 3, durationMs: 6000, tickMs: 1000, damagePctPerStack: 0.005, maxDamagePct: 0.022 },
+  frostbite: { maxStacks: 4, durationMs: 10000, slowPerStack: 0.10, maxSlow: 0.40, rootAtMaxStacks: true, rootDurationMs: 3000 },
+  necrotic: { maxStacks: 3, durationMs: 9000, tickMs: 1000, damagePctPerStack: 0.002, maxDamagePct: 0.012, healReductionPerStack: 0.15, maxHealReduction: 0.45 },
+  enrage: { maxStacks: 2, durationMs: Infinity, damageBoostPerStack: 0.20, maxDamageBoost: 0.40, speedBoostPerStack: 0.15, maxSpeedBoost: 0.30 },
 };
 
 const DEFAULT_STATUS_LIMITS = C.COMBAT_STATUS_LIMITS || {
@@ -81,6 +70,47 @@ module.exports = {
     return DEFAULT_STATUS_EFFECTS?.[effectName] || null;
   },
 
+  // Check if a shadow is a magic beast (retains creature abilities → family-based status effects)
+  _isShadowMagicBeast(shadow) {
+    if (!shadow) return false;
+    const roleKey = shadow.role || shadow.roleName || shadow.ro || '';
+    const roles = this.shadowArmy?.shadowRoles || this.shadowArmy?.constructor?.SHADOW_ROLES;
+    if (roles && roles[roleKey]) return !!roles[roleKey].isMagicBeast;
+    // Fallback: known magic beast role keys
+    const magicBeastRoles = new Set([
+      'ant', 'bear', 'wolf', 'spider', 'centipede', 'golem', 'serpent',
+      'naga', 'wyvern', 'dragon', 'titan', 'giant', 'elf', 'demon',
+      'ghoul', 'orc', 'ogre', 'yeti',
+    ]);
+    return magicBeastRoles.has(roleKey);
+  },
+
+  // Get the beast family for a shadow (e.g., 'beast', 'ice', 'demon')
+  _getShadowFamily(shadow) {
+    if (!shadow) return null;
+    // Direct family field (set at extraction)
+    if (shadow.family) return shadow.family;
+    // Lookup from ShadowArmy role definitions
+    const roleKey = shadow.role || shadow.roleName || shadow.ro || '';
+    const roles = this.shadowArmy?.shadowRoles || this.shadowArmy?.constructor?.SHADOW_ROLES;
+    if (roles && roles[roleKey]) return roles[roleKey].family || null;
+    // Hardcoded fallback map
+    const familyByRole = {
+      ant: 'insect', spider: 'insect', centipede: 'insect',
+      bear: 'beast', wolf: 'beast',
+      naga: 'reptile', serpent: 'reptile',
+      yeti: 'ice',
+      dragon: 'dragon', wyvern: 'dragon',
+      giant: 'giant', titan: 'giant',
+      demon: 'demon',
+      ogre: 'humanoid-beast', orc: 'humanoid-beast',
+      ghoul: 'undead',
+      golem: 'construct',
+      elf: 'ancient',
+    };
+    return familyByRole[roleKey] || null;
+  },
+
   _getDetoxificationStatusBonuses() {
     const bonuses = this.getSkillTreeBonuses?.() || null;
     return {
@@ -106,11 +136,16 @@ module.exports = {
     if (!bucket || typeof bucket !== 'object') return [];
     return Object.entries(bucket)
       .map(([effectName, effect]) => ({ effectName, effect }))
-      .filter(({ effect }) => effect && Number.isFinite(effect.expiresAt) && effect.expiresAt > now)
+      .filter(({ effect }) => effect && (effect.expiresAt === Infinity || (Number.isFinite(effect.expiresAt) && effect.expiresAt > now)))
       .sort((a, b) => {
         const stackDelta = Number(b.effect?.stacks || 0) - Number(a.effect?.stacks || 0);
         if (stackDelta !== 0) return stackDelta;
-        return Number(a.effect?.expiresAt || 0) - Number(b.effect?.expiresAt || 0);
+        const aExp = a.effect?.expiresAt;
+        const bExp = b.effect?.expiresAt;
+        if (aExp === Infinity && bExp === Infinity) return 0;
+        if (aExp === Infinity) return 1;
+        if (bExp === Infinity) return -1;
+        return Number(aExp || 0) - Number(bExp || 0);
       });
   },
 
@@ -159,24 +194,42 @@ module.exports = {
 
     const role = this.ensureMonsterRole(attacker);
     const rankIndex = Math.max(0, this.getRankIndexValue(attacker.rank || 'E'));
-    const baseByRole = {
-      tank: { effectName: 'armorBreak', chance: 0.08 },
-      support: { effectName: 'slow', chance: 0.075 },
-      caster: { effectName: 'poison', chance: 0.09 },
-      striker: { effectName: 'armorBreak', chance: 0.1 },
-      ranger: { effectName: 'slow', chance: 0.11 },
-      balanced: { effectName: 'poison', chance: 0.065 },
-    };
+    const beastFamily = attacker.beastFamily || null;
 
-    const selected = baseByRole[role] || baseByRole.balanced;
-    let chance = selected.chance + Math.min(0.08, rankIndex * 0.004);
+    // Family-based override: lore-accurate ailments tied to creature type
+    const familyMap = C.FAMILY_STATUS_EFFECT_MAP || {};
+    const familyEffect = beastFamily ? familyMap[beastFamily] : null;
+
+    let effectName;
+    let baseChance;
+
+    if (familyEffect) {
+      // 70% chance primary effect, 30% chance secondary for variety
+      effectName = Math.random() < 0.7 ? familyEffect.primary : familyEffect.secondary;
+      baseChance = familyEffect.chance;
+    } else {
+      // Fallback: role-based mapping (humanoid shadows or unknown families)
+      const baseByRole = {
+        tank: { effectName: 'armorBreak', chance: 0.08 },
+        support: { effectName: 'slow', chance: 0.075 },
+        caster: { effectName: 'poison', chance: 0.09 },
+        striker: { effectName: 'armorBreak', chance: 0.1 },
+        ranger: { effectName: 'slow', chance: 0.11 },
+        balanced: { effectName: 'poison', chance: 0.065 },
+      };
+      const selected = baseByRole[role] || baseByRole.balanced;
+      effectName = selected.effectName;
+      baseChance = selected.chance;
+    }
+
+    let chance = baseChance + Math.min(0.08, rankIndex * 0.004);
     if (attackerType === 'boss') {
       chance += 0.12;
     }
 
     const stackDelta = attackerType === 'boss' && rankIndex >= 6 ? 2 : 1;
     return {
-      effectName: selected.effectName,
+      effectName,
       chance: this.clampNumber(chance, 0.02, 0.55),
       stackDelta,
     };
@@ -212,6 +265,7 @@ module.exports = {
     const procChance = 1 - Math.pow(1 - effectProfile.chance, attempts);
     if (Math.random() >= procChance) return null;
 
+    const sourcePower = this._computeSourcePower(attacker?.rank, attacker);
     return this._applyCombatStatusToEntity({
       channelKey,
       targetType,
@@ -219,6 +273,7 @@ module.exports = {
       effectName: effectProfile.effectName,
       stackDelta: effectProfile.stackDelta,
       now,
+      sourcePower,
     });
   },
 
@@ -243,7 +298,8 @@ module.exports = {
     let changed = false;
     for (const effectName of Object.keys(bucket)) {
       const effect = bucket[effectName];
-      if (!effect || !Number.isFinite(effect.expiresAt) || effect.expiresAt <= now) {
+      // Permanent effects (enrage) have Infinity expiresAt — skip pruning
+      if (!effect || (effect.expiresAt !== Infinity && (!Number.isFinite(effect.expiresAt) || effect.expiresAt <= now))) {
         delete bucket[effectName];
         changed = true;
       }
@@ -325,16 +381,57 @@ module.exports = {
     return bucket;
   },
 
-  _applyCombatStatusToEntity({ channelKey, targetType, targetId, effectName, stackDelta = 1, now = Date.now() }) {
+  // Compute a compact source power snapshot for DOT scaling
+  // Higher sourceRankIndex + higher stats = more DOT damage
+  _computeSourcePower(sourceRank, sourceStats) {
+    const rankIndex = Math.max(0, this.getRankIndexValue?.(sourceRank || 'E') || 0);
+    const str = Math.max(0, Number(sourceStats?.strength) || 0);
+    const int = Math.max(0, Number(sourceStats?.intelligence) || 0);
+    // Power formula: rank weight (dominant) + stat component (secondary)
+    // Rank multiplier provides the base scaling (E=1..SM=61)
+    const rankMult = (C.RANK_MULTIPLIERS || {})[sourceRank] || Math.max(1, rankIndex + 1);
+    return {
+      rankIndex,
+      rankMult,
+      statPower: str + int * 0.5, // STR-heavy for physical DOTs, INT contributes for magical
+    };
+  },
+
+  // Calculate DOT scaling factor based on source power vs target rank
+  // Returns a multiplier applied to base % damage (0.5 = half damage, 2.0 = double)
+  _getDotSourceScaling(effect, targetRank) {
+    if (!effect?._sourcePower) return 1; // No source tracked = flat damage (legacy/enrage)
+    const source = effect._sourcePower;
+    const targetRankIndex = Math.max(0, this.getRankIndexValue?.(targetRank || 'E') || 0);
+    const targetRankMult = (C.RANK_MULTIPLIERS || {})[targetRank] || Math.max(1, targetRankIndex + 1);
+
+    // Rank ratio: source rank vs target rank (clamped to prevent extremes)
+    const rankRatio = this.clampNumber(source.rankMult / Math.max(1, targetRankMult), 0.3, 3.0);
+
+    // Stat contribution: source stats provide a small bonus scaling
+    // Normalized so ~500 total statPower = 1.0× bonus, scaling logarithmically
+    const statBonus = source.statPower > 0
+      ? this.clampNumber(Math.log2(1 + source.statPower / 500), 0.5, 2.0)
+      : 0.5;
+
+    // Combined: rank ratio is dominant (70%), stat bonus is secondary (30%)
+    return this.clampNumber(rankRatio * 0.7 + statBonus * 0.3, 0.25, 3.0);
+  },
+
+  _applyCombatStatusToEntity({ channelKey, targetType, targetId, effectName, stackDelta = 1, now = Date.now(), sourcePower = null }) {
     if (!this._isCombatStatusEffectsEnabled()) return null;
     const effectConfig = this._getStatusEffectConfig(effectName);
     if (!effectConfig) return null;
 
     if (targetType === 'user') {
-      const detox = this._getDetoxificationStatusBonuses();
-      const resistChance = Number(detox.debuffResistChance || 0);
-      if (resistChance > 0 && Math.random() < resistChance) {
-        return null;
+      // Detoxification only resists toxins/magical debuffs — bleed is physical (lore-accurate)
+      const isPhysical = effectName === 'bleed';
+      if (!isPhysical) {
+        const detox = this._getDetoxificationStatusBonuses();
+        const resistChance = Number(detox.debuffResistChance || 0);
+        if (resistChance > 0 && Math.random() < resistChance) {
+          return null;
+        }
       }
     }
 
@@ -347,23 +444,35 @@ module.exports = {
     const currentStacks = Math.max(0, Math.floor(existing?.stacks || 0));
     const nextStacks = this.clampNumber(currentStacks + addedStacks, 1, maxStacks);
 
+    const isPhysicalEffect = effectName === 'bleed';
     const durationReduction =
-      targetType === 'user'
+      targetType === 'user' && !isPhysicalEffect
         ? Number(this._getDetoxificationStatusBonuses().debuffDurationReduction || 0)
         : 0;
-    const durationMs = Math.max(
-      500,
-      Math.floor(Math.max(500, Math.floor(effectConfig.durationMs || 3000)) * (1 - durationReduction))
-    );
+    const isPermanent = effectConfig.durationMs === Infinity;
+    const durationMs = isPermanent
+      ? Infinity
+      : Math.max(500, Math.floor(Math.max(500, Math.floor(effectConfig.durationMs || 3000)) * (1 - durationReduction)));
     const nextState = {
       stacks: nextStacks,
       appliedAt: now,
-      expiresAt: now + durationMs,
+      expiresAt: isPermanent ? Infinity : now + durationMs,
       nextTickAt:
-        effectName === 'poison'
+        (effectName === 'poison' || effectName === 'bleed' || effectName === 'burn' || effectName === 'necrotic')
           ? now + Math.max(400, Math.floor(effectConfig.tickMs || 1000))
           : 0,
     };
+    // Store source power for rank/stat-scaled DOT damage
+    // Use new source if provided, otherwise preserve existing (stacking shouldn't downgrade source)
+    if (sourcePower) {
+      const existingPower = existing?._sourcePower;
+      // Keep the stronger source (higher rank mult wins)
+      nextState._sourcePower = existingPower && existingPower.rankMult > sourcePower.rankMult
+        ? existingPower
+        : sourcePower;
+    } else if (existing?._sourcePower) {
+      nextState._sourcePower = existing._sourcePower;
+    }
     bucket[effectName] = nextState;
 
     const state = this._ensureCombatStatusState(channelKey);
@@ -376,7 +485,8 @@ module.exports = {
     if (!bucket) return null;
     const effect = bucket[effectName];
     if (!effect) return null;
-    if (!Number.isFinite(effect.expiresAt) || effect.expiresAt <= now) {
+    // Permanent effects (enrage) have Infinity expiresAt — never expire naturally
+    if (effect.expiresAt !== Infinity && (!Number.isFinite(effect.expiresAt) || effect.expiresAt <= now)) {
       delete bucket[effectName];
       if (targetType === 'mob' && Object.keys(bucket).length === 0) {
         const state = this._combatStatusByChannel?.get?.(channelKey);
@@ -423,21 +533,117 @@ module.exports = {
 
   getEntityAttackSlowMultiplier(channelKey, targetType, targetId, now = Date.now()) {
     if (!this._isCombatStatusEffectsEnabled()) return 1;
-    const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'slow', now);
-    if (!effect) return 1;
-    const config = this._getStatusEffectConfig('slow');
-    const slow = this.clampNumber(
-      (effect.stacks || 0) * (config?.slowPerStack || 0),
-      0,
-      config?.maxSlow || 0.3
-    );
-    return this.clampNumber(1 + slow, 1, 1.6);
+
+    let totalSlow = 0;
+
+    // Standard slow effect
+    const slowEffect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'slow', now);
+    if (slowEffect) {
+      const slowConfig = this._getStatusEffectConfig('slow');
+      totalSlow += this.clampNumber(
+        (slowEffect.stacks || 0) * (slowConfig?.slowPerStack || 0),
+        0,
+        slowConfig?.maxSlow || 0.3
+      );
+    }
+
+    // Frostbite slow (stronger, stacks separately)
+    const frostEffect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'frostbite', now);
+    if (frostEffect) {
+      const frostConfig = this._getStatusEffectConfig('frostbite');
+      // At max stacks with rootAtMaxStacks: full freeze (100% slow = can't attack)
+      if (frostConfig?.rootAtMaxStacks && (frostEffect.stacks || 0) >= (frostConfig?.maxStacks || 4)) {
+        const rootExpiry = frostEffect._rootExpiresAt || 0;
+        if (now < rootExpiry) {
+          return 100; // Full freeze — effectively infinite cooldown
+        }
+      }
+      totalSlow += this.clampNumber(
+        (frostEffect.stacks || 0) * (frostConfig?.slowPerStack || 0),
+        0,
+        frostConfig?.maxSlow || 0.4
+      );
+    }
+
+    if (totalSlow <= 0) return 1;
+    return this.clampNumber(1 + totalSlow, 1, 2.5); // Cap at 150% extra cooldown
   },
 
-  _resolveShadowStatusEffectProfile(profile) {
+  // Necrotic: reduces healing/regeneration received
+  getEntityHealReductionMultiplier(channelKey, targetType, targetId, now = Date.now()) {
+    if (!this._isCombatStatusEffectsEnabled()) return 1;
+    const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'necrotic', now);
+    if (!effect) return 1;
+    const config = this._getStatusEffectConfig('necrotic');
+    const reduction = this.clampNumber(
+      (effect.stacks || 0) * (config?.healReductionPerStack || 0),
+      0,
+      config?.maxHealReduction || 0.45
+    );
+    return this.clampNumber(1 - reduction, 0.1, 1); // Minimum 10% healing
+  },
+
+  // Enrage: boosts attacker's outgoing damage (boss self-buff)
+  getEntityEnrageDamageMultiplier(channelKey, targetType, targetId, now = Date.now()) {
+    if (!this._isCombatStatusEffectsEnabled()) return 1;
+    const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'enrage', now);
+    if (!effect) return 1;
+    const config = this._getStatusEffectConfig('enrage');
+    const boost = this.clampNumber(
+      (effect.stacks || 0) * (config?.damageBoostPerStack || 0),
+      0,
+      config?.maxDamageBoost || 0.4
+    );
+    return this.clampNumber(1 + boost, 1, 1.5);
+  },
+
+  // Enrage: boosts attacker's attack speed
+  getEntityEnrageSpeedMultiplier(channelKey, targetType, targetId, now = Date.now()) {
+    if (!this._isCombatStatusEffectsEnabled()) return 1;
+    const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'enrage', now);
+    if (!effect) return 1;
+    const config = this._getStatusEffectConfig('enrage');
+    const boost = this.clampNumber(
+      (effect.stacks || 0) * (config?.speedBoostPerStack || 0),
+      0,
+      config?.maxSpeedBoost || 0.3
+    );
+    return this.clampNumber(1 - boost, 0.5, 1); // Lower multiplier = faster attacks
+  },
+
+  _resolveShadowStatusEffectProfile(profile, shadow = null) {
     const archetype = profile?.archetype || 'balanced';
     const personalityKey = profile?.personalityKey || 'balanced';
 
+    // Magic beast shadows: use family-based effects (lore-accurate — shadows retain creature abilities)
+    const isMagicBeast = shadow && this._isShadowMagicBeast(shadow);
+    if (isMagicBeast) {
+      const family = this._getShadowFamily(shadow);
+      const familyMap = C.FAMILY_STATUS_EFFECT_MAP || {};
+      const familyEffect = family ? familyMap[family] : null;
+
+      if (familyEffect) {
+        // 70% primary, 30% secondary for variety
+        const effectName = Math.random() < 0.7 ? familyEffect.primary : familyEffect.secondary;
+        let chance = familyEffect.chance * 0.3; // Shadow base proc rate (lower than enemy)
+
+        // Personality modifier
+        switch (personalityKey) {
+          case 'aggressive': chance += 0.008; break;
+          case 'strategic': case 'tactical': chance += 0.006; break;
+          case 'supportive': case 'tank': chance -= 0.003; break;
+          default: break;
+        }
+
+        return {
+          effectName,
+          target: 'both',
+          chance: this.clampNumber(chance, 0.005, 0.08),
+        };
+      }
+    }
+
+    // Humanoid shadows or unknown families: archetype-based mapping (original behavior)
     const baseByArchetype = {
       tank: { effectName: 'armorBreak', target: 'boss', chance: 0.012 },
       support: { effectName: 'slow', target: 'mob', chance: 0.018 },
@@ -497,7 +703,7 @@ module.exports = {
     if (!channelKey || !shadow || attacksInSpan <= 0) return;
 
     const profile = this._resolveShadowRoleProfile(shadow, combatData);
-    const effectProfile = this._resolveShadowStatusEffectProfile(profile);
+    const effectProfile = this._resolveShadowStatusEffectProfile(profile, shadow);
     if (!effectProfile?.effectName) return;
 
     const hasBossTarget =
@@ -548,6 +754,8 @@ module.exports = {
     }
 
     if (!targetType || targetId == null) return;
+    const shadowStats = this.getShadowEffectiveStatsCached?.(shadow) || shadow;
+    const sourcePower = this._computeSourcePower(shadow?.rank, shadowStats);
     this._applyCombatStatusToEntity({
       channelKey,
       targetType,
@@ -555,6 +763,7 @@ module.exports = {
       effectName: effectProfile.effectName,
       stackDelta,
       now,
+      sourcePower,
     });
   },
 
@@ -563,6 +772,42 @@ module.exports = {
     const state = this._combatStatusByChannel?.get?.(channelKey);
     if (!state || !state.hasActive) return false;
     return now >= (state.nextTickAt || 0);
+  },
+
+  // All DOT effect names that tick damage (used by processCombatStatusEffects)
+  _DOT_EFFECTS: ['poison', 'bleed', 'burn', 'necrotic'],
+
+  // Calculate DOT damage for a single tick of a given effect
+  // Scales by source rank/stats vs target rank when source info is available
+  _calculateDotTickDamage(effectName, effect, maxHp, targetRank = null) {
+    const config = this._getStatusEffectConfig(effectName);
+    if (!config) return 0;
+    const basePct = this.clampNumber(
+      (effect.stacks || 0) * (config.damagePctPerStack || 0),
+      0,
+      config.maxDamagePct || 0.02
+    );
+    // Apply source power scaling: stronger source = more DOT damage
+    const sourceScale = this._getDotSourceScaling(effect, targetRank);
+    const scaledPct = this.clampNumber(basePct * sourceScale, 0, config.maxDamagePct * 3);
+    return Math.max(1, Math.floor(maxHp * scaledPct));
+  },
+
+  // Advance a DOT effect's next tick timestamp
+  _advanceDotTick(effect, effectName, now = Date.now()) {
+    const config = this._getStatusEffectConfig(effectName);
+    effect.nextTickAt = now + Math.max(400, Math.floor(config?.tickMs || 1000));
+  },
+
+  // Check frostbite root state — set root expiry when max stacks reached
+  _checkFrostbiteRoot(channelKey, targetType, targetId, now = Date.now()) {
+    const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'frostbite', now);
+    if (!effect) return;
+    const config = this._getStatusEffectConfig('frostbite');
+    if (!config?.rootAtMaxStacks) return;
+    if ((effect.stacks || 0) >= (config.maxStacks || 4) && !effect._rootExpiresAt) {
+      effect._rootExpiresAt = now + (config.rootDurationMs || 3000);
+    }
   },
 
   async processCombatStatusEffects(channelKey, dungeon, now = Date.now()) {
@@ -579,54 +824,58 @@ module.exports = {
     const tickMs = this._getCombatStatusTickMs();
     if (now < (state.nextTickAt || 0)) return;
 
-    const poisonConfig = this._getStatusEffectConfig('poison');
     if (dungeon?.userParticipating) {
       this._attemptUserDetoxificationCleanse(channelKey, now);
     }
 
-    const userPoison = this._readActiveStatusEffect(channelKey, 'user', 'user', 'poison', now);
-    if (userPoison && dungeon?.userParticipating && Number(this.settings?.userHP) > 0) {
-      if (!Number.isFinite(userPoison.nextTickAt) || userPoison.nextTickAt <= now) {
+    // === USER DOT TICKS (poison, bleed, burn, necrotic) ===
+    if (dungeon?.userParticipating && Number(this.settings?.userHP) > 0) {
+      const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+      let userDefeated = false;
+      for (const effectName of this._DOT_EFFECTS) {
+        if (userDefeated) break;
+        const effect = this._readActiveStatusEffect(channelKey, 'user', 'user', effectName, now);
+        if (!effect) continue;
+        if (Number.isFinite(effect.nextTickAt) && effect.nextTickAt > now) continue;
+
         const maxHp = Number(this.settings.userMaxHP) || Number(this.settings.userHP) || 1;
-        const poisonPct = this.clampNumber(
-          (userPoison.stacks || 0) * (poisonConfig?.damagePctPerStack || 0),
-          0,
-          poisonConfig?.maxDamagePct || 0.018
-        );
-        const poisonDamage = this.applyStatusAdjustedIncomingDamage(
-          channelKey,
-          'user',
-          'user',
-          Math.max(1, Math.floor(maxHp * poisonPct)),
+        const dotDamage = this.applyStatusAdjustedIncomingDamage(
+          channelKey, 'user', 'user',
+          this._calculateDotTickDamage(effectName, effect, maxHp, userRank),
           now
         );
         this.syncHPFromStats();
-        this.settings.userHP = Math.max(0, this.settings.userHP - poisonDamage);
+        this.settings.userHP = Math.max(0, this.settings.userHP - dotDamage);
         this.pushHPToStats(true);
         this.startRegeneration();
-        userPoison.nextTickAt = now + Math.max(400, Math.floor(poisonConfig?.tickMs || 1000));
+        this._advanceDotTick(effect, effectName, now);
 
         if (this.settings.userHP <= 0) {
           await this.handleUserDefeat(channelKey);
+          userDefeated = true;
         }
       }
+      // Check frostbite root state on user
+      this._checkFrostbiteRoot(channelKey, 'user', 'user', now);
     }
 
-    const bossPoison = this._readActiveStatusEffect(channelKey, 'boss', 'boss', 'poison', now);
-    if (bossPoison && dungeon?.boss?.hp > 0) {
-      if (!Number.isFinite(bossPoison.nextTickAt) || bossPoison.nextTickAt <= now) {
+    // === BOSS DOT TICKS ===
+    if (dungeon?.boss?.hp > 0) {
+      for (const effectName of this._DOT_EFFECTS) {
+        const effect = this._readActiveStatusEffect(channelKey, 'boss', 'boss', effectName, now);
+        if (!effect) continue;
+        if (Number.isFinite(effect.nextTickAt) && effect.nextTickAt > now) continue;
+
         const maxHp = Number(dungeon.boss.maxHp) || Number(dungeon.boss.hp) || 1;
-        const poisonPct = this.clampNumber(
-          (bossPoison.stacks || 0) * (poisonConfig?.damagePctPerStack || 0),
-          0,
-          poisonConfig?.maxDamagePct || 0.018
-        );
-        const poisonDamage = Math.max(1, Math.floor(maxHp * poisonPct));
-        await this.applyDamageToBoss(channelKey, poisonDamage, 'status');
-        bossPoison.nextTickAt = now + Math.max(400, Math.floor(poisonConfig?.tickMs || 1000));
+        const dotDamage = this._calculateDotTickDamage(effectName, effect, maxHp, dungeon.boss.rank);
+        await this.applyDamageToBoss(channelKey, dotDamage, 'status');
+        this._advanceDotTick(effect, effectName, now);
       }
+      // Check frostbite root state on boss
+      this._checkFrostbiteRoot(channelKey, 'boss', 'boss', now);
     }
 
+    // === MOB DOT TICKS ===
     if (state.mobs instanceof Map && state.mobs.size > 0 && Array.isArray(dungeon?.mobs?.activeMobs)) {
       const liveMobById = new Map();
       for (const mob of dungeon.mobs.activeMobs) {
@@ -637,30 +886,29 @@ module.exports = {
 
       const deadMobsFromStatus = [];
       for (const [mobId, bucket] of state.mobs.entries()) {
-        const poison = this._readActiveStatusEffect(channelKey, 'mob', mobId, 'poison', now);
-        if (!poison) continue;
-        if (Number.isFinite(poison.nextTickAt) && poison.nextTickAt > now) continue;
-
         const mob = liveMobById.get(String(mobId));
         if (!mob || mob.hp <= 0) {
           state.mobs.delete(String(mobId));
           continue;
         }
 
-        const maxHp = Number(mob.maxHp) || Number(mob.hp) || 1;
-        const poisonPct = this.clampNumber(
-          (poison.stacks || 0) * (poisonConfig?.damagePctPerStack || 0),
-          0,
-          poisonConfig?.maxDamagePct || 0.018
-        );
-        const poisonDamage = Math.max(1, Math.floor(maxHp * poisonPct));
-        const beforeHp = mob.hp;
-        this.applyDamageToEntityHp(mob, poisonDamage);
-        poison.nextTickAt = now + Math.max(400, Math.floor(poisonConfig?.tickMs || 1000));
+        // Tick ALL active DOT effects on this mob
+        for (const effectName of this._DOT_EFFECTS) {
+          const effect = this._readActiveStatusEffect(channelKey, 'mob', mobId, effectName, now);
+          if (!effect) continue;
+          if (Number.isFinite(effect.nextTickAt) && effect.nextTickAt > now) continue;
 
-        if (beforeHp > 0 && mob.hp <= 0) {
-          deadMobsFromStatus.push(mob);
-          state.mobs.delete(String(mobId));
+          const maxHp = Number(mob.maxHp) || Number(mob.hp) || 1;
+          const dotDamage = this._calculateDotTickDamage(effectName, effect, maxHp, mob.rank);
+          const beforeHp = mob.hp;
+          this.applyDamageToEntityHp(mob, dotDamage);
+          this._advanceDotTick(effect, effectName, now);
+
+          if (beforeHp > 0 && mob.hp <= 0) {
+            deadMobsFromStatus.push(mob);
+            state.mobs.delete(String(mobId));
+            break; // Mob is dead, skip remaining DOTs
+          }
         }
       }
 
@@ -676,7 +924,7 @@ module.exports = {
           );
           if (!fallbackAttributed) {
             this._logMobContributionMiss(channelKey, this.getEnemyKey(mob, 'mob'), {
-              phase: 'status-poison',
+              phase: 'status-dot',
             });
           }
           this._onMobKilled(channelKey, dungeon, mob.rank);

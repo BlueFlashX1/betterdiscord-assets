@@ -156,7 +156,7 @@ class DungeonStorageManager {
       }
 
       // Shadow allocations may contain full shadow objects (very large); recompute on restore.
-      next.shadowAllocation = undefined;
+      delete next.shadowAllocation;
 
       // Runtime-only flags — must not persist (would block completeDungeon on restore)
       delete next._completing;

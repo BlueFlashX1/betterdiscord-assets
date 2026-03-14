@@ -501,8 +501,18 @@ const ActiveSkillMethods = {
   isDungeonCombatSkillUnlocked(skillId) {
     const def = this.dungeonCombatSkillDefs?.[skillId];
     if (!def?.unlock) return false;
+    const requiredLevel = def.unlock.passiveLevel || 1;
+
+    // Multi-skill unlock: ALL listed passives must meet the required level
+    if (Array.isArray(def.unlock.passiveSkills)) {
+      return def.unlock.passiveSkills.every(
+        (sid) => this.getSkillLevel(sid) >= requiredLevel
+      );
+    }
+
+    // Single-skill unlock (standard path)
     const passiveLevel = this.getSkillLevel(def.unlock.passiveSkill);
-    return passiveLevel >= def.unlock.passiveLevel;
+    return passiveLevel >= requiredLevel;
   },
 
   _cloneDungeonCombatSkillState(state) {

@@ -52,7 +52,7 @@ module.exports = {
           dungeon.completed ||
           dungeon.failed ||
           dungeon._completing ||
-          dungeon.boss.hp <= 0
+          !dungeon.boss || dungeon.boss.hp <= 0
         ) {
           return;
         }

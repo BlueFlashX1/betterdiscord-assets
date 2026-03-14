@@ -1,6 +1,6 @@
 {
   "name": "CriticalHit",
-  "description": "Critical hit system with visual effects and animations",
+  "description": "Per-message critical hit detection with combo tracking, statistics, and visual styling integrated with SoloLevelingStats",
   "version": "3.6.0",
   "author": "BlueFlashX1"
 }

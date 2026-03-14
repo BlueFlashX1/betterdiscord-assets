@@ -217,7 +217,11 @@ module.exports = {
     const baseHP = this.calculateHPSync(shadowVitality, shadowRank);
     const shadowRankIndex = this.getRankIndexValue(shadowRank);
     const shadowRankHpFactor = this.getShadowRankHpFactorByIndex(shadowRankIndex);
-    const finalMaxHP = Math.max(1, Math.floor(baseHP * 0.2 * shadowRankHpFactor));
+    // FIX: Shadow HP multiplier scales with rank instead of flat 0.2 for all.
+    // E(0.2) → D(0.25) → C(0.3) → B(0.35) → A(0.4) → S(0.5) → SS(0.55) → SSS(0.6)
+    // → SSS+(0.65) → NH(0.7) → Monarch(0.75) → Monarch+(0.8) → SM(0.85)
+    const shadowHpMultiplier = Math.min(0.85, 0.2 + shadowRankIndex * 0.05);
+    const finalMaxHP = Math.max(1, Math.floor(baseHP * shadowHpMultiplier * shadowRankHpFactor));
 
     if (typeof finalMaxHP !== 'number' || isNaN(finalMaxHP) || finalMaxHP <= 0) {
       const rankIndex = this.getRankIndexValue(shadowRank);

@@ -29,6 +29,12 @@ module.exports = {
         }
       }
 
+      // GUARD: If plugin was stopped while awaiting IDB read, bail out.
+      if (!this.started) {
+        this.debugLog?.('restoreActiveDungeons aborted — plugin stopped during IDB read');
+        return;
+      }
+
       savedDungeons.forEach((dungeon) => {
         const elapsed = Date.now() - dungeon.startTime;
         if (elapsed < this.settings.dungeonDuration && !dungeon.completed && !dungeon.failed) {
@@ -306,6 +312,12 @@ module.exports = {
         // Clear from memory if somehow still present
         this.activeDungeons.delete(dungeon.channelKey);
       });
+
+      // GUARD: If plugin was stopped during the forEach, don't start combat loops.
+      if (!this.started) {
+        this.debugLog?.('restoreActiveDungeons aborted — plugin stopped during dungeon hydration');
+        return;
+      }
 
       // Restore dungeons — only start combat for dungeons where shadows were deployed
       if (this.activeDungeons.size > 0) {

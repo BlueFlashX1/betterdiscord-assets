@@ -125,12 +125,22 @@ function buildActiveSkillAction(ce, options) {
     onDeactivate,
   } = options;
   if (!isUnlocked) {
-      const reqSkillDef = pluginInstance.findSkillAndTier(def.unlock.passiveSkill);
-      const reqName = reqSkillDef?.skill?.name || def.unlock.passiveSkill;
+      let reqText;
+      if (Array.isArray(def.unlock.passiveSkills)) {
+        const names = def.unlock.passiveSkills.map((sid) => {
+          const found = pluginInstance.findSkillAndTier(sid);
+          return found?.skill?.name || sid;
+        });
+        reqText = `Requires ${names.join(' + ')} Lv${def.unlock.passiveLevel || 1}`;
+      } else {
+        const reqSkillDef = pluginInstance.findSkillAndTier(def.unlock.passiveSkill);
+        const reqName = reqSkillDef?.skill?.name || def.unlock.passiveSkill;
+        reqText = `Requires ${reqName} Lv${def.unlock.passiveLevel}`;
+      }
       return ce(
         "div",
         { className: "skilltree-active-skill-unlock-req" },
-        `Requires ${reqName} Lv${def.unlock.passiveLevel}`
+        reqText
       );
     }
 

@@ -1,7 +1,7 @@
 {
   "name": "Dungeons",
   "author": "BlueFlashX1",
-  "description": "Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army",
+  "description": "Solo Leveling dungeon system with biome-based spawns, family-typed mobs, status effects (bleed, burn, frostbite, necrotic, enrage), boss durability phases, and shadow army combat",
   "version": "4.9.1",
   "source": "https://github.com/BlueFlashX1/betterdiscord-assets"
 }

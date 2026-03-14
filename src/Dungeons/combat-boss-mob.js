@@ -27,6 +27,48 @@ module.exports = {
     return null;
   },
 
+  // Check boss HP thresholds and apply enrage stacks (family-scaled intensity)
+  _checkBossEnrage(channelKey, dungeon, now = Date.now()) {
+    if (!dungeon?.boss || dungeon.boss.hp <= 0) return;
+    const maxHp = Number(dungeon.boss.maxHp) || Number(dungeon.boss.hp) || 1;
+    const hpFraction = dungeon.boss.hp / maxHp;
+
+    // Determine enrage intensity from boss family
+    const bossFamily = dungeon.boss.beastFamily || null;
+    const enrageIntensity = bossFamily
+      ? ((C.BOSS_ENRAGE_INTENSITY || {})[bossFamily] || 'medium')
+      : 'medium';
+    if (enrageIntensity === 'none') return; // Constructs don't enrage
+
+    // Track which phases have already been applied (avoid re-applying)
+    if (!dungeon.boss._enragePhases) dungeon.boss._enragePhases = { phase1: false, phase2: false };
+
+    let stacksToApply = 0;
+
+    // Phase 1: 50% HP threshold
+    if (hpFraction <= 0.50 && !dungeon.boss._enragePhases.phase1) {
+      dungeon.boss._enragePhases.phase1 = true;
+      stacksToApply += 1;
+    }
+    // Phase 2: 25% HP threshold (accumulates with phase 1 if both trigger in one hit)
+    if (hpFraction <= 0.25 && !dungeon.boss._enragePhases.phase2) {
+      dungeon.boss._enragePhases.phase2 = true;
+      stacksToApply += 1;
+    }
+
+    if (stacksToApply <= 0) return;
+
+    // Apply enrage as a status effect on the boss itself
+    this._applyCombatStatusToEntity?.({
+      channelKey,
+      targetType: 'boss',
+      targetId: 'boss',
+      effectName: 'enrage',
+      stackDelta: stacksToApply,
+      now,
+    });
+  },
+
   async processBossAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, prebuiltShadowByIdMap = null) {
     try {
       // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
@@ -58,6 +100,9 @@ module.exports = {
         return;
       }
 
+      // === ENRAGE CHECK: Apply enrage stacks at HP thresholds (family-scaled intensity) ===
+      this._checkBossEnrage(channelKey, dungeon, now);
+
       const activeInterval = 1000; // Boss attacks every 1 second
       const totalTimeSpan = cyclesMultiplier * activeInterval;
       const bossSlowMultiplier = this.getEntityAttackSlowMultiplier(
@@ -66,8 +111,10 @@ module.exports = {
         'boss',
         now
       );
+      // Enrage speed boost: reduces effective cooldown
+      const enrageSpeedMult = this.getEntityEnrageSpeedMultiplier?.(channelKey, 'boss', 'boss', now) || 1;
       const bossCooldown = this.getEffectiveAttackCooldownMs(
-        (dungeon.boss.attackCooldown || activeInterval) * bossSlowMultiplier,
+        (dungeon.boss.attackCooldown || activeInterval) * bossSlowMultiplier * enrageSpeedMult,
         activeInterval
       );
 
@@ -93,11 +140,14 @@ module.exports = {
       // Bloodlust debuff: reduce all boss stats while active
       const bloodlustReduction = this._getBloodlustStatReduction(dungeon);
       const statMult = bloodlustReduction > 0 ? (1 - bloodlustReduction) : 1;
+      // Enrage damage boost: amplifies boss stats when enraged
+      const enrageDamageMult = this.getEntityEnrageDamageMultiplier?.(channelKey, 'boss', 'boss', now) || 1;
+      const combinedStatMult = statMult * enrageDamageMult;
       const bossStats = {
-        strength: Math.floor(dungeon.boss.strength * statMult),
-        agility: Math.floor(dungeon.boss.agility * statMult),
-        intelligence: Math.floor(dungeon.boss.intelligence * statMult),
-        vitality: Math.floor(dungeon.boss.vitality * statMult),
+        strength: Math.floor(dungeon.boss.strength * combinedStatMult),
+        agility: Math.floor(dungeon.boss.agility * statMult), // Agility not boosted by rage (raw power only)
+        intelligence: Math.floor(dungeon.boss.intelligence * combinedStatMult),
+        vitality: Math.floor(dungeon.boss.vitality * statMult), // Vitality unaffected
       };
 
       const { assignedShadows, shadowHP, deadShadows } = this._getDungeonShadowCombatContext(
@@ -769,6 +819,7 @@ module.exports = {
   async applyDamageToBoss(channelKey, damage, source, shadowId = null, isCritical = false) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
+    const now = Date.now();
     const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
     if (!bossUnlocked) {
       dungeon.shadowsDeployed && this.ensureDeployedSpawnPipeline(channelKey, 'boss_damage_blocked');
@@ -784,17 +835,54 @@ module.exports = {
         'boss',
         'boss',
         damage,
-        Date.now()
+        now
       );
     }
 
-    // Ruler's Authority Force: resist reduction amplifies all incoming boss damage
+    // ── BOSS DURABILITY PIPELINE ──────────────────────────────────────
+    // Lore: Dungeon bosses are apex creatures — they don't die in one swing.
+
+    // 1) PHASE SHIELD — brief invulnerability at HP thresholds (75%, 50%, 25%)
+    if (dungeon.boss._phaseShieldExpiresAt && now < dungeon.boss._phaseShieldExpiresAt) {
+      return; // Boss is in phase shield — all damage absorbed
+    }
+
+    // 2) BOSS DAMAGE RESISTANCE — rank-scaled % reduction
+    const bossResistance = (C.BOSS_DAMAGE_RESISTANCE || {})[dungeon.boss.rank] || 0;
+    if (bossResistance > 0) {
+      damage = Math.max(1, Math.floor(damage * (1 - bossResistance)));
+    }
+
+    // 3) PER-HIT DAMAGE CAP — no single hit exceeds X% of boss maxHP
+    const capPct = C.BOSS_DAMAGE_CAP_PCT || 0.06;
+    const maxDamagePerHit = Math.max(1, Math.floor((dungeon.boss.maxHp || 1) * capPct));
+    damage = Math.min(damage, maxDamagePerHit);
+
+    // 4) Ruler's Authority Force: resist reduction amplifies all incoming boss damage
     const resistReduction = this._getRulersForceResistReduction(dungeon);
     if (damage > 0 && resistReduction > 0) {
       damage = Math.floor(damage * (1 / (1 - resistReduction)));
     }
 
+    // Apply damage
+    const hpBefore = dungeon.boss.hp;
     dungeon.boss.hp = Math.max(0, dungeon.boss.hp - damage);
+
+    // 5) PHASE SHIELD CHECK — trigger invulnerability on threshold crossing
+    const thresholds = C.BOSS_PHASE_THRESHOLDS || [0.75, 0.50, 0.25];
+    const shieldMs = C.BOSS_PHASE_SHIELD_MS || 2500;
+    const maxHp = dungeon.boss.maxHp || 1;
+    if (!dungeon.boss._phasesTriggered) dungeon.boss._phasesTriggered = [];
+    for (const threshold of thresholds) {
+      if (dungeon.boss._phasesTriggered.includes(threshold)) continue;
+      const thresholdHp = maxHp * threshold;
+      if (hpBefore > thresholdHp && dungeon.boss.hp <= thresholdHp && dungeon.boss.hp > 0) {
+        dungeon.boss._phasesTriggered.push(threshold);
+        dungeon.boss._phaseShieldExpiresAt = now + shieldMs;
+        this.debugLog?.(`BOSS PHASE SHIELD triggered at ${Math.round(threshold * 100)}% HP — ${shieldMs}ms invulnerability`);
+        break; // Only one phase per damage application
+      }
+    }
 
     // Track shadow contribution for XP
     if (source === 'shadow' && shadowId) {
@@ -830,7 +918,7 @@ module.exports = {
     this.queueHPBarUpdate(channelKey);
 
     if (dungeon.boss.hp <= 0) {
-      this.settings.debug && console.log(`[Dungeons] 💀 BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
+      this.debugLog?.(`BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
 
       // Remove HP bar and mark completed before completeDungeon.
       // completeDungeon is synchronous (Phase A), but marking completed early

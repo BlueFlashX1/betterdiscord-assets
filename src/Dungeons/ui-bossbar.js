@@ -1,5 +1,13 @@
 const dc = require("../shared/discord-classes");
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 module.exports = {
   _buildBossBarCombatSkillButtonHtml(skillState, channelKey) {
     if (!skillState?.skillId) return '';
@@ -35,11 +43,23 @@ module.exports = {
     `;
   },
 
+  // Status ailment icon/label/color definitions for boss combat effects
+  _STATUS_AILMENT_DISPLAY: {
+    poison:    { icon: '\u2620',     label: 'Poison',    cls: 'effect-badge-ailment-dot' },    // ☠
+    bleed:     { icon: '\u{1FA78}',  label: 'Bleed',     cls: 'effect-badge-ailment-dot' },    // 🩸
+    burn:      { icon: '\u{1F525}',  label: 'Burn',      cls: 'effect-badge-ailment-dot' },    // 🔥
+    necrotic:  { icon: '\u{1F480}',  label: 'Necrotic',  cls: 'effect-badge-ailment-dot' },    // 💀
+    armorBreak:{ icon: '\u{1F6E1}',  label: 'Armor Break',cls: 'effect-badge-ailment-amp' },   // 🛡 (with crack connotation)
+    slow:      { icon: '\u{1F422}',  label: 'Slow',      cls: 'effect-badge-ailment-slow' },   // 🐢
+    frostbite: { icon: '\u2744',     label: 'Frostbite', cls: 'effect-badge-ailment-slow' },   // ❄
+    enrage:    { icon: '\u{1F4A2}',  label: 'Enrage',    cls: 'effect-badge-ailment-enrage' }, // 💢
+  },
+
   _buildActiveEffectsRow(dungeon) {
     const now = Date.now();
     const effects = [];
 
-    // Buffs (green/cyan icons)
+    // ── Buffs (green/cyan icons) ──────────────────────────────────────
     const domain = dungeon.activeBuffs?.domain;
     if (domain && domain.expiresAt > now) {
       const sec = Math.ceil((domain.expiresAt - now) / 1000);
@@ -53,7 +73,7 @@ module.exports = {
       effects.push({ icon: '\u26A1', label: `Sprint -${pct}% CD`, time: sec, type: 'buff' });
     }
 
-    // Debuffs (red/orange icons)
+    // ── Skill debuffs (red/orange icons) ──────────────────────────────
     const rulers = dungeon.activeDebuffs?.rulers_force;
     if (rulers && rulers.expiresAt > now) {
       const sec = Math.ceil((rulers.expiresAt - now) / 1000);
@@ -86,12 +106,89 @@ module.exports = {
       effects.push({ icon: '\u{1F53B}', label: `-${pct}% Stats`, time: sec, type: 'debuff' });
     }
 
+    // ── Combat status ailments on BOSS (from _combatStatusByChannel) ──
+    const channelKey = dungeon.channelKey;
+    const statusState = this._combatStatusByChannel?.get?.(channelKey);
+    if (statusState?.boss && statusState.hasActive) {
+      const bossBucket = statusState.boss;
+      for (const [effectName, effect] of Object.entries(bossBucket)) {
+        if (!effect || typeof effect !== 'object') continue;
+        // Check if effect is still active
+        const isActive = effect.expiresAt === Infinity ||
+          (Number.isFinite(effect.expiresAt) && effect.expiresAt > now);
+        if (!isActive) continue;
+
+        const display = this._STATUS_AILMENT_DISPLAY[effectName];
+        if (!display) continue;
+
+        const stacks = Math.max(1, Number(effect.stacks) || 1);
+        const sec = effect.expiresAt === Infinity
+          ? null // permanent (enrage)
+          : Math.ceil((effect.expiresAt - now) / 1000);
+
+        // Build label with stack count
+        const stackStr = stacks > 1 ? ` x${stacks}` : '';
+        effects.push({
+          icon: display.icon,
+          label: `${display.label}${stackStr}`,
+          time: sec,
+          type: 'ailment',
+          cls: display.cls,
+        });
+      }
+    }
+
+    // ── Combat status ailments on USER (debuffs applied by enemies) ──
+    if (statusState?.user && statusState.hasActive) {
+      const userBucket = statusState.user;
+      for (const [effectName, effect] of Object.entries(userBucket)) {
+        if (!effect || typeof effect !== 'object') continue;
+        const isActive = effect.expiresAt === Infinity ||
+          (Number.isFinite(effect.expiresAt) && effect.expiresAt > now);
+        if (!isActive) continue;
+
+        const display = this._STATUS_AILMENT_DISPLAY[effectName];
+        if (!display) continue;
+
+        const stacks = Math.max(1, Number(effect.stacks) || 1);
+        const sec = effect.expiresAt === Infinity
+          ? null
+          : Math.ceil((effect.expiresAt - now) / 1000);
+
+        const stackStr = stacks > 1 ? ` x${stacks}` : '';
+        effects.push({
+          icon: display.icon,
+          label: `${display.label}${stackStr} (You)`,
+          time: sec,
+          type: 'ailment-self',
+          cls: 'effect-badge-ailment-self',
+        });
+      }
+    }
+
     if (!effects.length) return '';
 
     const badges = effects.map((e) => {
-      const cls = e.type === 'buff' ? 'effect-badge-buff' : 'effect-badge-debuff';
-      const timeStr = e.time >= 60 ? `${Math.floor(e.time / 60)}m${e.time % 60}s` : `${e.time}s`;
-      return `<span class="dungeon-effect-badge ${cls}" title="${e.label} (${timeStr})">${e.icon} ${timeStr}</span>`;
+      // Determine CSS class: custom ailment class, or buff/debuff fallback
+      let cls;
+      if (e.cls) {
+        cls = e.cls;
+      } else if (e.type === 'buff') {
+        cls = 'effect-badge-buff';
+      } else {
+        cls = 'effect-badge-debuff';
+      }
+
+      let timeStr;
+      if (e.time === null) {
+        timeStr = '\u221E'; // ∞ for permanent effects
+      } else if (e.time >= 60) {
+        timeStr = `${Math.floor(e.time / 60)}m${e.time % 60}s`;
+      } else {
+        timeStr = `${e.time}s`;
+      }
+      const titleTime = e.time === null ? 'permanent' : timeStr;
+      return `<span class="dungeon-effect-badge ${cls}" title="${escapeHtml(e.label)} (${titleTime})">${e.icon} ${timeStr}</span>`;
     }).join('');
 
     return `<div class="dungeon-active-effects-row">${badges}</div>`;
@@ -358,6 +455,22 @@ module.exports = {
         if (mobAliveEl) mobAliveEl.textContent = aliveMobs.toLocaleString();
         const mobTotalEl = hpBar.querySelector('.mob-total');
         if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
+        // Fast-path: update shadow alive/dead counts (changes every combat tick)
+        if (dungeon.shadowsDeployed) {
+          const allocated = this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
+          const deadSet = this.deadShadows?.get(channelKey);
+          const deadCount = deadSet?.size || 0;
+          const aliveCount = Math.max(0, allocated.length - deadCount);
+          const shadowAliveEl = hpBar.querySelector('.shadow-alive');
+          if (shadowAliveEl) shadowAliveEl.textContent = aliveCount.toLocaleString();
+          const shadowTotalEl = hpBar.querySelector('.shadow-total');
+          if (shadowTotalEl) shadowTotalEl.textContent = allocated.length.toLocaleString();
+          const shadowDeadEl = hpBar.querySelector('.shadow-dead');
+          if (shadowDeadEl) {
+            shadowDeadEl.textContent = deadCount > 0 ? `(${deadCount} dead)` : '';
+            shadowDeadEl.style.display = deadCount > 0 ? '' : 'none';
+          }
+        }
         this._updateBossBarCombatSkillButtons(hpBar, channelKey);
         this._updateActiveEffectsRow(hpBar, dungeon);
         // Fast-path: update gate timer countdown (changes every tick)
@@ -493,14 +606,14 @@ module.exports = {
         <div class="boss-bar-header">
           <div class="boss-bar-info">
             <div class="boss-bar-name">
-              ${participationBadge} | ${dungeon.name} [${dungeon.rank}]
+              ${participationBadge} | ${escapeHtml(dungeon.name)} [${escapeHtml(dungeon.rank)}]
             </div>
             ${deployButtonHTML}
             ${joinButtonHTML}
             ${leaveButtonHTML}
           </div>
           <div class="boss-bar-type">
-            ${dungeon.type}
+            ${escapeHtml(dungeon.type)}
           </div>
         </div>
         ${gateTimerHTML}

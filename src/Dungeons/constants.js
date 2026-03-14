@@ -19,11 +19,107 @@ module.exports = {
       slowPerStack: 0.08, // +8% attack cooldown per stack
       maxSlow: 0.3, // +30% cap
     },
+    bleed: {
+      maxStacks: 5,
+      durationMs: 8000,
+      tickMs: 1000,
+      damagePctPerStack: 0.003, // 0.3% maxHP per stack per tick (physical DOT)
+      maxDamagePct: 0.02, // 2.0% maxHP cap
+    },
+    burn: {
+      maxStacks: 3,
+      durationMs: 6000,
+      tickMs: 1000,
+      damagePctPerStack: 0.005, // 0.5% maxHP per stack per tick (fire DOT — high but short)
+      maxDamagePct: 0.022, // 2.2% maxHP cap
+    },
+    frostbite: {
+      maxStacks: 4,
+      durationMs: 10000,
+      slowPerStack: 0.10, // +10% attack cooldown per stack (stronger than slow)
+      maxSlow: 0.40, // +40% cap
+      rootAtMaxStacks: true, // At 4 stacks: 3s full freeze (100% slow)
+      rootDurationMs: 3000,
+    },
+    necrotic: {
+      maxStacks: 3,
+      durationMs: 9000,
+      tickMs: 1000,
+      damagePctPerStack: 0.002, // 0.2% maxHP per tick (weaker DOT but anti-heal)
+      maxDamagePct: 0.012, // 1.2% maxHP cap
+      healReductionPerStack: 0.15, // 15% healing reduction per stack
+      maxHealReduction: 0.45, // 45% heal reduction cap
+    },
+    enrage: {
+      maxStacks: 2, // Phase 1 (50% HP) and Phase 2 (25% HP)
+      durationMs: Infinity, // Permanent per phase
+      damageBoostPerStack: 0.20, // +20% outgoing damage per stack
+      maxDamageBoost: 0.40, // +40% cap at 2 stacks
+      speedBoostPerStack: 0.15, // +15% attack speed per stack
+      maxSpeedBoost: 0.30, // +30% cap at 2 stacks
+    },
+  },
+  // Family → status effect mapping for lore-accurate ailments
+  // Enemies and magic beast shadows inflict effects matching their creature family
+  FAMILY_STATUS_EFFECT_MAP: {
+    beast:            { primary: 'bleed',     secondary: 'armorBreak', chance: 0.09 },
+    ice:              { primary: 'frostbite', secondary: 'slow',       chance: 0.10 },
+    reptile:          { primary: 'poison',    secondary: 'bleed',      chance: 0.09 },
+    dragon:           { primary: 'burn',      secondary: 'bleed',      chance: 0.11 },
+    demon:            { primary: 'burn',      secondary: 'necrotic',   chance: 0.10 },
+    undead:           { primary: 'necrotic',  secondary: 'poison',     chance: 0.09 },
+    giant:            { primary: 'armorBreak',secondary: 'bleed',      chance: 0.08 },
+    'humanoid-beast': { primary: 'bleed',     secondary: 'armorBreak', chance: 0.09 },
+    insect:           { primary: 'poison',    secondary: 'slow',       chance: 0.10 },
+    construct:        { primary: 'armorBreak',secondary: 'slow',       chance: 0.08 },
+    ancient:          { primary: 'slow',      secondary: 'poison',     chance: 0.08 },
+  },
+  // Boss enrage intensity by family — how hard bosses rage when wounded
+  BOSS_ENRAGE_INTENSITY: {
+    beast:            'high',   // Tusk-style berserker
+    demon:            'high',   // Baran-style fury
+    dragon:           'high',   // Apocalyptic when wounded
+    'humanoid-beast': 'high',   // Savage warriors
+    giant:            'medium', // Slower but stronger rage
+    ice:              'medium', // Cold fury
+    reptile:          'medium', // Cornered predator
+    insect:           'medium', // Hive frenzy
+    undead:           'low',    // Relentless but consistent
+    ancient:          'low',    // Disciplined, less prone to berserk
+    construct:        'none',   // Mechanical, no rage
   },
   COMBAT_STATUS_LIMITS: {
     tickIntervalMs: 1000,
     maxTrackedMobsPerDungeon: 600,
   },
+  // ── BOSS DURABILITY SYSTEM ──────────────────────────────────────────
+  // Prevents bosses from being one-shot by shadow armies.
+  // Lore: Dungeon bosses are apex predators — they don't die in one swing.
+
+  // 1) BOSS DAMAGE RESISTANCE — rank-scaled % reduction on ALL incoming damage
+  //    Higher-rank bosses shrug off more damage (S-rank boss resists 55%)
+  BOSS_DAMAGE_RESISTANCE: {
+    E: 0.10,  D: 0.15,  C: 0.22,  B: 0.30,  A: 0.38,
+    S: 0.45,  SS: 0.50, SSS: 0.55, 'SSS+': 0.58,
+    NH: 0.60, Monarch: 0.62, 'Monarch+': 0.64, 'Shadow Monarch': 0.65,
+  },
+
+  // 2) PER-HIT DAMAGE CAP — no single hit can exceed this % of boss maxHP
+  //    Prevents one-shots even from massively overpowered shadows
+  BOSS_DAMAGE_CAP_PCT: 0.06, // 6% of maxHP per hit (boss needs 17+ hits minimum)
+
+  // 3) BOSS PHASE SHIELD — brief invulnerability at HP thresholds
+  //    Lore: Boss enters a rage state, briefly becoming untouchable
+  BOSS_PHASE_THRESHOLDS: [0.75, 0.50, 0.25], // HP% triggers
+  BOSS_PHASE_SHIELD_MS: 2500, // 2.5s invulnerability window
+
+  // 4) BOSS HP SCALING — multiplier applied on top of existing HP formula
+  //    Accounts for shadow army size (old formula assumed solo player)
+  BOSS_HP_ARMY_MULTIPLIER: 8, // 8x base HP to survive sustained shadow DPS
+
+  // 5) SHADOW VS BOSS DAMAGE REDUCTION — shadows deal reduced damage to bosses
+  //    Mirrors the existing 0.6x boss→shadow reduction (lore: bosses are tougher than mobs)
+  SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of their calculated damage to bosses
   RANK_MULTIPLIERS: {
     E: 1,
     D: 2,

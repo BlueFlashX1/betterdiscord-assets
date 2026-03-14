@@ -192,6 +192,7 @@ module.exports = {
   stopMessageObserver() {
     if (this.messageObserver) {
       this.messageObserver.disconnect();
+      this._observers?.delete?.(this.messageObserver);
       this.messageObserver = null;
     }
     if (this._messageObserverRetryTimeoutId) {

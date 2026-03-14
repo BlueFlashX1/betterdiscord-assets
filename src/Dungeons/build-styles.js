@@ -724,9 +724,60 @@ ${sel.settingsContainer} {
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.2) !important;
 }
 
+/* Status Ailment: DOT effects (poison, bleed, burn, necrotic) — sickly green-purple */
+.effect-badge-ailment-dot {
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.92) 0%, rgba(168, 85, 247, 0.28) 100%) !important;
+  color: #d8b4fe !important;
+  border: 1px solid rgba(168, 85, 247, 0.5) !important;
+  text-shadow: 0 0 6px rgba(168, 85, 247, 0.45) !important;
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.2) !important;
+}
+
+/* Status Ailment: Damage amplification (armorBreak) — amber/orange */
+.effect-badge-ailment-amp {
+  background: linear-gradient(135deg, rgba(120, 53, 15, 0.92) 0%, rgba(245, 158, 11, 0.28) 100%) !important;
+  color: #fcd34d !important;
+  border: 1px solid rgba(245, 158, 11, 0.5) !important;
+  text-shadow: 0 0 6px rgba(245, 158, 11, 0.45) !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.2) !important;
+}
+
+/* Status Ailment: Slow effects (slow, frostbite) — icy blue */
+.effect-badge-ailment-slow {
+  background: linear-gradient(135deg, rgba(12, 74, 110, 0.92) 0%, rgba(56, 189, 248, 0.28) 100%) !important;
+  color: #7dd3fc !important;
+  border: 1px solid rgba(56, 189, 248, 0.5) !important;
+  text-shadow: 0 0 6px rgba(56, 189, 248, 0.45) !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.2) !important;
+}
+
+/* Status Ailment: Enrage (boss permanent buff) — angry crimson */
+.effect-badge-ailment-enrage {
+  background: linear-gradient(135deg, rgba(153, 27, 27, 0.95) 0%, rgba(239, 68, 68, 0.35) 100%) !important;
+  color: #fecaca !important;
+  border: 1px solid rgba(248, 113, 113, 0.6) !important;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.6) !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3) !important;
+  animation: enragePulse 1.5s ease-in-out infinite !important;
+}
+
+/* Status Ailment: Self (debuffs on YOU) — dark red warning */
+.effect-badge-ailment-self {
+  background: linear-gradient(135deg, rgba(153, 27, 27, 0.92) 0%, rgba(220, 38, 38, 0.28) 100%) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(220, 38, 38, 0.6) !important;
+  text-shadow: 0 0 6px rgba(220, 38, 38, 0.45) !important;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.25), inset 0 0 4px rgba(220, 38, 38, 0.1) !important;
+}
+
 @keyframes effectPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.75; }
+}
+
+@keyframes enragePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.03); }
 }
 
 /* Boss Gate Timer — sealed boss countdown */

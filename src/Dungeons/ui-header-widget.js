@@ -332,8 +332,9 @@ module.exports = {
         mobsTarget,
         mobsSpawned,
       } = this._getWidgetMobMetrics(channelKey, dungeon);
-      const mobKillLine = mobsTarget > 0 ? `${mobsKilled}/${mobsTarget}` : `${mobsKilled}`;
-      const spawnLine = mobsTarget > 0 ? `${mobsSpawned}/${mobsTarget}` : `${mobsSpawned}`;
+      // Show kills as running total (no target — spawning is continuous until boss dies)
+      const mobKillLine = mobsKilled.toLocaleString();
+      const spawnLine = mobsSpawned.toLocaleString();
 
       return `
         <div class="dungeons-header-popup-row" data-channel-key="${channelKey}">
