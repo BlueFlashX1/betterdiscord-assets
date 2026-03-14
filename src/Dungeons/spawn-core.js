@@ -238,12 +238,35 @@ module.exports = {
     const dungeonName = this.generateDungeonName(rank, dungeonType);
     const bossName = this.generateBossName(rank, dungeonType);
 
-    // MASSIVELY INCREASED MOB COUNTS
-    // E: 2,000 | D: 5,000 | C: 8,000 | B: 12,000 | A: 17,000 | S: 23,000 | SS: 30,000 | SSS: 40,000 | NH: 50,000 | Monarch+: 80,000
-    const baseMobCount = 2000 + rankIndex * 3000;
+    // LORE-ACCURATE MOB COUNTS (exponential scaling)
+    // Solo Leveling lore reference:
+    //   E-rank: Small goblin caves (~50 beasts)
+    //   D-rank: Low-level beast dens (~150)
+    //   C-rank: Mid-tier, requires ~10 hunters (~400)
+    //   B-rank: Red gate scale, 14+ hunters (~1,200)
+    //   A-rank: Guild raid scale, high orcs (~4,000)
+    //   S-rank: National emergency — Jeju Island had 4,000+ ants (~10,000)
+    //   SS+: Demon Castle scale, 100 floors (~20,000-50,000)
+    //   Monarch+: Full army invasions (~100,000+)
+    const MOB_COUNT_BY_RANK = {
+      'E': 50,
+      'D': 150,
+      'C': 400,
+      'B': 1200,
+      'A': 4000,
+      'S': 10000,
+      'SS': 20000,
+      'SSS': 35000,
+      'SSS+': 50000,
+      'NH': 75000,
+      'Monarch': 100000,
+      'Monarch+': 150000,
+      'Shadow Monarch': 200000,
+    };
+    const baseMobCount = MOB_COUNT_BY_RANK[rank] || (50 * Math.pow(2.5, rankIndex));
     const biomeMultiplier = dungeonBiome.mobMultiplier || 1.0;
     const totalMobCount = Math.floor(
-      Math.min(150000, Math.max(2000, baseMobCount * biomeMultiplier))
+      Math.max(50, baseMobCount * biomeMultiplier)
     );
 
     // Calculate expected shadow allocation for this dungeon
