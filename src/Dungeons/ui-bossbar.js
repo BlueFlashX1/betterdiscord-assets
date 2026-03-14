@@ -138,6 +138,33 @@ module.exports = {
       }
     }
 
+    // ── Mob ailment summary counts (aggregated across all mobs) ──
+    if (statusState?.mobs && statusState.mobs.size > 0) {
+      // Tally: { effectName: count }
+      const mobAilmentCounts = {};
+      for (const [, mobBucket] of statusState.mobs) {
+        if (!mobBucket || typeof mobBucket !== 'object') continue;
+        for (const [effectName, effect] of Object.entries(mobBucket)) {
+          if (!effect || typeof effect !== 'object') continue;
+          const isActive = effect.expiresAt === Infinity ||
+            (Number.isFinite(effect.expiresAt) && effect.expiresAt > now);
+          if (!isActive) continue;
+          mobAilmentCounts[effectName] = (mobAilmentCounts[effectName] || 0) + 1;
+        }
+      }
+      for (const [effectName, count] of Object.entries(mobAilmentCounts)) {
+        const display = this._STATUS_AILMENT_DISPLAY[effectName];
+        if (!display || count === 0) continue;
+        effects.push({
+          icon: display.icon,
+          label: `${count} Mobs ${display.label}`,
+          time: null,
+          type: 'ailment-mob',
+          cls: 'effect-badge-ailment-mob',
+        });
+      }
+    }
+
     // ── Combat status ailments on USER (debuffs applied by enemies) ──
     if (statusState?.user && statusState.hasActive) {
       const userBucket = statusState.user;
@@ -179,16 +206,23 @@ module.exports = {
         cls = 'effect-badge-debuff';
       }
 
-      let timeStr;
-      if (e.time === null) {
-        timeStr = '\u221E'; // ∞ for permanent effects
+      let displayStr;
+      let titleTime;
+      if (e.type === 'ailment-mob') {
+        // Mob summary: show count instead of timer (e.g. "☠ 12")
+        displayStr = e.label.replace(/^(\d+)\s+Mobs\s+.*/, '$1');
+        titleTime = e.label;
+      } else if (e.time === null) {
+        displayStr = '\u221E'; // ∞ for permanent effects
+        titleTime = 'permanent';
       } else if (e.time >= 60) {
-        timeStr = `${Math.floor(e.time / 60)}m${e.time % 60}s`;
+        displayStr = `${Math.floor(e.time / 60)}m${e.time % 60}s`;
+        titleTime = displayStr;
       } else {
-        timeStr = `${e.time}s`;
+        displayStr = `${e.time}s`;
+        titleTime = displayStr;
       }
-      const titleTime = e.time === null ? 'permanent' : timeStr;
-      return `<span class="dungeon-effect-badge ${cls}" title="${escapeHtml(e.label)} (${titleTime})">${e.icon} ${timeStr}</span>`;
+      return `<span class="dungeon-effect-badge ${cls}" title="${escapeHtml(e.label)} (${titleTime})">${e.icon} ${displayStr}</span>`;
     }).join('');
 
     return `<div class="dungeon-active-effects-row">${badges}</div>`;

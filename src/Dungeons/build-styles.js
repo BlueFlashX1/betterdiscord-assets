@@ -761,6 +761,18 @@ ${sel.settingsContainer} {
   animation: enragePulse 1.5s ease-in-out infinite !important;
 }
 
+/* Status Ailment: Mob summary counts — muted teal (informational, not alarming) */
+.effect-badge-ailment-mob {
+  background: linear-gradient(135deg, rgba(17, 94, 89, 0.88) 0%, rgba(20, 184, 166, 0.22) 100%) !important;
+  color: #5eead4 !important;
+  border: 1px solid rgba(45, 212, 191, 0.4) !important;
+  text-shadow: 0 0 5px rgba(45, 212, 191, 0.35) !important;
+  box-shadow: 0 0 6px rgba(20, 184, 166, 0.15) !important;
+  font-size: 9px !important;
+  opacity: 0.85 !important;
+  animation: none !important;
+}
+
 /* Status Ailment: Self (debuffs on YOU) — dark red warning */
 .effect-badge-ailment-self {
   background: linear-gradient(135deg, rgba(153, 27, 27, 0.92) 0%, rgba(220, 38, 38, 0.28) 100%) !important;

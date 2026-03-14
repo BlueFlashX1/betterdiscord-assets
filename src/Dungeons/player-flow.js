@@ -574,6 +574,7 @@ module.exports = {
       executeThreshold = 0,
       executeMultiplier = 1,
       forceCritical = false,
+      agilityScaling = null,
     } = options || {};
 
     const bossStats = this._getBossCombatStats(dungeon);
@@ -608,6 +609,20 @@ module.exports = {
     const skillDamageMultiplier = Math.max(0.1, Number(skillMultiplier) || 1);
     if (skillDamageMultiplier !== 1 && damage > 0) {
       damage = Math.max(1, Math.floor(damage * skillDamageMultiplier));
+    }
+
+    // Agility scaling: dagger skills deal damage on a spectrum driven by agility.
+    // Higher agility = higher average damage, with per-throw variance for a natural feel.
+    if (agilityScaling && damage > 0) {
+      const userStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+      const agility = Math.max(0, Number(userStats.agility) || 0);
+      const perPoint = Number(agilityScaling.perPoint) || 0.015;
+      const variance = Number(agilityScaling.variance) || 0.15;
+      // Agility bonus: each point adds perPoint% damage (e.g. 100 agi = +150%)
+      const agilityMult = 1 + agility * perPoint;
+      // Variance: ±variance% randomness (e.g. ±15% means 0.85x-1.15x)
+      const roll = 1 + (Math.random() * 2 - 1) * variance;
+      damage = Math.max(1, Math.floor(damage * agilityMult * roll));
     }
 
     if (passiveDamageBonusKey === 'daggerThrowDamageBonus' && damage > 0) {
@@ -1020,6 +1035,7 @@ module.exports = {
         executeThreshold: def.executeThreshold || 0,
         executeMultiplier: def.executeMultiplier || 1,
         forceCritical: Boolean(def.forceCritical),
+        agilityScaling: def.agilityScaling || null,
       });
 
       if (attackResult.damage <= 0) {
@@ -1133,6 +1149,17 @@ module.exports = {
 
       // Apply skill multiplier
       damage = Math.max(1, Math.floor(damage * skillMultiplier));
+
+      // Agility scaling: dagger skills deal damage on a spectrum driven by agility
+      if (def.agilityScaling && damage > 0) {
+        const agiStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+        const agility = Math.max(0, Number(agiStats.agility) || 0);
+        const perPoint = Number(def.agilityScaling.perPoint) || 0.015;
+        const variance = Number(def.agilityScaling.variance) || 0.15;
+        const agilityMult = 1 + agility * perPoint;
+        const roll = 1 + (Math.random() * 2 - 1) * variance;
+        damage = Math.max(1, Math.floor(damage * agilityMult * roll));
+      }
 
       // Apply passive damage bonus (e.g. dagger throw)
       if (def.passiveDamageBonusKey === 'daggerThrowDamageBonus' && damage > 0) {

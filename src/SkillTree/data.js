@@ -347,13 +347,17 @@ const DUNGEON_COMBAT_SKILL_DEFS = {
     id: "dagger_throw",
     name: "Dagger Throw",
     buttonLabel: "DAGGER THROW",
-    desc: "Hurl shadow-laced daggers that pierce through enemy defenses. 1.35x damage in a piercing line through multiple mobs, or focused strikes on a boss. Inflicts armorBreak on impact — piercing impacts shatter defensive layers. Damage scales with Dagger Throw passive. 35 mana, 30s cooldown.",
+    desc: "Hurl shadow-laced daggers that pierce through enemy defenses. Damage strongly scales with agility — faster reflexes mean more lethal throws. 1.35x base multiplier with agility-driven variance. Inflicts armorBreak on impact. 35 mana, 30s cooldown.",
     lore: "Even at range, Jinwoo's dagger work retains its killing edge. Combined with telekinetic control, each thrown blade flies with guided precision — a ranged extension of the assassin's lethal craft.",
     manaCost: 35,
     cooldownMs: 30 * 1000,
     minimumCooldownMs: 10 * 1000,
     damageMultiplier: 1.35,
     passiveDamageBonusKey: "daggerThrowDamageBonus",
+    // Agility scaling: agility drives a damage spectrum instead of a fixed multiplier.
+    // Each point of agility adds 1.5% damage, with ±15% variance per throw.
+    // This replaces the old flat 50-500 piercing cap model with a continuous spectrum.
+    agilityScaling: { perPoint: 0.015, variance: 0.15 },
     targeting: "piercing",
     statusEffect: { name: "armorBreak", stacks: 2, chance: 0.65 },
     unlock: { passiveSkill: "dagger_throw", passiveLevel: 5 },
