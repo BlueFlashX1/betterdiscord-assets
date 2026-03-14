@@ -204,8 +204,19 @@ class ShadowStorageManager {
         reject(request.error);
       };
 
+      request.onblocked = () => {
+        this.debugError('INIT', 'Database upgrade blocked — close other Discord windows');
+        reject(new Error('ShadowArmy IDB blocked by another window'));
+      };
+
       request.onsuccess = () => {
         this.db = request.result;
+        // Handle version change from another window — release this connection
+        this.db.onversionchange = () => {
+          this.debugLog('INIT', 'Database version changed in another window — closing connection');
+          this.db.close();
+          this.db = null;
+        };
         this.debugLog('INIT', 'Database opened successfully', { dbName: this.dbName });
         resolve(this.db);
       };

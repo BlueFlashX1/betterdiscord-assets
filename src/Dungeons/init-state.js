@@ -225,6 +225,7 @@ module.exports = {
 
   _initState() {
     this.messageObserver = null;
+    this._sessionToken = 0; // guards against orphaned async start() continuations
     this._mobIdCounter = 0; // Incrementing mob ID (faster than Math.random().toString(36))
     this._mobSpawnQueue = new Map(); // Micro-queue for batched mob spawning (250-500ms)
     this._spawnPipelineGuardAt = new Map(); // channelKey -> last guard log timestamp

@@ -291,7 +291,16 @@ module.exports = {
   async _persistShadowToSettingsFallback(shadow, attemptNum, reasonLabel) {
     this.settings.shadows || (this.settings.shadows = []);
     this.settings.shadows.push(shadow);
-    this.saveSettings();
+    try {
+      this.saveSettings();
+    } catch (e) {
+      if (e?.name === 'QuotaExceededError' || (e?.message && e.message.includes('quota'))) {
+        this.debugError('STORAGE', 'localStorage quota exceeded — shadow data may be lost on reload', e);
+        BdApi.UI.showToast('ShadowArmy: Storage full — shadow data may be lost!', { type: 'error' });
+      } else {
+        throw e;
+      }
+    }
 
     const now = Date.now();
     this.settings.totalShadowsExtracted++;

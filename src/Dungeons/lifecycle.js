@@ -6,6 +6,8 @@ module.exports = {
 
     // Set plugin running state
     this.started = true;
+    // Session token: guards against orphaned async continuations from a previous start()
+    const sessionToken = ++this._sessionToken;
 
     // Reset observer start time when plugin starts
     this.observerStartTime = Date.now();
@@ -37,8 +39,7 @@ module.exports = {
     this.loadPluginReferences();
     await this.initStorage();
 
-    // Guard: if stop() was called during async init, bail out
-    if (!this.started) return;
+    if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
     // Recalculate mana pool on startup (in case shadow army grew while plugin was off)
     this._recalculateManaTimeout = this._setTrackedTimeout(async () => {
@@ -64,8 +65,7 @@ module.exports = {
     // Restore AFTER storage + saveManager + settings are all ready
     await this.restoreActiveDungeons();
 
-    // Guard: if stop() was called during dungeon restoration, bail out
-    if (!this.started) return;
+    if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
     // Validate active dungeon status after restoration
     this.validateActiveDungeonStatus();

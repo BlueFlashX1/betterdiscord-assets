@@ -17,6 +17,8 @@ module.exports = {
       // Record plugin start time to prevent processing old messages
       this.pluginStartTime = Date.now();
       this._isRunning = true;
+      // Session token: guards against orphaned async continuations from a previous start()
+      const sessionToken = ++this._sessionToken;
       this._loadSLUtils();
 
       // Init React components factory (v3.0.0)
@@ -70,9 +72,7 @@ module.exports = {
 
       // Load settings (will use IndexedDB if available, fallback to BdApi.Data)
       await this.loadSettings();
-
-      // Guard: if stop() was called during async init, bail out
-      if (!this._isRunning) return;
+      if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
       this.debugLog('START', 'Settings loaded', {
         level: this.settings.level,

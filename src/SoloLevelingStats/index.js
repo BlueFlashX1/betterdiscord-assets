@@ -351,6 +351,7 @@ const SoloLevelingStats = class SoloLevelingStats {
     this._startupLoadComplete = false;
     this._hasRealProgress = false;
     this._startupProgressProbeComplete = false;
+    this._sessionToken = 0; // guards against orphaned async start() continuations
     // Level up debouncing to prevent spam
     this.pendingLevelUp = null;
     this.levelUpDebounceTimeout = null;

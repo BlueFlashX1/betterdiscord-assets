@@ -194,6 +194,10 @@ function isFriend(userId) {
   return this._relationshipFriendIds instanceof Set && this._relationshipFriendIds.has(String(userId));
 }
 
+// Simple rate limiter for fallback toast path (when SoloLevelingToasts unavailable)
+const _fallbackToastTimestamps = [];
+const _FALLBACK_TOAST_MAX_PER_MIN = 30;
+
 function toast(message, type = "info", timeout = null) {
   if (this._toastEngine) {
     this._toastEngine.showToast(message, type, timeout, {
@@ -201,6 +205,13 @@ function toast(message, type = "info", timeout = null) {
       maxPerMinute: 30,
     });
   } else {
+    // Rate-limit fallback path to prevent toast flooding
+    const now = Date.now();
+    while (_fallbackToastTimestamps.length && _fallbackToastTimestamps[0] < now - 60000) {
+      _fallbackToastTimestamps.shift();
+    }
+    if (_fallbackToastTimestamps.length >= _FALLBACK_TOAST_MAX_PER_MIN) return;
+    _fallbackToastTimestamps.push(now);
     BdApi.UI.showToast(message, { type, ...(timeout ? { timeout } : {}) });
   }
 }

@@ -73,6 +73,7 @@ const ShadowArmy = class ShadowArmy {
     // ============================================================================
     this.storageManager = null;
     this.userId = null;
+    this._sessionToken = 0; // guards against orphaned async start() continuations
 
     // Performance cache for shadow power calculations
     this._shadowPowerCache = new Map();
@@ -163,6 +164,8 @@ const ShadowArmy = class ShadowArmy {
     }
     this._toast = _PluginUtils?.createToastHelper?.("shadowArmy") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this._isStopped = false;
+    // Session token: guards against orphaned async continuations from a previous start()
+    const sessionToken = ++this._sessionToken;
     // SNAPSHOT CACHE: Instance-level (NOT in this.settings — must not be persisted to disk)
     this._snapshotCache = null;
     this._snapshotTimestamp = 0;
@@ -178,6 +181,7 @@ const ShadowArmy = class ShadowArmy {
 
     // Get user ID for storage isolation
     this.userId = await this.getUserId();
+    if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
     // Initialize IndexedDB storage
     try {
@@ -260,9 +264,7 @@ const ShadowArmy = class ShadowArmy {
     }
 
     await this.loadSettings();
-
-    // Guard: if stop() was called during async init, bail out
-    if (this._isStopped) return;
+    if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
     this.injectCSS();
     this.integrateWithSoloLeveling();
@@ -626,6 +628,10 @@ const ShadowArmy = class ShadowArmy {
       this._retryTimeouts?.delete?.(this._navChangeTimeout);
       this._navChangeTimeout = null;
     }
+
+    // Reset Webpack module cache (prevents stale references after Discord updates)
+    this.webpackModules = { UserStore: null, ChannelStore: null, PermissionStore: null, Permissions: null };
+    this.webpackModuleAccess = false;
 
     // COMPREHENSIVE MEMORY CLEANUP
     if (this.cachedBuffs) this.cachedBuffs = null;
