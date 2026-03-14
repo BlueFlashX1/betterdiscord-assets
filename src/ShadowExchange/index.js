@@ -905,7 +905,13 @@ module.exports = class ShadowExchange {
         })();
     const rect = icon.getBoundingClientRect();
     tip.textContent = label;
-    tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
+    // PERF: Cache tooltip height after first render to avoid repeated offsetHeight reflows.
+    // Invalidate on content change (label length as proxy).
+    if (!tip._cachedHeight || tip._lastLabel !== label) {
+      tip._cachedHeight = tip.offsetHeight;
+      tip._lastLabel = label;
+    }
+    tip.style.top = `${rect.top - tip._cachedHeight - 8}px`;
     tip.style.left = `${rect.left + rect.width / 2}px`;
     tip.classList.add("sl-toolbar-tip--visible");
   }

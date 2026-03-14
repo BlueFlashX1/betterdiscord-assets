@@ -109,7 +109,7 @@ module.exports = {
     this._headerStatsPopupScrollHandler = () => this.queueHeaderStatsPopupPosition();
   
     document.addEventListener('mousedown', this._headerStatsPopupDocClickHandler, true);
-    window.addEventListener('resize', this._headerStatsPopupResizeHandler);
+    window.addEventListener('resize', this._headerStatsPopupResizeHandler, { passive: true });
     window.addEventListener('scroll', this._headerStatsPopupScrollHandler, this._headerStatsPopupScrollListenerOptions);
   
     this.positionHeaderStatsPopup();

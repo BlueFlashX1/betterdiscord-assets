@@ -780,14 +780,10 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         });
         try {
           // PERF: Scope observer to toolbar area instead of document.body
-          // to avoid firing on every DOM mutation in Discord
-          const toolbar = document.querySelector('[class*="toolbar_"]')
-            || document.querySelector('[class*="headerBar_"]');
-          const observeTarget = toolbar?.parentElement || document.querySelector('[class*="title_"]')?.closest('[class*="container_"]') || document.body;
-          this._headerObserver.observe(observeTarget, {
-            childList: true,
-            subtree: observeTarget !== document.body
-          });
+          // to avoid firing on every DOM mutation in Discord.
+          // Uses retry-until-ready pattern — if toolbar isn't in DOM yet,
+          // polls every 500ms (up to 10 tries) until it appears.
+          this._observeToolbarArea();
         } catch (_) {
           this._headerObserver = null;
         }
@@ -797,6 +793,33 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         this._scheduleHeaderWidgetReinject(80);
         this._refreshHeaderWidgetBadge();
       }
+      /**
+       * PERF: Retry-until-ready toolbar observer setup.
+       * Polls up to 10 times (every 500ms) until toolbar DOM element appears.
+       * Falls back gracefully (no observer) if toolbar never materializes.
+       */
+      _observeToolbarArea(attempt = 0) {
+        const toolbar = document.querySelector('[class*="toolbar_"]')
+          || document.querySelector('[class*="headerBar_"]');
+        const observeTarget = toolbar?.parentElement
+          || document.querySelector('[class*="title_"]')?.closest('[class*="container_"]');
+
+        if (observeTarget) {
+          this._headerObserver.observe(observeTarget, {
+            childList: true,
+            subtree: true
+          });
+          return;
+        }
+        // Toolbar not in DOM yet — retry up to 10 times
+        if (attempt < 10 && !this._isStopped) {
+          this._headerObserverRetryTimeout = setTimeout(() => {
+            this._observeToolbarArea(attempt + 1);
+          }, 500);
+        }
+        // After 10 retries, silently give up — the header widget still works,
+        // it just won't auto-reinject on toolbar mutations.
+      }
       _teardownHeaderWidget() {
         if (this._headerObserver) {
           try {
@@ -805,6 +828,10 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           }
         }
         this._headerObserver = null;
+        if (this._headerObserverRetryTimeout) {
+          clearTimeout(this._headerObserverRetryTimeout);
+          this._headerObserverRetryTimeout = null;
+        }
         if (this._headerRouteListener) {
           window.removeEventListener("resize", this._headerRouteListener);
           window.removeEventListener("hashchange", this._headerRouteListener);

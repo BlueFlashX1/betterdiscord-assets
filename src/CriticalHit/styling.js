@@ -156,15 +156,19 @@ ${childSel} {
     const styleId = C.CSS_STYLE_IDS.critMessages;
     if (this.critCSSRules.size === 0) {
       BdApi.DOM.removeStyle(styleId);
+      this._critStyleEl = null;
       return;
     }
     const allRules = Array.from(this.critCSSRules.values()).join('\n');
-    // Update existing <style> element in-place if it exists
-    const existing = document.getElementById(styleId);
-    if (existing) {
-      existing.textContent = allRules;
+    // PERF: Cache element reference instead of getElementById (BdApi may prefix the ID)
+    if (this._critStyleEl && this._critStyleEl.parentNode) {
+      this._critStyleEl.textContent = allRules;
     } else {
+      BdApi.DOM.removeStyle(styleId);
       BdApi.DOM.addStyle(styleId, allRules);
+      // Cache the actual element BdApi created (search by data attribute or last <style>)
+      this._critStyleEl = document.querySelector(`style[id*="${styleId}"]`)
+        || document.querySelector(`style#${styleId}`);
     }
   },
 

@@ -459,7 +459,7 @@ module.exports = class SoloLevelingTitleManager {
    * @param {object} params
    * @param {string[]} params.titles
    * @param {string} params.sortBy
-   * @returns {string[]} sorted titles (same array instance)
+   * @returns {string[]} sorted titles (new array, does not mutate input)
    */
   getSortedTitles({ titles, sortBy }) {
     const pickSortValue = SORT_VALUE_PICKERS[sortBy] || SORT_VALUE_PICKERS.xpBonus;
@@ -472,8 +472,9 @@ module.exports = class SoloLevelingTitleManager {
       sortValues[title] = pickSortValue(bonus);
     }
 
-    titles.sort((a, b) => (sortValues[b] || 0) - (sortValues[a] || 0));
-    return { sorted: titles, bonusMap };
+    // PERF: Sort a copy to avoid mutating the caller's array
+    const sorted = [...titles].sort((a, b) => (sortValues[b] || 0) - (sortValues[a] || 0));
+    return { sorted, bonusMap };
   }
 
 

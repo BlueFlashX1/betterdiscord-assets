@@ -210,6 +210,7 @@ class SensesEngine {
     // Kept intentionally low frequency and tiny scope (monitored users only) to avoid UI lag.
     this._presencePollInterval = setInterval(() => {
       if (this._plugin._stopped) return;
+      if (document.hidden) return; // PERF: skip polling when Discord is backgrounded
       this._pollMonitoredPresenceStatuses("interval");
     }, STATUS_POLL_INTERVAL_MS);
 

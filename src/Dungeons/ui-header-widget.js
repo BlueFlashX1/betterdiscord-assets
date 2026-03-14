@@ -229,7 +229,7 @@ module.exports = {
     this._dungeonHeaderPopupScrollHandler = () => this.queueDungeonHeaderPopupPosition();
 
     document.addEventListener('mousedown', this._dungeonHeaderPopupDocClickHandler, true);
-    window.addEventListener('resize', this._dungeonHeaderPopupResizeHandler);
+    window.addEventListener('resize', this._dungeonHeaderPopupResizeHandler, { passive: true });
     window.addEventListener('scroll', this._dungeonHeaderPopupScrollHandler, { passive: true, capture: true });
   },
 

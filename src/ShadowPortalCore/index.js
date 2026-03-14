@@ -1161,7 +1161,7 @@ const methods = {
       if (resizeTimer) clearTimeout(resizeTimer);
       resizeTimer = setTimeout(resize, 150);
     };
-    window.addEventListener("resize", onResize);
+    window.addEventListener("resize", onResize, { passive: true });
 
     const start = performance.now();
     // ── Canvas phase diagnostics (log once per phase) ──
@@ -2157,7 +2157,7 @@ function startDrawLoop() {
         worker.postMessage({ type: "resize", width: w, height: h });
       }, 150);
     };
-    window.addEventListener("resize", onResize);
+    window.addEventListener("resize", onResize, { passive: true });
 
     // Return stop function
     return () => {
