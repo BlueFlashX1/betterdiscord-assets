@@ -336,6 +336,30 @@ const SHADOW_ROLE_STAT_WEIGHTS = {
 };
 
 // ============================================================================
+// SHADOW ARMY CAPACITY — Lore-Accurate Storage Limits Per Player Rank
+// ============================================================================
+// Based on Solo Leveling novel: initial 20-slot cap (Job Change arc),
+// scaling with Intelligence/power, limitless only at Shadow Monarch.
+// Existing shadows that exceed the cap are grandfathered — never deleted.
+// New extractions are blocked until count drops below cap (or player ranks up).
+
+const SHADOW_ARMY_CAPACITY = {
+  E: 0,                 // No Shadow Extraction skill yet
+  D: 20,               // First gaining Shadow Extraction (ch.100 — 20 slots)
+  C: 50,               // Growing intelligence stat
+  B: 100,              // Mid-tier hunter growth
+  A: 250,              // Post-Igris, significant army
+  S: 500,              // Jeju Island arc, hundreds+
+  SS: 1000,            // Late S-rank power
+  SSS: 2000,           // ~ch.227 "near two thousand"
+  'SSS+': 5000,        // Approaching Monarch
+  NH: 10000,           // National Hunter level
+  Monarch: 50000,      // Partial Ashborn inheritance
+  'Monarch+': 130000,  // ch.240 "over 130 thousand elite shadows"
+  'Shadow Monarch': Infinity, // Full Ashborn power — limitless
+};
+
+// ============================================================================
 // RANK PROBABILITY MULTIPLIERS — Extraction Chance Scaling
 // ============================================================================
 // Lower ranks = easier. Higher ranks = exponentially harder.
@@ -396,6 +420,7 @@ module.exports = {
   SHADOW_ROLE_STAT_WEIGHTS,
   RANK_PROBABILITY_MULTIPLIERS,
   RANK_STAT_MULTIPLIERS,
+  SHADOW_ARMY_CAPACITY,
   // CSS style IDs
   STYLE_ID_EXTRACTION,
   STYLE_ID_ARISE,

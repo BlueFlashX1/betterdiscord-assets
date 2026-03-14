@@ -65,6 +65,8 @@ const ShadowArmy = class ShadowArmy {
     this.rankProbabilityMultipliers = C.RANK_PROBABILITY_MULTIPLIERS;
     // Rank stat multipliers (1.5^rank_index exponential scaling)
     this.rankStatMultipliers = C.RANK_STAT_MULTIPLIERS;
+    // Shadow army capacity per player rank (lore-accurate, Shadow Monarch = Infinity)
+    this.shadowArmyCapacity = C.SHADOW_ARMY_CAPACITY;
 
     // ============================================================================
     // COMPONENT REFERENCES - Storage, UI, Integration

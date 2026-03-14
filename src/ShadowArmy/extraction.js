@@ -6,6 +6,46 @@
 
 module.exports = {
   // ============================================================================
+  // SHADOW ARMY CAPACITY — Lore-Accurate Cap Enforcement
+  // ============================================================================
+
+  /**
+   * Get the shadow army capacity for a given player rank.
+   * Shadow Monarch = Infinity (limitless). E-rank = 0 (no extraction skill).
+   */
+  getShadowArmyCap(playerRank) {
+    const cap = this.shadowArmyCapacity?.[playerRank];
+    return Number.isFinite(cap) ? cap : (cap === Infinity ? Infinity : 0);
+  },
+
+  /**
+   * Check if the army is at or over capacity for the current player rank.
+   * Returns { atCap, currentCount, cap, overBy }.
+   * Grandfathered shadows (existing over-cap) are NOT deleted — only new extractions are blocked.
+   */
+  async checkShadowArmyCap() {
+    const soloData = this.getSoloLevelingData();
+    const playerRank = soloData?.rank || 'E';
+    const cap = this.getShadowArmyCap(playerRank);
+
+    if (cap === Infinity) {
+      return { atCap: false, currentCount: 0, cap: Infinity, overBy: 0 };
+    }
+
+    let currentCount = 0;
+    if (this.storageManager && typeof this.storageManager.getTotalCount === 'function') {
+      try {
+        currentCount = await this.storageManager.getTotalCount();
+      } catch (e) {
+        this.debugError('CAP_CHECK', 'Failed to get shadow count', e);
+      }
+    }
+
+    const overBy = Math.max(0, currentCount - cap);
+    return { atCap: currentCount >= cap, currentCount, cap, overBy };
+  },
+
+  // ============================================================================
   // SOLO LEVELING INTEGRATION
   // ============================================================================
 
@@ -134,6 +174,15 @@ module.exports = {
 
     const soloData = this.getSoloLevelingData();
     if (!soloData) return null;
+
+    // Shadow army capacity check — block new extractions when at/over cap
+    const capStatus = await this.checkShadowArmyCap();
+    if (capStatus.atCap) {
+      this.debugLog('EXTRACTION', 'Shadow army at capacity, extraction blocked', {
+        current: capStatus.currentCount, cap: capStatus.cap, overBy: capStatus.overBy,
+      });
+      return null;
+    }
 
     const { rank, level, stats } = soloData;
     const intelligence = stats.intelligence || 0;
@@ -583,6 +632,16 @@ module.exports = {
       return { success: false, shadow: null, error: 'Shadow Extraction skill not unlocked' };
     }
 
+    // Shadow army capacity check — block new extractions when at/over cap
+    const capStatus = await this.checkShadowArmyCap();
+    if (capStatus.atCap) {
+      const capLabel = capStatus.cap === Infinity ? 'unlimited' : capStatus.cap.toLocaleString();
+      return {
+        success: false, shadow: null,
+        error: `Shadow army at capacity (${capStatus.currentCount.toLocaleString()}/${capLabel}). Rank up or release shadows.`,
+      };
+    }
+
     // Boss attempt limit check
     if (isBoss) {
       const canExtract = this.canExtractFromBoss(bossId);
@@ -656,6 +715,24 @@ module.exports = {
     }
     if (!corpsePile || corpsePile.length === 0) {
       return { extracted: 0, attempted: 0 };
+    }
+
+    // Shadow army capacity — limit bulk extraction to remaining slots
+    const capStatus = await this.checkShadowArmyCap();
+    if (capStatus.atCap) {
+      this.debugLog('ARISE', 'Shadow army at capacity, bulk extraction blocked', capStatus);
+      this.showToast?.(
+        `Shadow army at capacity (${capStatus.currentCount.toLocaleString()}/${capStatus.cap.toLocaleString()}). Rank up or release shadows to extract more.`,
+        'warning'
+      );
+      return { extracted: 0, attempted: 0, error: 'Shadow army at capacity' };
+    }
+
+    // Cap the corpse pile to remaining capacity (don't process more than we can store)
+    const remainingSlots = capStatus.cap === Infinity ? corpsePile.length : Math.max(0, capStatus.cap - capStatus.currentCount);
+    if (remainingSlots < corpsePile.length) {
+      this.debugLog('ARISE', `Capping bulk extraction to ${remainingSlots} remaining slots (${corpsePile.length} corpses available)`);
+      corpsePile = corpsePile.slice(0, remainingSlots);
     }
 
     const total = corpsePile.length;
