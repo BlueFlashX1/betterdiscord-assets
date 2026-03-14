@@ -905,6 +905,7 @@ module.exports = class SoloLevelingToasts {
       return this._cache.soloPluginInstance;
     }
 
+    if (!BdApi.Plugins.isEnabled("SoloLevelingStats")) return null;
     const soloPlugin = BdApi.Plugins.get("SoloLevelingStats");
     if (!soloPlugin) return null;
     const instance = soloPlugin.instance || soloPlugin;

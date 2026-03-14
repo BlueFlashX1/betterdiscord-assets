@@ -45,4 +45,29 @@ function createTtlCache(ttlMs = 5000) {
   };
 }
 
-module.exports = { createTtlCache };
+/**
+ * Create a single-value TTL cache (no key needed).
+ * Drop-in replacement for the inline _ttl pattern used in ShadowStep, ShadowSenses, etc.
+ * @param {number} [ttlMs=5000] - Time-to-live in milliseconds
+ * @returns {{ get: () => *, set: (value: *) => void, invalidate: () => void }}
+ */
+function createSingleValueCache(ttlMs = 5000) {
+  let value;
+  let timestamp = 0;
+
+  return {
+    get() {
+      return Date.now() - timestamp < ttlMs ? value : null;
+    },
+    set(v) {
+      value = v;
+      timestamp = Date.now();
+    },
+    invalidate() {
+      value = null;
+      timestamp = 0;
+    }
+  };
+}
+
+module.exports = { createTtlCache, createSingleValueCache };

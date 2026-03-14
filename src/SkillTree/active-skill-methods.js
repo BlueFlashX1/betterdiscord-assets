@@ -36,7 +36,9 @@ const ActiveSkillMethods = {
   _computeMaxManaFromStats() {
     const soloData = this.getSoloLevelingData();
     const intelligence = soloData?.stats?.intelligence || 0;
-    return 100 + intelligence * 2;
+    const level = soloData?.level || 1;
+    // Must match SoloLevelingStats formula: 100 + INT*12 + level*8
+    return 100 + intelligence * 12 + level * 8;
   },
 
   _getSoloLevelingInstance(now = Date.now()) {
@@ -483,11 +485,11 @@ const ActiveSkillMethods = {
     const state = this.getActiveSkillState(skillId);
     if (!state.active || state.chargesLeft <= 0) return false;
 
-    state.chargesLeft -= 1;
+    // Write back with spread to preserve all fields (state is a clone)
     if (!this.settings.activeSkillStates) this.settings.activeSkillStates = {};
-    this.settings.activeSkillStates[skillId] = state;
+    this.settings.activeSkillStates[skillId] = { ...state, chargesLeft: state.chargesLeft - 1 };
 
-    if (state.chargesLeft <= 0) {
+    if (state.chargesLeft - 1 <= 0) {
       this._deactivateSkill(skillId, "charges_exhausted");
     } else {
       this.saveSettings();

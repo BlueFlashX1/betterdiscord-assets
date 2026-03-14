@@ -7,7 +7,8 @@ const PANEL_CONTAINER_ID = "shadow-senses-panel-root";
 const TRANSITION_ID = "shadow-senses-transition-overlay";
 const GLOBAL_UTILITY_FEED_ID = "__shadow_senses_global__";
 
-const RANKS = window.SoloLevelingUtils?.RANKS || ["E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH", "Monarch", "Monarch+", "Shadow Monarch"];
+const { RANK_ORDER } = require("../shared/rank-utils");
+const RANKS = RANK_ORDER;
 const RANK_COLORS = {
   E: "#9ca3af", D: "#60a5fa", C: "#34d399", B: "#a78bfa",
   A: "#f59e0b", S: "#ef4444", SS: "#ec4899", SSS: "#8b5cf6",

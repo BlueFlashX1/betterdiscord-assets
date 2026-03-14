@@ -840,10 +840,9 @@ module.exports = class LevelProgressBar {
       this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not available');
       return false;
     }
-    if (!instance || typeof instance.on !== 'function') {
+    if (typeof instance.on !== 'function') {
       this.debugLog('SUBSCRIBE_EVENTS', 'Event system not available', {
-        hasInstance: !!instance,
-        hasOnMethod: !!(instance && typeof instance.on === 'function'),
+        hasOnMethod: typeof instance.on === 'function',
       });
       this.subscribeToDomEvents();
       return false;

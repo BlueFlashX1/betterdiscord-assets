@@ -125,6 +125,8 @@ module.exports = class HSLWheelBridge {
       this._fallbackEngine = null;
     }
     this._engineMounted = false;
+    // Clear module-level scroller cache to prevent stale DOM refs across hot-reload
+    for (const k in _scrollerCache) delete _scrollerCache[k];
     BdApi.Patcher.unpatchAll(this._patcherId);
   }
 

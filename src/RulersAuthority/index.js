@@ -63,7 +63,7 @@ const _createModules = () => ({
   get channels() { if (!this._channelsResolved) { this._channels = BdApi.Webpack.getByKeys("channel", "closeIcon", "dm") || null;                     this._channelsResolved = true; } return this._channels; },
 });
 
-const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
+const { createSingleValueCache: _ttl } = require("../shared/ttl-cache");
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Module imports

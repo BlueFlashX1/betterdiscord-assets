@@ -101,8 +101,18 @@ module.exports = {
             ? cachedComboData
             : (() => {
                 try {
+                  // Read combo from live CriticalHit instance (was reading dead 'CriticalHitAnimation' key)
+                  let liveCombo = null;
+                  try {
+                    const chPlugin = BdApi.Plugins.isEnabled('CriticalHit') && BdApi.Plugins.get('CriticalHit');
+                    const chInstance = chPlugin?.instance;
+                    if (chInstance?.getUserCombo) {
+                      const userId = this.UserStore?.getCurrentUser?.()?.id;
+                      liveCombo = userId ? chInstance.getUserCombo(userId) : null;
+                    }
+                  } catch (_) { /* CriticalHit unavailable */ }
                   const loaded = {
-                    combo: BdApi.Data.load('CriticalHitAnimation', 'userCombo'),
+                    combo: liveCombo,
                     burst: BdApi.Data.load('CriticalHit', 'lastCritBurst'),
                   };
                   this._cache.criticalHitComboData = loaded;

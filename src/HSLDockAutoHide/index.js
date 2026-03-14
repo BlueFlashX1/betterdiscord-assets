@@ -335,7 +335,7 @@ module.exports = class HSLDockAutoHide {
         if (!engineRef.current || pluginInstance._isStopped) return;
         engineRef.current.syncDock();
         engineRef.current.trySetupUserPanel();
-      });
+      }, []);
 
       return null;
     };

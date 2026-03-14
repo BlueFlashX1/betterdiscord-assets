@@ -50,7 +50,7 @@ const { createToast } = require("../shared/toast");
 const { getNavigationUtils } = require("../shared/navigation");
 const isEditableTarget = _PluginUtils?.isEditableTarget || _sharedIsEditableTarget;
 const matchesHotkey = _PluginUtils?.matchesHotkey || _sharedMatchesHotkey;
-const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
+const { createSingleValueCache: _ttl } = require("../shared/ttl-cache");
 const { buildComponents } = require("./components");
 const { buildShadowStepSettingsPanel } = require("./settings-panel");
 const { getShadowStepCss } = require("./styles");
@@ -455,7 +455,10 @@ module.exports = class ShadowStep {
     this.saveSettings();
 
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
-      _ensureShadowPortalCoreApplied(this.constructor);
+      if (!this._portalCoreApplyAttempted) {
+        _ensureShadowPortalCoreApplied(this.constructor);
+        this._portalCoreApplyAttempted = true;
+      }
     }
 
     // Fail-safe: never crash teleport if shared core failed to load.

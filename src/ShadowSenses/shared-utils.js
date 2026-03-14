@@ -10,21 +10,7 @@ try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _Plug
 let _TransitionCleanupUtils;
 try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
 
-const _ttl = _PluginUtils?.createTTLCache || ((ms) => {
-  let v;
-  let t = 0;
-  return {
-    get: () => Date.now() - t < ms ? v : null,
-    set: (x) => {
-      v = x;
-      t = Date.now();
-    },
-    invalidate: () => {
-      v = null;
-      t = 0;
-    },
-  };
-});
+const { createSingleValueCache: _ttl } = require("../shared/ttl-cache");
 
 module.exports = {
   _bdLoad,

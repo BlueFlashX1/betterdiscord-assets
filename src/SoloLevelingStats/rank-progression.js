@@ -44,8 +44,9 @@ module.exports = {
   },
 
   getPromotedRanksForRank(rank = this.settings?.rank) {
+    const { RANK_ORDER } = require('../shared/rank-utils');
     const fallbackRanks =
-      this.defaultSettings?.ranks || ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'];
+      this.defaultSettings?.ranks || RANK_ORDER;
     const ranks =
       Array.isArray(this.settings?.ranks) && this.settings.ranks.length
         ? this.settings.ranks

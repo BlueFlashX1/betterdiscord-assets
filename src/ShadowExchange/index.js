@@ -820,7 +820,10 @@ module.exports = class ShadowExchange {
     }
 
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
-      _ensureShadowPortalCoreApplied(this.constructor);
+      if (!this._portalCoreApplyAttempted) {
+        _ensureShadowPortalCoreApplied(this.constructor);
+        this._portalCoreApplyAttempted = true;
+      }
     }
 
     // Fail-safe: do not throw if shared core failed to load.

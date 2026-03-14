@@ -113,11 +113,12 @@ module.exports = {
     const { useState, useEffect, useCallback, useRef } = React;
     const ce = React.createElement;
 
-    const RANKS_SA = ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+'];
+    const { RANK_ORDER } = require("../shared/rank-utils");
+    const RANKS_SA = RANK_ORDER;
     const RANK_COLORS_SA = {
       E: '#999', D: '#a0a0a0', C: '#22c55e', B: '#3b82f6', A: '#8a2be2',
       S: '#f59e0b', SS: '#ef4444', SSS: '#ec4899', 'SSS+': '#f50057',
-      NH: '#e040fb', Monarch: '#ff4500', 'Monarch+': '#ff6b2b',
+      NH: '#e040fb', Monarch: '#ff4500', 'Monarch+': '#ff6b2b', 'Shadow Monarch': '#8a2be2',
     };
 
     // ---- Sub-component: Stat Card ----

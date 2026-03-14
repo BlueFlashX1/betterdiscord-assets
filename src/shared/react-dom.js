@@ -65,7 +65,9 @@ function renderToContainer(container, element) {
     };
   }
 
-  console.error("[shared/react-dom] Neither createRoot nor ReactDOM.render available");
+  const { createWarnOnce } = require("./warn-once");
+  const warnOnce = createWarnOnce();
+  warnOnce("react-dom-unavailable", "[shared/react-dom] Neither createRoot nor ReactDOM.render available");
   return () => {};
 }
 

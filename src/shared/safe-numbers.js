@@ -12,7 +12,7 @@
  *   createZeroStatBlock()        // => { strength: 0, agility: 0, ... }
  */
 
-const STAT_KEYS = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+const STAT_KEYS = Object.freeze(['strength', 'agility', 'intelligence', 'vitality', 'perception']);
 
 /**
  * Normalize a value to a finite number. Returns fallback if NaN/Infinity/undefined.

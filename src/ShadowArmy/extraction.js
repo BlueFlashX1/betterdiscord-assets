@@ -563,7 +563,7 @@ module.exports = {
                   resolvedRank, shadowRanks: this.shadowRanks,
                 });
                 const result = await this.storageManager.getAggregatedPower(
-                  resolvedRank, this.shadowRanks, true
+                  resolvedRank, this.shadowRanks
                 );
                 this.debugLog('TOTAL_POWER_UPDATE', 'Aggregated power recalculation completed', {
                   totalPower: result?.totalPower || 0,
@@ -730,7 +730,7 @@ module.exports = {
     const capStatus = await this.checkShadowArmyCap();
     if (capStatus.atCap) {
       this.debugLog('ARISE', 'Shadow army at capacity, bulk extraction blocked', capStatus);
-      this.showToast?.(
+      this._toast?.(
         `Shadow army at capacity (${capStatus.currentCount.toLocaleString()}/${capStatus.cap.toLocaleString()}). Rank up or release shadows to extract more.`,
         'warning'
       );

@@ -326,8 +326,8 @@ module.exports = class ShadowRecon {
 
     const nextMap = new Map();
     try {
-      const plugin = BdApi.Plugins.get("ShadowSenses");
-      const instance = plugin?.instance || plugin;
+      const plugin = BdApi.Plugins.isEnabled("ShadowSenses") && BdApi.Plugins.get("ShadowSenses");
+      const instance = plugin?.instance || null;
       const live = instance?.deploymentManager?.getDeployments?.();
       let deployments;
       if (Array.isArray(live)) {

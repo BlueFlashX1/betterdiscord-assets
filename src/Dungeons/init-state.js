@@ -625,7 +625,8 @@ module.exports = {
   },
 
   _buildRankLookupTables() {
-    const ranks = this.settings.dungeonRanks || ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+','Shadow Monarch'];
+    const { RANK_ORDER } = require('../shared/rank-utils');
+    const ranks = this.settings.dungeonRanks || RANK_ORDER;
     const n = ranks.length;
 
     // Flat resurrection costs (Step 1)

@@ -368,8 +368,8 @@ module.exports = {
         : (this.settings.userMana || 0);
 
       // Sort: resurrect highest-rank shadows first (most valuable)
-      const rankOrder = { 'Shadow Monarch': 12, 'Monarch+': 11, Monarch: 10, NH: 9, 'SSS+': 8, SSS: 7, SS: 6, S: 5, A: 4, B: 3, C: 2, D: 1, E: 0 };
-      newlyDead.sort((a, b) => (rankOrder[b.targetShadow.rank] || 0) - (rankOrder[a.targetShadow.rank] || 0));
+      const { getRankIndex } = require('../shared/rank-utils');
+      newlyDead.sort((a, b) => getRankIndex(b.targetShadow.rank) - getRankIndex(a.targetShadow.rank));
 
       let resurrectedCount = 0;
       for (const { shadowId, targetShadow, shadowHPData } of newlyDead) {

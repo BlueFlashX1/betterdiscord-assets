@@ -84,7 +84,7 @@ module.exports = {
   invalidateShadowCountCache() {
     this._shadowCountCache = null;
     // Also clear centralized CacheManager entry
-    this.cache?.caches?.delete('shadowCount');
+    this.cache?.delete?.('shadowCount');
   },
 
   getSkillTreeBonuses() {

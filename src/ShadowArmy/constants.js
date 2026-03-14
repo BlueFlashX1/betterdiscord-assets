@@ -37,13 +37,7 @@ const SHADOW_PERSONALITY_ROLE_MAP = {
   yeti: 'tank',
 };
 
-const STAT_KEYS = Object.freeze([
-  'strength',
-  'agility',
-  'intelligence',
-  'vitality',
-  'perception',
-]);
+const { STAT_KEYS } = require("../shared/safe-numbers");
 
 function normalizeShadowPersonalityValue(value) {
   if (typeof value !== 'string') return '';
@@ -147,10 +141,7 @@ const DEFAULT_SETTINGS = {
 // SHADOW RANK SYSTEM — Solo Leveling Rank Hierarchy (E → Shadow Monarch)
 // ============================================================================
 
-const SHADOW_RANKS = [
-  'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH',
-  'Monarch', 'Monarch+', 'Shadow Monarch',
-];
+const { RANK_ORDER: SHADOW_RANKS } = require("../shared/rank-utils");
 
 // ============================================================================
 // SHADOW ROLES — 26 Types (8 Humanoid + 18 Magic Beast)

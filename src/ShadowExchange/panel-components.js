@@ -1,7 +1,4 @@
-const RANK_ORDER = window.SoloLevelingUtils?.RANKS || [
-  "E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH",
-  "Monarch", "Monarch+", "Shadow Monarch",
-];
+const { RANK_ORDER } = require("../shared/rank-utils");
 
 const RANK_COLORS = {
   E: "#808080", D: "#8B4513", C: "#FF6347", B: "#FFD700",

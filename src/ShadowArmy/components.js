@@ -8,7 +8,9 @@ function buildWidgetComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
 
-  const RANKS = ['Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+  const { RANK_ORDER: _RO } = require("../shared/rank-utils");
+  // Display order: descending, exclude Shadow Monarch (not shown in widget)
+  const RANKS = [..._RO].filter(r => r !== 'Shadow Monarch').reverse();
   const RANK_COLORS = {
     'Monarch+': '#ff6b2b', Monarch: '#ff4500', NH: '#e040fb', 'SSS+': '#f50057',
     SSS: '#ec4899', SS: '#ef4444', S: '#f59e0b', A: '#8a2be2',
