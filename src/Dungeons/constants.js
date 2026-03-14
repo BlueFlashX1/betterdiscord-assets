@@ -59,8 +59,7 @@ module.exports = {
       maxSpeedBoost: 0.30, // +30% cap at 2 stacks
     },
   },
-  // Family → status effect mapping for lore-accurate ailments
-  // Enemies and magic beast shadows inflict effects matching their creature family
+  // Family → status effect mapping (enemies and magic beast shadows use creature-matched ailments)
   FAMILY_STATUS_EFFECT_MAP: {
     beast:            { primary: 'bleed',     secondary: 'armorBreak', chance: 0.09 },
     ice:              { primary: 'frostbite', secondary: 'slow',       chance: 0.10 },
@@ -74,29 +73,27 @@ module.exports = {
     construct:        { primary: 'armorBreak',secondary: 'slow',       chance: 0.08 },
     ancient:          { primary: 'slow',      secondary: 'poison',     chance: 0.08 },
   },
-  // Boss enrage intensity by family — how hard bosses rage when wounded
+  // Boss enrage intensity by family
   BOSS_ENRAGE_INTENSITY: {
-    beast:            'high',   // Tusk-style berserker
-    demon:            'high',   // Baran-style fury
-    dragon:           'high',   // Apocalyptic when wounded
-    'humanoid-beast': 'high',   // Savage warriors
-    giant:            'medium', // Slower but stronger rage
-    ice:              'medium', // Cold fury
-    reptile:          'medium', // Cornered predator
-    insect:           'medium', // Hive frenzy
-    undead:           'low',    // Relentless but consistent
-    ancient:          'low',    // Disciplined, less prone to berserk
-    construct:        'none',   // Mechanical, no rage
+    beast:            'high',
+    demon:            'high',
+    dragon:           'high',
+    'humanoid-beast': 'high',
+    giant:            'medium',
+    ice:              'medium',
+    reptile:          'medium',
+    insect:           'medium',
+    undead:           'low',
+    ancient:          'low',
+    construct:        'none',   // Mechanical — no rage
   },
   COMBAT_STATUS_LIMITS: {
     tickIntervalMs: 1000,
     maxTrackedMobsPerDungeon: 600,
   },
-  // BOSS DURABILITY SYSTEM
-  // Prevents bosses from being one-shot by shadow armies.
+  // Boss durability — prevents shadow armies from one-shotting bosses
 
   // 1) BOSS DAMAGE RESISTANCE — rank-scaled % reduction on ALL incoming damage
-  //    Higher-rank bosses shrug off more damage (S-rank boss resists 55%)
   BOSS_DAMAGE_RESISTANCE: {
     E: 0.10,  D: 0.15,  C: 0.22,  B: 0.30,  A: 0.38,
     S: 0.45,  SS: 0.50, SSS: 0.55, 'SSS+': 0.58,
@@ -104,19 +101,17 @@ module.exports = {
   },
 
   // 2) PER-HIT DAMAGE CAP — no single hit can exceed this % of boss maxHP
-  //    Prevents one-shots even from massively overpowered shadows
   BOSS_DAMAGE_CAP_PCT: 0.06, // 6% of maxHP per hit (boss needs 17+ hits minimum)
 
   // 3) BOSS PHASE SHIELD — brief invulnerability at HP thresholds
-  BOSS_PHASE_THRESHOLDS: [0.75, 0.50, 0.25], // HP% triggers
-  BOSS_PHASE_SHIELD_MS: 2500, // 2.5s invulnerability window
+  BOSS_PHASE_THRESHOLDS: [0.75, 0.50, 0.25],
+  BOSS_PHASE_SHIELD_MS: 2500, // 2.5s invulnerability
 
-  // 4) BOSS HP SCALING — multiplier applied on top of existing HP formula
-  //    Accounts for shadow army size (old formula assumed solo player)
+  // 4) BOSS HP SCALING — accounts for shadow army size (old formula assumed solo player)
   BOSS_HP_ARMY_MULTIPLIER: 8, // 8x base HP to survive sustained shadow DPS
 
-  // 5) SHADOW VS BOSS DAMAGE REDUCTION — shadows deal reduced damage to bosses
-  SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of their calculated damage to bosses
+  // 5) SHADOW VS BOSS DAMAGE REDUCTION
+  SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of calculated damage to bosses
   RANK_MULTIPLIERS: {
     E: 1,
     D: 2,

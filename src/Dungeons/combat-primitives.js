@@ -66,7 +66,6 @@ module.exports = {
   async recalculateUserHP() {
     if (!this.soloLevelingStats) return;
 
-    // CRITICAL: Sync HP from Stats plugin first (get latest value)
     this.syncHPFromStats();
 
     const totalStats = this.getUserEffectiveStats();
@@ -77,7 +76,6 @@ module.exports = {
     const oldMaxHP = this.settings.userMaxHP || 0;
     this.settings.userMaxHP = await this.calculateHP(vitality, rank, true);
 
-    // If max HP increased, increase current HP proportionally
     if (this.settings.userMaxHP > oldMaxHP) {
       const hpIncrease = this.settings.userMaxHP - oldMaxHP;
       this.settings.userHP = Math.min(
@@ -86,15 +84,13 @@ module.exports = {
       );
     }
 
-    // CRITICAL: Push HP to Stats plugin and update UI in real-time
-    this.pushHPToStats(true); // Save immediately
-    this.updateStatsUI(); // Real-time UI update
+    this.pushHPToStats(true);
+    this.updateStatsUI();
   },
 
   async recalculateUserMana() {
     if (!this.soloLevelingStats) return;
 
-    // CRITICAL: Sync mana from Stats plugin first (get latest value)
     this.syncManaFromStats();
 
     const totalStats = this.getUserEffectiveStats();
@@ -104,22 +100,19 @@ module.exports = {
     const oldMaxMana = this.settings.userMaxMana || 0;
     this.settings.userMaxMana = await this.calculateMana(intelligence, level);
 
-    // If max mana increased, increase current mana proportionally
     if (this.settings.userMaxMana > oldMaxMana) {
       const manaIncrease = this.settings.userMaxMana - oldMaxMana;
       this.settings.userMana = Math.min(
         this.settings.userMaxMana,
         this.settings.userMana + manaIncrease
       );
-      // Mana pool updated silently
     } else {
-      // Clamp current mana if max dropped (e.g., buff expired)
+      // Clamp if max dropped (e.g., buff expired)
       this.settings.userMana = Math.min(this.settings.userMaxMana, this.settings.userMana || 0);
     }
 
-    // CRITICAL: Push Mana to Stats plugin and update UI in real-time
-    this.pushManaToStats(true); // Save immediately
-    this.updateStatsUI(); // Real-time UI update
+    this.pushManaToStats(true);
+    this.updateStatsUI();
     this.saveSettings();
   },
 
@@ -164,15 +157,14 @@ module.exports = {
   startRegeneration() {
     if (this.regenInterval) {
       this.debugLog('⏰ Regeneration interval already running');
-      return; // Already running
+      return;
     }
 
     this.debugLog('⏰ Regeneration interval started (auto-pauses when full)');
-    // Start HP/Mana regeneration interval
     this.regenInterval = setInterval(() => {
       if (!this.isWindowVisible()) return; // PERF(P5-3): Skip regen when hidden
       this.regenerateHPAndMana();
-    }, 3000); // Regenerate every 3 seconds
+    }, 3000);
     this._intervals.add(this.regenInterval);
   },
 
@@ -207,8 +199,7 @@ module.exports = {
       return;
     }
 
-    // CRITICAL: SYNC FROM STATS PLUGIN FIRST (pull latest values before regenerating)
-    // SoloLevelingStats may have its own regeneration or HP changes we need to respect
+    // CRITICAL: Sync from Stats plugin first — it may have its own HP/mana changes
     this.syncHPAndManaFromStats();
 
     // Get total effective stats (including buffs) and level
@@ -231,7 +222,6 @@ module.exports = {
       this._regenDebugShown = true;
     }
 
-    // VALIDATION: Ensure HP/Mana values are valid numbers
     if (typeof this.settings.userHP !== 'number' || isNaN(this.settings.userHP)) {
       this.settings.userHP = this.settings.userMaxHP || 100;
     }
@@ -271,7 +261,6 @@ module.exports = {
       return;
     }
 
-    // HP REGENERATION: Execute if HP is below max
     if (needsHPRegen) {
       // Enhanced regeneration formula with level and stat scaling
       const baseRate = 0.005; // 0.5% base regeneration
@@ -328,10 +317,7 @@ module.exports = {
       this._hpRegenActive = false;
     }
 
-    // MANA REGENERATION: Execute if Mana is below max
-    // Uses sqrt scaling for INT with mode-aware caps:
-    // - In combat: intentionally low regen so resurrection costs matter.
-    // - Out of combat: faster refill for QoL between fights.
+    // Mana regen: sqrt INT scaling, intentionally low in-combat so resurrection costs matter
     if (needsManaRegen) {
       const inCombat = this._hasActiveDungeonCombat();
       const baseRate = inCombat ? 0.0015 : 0.008;
@@ -394,11 +380,9 @@ module.exports = {
   },
 
   async handleUserDefeat(channelKey) {
-    // CRITICAL: Sync HP from Stats plugin to get the absolute latest value
-    // This prevents false defeat notifications due to stale HP values
+    // CRITICAL: Sync HP first — prevents false defeat from stale values
     this.syncHPFromStats();
 
-    // VALIDATION: Double-check HP is actually 0 before showing defeat
     if (this.settings.userHP > 0) {
       this.debugLog('DEFEAT_CHECK', 'Defeat triggered but HP > 0, ignoring', {
         userHP: this.settings.userHP,
@@ -471,7 +455,6 @@ module.exports = {
   },
 
   getUserEffectiveStats() {
-    // Check cache first
     const now = Date.now();
     if (
       this._cache.userEffectiveStats &&
@@ -487,7 +470,6 @@ module.exports = {
       this.getUserStats()?.stats ||
       {};
 
-    // Cache the result
     this._cache.userEffectiveStats = result;
     this._cache.userEffectiveStatsTime = now;
 

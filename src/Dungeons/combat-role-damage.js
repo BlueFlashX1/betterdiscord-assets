@@ -1,6 +1,5 @@
 module.exports = {
   buildDungeonCombatSnapshot({ dungeon, aliveMobs, bossAlive }) {
-    // Build Map directly (no intermediate array allocation)
     const mobById = new Map();
     if (aliveMobs) {
       for (const mob of aliveMobs) {
@@ -711,7 +710,6 @@ module.exports = {
 
     let damage = this.calculateDamage(attacker.stats, defender.stats, attacker.rank, defender.rank);
 
-    // Apply role-based damage multiplier
     damage = this.applyRoleDamageMultiplier(shadow.role, damage);
 
     if (!Number.isFinite(damage) || damage < 0) {

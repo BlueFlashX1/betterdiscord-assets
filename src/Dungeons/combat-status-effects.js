@@ -84,16 +84,12 @@ module.exports = {
     return magicBeastRoles.has(roleKey);
   },
 
-  // Get the beast family for a shadow (e.g., 'beast', 'ice', 'demon')
   _getShadowFamily(shadow) {
     if (!shadow) return null;
-    // Direct family field (set at extraction)
     if (shadow.family) return shadow.family;
-    // Lookup from ShadowArmy role definitions
     const roleKey = shadow.role || shadow.roleName || shadow.ro || '';
     const roles = this.shadowArmy?.shadowRoles || this.shadowArmy?.constructor?.SHADOW_ROLES;
     if (roles && roles[roleKey]) return roles[roleKey].family || null;
-    // Hardcoded fallback map
     const familyByRole = {
       ant: 'insect', spider: 'insect', centipede: 'insect',
       bear: 'beast', wolf: 'beast',
@@ -195,7 +191,6 @@ module.exports = {
     const rankIndex = Math.max(0, this.getRankIndexValue(attacker.rank || 'E'));
     const beastFamily = attacker.beastFamily || null;
 
-    // Family-based override: lore-accurate ailments tied to creature type
     const familyMap = C.FAMILY_STATUS_EFFECT_MAP || {};
     const familyEffect = beastFamily ? familyMap[beastFamily] : null;
 
@@ -203,7 +198,7 @@ module.exports = {
     let baseChance;
 
     if (familyEffect) {
-      // 70% chance primary effect, 30% chance secondary for variety
+      // 70% primary, 30% secondary for variety
       effectName = Math.random() < 0.7 ? familyEffect.primary : familyEffect.secondary;
       baseChance = familyEffect.chance;
     } else {
@@ -297,8 +292,7 @@ module.exports = {
     let changed = false;
     for (const effectName of Object.keys(bucket)) {
       const effect = bucket[effectName];
-      // Permanent effects (enrage) have Infinity expiresAt — skip pruning
-      if (!effect || (effect.expiresAt !== Infinity && (!Number.isFinite(effect.expiresAt) || effect.expiresAt <= now))) {
+      if (!effect || (effect.expiresAt !== Infinity && (!Number.isFinite(effect.expiresAt) || effect.expiresAt <= now))) { // Infinity = permanent (enrage)
         delete bucket[effectName];
         changed = true;
       }
@@ -568,7 +562,6 @@ module.exports = {
     return this.clampNumber(1 + totalSlow, 1, 2.5); // Cap at 150% extra cooldown
   },
 
-  // Necrotic: reduces healing/regeneration received
   getEntityHealReductionMultiplier(channelKey, targetType, targetId, now = Date.now()) {
     if (!this._isCombatStatusEffectsEnabled()) return 1;
     const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'necrotic', now);
@@ -582,7 +575,6 @@ module.exports = {
     return this.clampNumber(1 - reduction, 0.1, 1); // Minimum 10% healing
   },
 
-  // Enrage: boosts attacker's outgoing damage (boss self-buff)
   getEntityEnrageDamageMultiplier(channelKey, targetType, targetId, now = Date.now()) {
     if (!this._isCombatStatusEffectsEnabled()) return 1;
     const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'enrage', now);
@@ -596,7 +588,6 @@ module.exports = {
     return this.clampNumber(1 + boost, 1, 1.5);
   },
 
-  // Enrage: boosts attacker's attack speed
   getEntityEnrageSpeedMultiplier(channelKey, targetType, targetId, now = Date.now()) {
     if (!this._isCombatStatusEffectsEnabled()) return 1;
     const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'enrage', now);
@@ -614,7 +605,6 @@ module.exports = {
     const archetype = profile?.archetype || 'balanced';
     const personalityKey = profile?.personalityKey || 'balanced';
 
-    // Magic beast shadows: use family-based effects (lore-accurate — shadows retain creature abilities)
     const isMagicBeast = shadow && this._isShadowMagicBeast(shadow);
     if (isMagicBeast) {
       const family = this._getShadowFamily(shadow);
@@ -622,8 +612,7 @@ module.exports = {
       const familyEffect = family ? familyMap[family] : null;
 
       if (familyEffect) {
-        // 70% primary, 30% secondary for variety
-        const effectName = Math.random() < 0.7 ? familyEffect.primary : familyEffect.secondary;
+        const effectName = Math.random() < 0.7 ? familyEffect.primary : familyEffect.secondary; // 70% primary, 30% secondary for variety
         let chance = familyEffect.chance * 0.3; // Shadow base proc rate (lower than enemy)
 
         // Personality modifier
@@ -642,7 +631,6 @@ module.exports = {
       }
     }
 
-    // Humanoid shadows or unknown families: archetype-based mapping (original behavior)
     const baseByArchetype = {
       tank: { effectName: 'armorBreak', target: 'boss', chance: 0.012 },
       support: { effectName: 'slow', target: 'mob', chance: 0.018 },
@@ -773,11 +761,8 @@ module.exports = {
     return now >= (state.nextTickAt || 0);
   },
 
-  // All DOT effect names that tick damage (used by processCombatStatusEffects)
   _DOT_EFFECTS: ['poison', 'bleed', 'burn', 'necrotic'],
 
-  // Calculate DOT damage for a single tick of a given effect
-  // Scales by source rank/stats vs target rank when source info is available
   _calculateDotTickDamage(effectName, effect, maxHp, targetRank = null) {
     const config = this._getStatusEffectConfig(effectName);
     if (!config) return 0;
@@ -792,13 +777,11 @@ module.exports = {
     return Math.max(1, Math.floor(maxHp * scaledPct));
   },
 
-  // Advance a DOT effect's next tick timestamp
   _advanceDotTick(effect, effectName, now = Date.now()) {
     const config = this._getStatusEffectConfig(effectName);
     effect.nextTickAt = now + Math.max(400, Math.floor(config?.tickMs || 1000));
   },
 
-  // Check frostbite root state — set root expiry when max stacks reached
   _checkFrostbiteRoot(channelKey, targetType, targetId, now = Date.now()) {
     const effect = this._readActiveStatusEffect(channelKey, targetType, targetId, 'frostbite', now);
     if (!effect) return;
@@ -827,7 +810,7 @@ module.exports = {
       this._attemptUserDetoxificationCleanse(channelKey, now);
     }
 
-    // === USER DOT TICKS (poison, bleed, burn, necrotic) ===
+    // User DOT ticks
     if (dungeon?.userParticipating && Number(this.settings?.userHP) > 0) {
       const userRank = this.soloLevelingStats?.settings?.rank || 'E';
       let userDefeated = false;
@@ -858,7 +841,7 @@ module.exports = {
       this._checkFrostbiteRoot(channelKey, 'user', 'user', now);
     }
 
-    // === BOSS DOT TICKS ===
+    // Boss DOT ticks
     if (dungeon?.boss?.hp > 0) {
       for (const effectName of this._DOT_EFFECTS) {
         const effect = this._readActiveStatusEffect(channelKey, 'boss', 'boss', effectName, now);
@@ -874,7 +857,7 @@ module.exports = {
       this._checkFrostbiteRoot(channelKey, 'boss', 'boss', now);
     }
 
-    // === MOB DOT TICKS ===
+    // Mob DOT ticks
     if (state.mobs instanceof Map && state.mobs.size > 0 && Array.isArray(dungeon?.mobs?.activeMobs)) {
       const liveMobById = new Map();
       for (const mob of dungeon.mobs.activeMobs) {

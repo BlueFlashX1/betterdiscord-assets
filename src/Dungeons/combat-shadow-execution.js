@@ -3,11 +3,10 @@ const C = require('./constants');
 module.exports = {
   async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, shadowBudget = 250) {
     try {
-      // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
+      // PERF: Use hoisted visibility when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
       if (!isWindowVisible) {
-        // Window hidden - reduce cycles multiplier significantly (75% reduction)
-        cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
+        cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // 75% reduction when hidden
       }
 
       // Validate active dungeon status periodically (deterministic cadence avoids RNG jitter).
@@ -26,7 +25,6 @@ module.exports = {
         return;
       }
 
-      // Stop attacking if boss is already dead (0 HP)
       if (dungeon.boss.hp <= 0 && dungeon.mobs?.activeMobs?.length === 0) {
         this.stopShadowAttacks(channelKey);
         return;
@@ -38,7 +36,6 @@ module.exports = {
       }
 
       try {
-        // Ensure combat state objects exist (defensive re-init)
         if (!dungeon.shadowCombatData || !(dungeon.shadowCombatData instanceof Map)) {
           dungeon.shadowCombatData = new Map();
         }
@@ -52,9 +49,7 @@ module.exports = {
           }
         }
 
-        // OPTIMIZATION: Use pre-split shadow allocations (cached)
-        // DYNAMIC DEPLOYMENT: Reallocate shadows if cache expired OR if this dungeon has no shadows.
-        // PERF: preSplitShadowArmy is expensive (IDB read + sort). Call it AT MOST ONCE per tick.
+        // PERF: preSplitShadowArmy (IDB read + sort) called at most once per tick
         const hasAllocation =
           this.shadowAllocations.has(channelKey) &&
           this.shadowAllocations.get(channelKey)?.length > 0;
@@ -76,7 +71,6 @@ module.exports = {
           }
         }
 
-        // Get pre-allocated shadows for this dungeon
         const assignedShadows = this.shadowAllocations.get(channelKey);
         if (!assignedShadows || assignedShadows.length === 0) {
           this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — NO shadows for ${channelKey}`);
@@ -125,10 +119,7 @@ module.exports = {
           dungeon.shadowCombatData = new Map();
         }
 
-        // OPTIMIZATION: Sync HP + combat data init (no async, no microtasks, no Promise.all).
-        // CRITICAL: Initialize ALL assigned shadows (not just combat-ready ones)
-        // getCombatReadyShadows filters out shadows without HP, which prevents initialization
-        // PERFORMANCE: Skip initialized shadows when window is hidden
+        // Init ALL assigned shadows (not just combat-ready) — getCombatReadyShadows filters later
         for (const shadow of assignedShadows) {
           const shadowId = this.getShadowIdValue(shadow);
           if (!shadowId) continue;
@@ -145,11 +136,7 @@ module.exports = {
           }
         }
 
-        // RESURRECTION: Resurrect ALL dead shadows each tick (no budget cap).
-        // With rank-scaled HP buff, shadow deaths are manageable — no longer thousands per tick.
-        // attemptAutoResurrection is essentially synchronous (mana check + deduct), so no I/O stall.
-        // Loop breaks early when mana runs out (budgetAvailable < manaCost check inside).
-        // PERFORMANCE: Skip resurrection checks when window is hidden
+        // Resurrect dead shadows each tick (breaks early when mana runs out); skip when hidden
         if (isWindowVisible) {
           if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
           const nowResurrection = Date.now();
@@ -160,7 +147,6 @@ module.exports = {
             const hpData = shadowHP.get(shadowId);
             if (!hpData || hpData.hp > 0) continue;
 
-            // Skip if resurrection was already attempted recently (within 2s window)
             const lastAttempt = dungeon._lastResurrectionAttempt[shadowId] || 0;
             if (nowResurrection - lastAttempt < 2000) continue;
 
@@ -183,7 +169,6 @@ module.exports = {
           }
         }
 
-        // Prepare target stats
         const bossStats = {
           strength: dungeon.boss.strength,
           agility: dungeon.boss.agility,
@@ -208,7 +193,6 @@ module.exports = {
         const bossAlive = dungeon.boss.hp > 0;
         const combatSnapshot = this.buildDungeonCombatSnapshot({ dungeon, aliveMobs, bossAlive });
 
-        // Combat tracking (for completion analytics)
         if (!dungeon.combatAnalytics) {
           dungeon.combatAnalytics = {
             totalBossDamage: 0,
@@ -221,14 +205,10 @@ module.exports = {
         const analytics = dungeon.combatAnalytics;
         const now = Date.now();
 
-        // BATCH PROCESSING: Calculate attacks for cyclesToProcess cycles in one calculation
-        // For background dungeons, this processes 15-20 cycles worth of attacks at once
-        const activeInterval = 3000; // Shadow attacks happen every 3 seconds
-        const totalTimeSpan = cyclesMultiplier * activeInterval; // Total time being processed
+        const activeInterval = 3000;
+        const totalTimeSpan = cyclesMultiplier * activeInterval;
 
-        // PERFORMANCE: Sampling — do not process thousands of shadows every tick.
-        // We simulate a representative subset and scale damage up. This keeps gameplay responsive
-        // and avoids per-tick large array allocations for massive armies.
+        // PERF: Sample representative subset of shadows and scale damage up
         const visibleTargetBudget = aliveMobs.length > 0
           ? Math.max(80, Math.min(shadowBudget, aliveMobs.length * 2))
           : Math.max(100, Math.min(shadowBudget, 160));
@@ -304,7 +284,6 @@ module.exports = {
           this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, ready=${combatReadyCount}, sample=${maxShadowsToProcess}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
         }
 
-        // HOISTED: These only depend on dungeon state, not per-shadow state
         const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
         const bossAliveNow = dungeon.boss.hp > 0 && bossUnlocked;
         const hasMobs = aliveMobs.length > 0;
@@ -319,14 +298,10 @@ module.exports = {
             : 1;
         const roleCombatContext = this.getRoleCombatTickContext(channelKey);
         const rolePressure = this.buildRolePressureBucket();
-        // HOISTED: Domain buff applies to ALL shadow damage (boss + mob), not per-shadow
         const domainMultiplier = this._getDomainShadowMultiplier(dungeon);
 
-        // HOISTED: Rank-stratified mob targets — one representative per rank for accurate damage calc.
-        // Instead of averaging ALL mobs into one fake entity (inaccurate when rank-E and rank-S mix),
-        // group mobs by rank and build per-rank representative stats. Shadows then calculate damage
-        // against each rank group separately and distribute proportionally.
-        const mobRankGroups = new Map(); // rank -> { count, representative: { type, rank, strength, ... }, mobsInGroup: [] }
+        // Rank-stratified mob targets: group by rank for accurate per-rank damage calc instead of a single averaged entity
+        const mobRankGroups = new Map(); // rank -> { count, representative, mobsInGroup }
         if (hasMobs) {
           for (let m = 0; m < aliveMobs.length; m++) {
             const mob = aliveMobs[m];
@@ -378,9 +353,8 @@ module.exports = {
           }
         }
 
-        // AGGREGATED: Accumulate boss damage across ALL shadows, apply once after loop
         let aggregatedBossDamage = 0;
-        // Pooled mob damage map — reuse across ticks to avoid per-tick allocation + GC
+        // Reuse pooled map to avoid per-tick allocation + GC
         if (!(dungeon._pooledMobDamageMap instanceof Map)) dungeon._pooledMobDamageMap = new Map();
         const mobDamageMap = dungeon._pooledMobDamageMap;
         mobDamageMap.clear();
@@ -398,17 +372,11 @@ module.exports = {
           i += stride, processed++
         ) {
           const shadow = combatReadyShadows[i];
-          // Guard clause: Ensure shadow exists and has valid ID
           const shadowId = this.getShadowIdValue(shadow);
-          if (!shadowId) {
-            continue; // Skip invalid shadow
-          }
+          if (!shadowId) continue;
 
           const shadowHPData = shadowHP.get(shadowId);
-          // Double-check HP (should already be filtered by getCombatReadyShadows, but safety check)
-          if (!shadowHPData || shadowHPData.hp <= 0) {
-            continue; // Skip this shadow, continue to next
-          }
+          if (!shadowHPData || shadowHPData.hp <= 0) continue;
 
           let combatData = dungeon.shadowCombatData.get(shadowId);
           if (!combatData) {
@@ -427,14 +395,12 @@ module.exports = {
 
           const finalCombatData = combatData;
 
-          // Calculate attacks with shared cadence helpers to stay consistent with boss/mob timing.
           const timeSinceLastAttack = Math.max(0, now - (finalCombatData.lastAttackTime || 0));
           let effectiveCooldown = this.getEffectiveAttackCooldownMs(
             finalCombatData.attackInterval || finalCombatData.cooldown || 2000,
             activeInterval
           );
 
-          // Apply sprint buff (attack cooldown reduction)
           const sprintReduction = this._getSprintCooldownReduction(dungeon);
           if (sprintReduction > 0) {
             effectiveCooldown = Math.max(800, Math.floor(effectiveCooldown * (1 - sprintReduction)));
@@ -446,16 +412,13 @@ module.exports = {
             totalTimeSpan
           );
 
-          if (attacksInSpan <= 0) {
-            continue; // Shadow not ready yet, continue to next shadow
-          }
+          if (attacksInSpan <= 0) continue;
           this._addRolePressureSample(rolePressure, shadow, finalCombatData, attacksInSpan, scaleFactor);
 
-          // FAST PATH: no per-attack loop. Compute attacks once, then apply personality-driven split + variance.
           let totalBossDamage = 0;
           let totalMobDamage = 0;
 
-          // Target split (uses hoisted bossChance)
+          // Target split
           const half = Math.floor(attacksInSpan * bossChance);
           const bossAttacks =
             bossAliveNow && hasMobs
@@ -468,7 +431,7 @@ module.exports = {
           // One random variance factor per shadow per tick (keeps chaos without per-hit RNG cost).
           const shadowVariance = this._varianceNarrow();
 
-          // COMBO SYSTEM: Perception-scaled combo multiplier for consecutive hits on same target type.
+          // Combo: perception-scaled multiplier for consecutive hits on same target type
           const dominantTarget = bossAttacks >= mobAttacks ? 'boss' : 'mob';
           if (finalCombatData.lastTargetType === dominantTarget) {
             finalCombatData.comboHits = (finalCombatData.comboHits || 0) + attacksInSpan;
@@ -505,22 +468,14 @@ module.exports = {
               roleCombatContext,
             });
             const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier));
-            // Domain buff applied inline (same as mob path) for consistency
             totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier * domainMultiplier);
-            // Shadow vs boss damage reduction — shadows deal reduced damage to bosses
+            // Shadow vs boss damage reduction — mirrors boss→shadow 0.6x
             const shadowBossReduction = C.SHADOW_VS_BOSS_DAMAGE_MULT || 0.35;
             totalBossDamage = Math.max(1, Math.floor(totalBossDamage * shadowBossReduction));
             totalBossDamage > 0 && analytics.shadowsAttackedBoss++;
           }
 
           if (hasMobs && mobAttacks > 0 && mobRankGroups.size > 0) {
-            // RANK-STRATIFIED MOB DAMAGE WITH REALISTIC KILL DISTRIBUTION:
-            // Each sampled shadow represents `scaleFactor` shadows. Spread scaled damage across
-            // multiple mobs so kill count is realistic (not overkill on one mob).
-            // PERFORMANCE: Uses indexed round-robin traversal per rank group instead of
-            // random picks. Each rank group maintains an `aliveIdx` pointer that advances
-            // through mobs sequentially. O(1) per target instead of O(5) random retries.
-            // Worst case: 250 shadows × 5 rank groups × ~25 mobs per shadow = 31,250 ops.
             let mobDamageApplied = false;
             for (const [, rankGroup] of mobRankGroups) {
               const groupAttacks = Math.max(0, Math.round(mobAttacks * rankGroup.fraction));
@@ -540,7 +495,6 @@ module.exports = {
                 roleCombatContext,
               });
               const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier));
-              // Domain buff applied here so it flows into the mob damage spread (not just analytics)
               const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier * domainMultiplier);
               if (unscaledDamage <= 0) continue;
 
@@ -614,7 +568,6 @@ module.exports = {
             now,
           });
 
-          // AGGREGATE boss damage (apply once after loop instead of per-shadow)
           if (totalBossDamage > 0) {
             aggregatedBossDamage += totalBossDamage;
             analytics.totalBossDamage += totalBossDamage;
@@ -623,12 +576,10 @@ module.exports = {
 
           analytics.totalMobDamage += totalMobDamage;
 
-          // Guard: Ensure shadowCombatData exists
           if (!dungeon.shadowCombatData || !(dungeon.shadowCombatData instanceof Map)) {
             dungeon.shadowCombatData = new Map();
           }
 
-          // Update combat data
           const combatDataToUpdate = dungeon.shadowCombatData.get(shadowId);
           if (!combatDataToUpdate) {
             // Reinitialize combat data defensively to avoid crash
@@ -640,7 +591,6 @@ module.exports = {
           combatDataToUpdate.attackCount += attacksInSpan;
           combatDataToUpdate.damageDealt += totalBossDamage + totalMobDamage;
 
-          // Advance cadence using elapsed/cooldown carryover.
           combatDataToUpdate.lastAttackTime = this.getPostAttackTimestamp(
             now,
             timeSinceLastAttack,
@@ -649,7 +599,6 @@ module.exports = {
             attacksInSpan
           );
 
-          // Update attack interval for next batch
           if (this.shadowArmy?.calculateShadowAttackInterval) {
             const newInterval = this.shadowArmy.calculateShadowAttackInterval(shadow, 2000);
             combatDataToUpdate.attackInterval = newInterval;
@@ -671,12 +620,11 @@ module.exports = {
           }
         }
 
-        // AGGREGATED BOSS DAMAGE: Apply once after all shadows processed (was per-shadow)
+        // Apply aggregated boss damage once (was per-shadow)
         if (aggregatedBossDamage > 0) {
           await this.applyDamageToBoss(channelKey, aggregatedBossDamage, 'shadow', null);
         }
 
-        // BATCH MOB DAMAGE: Apply accumulated mob damage from all shadows
         const deadMobsThisTick = [];
         if (mobDamageMap.size > 0) {
           const statusApplyTs = Date.now();
@@ -697,7 +645,6 @@ module.exports = {
             combatSnapshot.mobById
           );
 
-          // Process killed mobs (XP, notifications) and collect for batch extraction
           mobDamageMap.forEach((_damage, mobId) => {
             const mob = combatSnapshot.mobById.get(mobId);
             if (!mob || mob.hp > 0) return; // Only process dead mobs
@@ -720,20 +667,17 @@ module.exports = {
           if (deadMobsThisTick.length > 0) {
             this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: Fast-path — ${deadMobsThisTick.length} mobs killed (dmgMap=${mobDamageMap.size})`);
           }
-          // ARISE: Stash dead mobs in corpse pile for post-dungeon extraction (lore-accurate)
           for (const mob of deadMobsThisTick) {
             this._addToCorpsePile(channelKey, mob, false);
           }
         }
 
-        // Only compact activeMobs and prune ledger when mobs actually died this tick.
-        // Both functions scan the entire activeMobs array — skip when nothing changed.
+        // Only compact + prune when mobs died — both scan activeMobs, skip when nothing changed
         if (deadMobsThisTick.length > 0) {
           this._cleanupDungeonActiveMobs(dungeon);
           this._pruneShadowMobContributionLedger(dungeon);
         }
 
-        // REAL-TIME UPDATE: Queue throttled HP bar update after all combat processing
         this.queueHPBarUpdate(channelKey);
 
         this.deadShadows.set(channelKey, deadShadows);

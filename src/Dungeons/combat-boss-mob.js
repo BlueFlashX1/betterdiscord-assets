@@ -81,11 +81,10 @@ module.exports = {
 
   async processBossAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, prebuiltShadowByIdMap = null) {
     try {
-      // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
+      // PERF: Use hoisted visibility when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
       if (!isWindowVisible) {
-        // Window hidden - reduce cycles multiplier significantly (75% reduction)
-        cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
+        cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // 75% reduction when hidden
       }
 
       const dungeon = this._getActiveDungeon(channelKey);
@@ -128,7 +127,6 @@ module.exports = {
         activeInterval
       );
 
-      // OPTIMIZATION: Calculate attacks using helper function
       // CRITICAL: Initialize lastAttackTime if not set (prevents one-shot on join)
       if (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0) {
         dungeon.boss.lastAttackTime = now;
@@ -165,11 +163,9 @@ module.exports = {
         dungeon
       );
 
-      // Get alive shadows ONCE before the attack loop (not per-attack)
       const aliveShadows = this.getCombatReadyShadows(assignedShadows, deadShadows, shadowHP);
 
-      // NUMPY-STYLE: O(1) shadow lookup Map — shared with _applyAccumulatedShadowAndUserDamage.
-      // Uses pre-built map from _processDungeonCombatTick when available (avoids rebuilding per attack phase).
+      // PERF: O(1) shadow lookup — reuses pre-built map from _processDungeonCombatTick when available
       const shadowByIdMap = prebuiltShadowByIdMap || new Map(
         assignedShadows.map((s) => [this.getShadowIdValue(s), s])
       );
@@ -177,7 +173,6 @@ module.exports = {
       const getShadowHpData = (shadowId) =>
         this._getShadowHpDataByKey(shadowHP, shadowByIdMap, shadowId);
 
-      // BATCH PROCESSING: Calculate all attacks in one calculation with variance
       let totalUserDamage = 0;
       const shadowDamageMap = new Map(); // Track damage per shadow
       const rankIndexForFallback =
@@ -304,7 +299,6 @@ module.exports = {
         );
       }
 
-      // REAL-TIME UPDATE: Queue throttled HP bar update after calculating all damage
       this.queueHPBarUpdate(channelKey);
 
       await this._applyAccumulatedShadowAndUserDamage({
@@ -351,14 +345,11 @@ module.exports = {
 
   async processMobAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, mobBudget = 500, prebuiltShadowByIdMap = null) {
     try {
-      // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
+      // PERF: Use hoisted visibility when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
       if (!isWindowVisible) {
-        // Window hidden - reduce cycles multiplier significantly (75% reduction)
-        cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
+        cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // 75% reduction when hidden
       }
-
-      // NOTE: syncHPAndManaFromStats hoisted to _combatLoopTick (once per tick)
 
       const dungeon = this._getActiveDungeon(channelKey);
       if (!dungeon || !dungeon.mobs?.activeMobs?.length) {
@@ -375,20 +366,15 @@ module.exports = {
         dungeon
       );
 
-      // Get alive shadows ONCE before all mob attack processing (not per-attack)
       const aliveShadows = this.getCombatReadyShadows(assignedShadows, deadShadows, shadowHP);
-
-      // BATCH PROCESSING: Calculate all mob attacks in one calculation with variance
       const shadowDamageMap = new Map(); // Track damage per shadow
       let totalUserDamage = 0;
 
-      // Guard clause: Check again in case dungeon.mobs became null between checks
       if (!dungeon.mobs || !dungeon.mobs.activeMobs || dungeon.mobs.activeMobs.length === 0) {
         return;
       }
 
-      // NUMPY-STYLE: O(1) shadow lookup Map for damage application.
-      // Uses pre-built map from _processDungeonCombatTick when available (avoids rebuilding per attack phase).
+      // PERF: O(1) shadow lookup — reuses pre-built map from _processDungeonCombatTick when available
       const shadowByIdMap = prebuiltShadowByIdMap || new Map(
         assignedShadows.map((s) => [this.getShadowIdValue(s), s])
       );
@@ -758,7 +744,6 @@ module.exports = {
       // the Map entry when deadShadows was created via the `|| new Set()` fallback (first combat tick).
       this.deadShadows.set(channelKey, deadShadows);
 
-      // REAL-TIME UPDATE: Queue throttled HP bar update after boss attacks complete
       this.queueHPBarUpdate(channelKey);
 
     } catch (error) {
@@ -803,8 +788,6 @@ module.exports = {
       // Extraction data stored in BdAPI to prevent crashes during combat
       // Mobs will be extracted after dungeon ends (boss defeated or timeout)
 
-      // AGGRESSIVE CLEANUP: Remove dead mobs (extraction data already stored)
-      // Keep only alive mobs (dead mobs are already processed for extraction)
       const nextActiveMobs = [];
       for (const m of dungeon.mobs.activeMobs) {
         m && m.hp > 0 && nextActiveMobs.push(m);
@@ -844,7 +827,7 @@ module.exports = {
       );
     }
 
-    // BOSS DURABILITY PIPELINE
+    // Boss durability pipeline (prevents one-shots):
 
     // 1) PHASE SHIELD — brief invulnerability at HP thresholds (75%, 50%, 25%)
     if (dungeon.boss._phaseShieldExpiresAt && now < dungeon.boss._phaseShieldExpiresAt) {
@@ -887,12 +870,10 @@ module.exports = {
       }
     }
 
-    // Track shadow contribution for XP
     if (source === 'shadow' && shadowId) {
       this._addShadowContribution(dungeon, shadowId, 'bossDamage', damage);
     }
 
-    // Track user damage with critical hits
     if (source === 'user') {
       if (!dungeon.userDamageDealt) dungeon.userDamageDealt = 0;
       if (!dungeon.userCriticalHits) dungeon.userCriticalHits = 0;
@@ -902,7 +883,6 @@ module.exports = {
         dungeon.userCriticalHits++;
       }
 
-      // Log user damage (every 10 attacks to avoid spam)
       if (!dungeon.userAttackCount) dungeon.userAttackCount = 0;
       dungeon.userAttackCount++;
       if (dungeon.userAttackCount % 10 === 0) {
@@ -923,9 +903,7 @@ module.exports = {
     if (dungeon.boss.hp <= 0) {
       this.debugLog?.(`BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
 
-      // Remove HP bar and mark completed before completeDungeon.
-      // completeDungeon is synchronous (Phase A), but marking completed early
-      // ensures the restore interval sees it immediately.
+      // Mark completed early so restore interval sees it before completeDungeon runs
       dungeon.completed = true;
       this.removeBossHPBar(channelKey);
       document
