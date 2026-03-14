@@ -2,25 +2,21 @@ const { buildCSS } = require('./build-styles');
 
 module.exports = {
   removeCSSById(styleId) {
-    // Guard clause: Validate input
     if (!styleId) {
       this.errorLog?.('CSS', 'Invalid CSS removal: missing styleId');
       return false;
     }
 
     try {
-      // Try BdApi.DOM.removeStyle first (official API)
       if (BdApi?.DOM?.removeStyle) {
         BdApi.DOM.removeStyle(styleId);
       } else {
-        // Fallback to manual removal
         const style = document.getElementById(styleId);
         if (style && style.parentNode) {
           style.parentNode.removeChild(style);
         }
       }
 
-      // Remove from tracking
       if (this._injectedStyles) {
         this._injectedStyles.delete(styleId);
       }
@@ -59,12 +55,11 @@ module.exports = {
       return;
     }
 
-    // Inject CSS using BdApi.DOM.addStyle (official API, persistent across Discord updates)
     try {
       if (BdApi?.DOM?.addStyle) {
         BdApi.DOM.addStyle(styleId, cssContent);
       } else {
-        // Fallback to manual injection (shouldn't happen in BetterDiscord)
+        // Fallback (shouldn't happen in BetterDiscord)
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = cssContent;
@@ -74,7 +69,6 @@ module.exports = {
       this.debugLog('CSS', `Failed to inject CSS: ${styleId}`, error);
     }
 
-    // Track injected style for cleanup
     if (!this._injectedStyles) {
       this._injectedStyles = new Set();
     }

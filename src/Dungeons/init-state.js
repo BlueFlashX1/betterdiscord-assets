@@ -5,43 +5,43 @@ module.exports = {
   _initDefaults() {
     this.defaultSettings = {
       enabled: true,
-      debug: false, // Debug mode: enables verbose console logging
-      spawnChance: 12, // 12% chance per user message
-      dungeonDuration: 600000, // 10 minutes
-      maxDungeonsPercentage: 0.15, // Max 15% of server channels can have active dungeons
-      minDungeonsAllowed: 3, // Always allow at least 3 dungeons even in small servers
-      maxDungeonsAllowed: 20, // Cap at 20 dungeons max even in huge servers
-      channelSpawnCooldown: 300000, // 5 min cooldown per channel after dungeon ends
-      globalSpawnCooldown: 60000, // 60s between any new dungeon spawn
+      debug: false,
+      spawnChance: 12,
+      dungeonDuration: 600000,
+      maxDungeonsPercentage: 0.15,
+      minDungeonsAllowed: 3,
+      maxDungeonsAllowed: 20,
+      channelSpawnCooldown: 300000,
+      globalSpawnCooldown: 60000,
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
-      mobMaxActiveCap: Infinity, // No artificial cap — dungeon mob capacity (MOB_COUNT_BY_RANK) is the limit
-      mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
-      mobWaveVariancePercent: 0.2, // ±20% organic wave variance
-      mobTierNormalShare: 0.7, // Spawn mix: normal mobs
-      mobTierEliteShare: 0.25, // Spawn mix: elite mobs
-      mobTierChampionShare: 0.05, // Spawn mix: champion mobs (mini-boss pressure)
-      shadowMobTargetShare: 0.7, // Shadow targeting: 70% mobs by default
-      shadowBossTargetShareLowBossHp: 0.6, // When boss low HP, shift to boss focus
-      shadowBossFocusLowHpThreshold: 0.4, // 40% boss HP execute threshold
-      bossGateEnabled: true, // Prevent immediate boss burn on fresh dungeon spawn
-      bossGateMinDurationMs: 180000, // Boss unlock requires at least 3 minutes elapsed
-      bossGateRequiredMobKills: 0, // No mob kill requirement — timer only
-      shadowPressureScalingEnabled: false, // Lore mode: disable HP scaling from deployed shadow count
-      shadowPressureMobScaleStep: 0.12, // mobHP *= 1 + step * log10(shadowPower + 1)
-      shadowPressureBossScaleStep: 0.18, // bossHP *= 1 + step * log10(shadowPower + 1)
-      shadowPressureScaleMax: 2.75, // Safety cap for pressure scaling
-      staticBossHpBaseMultiplier: 2.3, // Base static HP multiplier (no shadow pressure scaling)
-      staticBossHpRankStep: 0.14, // Additional static HP multiplier per rank index
-      rankAllocationDeployPoolShare: 0.8, // Share of combat pool to deploy across active dungeons
-      rankAllocationPreferredPairShare: 0.8, // Share of each dungeon allocation from (same-rank + one-rank-higher)
-      rankAllocationSameRankShare: 0.75, // Inside preferred pair, majority stays same-rank
-      roleCombatModelEnabled: true, // Lore-role combat model (bounded state, low-overhead)
-      roleCombatModelVersion: 1, // Reserved for future behavior migrations
-      combatStatusEffectsEnabled: true, // Explicit per-entity debuffs (poison/slow/armor-break)
-      combatStatusTickMs: 1000, // Debuff DOT tick cadence
-      combatStatusMaxTrackedMobs: 600, // Safety cap for active mob status buckets
+      mobMaxActiveCap: Infinity,
+      mobWaveBaseCount: 200,
+      mobWaveVariancePercent: 0.2,
+      mobTierNormalShare: 0.7,
+      mobTierEliteShare: 0.25,
+      mobTierChampionShare: 0.05,
+      shadowMobTargetShare: 0.7,
+      shadowBossTargetShareLowBossHp: 0.6,
+      shadowBossFocusLowHpThreshold: 0.4,
+      bossGateEnabled: true,
+      bossGateMinDurationMs: 180000,
+      bossGateRequiredMobKills: 0,
+      shadowPressureScalingEnabled: false,
+      shadowPressureMobScaleStep: 0.12,
+      shadowPressureBossScaleStep: 0.18,
+      shadowPressureScaleMax: 2.75,
+      staticBossHpBaseMultiplier: 2.3,
+      staticBossHpRankStep: 0.14,
+      rankAllocationDeployPoolShare: 0.8,
+      rankAllocationPreferredPairShare: 0.8,
+      rankAllocationSameRankShare: 0.75,
+      roleCombatModelEnabled: true,
+      roleCombatModelVersion: 1,
+      combatStatusEffectsEnabled: true,
+      combatStatusTickMs: 1000,
+      combatStatusMaxTrackedMobs: 600,
       // Dungeon ranks including SS, SSS
       dungeonRanks: [
         'E',
@@ -60,21 +60,20 @@ module.exports = {
       ],
       userActiveDungeon: null,
       lastSpawnTime: {},
-      lastDungeonEndTime: {}, // channelKey -> timestamp (used for spawn cooldown)
+      lastDungeonEndTime: {},
       mobKillNotifications: {},
-      // User HP/Mana (calculated from stats)
-      userHP: null, // Will be calculated from vitality
+      userHP: null,
       userMaxHP: null,
-      userMana: null, // Will be calculated from intelligence
+      userMana: null,
       userMaxMana: null,
-      // User HP scaling: rank contributes quadratically; shadow bonus uses soft-cap scaling.
+      // HP scaling: rank quadratic + shadow soft-cap
       userRankHpLinearStep: 50,
       userRankHpCurveStep: 35,
       userHpPerShadowBase: 8,
       userHpPerShadowRankStep: 0.6,
       userHpShadowSoftCapCount: 500,
       userHpShadowSoftCapMultiplier: 0.12,
-      // Shadow combat stat harmonizer (combat-only): compresses extreme high-rank stats.
+      // Combat stat harmonizer: compresses extreme high-rank stats
       shadowCombatStatPivotScale: 3.5,
       shadowCombatStatCompressionExp: 0.68,
       settingsVersion: 4,
@@ -84,56 +83,49 @@ module.exports = {
     // Hot paths mutate `this.settings`; if it aliases `defaultSettings`, defaults get corrupted.
     this.settings = structuredClone(this.defaultSettings);
 
-    // Plugin running state
     this.started = false;
-
-    // Plugin references
     this.soloLevelingStats = null;
     this.shadowArmy = null;
     this.toasts = null;
 
-    // RANK SCALING CONFIG (single source of truth)
-    // Used by combat damage + mob/boss/shadow HP scaling.
+    // Rank scaling — single source of truth for combat damage + mob/boss/shadow HP
     this.rankScaling = {
-      powerStep: 1.35, // base step used for rank power ratio
-      damageExponent: 0.85, // curve for rank-vs-rank damage multiplier
+      powerStep: 1.35,
+      damageExponent: 0.85,
       damageMin: 0.35,
       damageMax: 3.25,
       mobHpStep: 1.18,
       mobHpMaxFactor: 12,
-      bossHpStep: 1.3, // stronger rank separation for boss HP
-      bossHpMaxFactor: 60, // safety cap for extreme rank indices
+      bossHpStep: 1.3,
+      bossHpMaxFactor: 60,
       shadowHpBaseFactor: 0.9,
       shadowHpStep: 0.05,
       shadowHpMaxFactor: 1.5,
     };
 
-    this.extractionRetryLimit = 3; // Max attempts per boss (mobs use single-attempt immediate extraction)
+    this.extractionRetryLimit = 3;
   },
 
   _initTimers() {
     this.shadowAttackIntervals = new Map();
     this.mobKillNotificationTimers = new Map();
     this.mobSpawnTimers = new Map();
-    this._mobSpawnNextAt = new Map(); // channelKey -> next spawn timestamp (global scheduler)
-    this._mobSpawnQueueNextAt = new Map(); // channelKey -> next queue flush timestamp
+    this._mobSpawnNextAt = new Map();
+    this._mobSpawnQueueNextAt = new Map();
     this._mobSpawnLoopInterval = null;
     this._mobSpawnLoopInFlight = false;
     this._mobSpawnLoopNextAt = 0;
     // 500ms base tick: fast enough for responsive queue flushes, light enough for CPU
     this._mobSpawnLoopTickMs = 500;
-    this.bossAttackTimers = new Map(); // Boss attack timers per dungeon
-    this.mobAttackTimers = new Map(); // Mob attack timers per dungeon
+    this.bossAttackTimers = new Map();
+    this.mobAttackTimers = new Map();
 
-    // CENTRALIZED RESOURCE MANAGEMENT (for proper cleanup - prevents memory leaks)
-    this._intervals = new Set(); // Track all setInterval IDs for cleanup
-    this._timeouts = new Set(); // Track all setTimeout IDs for cleanup
+    // Centralized resource tracking (cleanup on stop)
+    this._intervals = new Set();
+    this._timeouts = new Set();
 
-    // HP/Mana regeneration timer
     this.regenInterval = null;
-
-    // Performance optimization: Track current channel for active dungeon detection
-    this.currentChannelUpdateInterval = null; // Update current channel every 2 seconds
+    this.currentChannelUpdateInterval = null;
 
     // PERFORMANCE: global combat loop (replaces per-dungeon intervals)
     this._combatLoopInterval = null;
@@ -141,103 +133,95 @@ module.exports = {
     this._combatLoopNextAt = 0;
     // 1s base tick: reduces baseline CPU; per-dungeon cadence still handled by interval maps.
     this._combatLoopTickMs = 1000;
-    this._shadowActiveIntervalMs = new Map(); // channelKey -> active interval ms
-    this._shadowBackgroundIntervalMs = new Map(); // channelKey -> background interval ms
-    this._bossBackgroundIntervalMs = new Map(); // channelKey -> background interval ms
-    this._mobBackgroundIntervalMs = new Map(); // channelKey -> background interval ms
+    this._shadowActiveIntervalMs = new Map();
+    this._shadowBackgroundIntervalMs = new Map();
+    this._bossBackgroundIntervalMs = new Map();
+    this._mobBackgroundIntervalMs = new Map();
 
-    // Performance optimization: Track window visibility for background processing
-    this._visibilityChangeHandler = null; // Visibility change event handler
-    this._pausedIntervals = new Map(); // Track paused intervals: { channelKey: { shadow, boss, mob } }
-
-    // HP bar restoration interval (restores HP bars removed by DOM changes)
+    this._visibilityChangeHandler = null;
+    this._pausedIntervals = new Map();
     this._hpBarRestoreInterval = null;
 
     this.dungeonCleanupInterval = null;
 
-    // Performance optimization: Track last processing time for batch processing
-    this._lastShadowAttackTime = new Map(); // channelKey -> last processing timestamp
-    this._lastBossAttackTime = new Map(); // channelKey -> last processing timestamp
-    this._lastMobAttackTime = new Map(); // channelKey -> last processing timestamp
+    this._lastShadowAttackTime = new Map();
+    this._lastBossAttackTime = new Map();
+    this._lastMobAttackTime = new Map();
   },
 
   _initCaches() {
-    this._ariseButtonRefs = new Map(); // PERF: Cache ARISE button DOM refs to avoid document.querySelector every 5 ticks
-    this._bossBarCache = new Map(); // Cache last boss bar render payload per channel
-    this._mobCleanupCache = new Map(); // Throttled alive-mob counts per channel
-    this._bossBarLayoutThrottle = new Map(); // Throttle HP bar layout adjustments (100-150ms)
-    this._rankStatsCache = new Map(); // Cache rank-based stat calculations
-    // Boss stats are rolled fresh per instance (no cache needed — bosses spawn infrequently)
-    this._personalityCache = new Map(); // TTL cache for personality lookups
-    this._memberWidthCache = new Map(); // Short-lived cache for member list width
-    this._containerCache = new Map(); // Cache for progress/header containers (short TTL)
+    this._ariseButtonRefs = new Map();
+    this._bossBarCache = new Map();
+    this._mobCleanupCache = new Map();
+    this._bossBarLayoutThrottle = new Map();
+    this._rankStatsCache = new Map();
+    this._personalityCache = new Map();
+    this._memberWidthCache = new Map();
+    this._containerCache = new Map();
 
-    this._shadowCountCache = null; // Shadow count cache (5s TTL)
-    this._shadowsCache = null; // Shadows data cache (10s TTL — invalidated explicitly on mutations)
-    this._deployStarterPoolCache = null; // Rank-aware sampled pool for fast deploy allocation (not a full-army cache)
+    this._shadowCountCache = null;
+    this._shadowsCache = null;
+    this._deployStarterPoolCache = null;
     this._deployStarterPoolCacheTime = null;
     this._deployStarterPoolCacheRank = null;
-    // Starter pool should stay reusable long enough for realistic "spawn then deploy" delays.
-    this._deployStarterPoolCacheTTL = 120000; // 2 min fresh window
-    this._deployStarterPoolStaleMaxAge = 900000; // 15 min stale fallback window
-    this._shadowStatsCache = new Map(); // Shadow stats cache (500ms TTL)
-    this._mobGenerationCache = new Map(); // Mob generation cache (prevents crashes from excessive generation)
-    this._mobCacheTTL = 60000; // 60 seconds cache TTL for mob generation
+    this._deployStarterPoolCacheTTL = 120000;
+    this._deployStarterPoolStaleMaxAge = 900000;
+    this._shadowStatsCache = new Map();
+    this._mobGenerationCache = new Map();
+    this._mobCacheTTL = 60000;
 
-    // CENTRALIZED CACHE MANAGER
     this.cache = new CacheManager();
 
-    // Additional performance caches
     this._cache = {
-      pluginInstances: {}, // Cache plugin instances by name
+      pluginInstances: {},
       pluginInstancesTime: {},
-      pluginInstancesTTL: 5000, // 5s - plugin instances don't change often
+      pluginInstancesTTL: 5000,
       skillTreeBonuses: null,
       skillTreeBonusesTime: 0,
-      skillTreeBonusesTTL: 500, // 500ms - passive bonuses can change on upgrade
+      skillTreeBonusesTTL: 500,
       userEffectiveStats: null,
       userEffectiveStatsTime: 0,
-      userEffectiveStatsTTL: 500, // 500ms - stats change when stats are allocated
+      userEffectiveStatsTTL: 500,
     };
-    this._guildChannelCache = new Map(); // guildId -> {ts, channels}
-    this._guildChannelCacheTTL = 30000; // 30s
-    this._spawnableChannelCache = new Map(); // guildId -> {ts, channels} (text + unmuted)
-    this._spawnableChannelCacheTTL = 10000; // 10s
+    this._guildChannelCache = new Map();
+    this._guildChannelCacheTTL = 30000;
+    this._spawnableChannelCache = new Map();
+    this._spawnableChannelCacheTTL = 10000;
 
-    // Shadow army pre-allocation cache (optimization: split shadows once, reuse assignments)
-    this.shadowAllocations = new Map(); // Map<channelKey, assignedShadows[]>
-    this.shadowReserve = []; // Weakest shadows held back for ShadowSenses deployment
-    this.allocationCache = null; // Cache of all shadows
-    this.allocationCacheTime = null; // When cache was created
-    this.allocationCacheTTL = 45000; // Reduced recompute churn; immediate dirty invalidation still handles ghost-combatant consistency
-    this._allocationHardRefreshTTL = 120000; // Safety full refresh in case dirty invalidation misses an edge path
-    this._allocationDirty = true; // Recompute allocations on first use
+    // Shadow pre-allocation: split once, reuse across combat ticks
+    this.shadowAllocations = new Map();
+    this.shadowReserve = [];
+    this.allocationCache = null;
+    this.allocationCacheTime = null;
+    this.allocationCacheTTL = 45000;
+    this._allocationHardRefreshTTL = 120000;
+    this._allocationDirty = true;
     this._allocationDirtyReason = 'init';
-    this._allocationShadowSetDirty = true; // Rebuild sorted shadow pool when army composition/stats changed
-    this._allocationSortedShadowsCache = null; // Cached strongest->weakest sorted army
+    this._allocationShadowSetDirty = true;
+    this._allocationSortedShadowsCache = null;
     this._allocationSortedShadowsCacheTime = null;
-    this._allocationSortedShadowsCacheTTL = 600000; // 10 min TTL; shadow-set mutations invalidate immediately
-    this._allocationScoreCache = null; // Map<shadowId, combatScore>
-    this._allocationSummary = new Map(); // channelKey -> { dungeonRank, assignedCount, avgShadowRankIndex }
-    this.shadowArmyCountCache = new Map(); // Track shadow count to detect new extractions
+    this._allocationSortedShadowsCacheTTL = 600000;
+    this._allocationScoreCache = null;
+    this._allocationSummary = new Map();
+    this.shadowArmyCountCache = new Map();
   },
 
   _initState() {
     this.messageObserver = null;
-    this._sessionToken = 0; // guards against orphaned async start() continuations
-    this._mobIdCounter = 0; // Incrementing mob ID (faster than Math.random().toString(36))
-    this._mobSpawnQueue = new Map(); // Micro-queue for batched mob spawning (250-500ms)
-    this._spawnPipelineGuardAt = new Map(); // channelKey -> last guard log timestamp
-    this._mobContributionMissLogState = new Map(); // channelKey -> throttled miss-log state
+    this._sessionToken = 0;
+    this._mobIdCounter = 0;
+    this._mobSpawnQueue = new Map();
+    this._spawnPipelineGuardAt = new Map();
+    this._mobContributionMissLogState = new Map();
     this.lastUserAttackTime = 0;
     this.storageManager = null;
     this.mobBossStorageManager = null; // Dedicated storage for mobs and bosses
-    this.activeDungeons = new Map(); // Use Map for better performance
-    this._pendingDungeonMobXPByBatch = new Map(); // xpBatchKey -> pending mob XP (awarded on dungeon end)
-    this._pendingDungeonMobKillsByBatch = new Map(); // xpBatchKey -> pending mob kills (summary context)
-    this._combatRoundRobinCursor = 0; // Fair scheduler cursor for multi-dungeon combat processing
-    this._roleCombatStates = new Map(); // channelKey -> bounded role-combat pressure state
-    this._combatStatusByChannel = new Map(); // channelKey -> explicit status effects (runtime-only)
+    this.activeDungeons = new Map();
+    this._pendingDungeonMobXPByBatch = new Map();
+    this._pendingDungeonMobKillsByBatch = new Map();
+    this._combatRoundRobinCursor = 0;
+    this._roleCombatStates = new Map();
+    this._combatStatusByChannel = new Map();
     this._perfTelemetry = {
       combatTickEmaMs: 0,
       mobSpawnTickEmaMs: 0,
@@ -255,61 +239,45 @@ module.exports = {
     this._combatSettingsFlushIntervalMs = 1500;
     this._combatSettingsFallbackFlushTimer = null;
 
-    this.hiddenComments = new Map(); // Track hidden comment elements per channel
+    this.hiddenComments = new Map();
 
-    // CHANNEL LOCK SYSTEM: Prevents multiple dungeons in same channel (spam protection)
-    this.channelLocks = new Set(); // Locked channels (one dungeon at a time per channel)
-    this._lastGlobalSpawnTime = Date.now(); // Initialize to prevent burst spawning on plugin load
+    // Channel lock: one dungeon at a time per channel
+    this.channelLocks = new Set();
+    this._lastGlobalSpawnTime = Date.now();
 
-    this.deadShadows = new Map(); // Track dead shadows per dungeon
+    this.deadShadows = new Map();
+    this._observers = new Set();
+    this._listeners = new Map(); // {type: Set<handler>} or {target,event,handler,capture}
 
-    this._observers = new Set(); // Track all MutationObserver instances
-    this._listeners = new Map(); // Track event listeners: {type: Set<handler>}
-
-    // Defeated bosses awaiting shadow extraction (ARISE)
-    this.defeatedBosses = new Map(); // { channelKey: { boss, dungeon, timestamp } }
-    this._arisedBossIds = new Set(); // Prevent arising the same boss twice
+    // Defeated bosses awaiting ARISE extraction
+    this.defeatedBosses = new Map();
+    this._arisedBossIds = new Set();
 
     // ARISE corpse pile is stored on each dungeon object (dungeon.corpsePile = [])
     // so it persists to IDB and survives hot-reloads/restarts.
 
-    this._lastRebalanceAt = new Map(); // channelKey -> timestamp (throttle reinforcement)
-    this._rebalanceCooldownMs = 15000; // at most once per 15s per dungeon
-    this._deployRebalanceInFlight = new Set(); // channelKeys currently running async post-deploy full split
-    this._deployStarterWarmInFlight = null; // Shared promise for starter-pool warmup (prevents duplicate IDB reads)
-    this._deployStarterShadowCap = 240; // Fast-start provisional shadow cap before full split completes
-    this._pendingDungeonXpPostProcess = new Map(); // taskKey -> metadata
+    this._lastRebalanceAt = new Map();
+    this._rebalanceCooldownMs = 15000;
+    this._deployRebalanceInFlight = new Set();
+    this._deployStarterWarmInFlight = null;
+    this._deployStarterShadowCap = 240;
+    this._pendingDungeonXpPostProcess = new Map();
 
-    // Performance optimization: Track current channel for active dungeon detection
-    this.currentChannelKey = null; // Current channel user is viewing
-
-    // Performance optimization: Track window visibility for background processing
-    this._isWindowVisible = !document.hidden; // Track if Discord window is visible
-    this._windowHiddenTime = null; // Timestamp when window became hidden (for simulation)
+    this.currentChannelKey = null;
+    this._isWindowVisible = !document.hidden;
+    this._windowHiddenTime = null;
 
     this.saveManager = null;
     if (UnifiedSaveManager) {
       this.saveManager = new UnifiedSaveManager('Dungeons');
     }
 
-    // Track observer start time to ignore old messages
     this.observerStartTime = Date.now();
-    this.processedMessageIds = new Set(); // Track processed message IDs to avoid duplicates
-
-    // CSS Management System - Track injected styles for cleanup
+    this.processedMessageIds = new Set();
     this._injectedStyles = new Set();
-
-    // Legacy (removed): continuous extraction processors (mobs use MobBossStorageManager + deferred worker)
-
-    // Throttle mob capacity warnings to prevent console spam
-    this._mobCapWarningShown = {}; // Track per-dungeon warnings (30s throttle)
-
-    // Event-based extraction verification
-    this.extractionEvents = new Map(); // Track extraction attempts by mobId
-    // Extraction event handling consolidated into _shadowExtractedListener in loadPluginReferences()
-
-    // Extraction tracking
-    this.extractionInProgress = new Set(); // Track channels currently processing extractions
+    this._mobCapWarningShown = {};
+    this.extractionEvents = new Map();
+    this.extractionInProgress = new Set();
   },
 
   _initUI() {
@@ -326,10 +294,10 @@ module.exports = {
     this._dungeonHeaderPopupPositionRaf = null;
     this._dungeonUiActionLocks = new Set();
 
-    // Performance optimization: Throttled DOM updates
-    this._hpBarUpdateQueue = new Set(); // Queue of channelKeys needing HP bar updates
-    this._hpBarUpdateScheduled = false; // Flag to prevent duplicate scheduling
-    this._lastHPBarUpdate = {}; // Track last update time per channelKey (throttle to 1s)
+    // Throttled DOM updates
+    this._hpBarUpdateQueue = new Set();
+    this._hpBarUpdateScheduled = false;
+    this._lastHPBarUpdate = {};
   },
 
   debugLog(...args) {

@@ -321,15 +321,12 @@ module.exports = {
     shadowByIdMap = null, // Optional pre-built Map for O(1) lookup (avoids O(N) .find per entry)
     damageAlreadyApplied = false, // When true, HP already deducted (per-round processing); skip Phase 1 damage, only collect deaths
   }) {
-    // NUMPY-STYLE: O(1) Map lookup instead of O(N) linear scan per damaged shadow.
-    // Without this, 180 damaged shadows × 5000 assigned = 900,000 comparisons per tick.
+    // PERF: O(1) Map lookup — without this, N damaged × M assigned = O(NM) per tick
     const shadowById = shadowByIdMap || new Map(
       assignedShadows.map((s) => [this.getShadowIdValue(s), s])
     );
 
-    // Phase 1: Apply damage to all shadows (pure state update, no async)
-    // When damageAlreadyApplied=true (boss AOE per-round processing), skip HP deduction
-    // but still scan for newly dead shadows that need resurrection.
+    // damageAlreadyApplied=true: HP already deducted per-round; just scan for deaths
     const newlyDead = [];
     for (const [shadowId, damage] of shadowDamageMap.entries()) {
       const targetShadow = shadowById.get(shadowId);
@@ -352,14 +349,12 @@ module.exports = {
       }
     }
 
-    // Phase 2: BATCHED RESURRECTION — one mana sync + deduction for all deaths this tick.
-    // Old: N sequential await calls (200 deaths = 200 async round-trips).
-    // New: sort by rank (highest first), deduct mana greedily until budget exhausted.
+    // PERF: Batched resurrection — one mana write-back for all deaths this tick
     if (newlyDead.length > 0 && this.soloLevelingStats) {
       if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
       const now = Date.now();
 
-      // BUGFIX LOGIC-1: In parallel mode, use per-dungeon budget instead of shared userMana
+      // BUGFIX: Parallel mode uses per-dungeon mana budget; defer write-back to post-Promise.all
       if (this._tickManaBudgetPerDungeon === undefined) {
         this.syncManaFromStats();
       }
@@ -367,7 +362,6 @@ module.exports = {
         ? this._tickManaBudgetPerDungeon - (dungeon._tickManaUsed || 0)
         : (this.settings.userMana || 0);
 
-      // Sort: resurrect highest-rank shadows first (most valuable)
       const { getRankIndex } = require('../shared/rank-utils');
       newlyDead.sort((a, b) => getRankIndex(b.targetShadow.rank) - getRankIndex(a.targetShadow.rank));
 
@@ -391,10 +385,8 @@ module.exports = {
         }
       }
 
-      // Single mana write-back for entire batch
       if (resurrectedCount > 0) {
         if (this._tickManaBudgetPerDungeon !== undefined) {
-          // BUGFIX LOGIC-1: Parallel mode — track spend, defer write-back to post-Promise.all
           const totalSpent = (this._tickManaBudgetPerDungeon - (dungeon._tickManaUsed || 0)) - manaPool;
           dungeon._tickManaUsed = (dungeon._tickManaUsed || 0) + Math.max(0, totalSpent);
         } else {
@@ -407,7 +399,6 @@ module.exports = {
         this.startRegeneration(); // PERF: restart regen if it was paused
       }
 
-      // Update alive count cache: subtract deaths, add back resurrections
       if (dungeon._cachedAliveCount != null) {
         dungeon._cachedAliveCount = Math.max(0, dungeon._cachedAliveCount - newlyDead.length + resurrectedCount);
       }

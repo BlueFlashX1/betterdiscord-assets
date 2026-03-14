@@ -1,14 +1,6 @@
 /**
- * build-styles.js — Dynamic CSS builder for the Dungeons plugin.
- *
- * Replaces static styles.css import in css-management.js. Uses the shared
- * Discord class resolver (dc) to substitute resolved Webpack class selectors
- * for [class*="..."] wildcard selectors wherever possible, falling back
- * gracefully to wildcards when Webpack resolution fails.
- *
- * Usage:
- *   const { buildCSS } = require("./build-styles");
- *   const css = buildCSS();  // returns the full CSS string
+ * build-styles.js — Dynamic CSS builder using shared Discord class resolver (dc).
+ * Falls back to [class*="..."] wildcards when Webpack resolution fails.
  */
 
 const dc = require("../shared/discord-classes");
@@ -20,16 +12,7 @@ const dc = require("../shared/discord-classes");
  * @returns {string}
  */
 function buildCSS() {
-  // Resolved selectors used in this file
-  // dc.sel.toolbar        → ".toolbar_abc123"   or  '[class*="toolbar_"]'
-  // dc.sel.userSettings   → ".standardSidebarView_abc"  or  '[class*="userSettings_"]'
-  // Selectors NOT in the shared resolver (no stable Webpack module found):
-  //   comment, reply          — still wildcard (toolbar child icons)
-  //   layer / baseLayer       — Discord layer stack, still wildcard
-  // For the :has() combos we substitute dc.sel.userSettings for both
-  //   [class*='userSettings'] and [class*='standardSidebarView'] since the
-  //   resolver maps "userSettings" → standardSidebarView class.
-
+  // dc.sel resolves Webpack classes at runtime; comment/reply/layer still wildcard (no stable module)
   const sel = dc.sel;
 
   return `@keyframes dungeonPulse {
@@ -83,8 +66,7 @@ function buildCSS() {
   75% { transform: translateX(10px); }
 }
 
-/* Hide comment/thread buttons when dungeon HP bar is active (CSS-based, survives re-renders) */
-/* Use both resolved + wildcard toolbar selector for reliability */
+/* Hide comment/thread buttons when dungeon HP bar active — dual selector for reliability */
 .dungeon-boss-hp-container ~ ${sel.toolbar} [class*="comment"],
 .dungeon-boss-hp-container ~ ${sel.toolbar} ${sel.thread},
 .dungeon-boss-hp-container ~ ${sel.toolbar} [class*="reply"],
@@ -414,13 +396,10 @@ function buildCSS() {
 }
 
 /* Hide boss HP bar when settings/modals are open */
-/* When user settings open */
 [class*='layer']:has(${sel.userSettings}) .dungeon-boss-hp-container,
 [class*='layer']:has(${sel.settingsContainer}) .dungeon-boss-hp-container,
 [class*='layer']:has(${sel.standardSidebarView}) .dungeon-boss-hp-container,
-/* When any layer above base layer */
 [class*='layer'][class*='baseLayer'] ~ [class*='layer'] .dungeon-boss-hp-container,
-/* When settings layer exists */
 body:has(${sel.userSettings}) .dungeon-boss-hp-container,
 body:has(${sel.settingsContainer}) .dungeon-boss-hp-container,
 body:has(${sel.standardSidebarView}) .dungeon-boss-hp-container {
@@ -428,18 +407,15 @@ body:has(${sel.standardSidebarView}) .dungeon-boss-hp-container {
   visibility: hidden !important;
 }
 
-/* Only show in main chat view (not in settings) */
 .dungeon-boss-hp-container {
   pointer-events: auto !important;
 }
 
-/* Ensure it stays below settings layers */
 ${sel.userSettings},
 ${sel.settingsContainer} {
   z-index: 1000 !important;
 }
 
-/* Boss HP Bar in Channel Header */
 .dungeon-boss-hp-bar {
   display: flex !important;
   flex-direction: column !important;
@@ -468,7 +444,6 @@ ${sel.settingsContainer} {
   max-width: 100% !important;
 }
 
-/* Dungeon HP Bar Buttons */
 .dungeon-deploy-btn {
   padding: 4px 12px !important;
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
@@ -562,7 +537,7 @@ ${sel.settingsContainer} {
   box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6) !important;
 }
 
-/* Boss Bar Layout — structural classes extracted from inline styles */
+/* Boss bar layout (inline styles extracted to classes) */
 .boss-bar-layout {
   display: flex !important;
   flex-direction: column !important;
@@ -794,7 +769,7 @@ ${sel.settingsContainer} {
   box-shadow: 0 0 8px rgba(220, 38, 38, 0.25), inset 0 0 4px rgba(220, 38, 38, 0.1) !important;
 }
 
-/* ── Custom Dungeon Tooltips ── black bg + purple border, replaces native title */
+/* Custom dungeon tooltips — black bg + purple border, replaces native title */
 [data-dungeon-tip] {
   position: relative !important;
 }
@@ -839,7 +814,6 @@ ${sel.settingsContainer} {
   animation: dungeonTipFadeIn 0.12s ease-out !important;
 }
 
-/* Hide tooltip when data-dungeon-tip is empty */
 [data-dungeon-tip=""]:hover::after,
 [data-dungeon-tip=""]:hover::before {
   display: none !important;
@@ -860,7 +834,7 @@ ${sel.settingsContainer} {
   50% { opacity: 0.85; transform: scale(1.03); }
 }
 
-/* Boss Gate Timer — sealed boss countdown */
+/* Boss gate timer — sealed boss countdown */
 .boss-gate-timer {
   display: flex !important;
   align-items: center !important;
@@ -946,7 +920,6 @@ ${sel.settingsContainer} {
   color: #94a3b8 !important;
 }
 
-/* Participation badge states */
 .boss-bar-badge-waiting {
   color: #8b5cf6 !important;
   font-weight: 700 !important;
@@ -962,7 +935,7 @@ ${sel.settingsContainer} {
   font-weight: 700 !important;
 }
 
-/* HP Bar — combined rules (inline styles extracted + CSS-only properties preserved) */
+/* HP bar — inline styles extracted + CSS-only properties preserved */
 .dungeon-boss-hp-bar .hp-bar-container,
 .hp-bar-container {
   height: 14px !important;
@@ -1018,7 +991,6 @@ ${sel.settingsContainer} {
   letter-spacing: 0.8px !important;
 }
 
-/* User HP Bar */
 .dungeon-user-hp-bar {
   font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }

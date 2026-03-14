@@ -4,12 +4,8 @@ module.exports = {
       await this.stop();
     }
 
-    // Set plugin running state
     this.started = true;
-    // Session token: guards against orphaned async continuations from a previous start()
-    const sessionToken = ++this._sessionToken;
-
-    // Reset observer start time when plugin starts
+    const sessionToken = ++this._sessionToken; // guard against orphaned async continuations
     this.observerStartTime = Date.now();
 
     if (this.saveManager) {
@@ -18,20 +14,12 @@ module.exports = {
         this.debugLog('START', 'UnifiedSaveManager initialized (IndexedDB)');
       } catch (error) {
         this.errorLog('START', 'Failed to initialize UnifiedSaveManager', error);
-        this.saveManager = null; // Fallback to BdApi.Data
+        this.saveManager = null;
       }
     }
 
-    // Load settings ONCE (uses IndexedDB if available, fallback to BdApi.Data)
     await this.loadSettings();
-
-    // Build O(1) lookup tables for rank-based values (resurrection costs, mob stats, boss HP)
     this._buildRankLookupTables();
-
-    // NOTE: Testing spawn override removed — spawn chance now respects user settings
-    // To test with 100% spawn, set spawnChance in plugin settings manually
-
-    // Inject CSS using BdApi.DOM.addStyle (official API, persistent)
     this.injectCSS();
     this.installDelegatedUiHandlers();
 
@@ -45,28 +33,15 @@ module.exports = {
       await this.recalculateUserMana();
     }, 2000);
 
-    // Retry loading plugin references (especially for toasts plugin)
-    this._setTrackedTimeout(() => {
-      if (!this.toasts) {
-        this.loadPluginReferences();
-      }
-    }, 1000);
-
-    this._setTrackedTimeout(() => {
-      if (!this.toasts) {
-        this.loadPluginReferences();
-      }
-    }, 3000);
+    // Retry toasts plugin reference (may load after us)
+    this._setTrackedTimeout(() => { if (!this.toasts) this.loadPluginReferences(); }, 1000);
+    this._setTrackedTimeout(() => { if (!this.toasts) this.loadPluginReferences(); }, 3000);
 
     this.startMessageObserver();
     this.startDungeonCleanupLoop();
 
-    // Restore AFTER storage + saveManager + settings are all ready
     await this.restoreActiveDungeons();
-
-    if (this._sessionToken !== sessionToken) return; // orphaned coroutine
-
-    // Validate active dungeon status after restoration
+    if (this._sessionToken !== sessionToken) return;
     this.validateActiveDungeonStatus();
 
     this.setupChannelWatcher();
@@ -79,13 +54,8 @@ module.exports = {
       this._preWarmShadowCache().catch(() => {});
     }, 3000);
 
-    // Start window visibility tracking for performance optimization
     this.startVisibilityTracking();
-
-    // Start HP bar restoration loop (checks every 2 seconds for missing HP bars)
     this.startHPBarRestoration();
-
-    // Start HP/Mana regeneration loop (every 1 second)
     this.startRegeneration();
 
     // PERF: 10s status validation interval removed — validation is event-driven
@@ -103,7 +73,6 @@ module.exports = {
         this._cache.pluginInstances = {};
         this._cache.pluginInstancesTime = {};
       }
-      // Re-acquire plugin references on toggle (was previously polled every 30s)
       if (!this.soloLevelingStats?.settings) {
         this.soloLevelingStats = this.validatePluginReference('SoloLevelingStats', 'settings');
       }
@@ -139,7 +108,6 @@ module.exports = {
   },
 
   _stopRuntimePipelines() {
-    // Stop HP/Mana regeneration
     this.stopRegeneration();
 
     if (this._recalculateManaTimeout) {
@@ -159,13 +127,12 @@ module.exports = {
     this.removeAllBossHPBars();
     this.stopDungeonHeaderWidget?.();
 
-    // RELEASE ALL CHANNEL LOCKS: Plugin stopping - free all channels
+    // Free all channel locks on stop
     if (this.channelLocks) {
       this.debugLog(`Releasing ${this.channelLocks.size} channel locks on plugin stop`);
       this.channelLocks.clear();
     }
 
-    // Stop all tracked intervals (centralized cleanup)
     this._intervals.forEach((intervalId) => clearInterval(intervalId));
     this._intervals.clear();
 
@@ -177,12 +144,10 @@ module.exports = {
 
     this.stopHPBarRestoration();
 
-    // Stop window visibility tracking
     this.stopVisibilityTracking();
   },
 
   _clearStopCachesAndState() {
-    // Clear all caches
     if (this._cache) {
       this._cache.pluginInstances = {};
       this._cache.pluginInstancesTime = {};
@@ -196,12 +161,10 @@ module.exports = {
       this.gcInterval = null;
     }
 
-    // Clear extraction systems
     if (this.shadowArmyCountCache) {
       this.shadowArmyCountCache.clear();
     }
 
-    // Clear mob capacity warning tracking
     if (this._mobCapWarningShown) {
       this._mobCapWarningShown = {};
     }
@@ -220,7 +183,6 @@ module.exports = {
     if (this._dungeonUiActionLocks) this._dungeonUiActionLocks.clear();
     this.clearCombatStatusState?.();
 
-    // Remove plugin toggle event listeners
     if (this._pluginToggleHandler) {
       if (typeof BdApi?.Events?.off === 'function') {
         BdApi.Events.off('plugin-loaded', this._pluginToggleHandler);
@@ -229,7 +191,6 @@ module.exports = {
       this._pluginToggleHandler = null;
     }
 
-    // Remove shadow extraction event listeners
     if (this._shadowExtractedListener) {
       if (typeof BdApi?.Events?.off === 'function') {
         BdApi.Events.off('ShadowArmy:shadowExtracted', this._shadowExtractedListener);
@@ -240,7 +201,6 @@ module.exports = {
       this._shadowExtractedListener = null;
     }
 
-    // Clear combat/deployment tracking state
     if (this.deadShadows) this.deadShadows.clear();
     if (this._roleCombatStates) this._roleCombatStates.clear();
     if (this.defeatedBosses) this.defeatedBosses.clear();
@@ -294,7 +254,6 @@ module.exports = {
     this.stopChannelWatcher?.();
     this.currentChannelKey = null;
 
-    // Clear HP bar update queue
     if (this._hpBarUpdateQueue) this._hpBarUpdateQueue.clear();
     if (this._hpBarUpdateTimer) {
       this._timeouts.delete(this._hpBarUpdateTimer);
@@ -307,16 +266,12 @@ module.exports = {
   },
 
   _cleanupUiAndStyleStateOnStop() {
-    // Remove injected CSS (cleanup all tracked styles)
     this.cleanupAllCSS();
-
-    // Flush pending debounced save immediately on shutdown
     this.saveSettings(true);
   },
 
   _cleanupTrackedResourcesOnStop() {
-    // CENTRALIZED CLEANUP: Remove all tracked resources to prevent memory leaks
-    // Remove all event listeners (handles both Set<handler> and {target,event,handler,capture} shapes)
+    // Remove all tracked listeners and observers
     this._listeners.forEach((value, key) => {
       if (value instanceof Set) {
         // Set<handler> shape (e.g., popstate handlers)
@@ -343,7 +298,6 @@ module.exports = {
     this._timeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this._timeouts.clear();
 
-    // Legacy cleanup (for compatibility)
     if (this._popstateHandler) {
       window.removeEventListener('popstate', this._popstateHandler);
       this._popstateHandler = null;

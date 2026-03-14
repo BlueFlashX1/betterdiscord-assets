@@ -6,13 +6,9 @@ module.exports = {
       return;
     }
 
-    // Find message container first.
-    // IMPORTANT: Do NOT fall back to observing document.body.
-    // Observing the entire document can cause massive mutation volume and peg CPU.
+    // IMPORTANT: Never fall back to document.body — causes massive mutation volume and pegs CPU
     const findMessageContainer = () => {
-      // Try specific Discord message container selectors first (more specific to less specific)
       const selectors = [
-        // Stable data-attribute selector first (survives class name changes)
         'div[data-list-id="chat-messages"]',
         `main${dc.sel.chatContent} > div${dc.sel.messagesWrapper}`,
         `div${dc.sel.messagesWrapper}`,
@@ -41,7 +37,6 @@ module.exports = {
         }
       }
 
-      // Fallback: Find scroller that contains actual message elements
       const scrollers = document.querySelectorAll(dc.sel.scroller);
       let scrollerWithMessages = null;
       for (const scroller of scrollers) {
@@ -55,7 +50,6 @@ module.exports = {
       }
       if (scrollerWithMessages) return scrollerWithMessages;
 
-      // No safe container found; retry later.
       return null;
     };
 
@@ -64,7 +58,6 @@ module.exports = {
     if (messageContainer) {
       this.debugLog('MESSAGE_OBSERVER', 'Container found, attaching observer');
 
-      // Reset retry counters once we successfully attach.
       this._messageObserverRetryCount = 0;
       if (this._messageObserverRetryTimeoutId) {
         clearTimeout(this._messageObserverRetryTimeoutId);
@@ -72,12 +65,11 @@ module.exports = {
         this._messageObserverRetryTimeoutId = null;
       }
 
-      // Only instantiate and assign observer after finding a valid container
       this.messageObserver = new MutationObserver((mutations) => {
         if (!this.started || !this.settings?.enabled) return;
         if (document.hidden) return;
 
-        // Queue real chat message list items only; avoid expensive DOM queries on every mutation.
+        // PERF: Queue only real message list items; skip expensive DOM queries per mutation
         let addedMessageCount = 0;
         mutations.forEach((mutation) => {
           mutation.addedNodes.forEach((node) => {
@@ -99,13 +91,12 @@ module.exports = {
         if (addedMessageCount > 0) this._scheduleMessageFlush();
       });
 
-      // Track observer for cleanup
       this._observers.add(this.messageObserver);
       this._messageContainerRef = messageContainer;
       // PERF: attributes/characterData false — we only care about added/removed nodes
       this.messageObserver.observe(messageContainer, { childList: true, subtree: true, attributes: false, characterData: false });
 
-      // Periodic check: if React reconciliation replaces the container, reattach observer
+      // Reattach if React replaces the container
       if (this._messageContainerReattachId) {
         clearInterval(this._messageContainerReattachId);
         this._intervals?.delete?.(this._messageContainerReattachId);
@@ -122,7 +113,6 @@ module.exports = {
       }, 3000);
       this._intervals?.add?.(this._messageContainerReattachId);
     } else {
-      // Avoid scheduling multiple concurrent retries.
       if (this._messageObserverRetryTimeoutId) return;
 
       this._messageObserverRetryCount = (this._messageObserverRetryCount || 0) + 1;
@@ -142,7 +132,6 @@ module.exports = {
         }
       );
 
-      // Retry after delay if container not found (timing issue)
       this._messageObserverRetryTimeoutId = this._setTrackedTimeout(() => {
         this._messageObserverRetryTimeoutId = null;
         if (this.started) this.startMessageObserver();
@@ -172,7 +161,7 @@ module.exports = {
         pending.delete(el);
         processed++;
         try {
-          // Sequential processing prevents runaway async concurrency under message storms.
+          // PERF: Sequential — prevents async runaway under message storms
           await this.handleMessage(el);
         } catch (error) {
           this.errorLog('MESSAGE_OBSERVER', 'Failed processing message element', error);
@@ -223,12 +212,11 @@ module.exports = {
       const messageTimestamp = this.getMessageTimestamp(messageElement);
       if (messageTimestamp && messageTimestamp < this.observerStartTime) return;
 
-      // Check for duplicate processing using message ID
       const messageId = this.getMessageId(messageElement);
       if (messageId && this.processedMessageIds.has(messageId)) return;
       if (messageId) {
         this.processedMessageIds.add(messageId);
-        // Limit set size to prevent memory leak
+        // Bound set size to prevent unbounded growth
         if (this.processedMessageIds.size > 1000) {
           const firstId = this.processedMessageIds.values().next().value;
           this.processedMessageIds.delete(firstId);
@@ -266,7 +254,6 @@ module.exports = {
         }
       }
 
-      // Still check current channel for user attacks
       if (this.settings.userActiveDungeon === userChannelKey) {
         const userSlowMultiplier = this.getEntityAttackSlowMultiplier(
           userChannelKey,
@@ -279,7 +266,6 @@ module.exports = {
           this.settings.userAttackCooldown || 2000
         );
         if (now - this.lastUserAttackTime >= effectiveUserAttackCooldown) {
-          // Pass messageElement for critical hit detection
           await this.processUserAttack(userChannelKey, messageElement);
           this.lastUserAttackTime = now;
         }
@@ -291,7 +277,6 @@ module.exports = {
 
   getMessageTimestamp(messageElement) {
     try {
-      // Try to get timestamp from time element
       const timeElement = messageElement.querySelector('time');
       if (timeElement) {
         const datetime = timeElement.getAttribute('datetime');
@@ -300,13 +285,11 @@ module.exports = {
         }
       }
 
-      // Try to get from data attribute
       const timestamp = messageElement.getAttribute('data-timestamp');
       if (timestamp) {
         return parseInt(timestamp);
       }
 
-      // Try React fiber
       const reactKey = Object.keys(messageElement).find(
         (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
       );
@@ -318,25 +301,20 @@ module.exports = {
           fiber = fiber.return;
         }
       }
-    } catch (e) {
-      // Ignore errors
-    }
+    } catch (e) { /* swallow */ }
     return null;
   },
 
   getMessageId(messageElement) {
     try {
-      // Try data-list-item-id
       const listItemId =
         messageElement.getAttribute('data-list-item-id') ||
         messageElement.closest('[data-list-item-id]')?.getAttribute('data-list-item-id');
       if (listItemId) return listItemId;
 
-      // Try id attribute
       const id = messageElement.getAttribute('id');
       if (id) return id;
 
-      // Try React fiber
       const reactKey = Object.keys(messageElement).find(
         (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
       );
@@ -353,9 +331,7 @@ module.exports = {
         );
         if (result.found) return result.found;
       }
-    } catch (e) {
-      // Ignore errors
-    }
+    } catch (e) { /* swallow */ }
     return null;
   },
 
@@ -370,14 +346,12 @@ module.exports = {
 
     if (!authorElement) return false;
 
-    // Reject bot messages
     const botBadge =
       messageElement.querySelector('svg[aria-label*="bot" i]') ||
       dc.query(messageElement, "botTag") ||
       dc.query(messageElement, "bot");
     if (botBadge) return false;
 
-    // Reject system messages (join, boost, pin, etc.) — they have [class*="systemMessage"]
     if (dc.query(messageElement, "systemMessage") ||
         messageElement.closest(dc.sel.systemMessage)) return false;
 

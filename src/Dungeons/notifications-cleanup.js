@@ -1,9 +1,7 @@
 module.exports = {
   startMobKillNotifications(channelKey) {
-    // Track that this channel wants notifications (no per-channel timer needed)
     this._mobKillChannels || (this._mobKillChannels = new Set());
     this._mobKillChannels.add(channelKey);
-    // Start global timer if not already running
     if (!this._mobKillGlobalTimer) {
       this._mobKillGlobalTimer = setInterval(() => {
         if (!this.isWindowVisible()) return; // PERF(P5-3): Skip kill summaries when hidden
@@ -20,7 +18,6 @@ module.exports = {
 
   stopMobKillNotifications(channelKey) {
     if (this._mobKillChannels) this._mobKillChannels.delete(channelKey);
-    // Stop global timer if no channels left
     if (this._mobKillChannels && this._mobKillChannels.size === 0 && this._mobKillGlobalTimer) {
       clearInterval(this._mobKillGlobalTimer);
       this._intervals.delete(this._mobKillGlobalTimer);
@@ -50,8 +47,7 @@ module.exports = {
     if (!dungeon) return;
     notification.count = 0;
     notification.lastNotification = Date.now();
-    // PERF: No saveSettings() here — mob kill counts are ephemeral runtime data,
-    // persisted naturally by next debounced save from combat tick
+    // PERF: No saveSettings() — kill counts persist via next combat-tick debounced save
   },
 
   startDungeonCleanupLoop() {
@@ -68,7 +64,6 @@ module.exports = {
     const NEVER_ENGAGED_EXPIRY_MS = 60000;  // 1 minute — never deployed, never joined
     const DISENGAGED_EXPIRY_MS = 180000;   // 3 minutes — had engagement that was withdrawn
     this.activeDungeons.forEach((dungeon, channelKey) => {
-      // Skip dungeons already completed/failed (ARISE-deferred or mid-completion).
       if (dungeon.completed || dungeon.failed) return;
 
       // BUGFIX LOGIC-9: Recover dungeons stranded with _completing=true for >30s
@@ -81,13 +76,12 @@ module.exports = {
         return;
       }
 
-      // Active protection: never expire while user is participating or shadows are deployed.
+      // Never expire while actively engaged
       if (dungeon.shadowsDeployed || dungeon.userParticipating) {
-        dungeon._idleSince = null; // Reset idle timer — dungeon is actively engaged
+        dungeon._idleSince = null;
         return;
       }
 
-      // Dungeon is idle (no user, no shadows). Start idle countdown.
       if (!dungeon._idleSince) {
         dungeon._idleSince = now;
       }
@@ -104,8 +98,7 @@ module.exports = {
       this.completeDungeon(channelKey, 'timeout');
     });
 
-    // Cleanup defeated bosses that were not extracted (ARISE) after 5 minutes.
-    // Centralized here to avoid per-boss long-lived timers.
+    // Expire unextracted defeated bosses after 5 min (avoids per-boss long-lived timers)
     if (this.defeatedBosses && this.defeatedBosses.size > 0) {
       const expiredBossKeys = [];
       for (const [channelKey, bossData] of this.defeatedBosses.entries()) {
@@ -113,7 +106,7 @@ module.exports = {
         now - ts >= 5 * 60 * 1000 && expiredBossKeys.push(channelKey);
       }
 
-      // Cap cleanup per tick to avoid spikes if many expire at once.
+      // Cap per-tick cleanups to avoid spikes
       const MAX_BOSS_CLEANUPS_PER_TICK = 3;
       expiredBossKeys.slice(0, MAX_BOSS_CLEANUPS_PER_TICK).forEach((channelKey) => {
         this.cleanupDefeatedBoss(channelKey);
