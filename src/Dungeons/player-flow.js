@@ -439,7 +439,21 @@ module.exports = {
     dungeon._deployPendingFullAllocation = true;
     this._scheduleDeployRebalance(channelKey, deployStartedAt);
 
-    this.showToast(`Shadows deployed to ${dungeon.name}!`, 'success');
+    // Build rank breakdown for deploy summary
+    const deployedShadows = this.shadowAllocations.get(channelKey) || assignedShadows;
+    const rankCounts = {};
+    for (const s of deployedShadows) {
+      const r = s?.rank || 'E';
+      rankCounts[r] = (rankCounts[r] || 0) + 1;
+    }
+    const totalDeployed = deployedShadows.length;
+    // Format: "12 shadows (3 S, 5 A, 4 B)" — show ranks highest-first
+    const rankOrder = ['Shadow Monarch', 'Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+    const rankParts = rankOrder
+      .filter(r => rankCounts[r] > 0)
+      .map(r => `${rankCounts[r]} ${r}`);
+    const breakdownStr = rankParts.length > 0 ? ` (${rankParts.join(', ')})` : '';
+    this.showToast(`${totalDeployed} shadows deployed to ${dungeon.name}!${breakdownStr}`, 'success');
     dungeon._deploying = false; // MUTEX RELEASE: deploy pipeline complete
     this.saveSettings();
 

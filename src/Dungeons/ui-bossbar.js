@@ -460,6 +460,33 @@ module.exports = {
           </div>`
         : '';
 
+      // Shadow deployment info row — shows count + rank breakdown when deployed
+      let shadowInfoHTML = '';
+      if (dungeon.shadowsDeployed) {
+        const allocated = this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
+        const deadSet = this.deadShadows?.get(channelKey);
+        const deadCount = deadSet?.size || 0;
+        const aliveCount = Math.max(0, allocated.length - deadCount);
+        // Build rank breakdown (highest first)
+        const rc = {};
+        for (const s of allocated) {
+          const r = s?.rank || 'E';
+          rc[r] = (rc[r] || 0) + 1;
+        }
+        const rankOrder = ['Shadow Monarch', 'Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+        const parts = rankOrder.filter(r => rc[r] > 0).map(r => `${rc[r]}${r}`);
+        const rankStr = parts.length > 0 ? parts.join(' ') : '';
+        shadowInfoHTML = `
+          <div class="boss-bar-shadow-info">
+            <span class="boss-bar-stat-label">Shadows:</span>
+            <span class="shadow-alive">${aliveCount.toLocaleString()}</span>
+            <span class="boss-bar-stat-separator">/</span>
+            <span class="shadow-total">${allocated.length.toLocaleString()}</span>
+            ${deadCount > 0 ? `<span class="shadow-dead" style="color:#ef4444;margin-left:4px;">(${deadCount} dead)</span>` : ''}
+            ${rankStr ? `<span class="shadow-ranks" style="opacity:0.7;margin-left:6px;font-size:11px;">[${rankStr}]</span>` : ''}
+          </div>`;
+      }
+
       // Multi-line layout to show all info without truncation
       hpBar.innerHTML = `
       <div class="boss-bar-layout">
@@ -485,6 +512,7 @@ module.exports = {
             <span class="boss-bar-stat-separator">/</span>
             <span class="mob-total">${totalMobs.toLocaleString()}</span>
           </div>
+          ${shadowInfoHTML}
         </div>
         ${combatSkillsRowHTML}
         ${activeEffectsRowHTML}
