@@ -879,10 +879,12 @@ var require_ShadowAwayBridge_plugin = __commonJS({
       _startHeaderBadgePolling() {
         this._stopHeaderBadgePolling();
         this._headerBadgePollTimer = setInterval(async () => {
-          await this._flushQueuedReturnSignal();
-          if (document.getElementById(HEADER_WIDGET_ID)) {
-            await this._refreshHeaderWidgetBadge();
-          }
+          try {
+            await this._flushQueuedReturnSignal();
+            if (document.getElementById(HEADER_WIDGET_ID)) {
+              await this._refreshHeaderWidgetBadge();
+            }
+          } catch (_) { /* badge poll — non-critical, swallow to avoid unhandled rejection every 12s */ }
         }, HEADER_WIDGET_BADGE_POLL_MS);
         Promise.resolve().then(async () => {
           await this._flushQueuedReturnSignal();

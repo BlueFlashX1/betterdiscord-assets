@@ -633,9 +633,9 @@ const ShadowArmy = class ShadowArmy {
       this._extractionTimestamps = null;
     }
 
-    if (this.settings.dungeonExtractionAttempts) {
-      this.settings.dungeonExtractionAttempts = null;
-    }
+    // dungeonExtractionAttempts is a persisted settings field, not runtime state —
+    // do NOT null it here (save already flushed above, and nulling after save
+    // creates transient inconsistency if canExtractFromBoss() is called during shutdown)
 
     // Disconnect member list observer
     if (this.memberListObserver) {
