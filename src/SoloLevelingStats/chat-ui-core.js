@@ -156,6 +156,7 @@ module.exports = {
     }
     this._headerStatsPopupPositionRaf = requestAnimationFrame(() => {
       this._headerStatsPopupPositionRaf = null;
+      if (!this._isRunning) return;
       this.positionHeaderStatsPopup();
     });
   },

@@ -37,6 +37,9 @@ module.exports = {
     this.loadPluginReferences();
     await this.initStorage();
 
+    // Guard: if stop() was called during async init, bail out
+    if (!this.started) return;
+
     // Recalculate mana pool on startup (in case shadow army grew while plugin was off)
     this._recalculateManaTimeout = this._setTrackedTimeout(async () => {
       await this.recalculateUserMana();
@@ -60,6 +63,9 @@ module.exports = {
 
     // Restore AFTER storage + saveManager + settings are all ready
     await this.restoreActiveDungeons();
+
+    // Guard: if stop() was called during dungeon restoration, bail out
+    if (!this.started) return;
 
     // Validate active dungeon status after restoration
     this.validateActiveDungeonStatus();

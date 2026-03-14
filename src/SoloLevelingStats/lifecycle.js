@@ -70,6 +70,10 @@ module.exports = {
 
       // Load settings (will use IndexedDB if available, fallback to BdApi.Data)
       await this.loadSettings();
+
+      // Guard: if stop() was called during async init, bail out
+      if (!this._isRunning) return;
+
       this.debugLog('START', 'Settings loaded', {
         level: this.settings.level,
         rank: this.settings.rank,
@@ -234,6 +238,7 @@ module.exports = {
       }
       this._createChatUIStartupRetryTimeout = setTimeout(() => {
         this._createChatUIStartupRetryTimeout = null;
+        if (!this._isRunning) return;
         try {
           this.createChatUI();
         } catch (retryError) {
@@ -279,6 +284,12 @@ module.exports = {
     this._isRunning = false;
     this._shadowBuffsRefreshPromise = null;
     this._shadowBuffsRefreshAt = 0;
+
+    // Clean up chat UI startup retry timeout
+    if (this._createChatUIStartupRetryTimeout) {
+      clearTimeout(this._createChatUIStartupRetryTimeout);
+      this._createChatUIStartupRetryTimeout = null;
+    }
 
     // Clean up level up debounce timeout
     if (this.levelUpDebounceTimeout) {

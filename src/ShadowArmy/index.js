@@ -261,6 +261,9 @@ const ShadowArmy = class ShadowArmy {
 
     await this.loadSettings();
 
+    // Guard: if stop() was called during async init, bail out
+    if (this._isStopped) return;
+
     this.injectCSS();
     this.integrateWithSoloLeveling();
 

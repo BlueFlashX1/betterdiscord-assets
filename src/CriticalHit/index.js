@@ -557,6 +557,12 @@ const CriticalHit = class CriticalHit {
         this.animationContainer = null;
       }
 
+      // Remove screen-shake style element (injected by animation.js)
+      if (this._shakeStyleEl) {
+        this._shakeStyleEl.remove();
+        this._shakeStyleEl = null;
+      }
+
       this.detachCriticalHitSettingsPanelHandlers();
 
       this.debugLog('PLUGIN_STOP', 'SUCCESS: CriticalHit plugin stopped successfully');
