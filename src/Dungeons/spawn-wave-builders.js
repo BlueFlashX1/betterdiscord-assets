@@ -357,7 +357,8 @@ module.exports = {
         : 0;
       const deficitBoost = 0.6 + deficitRatio * 0.8; // 0.6x near cap, up to 1.4x when empty
       // Rank-scaled spawn cap: low ranks spawn small waves, high ranks spawn armies
-      const rankSpawnCap = Math.max(10, Math.min(2000, Math.floor(mobCap * 0.05)));
+      // E(50)→3, S(10k)→500, Monarch(250k)→5000, Shadow Monarch(1M)→10000
+      const rankSpawnCap = Math.max(10, Math.min(10000, Math.floor(mobCap * 0.01 + dungeonRankIndex * 200)));
       const dynamicBaseSpawn = this.clampNumber(Math.floor(blendedBase * deficitBoost), 1, rankSpawnCap);
 
       // Apply variance around dynamic target
