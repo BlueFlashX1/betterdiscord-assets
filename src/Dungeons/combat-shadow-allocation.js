@@ -510,14 +510,14 @@ module.exports = {
     const PREFERRED_PAIR_SHARE = this.clampNumber(
       Number.isFinite(this.settings?.rankAllocationPreferredPairShare)
         ? this.settings.rankAllocationPreferredPairShare
-        : 0.8,
+        : 0.85,
       0.5,
       1
     );
     const SAME_RANK_WITHIN_PAIR_SHARE = this.clampNumber(
       Number.isFinite(this.settings?.rankAllocationSameRankShare)
         ? this.settings.rankAllocationSameRankShare
-        : 0.75,
+        : 0.85,
       0.5,
       0.95
     );
