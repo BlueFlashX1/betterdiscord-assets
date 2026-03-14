@@ -47,7 +47,6 @@ module.exports = {
     if (!notification || notification.count === 0) return;
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
-    const _count = notification.count; // Used in notification display
     notification.count = 0;
     notification.lastNotification = Date.now();
     // PERF: No saveSettings() here — mob kill counts are ephemeral runtime data,

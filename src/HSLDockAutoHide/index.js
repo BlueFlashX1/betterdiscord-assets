@@ -342,8 +342,4 @@ module.exports = class HSLDockAutoHide {
     return this.__DockControllerCached;
   }
 
-  getCSS() {
-    // Legacy — returns combined CSS for backward compat
-    return getUserPanelDockCss() + getDockAutoHideCss();
-  }
 };

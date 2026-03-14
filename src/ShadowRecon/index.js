@@ -93,6 +93,7 @@ const {
   getGuildOnlineCount,
   injectServerCounterWidget,
   refreshGuildIconHints,
+  removeGuildTooltip,
   removeServerCounterWidget,
   updateServerCounterWidget,
 } = require("./guild-visuals");
@@ -160,6 +161,21 @@ module.exports = class ShadowRecon {
       this.startRefreshLoops();
       this.setupObserver();
 
+      // Discord's guild nav may not be in the DOM yet at startup.
+      // Schedule a few early retries so the widget appears once the nav loads.
+      if (!document.getElementById(WIDGET_ID)) {
+        const retryDelays = [800, 2000, 5000];
+        this._startupRetryTimers = retryDelays.map(delay =>
+          setTimeout(() => {
+            if (this._stopped) return;
+            if (!document.getElementById(WIDGET_ID)) {
+              this.injectServerCounterWidget();
+              this.refreshGuildIconHints();
+            }
+          }, delay)
+        );
+      }
+
       this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} - Recon online`, "info");
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed to start`, err);
@@ -171,11 +187,16 @@ module.exports = class ShadowRecon {
   stop(options = {}) {
     const { silent = false } = options;
     this._stopped = true;
+    if (this._startupRetryTimers) {
+      this._startupRetryTimers.forEach(t => clearTimeout(t));
+      this._startupRetryTimers = null;
+    }
     this.unpatchContextMenus();
     this.stopRefreshLoops();
     this.teardownObserver();
     this.removeServerCounterWidget();
     this.clearGuildIconHints();
+    removeGuildTooltip();
     this._clearRuntimeCaches();
     this.closeModal();
     BdApi.DOM.removeStyle(STYLE_ID);
@@ -264,8 +285,6 @@ module.exports = class ShadowRecon {
 
   initWebpack() {
     const { Webpack } = BdApi;
-
-    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
 
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
@@ -484,7 +503,12 @@ module.exports = class ShadowRecon {
   }
 
   refreshAllVisuals() {
-    this.updateServerCounterWidget();
+    // Re-inject widget if it was missed at startup (DOM wasn't ready)
+    if (this.settings.showServerCounterWidget && !document.getElementById(WIDGET_ID)) {
+      this.injectServerCounterWidget();
+    } else {
+      this.updateServerCounterWidget();
+    }
     this.refreshGuildIconHints();
   }
 

@@ -50,16 +50,22 @@ module.exports = {
   },
 
   calculateMana(intelligence) {
-    if (this._cache.manaCache.has(intelligence)) {
-      return this._cache.manaCache.get(intelligence);
+    // Pull flat mana bonus from SkillTree (e.g. Black Heart: +100,000)
+    const skillBonuses = typeof this.getSkillTreeBonuses === 'function'
+      ? this.getSkillTreeBonuses() : null;
+    const flatMana = Math.max(0, Number(skillBonuses?.flatMana) || 0);
+
+    const cacheKey = `${intelligence}_${flatMana}`;
+    if (this._cache.manaCache.has(cacheKey)) {
+      return this._cache.manaCache.get(cacheKey);
     }
-  
+
     const baseMana = 100;
-    const result = baseMana + intelligence * 10;
+    const result = baseMana + intelligence * 10 + flatMana;
     if (this._cache.manaCache.size < 100) {
-      this._cache.manaCache.set(intelligence, result);
+      this._cache.manaCache.set(cacheKey, result);
     }
-  
+
     return result;
   }
 };

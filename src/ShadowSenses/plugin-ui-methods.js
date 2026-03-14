@@ -112,7 +112,7 @@ const ShadowSensesUiMethods = {
       }
 
       // Find innermost content target: membersList > membersContent (or first child)
-      const membersList = membersWrap.querySelector(dc.sel.members);
+      const membersList = membersWrap.querySelector(require('../shared/discord-classes').sel.members);
       const target = membersList || membersWrap;
 
       const createRoot = this._getCreateRoot();

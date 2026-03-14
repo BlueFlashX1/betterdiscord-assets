@@ -13,7 +13,6 @@ try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } c
 module.exports = class UserPanelDockMover {
   constructor() {
     this.pluginId = "UserPanelDockMover";
-    this.version = PLUGIN_VERSION;
     this.instanceKey = "__UserPanelDockMoverInstance";
     this.panelSelector = "section[aria-label='User status and settings']";
     this.dockSelector = "nav[aria-label='Servers sidebar']";

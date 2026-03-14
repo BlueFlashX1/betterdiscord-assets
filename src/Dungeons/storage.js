@@ -13,10 +13,6 @@ class DungeonStorageManager {
     this.storeName = 'dungeons';
     this.archiveStoreName = 'dungeons_archive'; // Hot/cold data separation
     this.db = null;
-    this._batchQueue = new Map(); // Batch write queue
-    this._batchTimer = null;
-    this._batchThreshold = 5; // Flush after 5 operations
-    this._batchIntervalMs = 1000; // Or flush after 1s
   }
 
   async init() {

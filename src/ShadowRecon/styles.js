@@ -4,7 +4,7 @@ function getShadowReconCss(widgetId, modalId) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin: 5px 6px;
+  margin: 5px 10px 5px 6px;
   padding: 6px 8px;
   border: 1px solid rgba(96, 165, 250, 0.45);
   border-radius: 2px;
@@ -18,18 +18,18 @@ function getShadowReconCss(widgetId, modalId) {
   text-overflow: ellipsis;
   cursor: pointer;
   user-select: none;
+  flex-shrink: 0;
   transform-origin: center center;
   transition: border-color 120ms ease, color 120ms ease, transform 140ms ease;
 }
 
 #${widgetId}.shadow-recon-widget.shadow-recon-widget--rotated {
-  transform: rotate(90deg);
-  margin: 8px -10px;
-  padding: 6px 8px;
+  margin: 4px 12px 4px 4px;
+  padding: 4px 7px;
   border-radius: 2px;
   font-size: 9px;
   line-height: 1.2;
-  max-width: 92px;
+  max-width: none;
 }
 
 #${widgetId}.shadow-recon-widget:hover {
@@ -175,6 +175,64 @@ function getShadowReconCss(widgetId, modalId) {
 .shadow-recon-button:hover {
   border-color: rgba(96, 165, 250, 0.85);
   background: rgba(30, 58, 138, 0.35);
+}
+
+/* Guild icon custom tooltip */
+.shadow-recon-tooltip {
+  position: fixed;
+  z-index: 10100;
+  padding: 8px 12px;
+  border: 1px solid rgba(168, 85, 247, 0.65);
+  border-radius: 4px;
+  background: rgba(10, 10, 10, 0.96);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 8px rgba(168, 85, 247, 0.15);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 100ms ease, transform 100ms ease;
+  max-width: 320px;
+  font-family: inherit;
+}
+
+.shadow-recon-tooltip--visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.shadow-recon-tooltip-row {
+  color: #d4d4d8;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.shadow-recon-tooltip-row + .shadow-recon-tooltip-row {
+  margin-top: 2px;
+}
+
+.shadow-recon-tooltip-tag {
+  font-weight: 600;
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  letter-spacing: 0.02em;
+}
+
+.shadow-recon-tooltip-tag--marked {
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.shadow-recon-tooltip-tag--unmarked {
+  color: #a1a1aa;
+  background: rgba(113, 113, 122, 0.15);
+  border: 1px solid rgba(113, 113, 122, 0.3);
+}
+
+.shadow-recon-tooltip-name {
+  color: #e4e4e7;
+  font-weight: 500;
 }
 `;
 }

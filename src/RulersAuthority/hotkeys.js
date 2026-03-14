@@ -2,7 +2,7 @@
 // Hotkey Utilities — delegates to shared/hotkeys with PluginUtils override
 // ═══════════════════════════════════════════════════════════════════════════
 
-const { isEditableTarget: _sharedIsEditableTarget, parseHotkey, matchesHotkey: _sharedMatchesHotkey } = require("../shared/hotkeys");
+const { isEditableTarget: _sharedIsEditableTarget, matchesHotkey: _sharedMatchesHotkey } = require("../shared/hotkeys");
 
 let _pluginUtilsRef = null;
 

@@ -5,8 +5,8 @@ const {
   STATUS_LABELS,
   STATUS_TOAST_TIMEOUT_MS,
 } = require("./constants");
-const { createToast } = require("../shared/toast");
-const _fallbackToast = createToast();
+// Toast fallback uses the singleton from index.js via the engine's _plugin ref.
+// Do NOT create a second createToast() instance here — see audit #9.
 
 function resolveUserStore() {
   if (this._plugin._UserStore) return this._plugin._UserStore;
@@ -201,7 +201,7 @@ function toast(message, type = "info", timeout = null) {
       maxPerMinute: 30,
     });
   } else {
-    _fallbackToast(message, type);
+    BdApi.UI.showToast(message, { type, ...(timeout ? { timeout } : {}) });
   }
 }
 
@@ -369,24 +369,5 @@ module.exports = {
   _showStatusToast: showStatusToast,
   _snapshotFriendRelationships: snapshotFriendRelationships,
   _toast: toast,
-  extractPresenceUpdates,
-  getFriendIdSet,
-  getStatusLabel,
-  getTypingCooldownMs,
-  isFriend,
-  isOnlineStatus,
-  normalizeStatus,
-  resolvePresenceStore,
   resolvePresenceUpdateStatus,
-  resolveRelationshipStore,
-  resolveUserAvatarUrl,
-  resolveUserName,
-  resolveUserStore,
-  scheduleDeferredUtilityToast,
-  scheduleStatusToast,
-  seedTrackedStatuses,
-  showMentionToast,
-  showStatusToast,
-  snapshotFriendRelationships,
-  toast,
 };

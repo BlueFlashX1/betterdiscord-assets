@@ -183,7 +183,7 @@ module.exports = {
           } else {
             this.showAriseSuccessAnimation(result.shadow, bossData.boss);
           }
-          this.showToast(`ARISE! \"${result.shadow.name}\" extracted!`, 'success');
+          this.showToast(`ARISE! \"${result.shadow.roleName || result.shadow.role}\" extracted!`, 'success');
           await this.recalculateUserMana();
         },
         error: () => {
@@ -290,7 +290,7 @@ module.exports = {
 
     const shadowName = document.createElement('div');
     shadowName.style.cssText = 'font-size: 32px; color: white; margin-bottom: 8px;';
-    shadowName.textContent = shadow?.name ?? '';
+    shadowName.textContent = shadow?.roleName || shadow?.role || '';
 
     const shadowRank = document.createElement('div');
     shadowRank.style.cssText = 'font-size: 20px; color: #a78bfa; margin-bottom: 4px;';
@@ -548,7 +548,7 @@ module.exports = {
         beforeStates.set(shadowId, {
           level: shadow.level || 1,
           rank: shadow.rank,
-          name: shadow.name || 'Shadow',
+          name: shadow.roleName || shadow.role || shadow.name || 'Shadow',
         });
 
         xpByShadowId[shadowId] = totalXP;

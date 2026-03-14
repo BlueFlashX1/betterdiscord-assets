@@ -889,11 +889,4 @@ module.exports = {
   _onRelationshipChange: onRelationshipChange,
   _seedUserActivityFromFeeds: seedUserActivityFromFeeds,
   _onTypingStart: onTypingStart,
-  onChannelSelect,
-  onMessageCreate,
-  pollMonitoredPresenceStatuses,
-  onPresenceUpdate,
-  onRelationshipChange,
-  seedUserActivityFromFeeds,
-  onTypingStart,
 };

@@ -12,8 +12,4 @@ function createWarnOnce() {
   };
 }
 
-function clearWarnings(warnOnce) {
-  // No-op if not using the Set-based pattern; provided for symmetry
-}
-
 module.exports = { createWarnOnce };

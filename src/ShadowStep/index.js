@@ -421,6 +421,16 @@ module.exports = class ShadowStep {
       return;
     }
 
+    // Shared teleport cooldown (synced with ShadowExchange + ShadowSenses)
+    const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
+    if (portalCore?.checkTeleportCooldown) {
+      const cdCheck = portalCore.checkTeleportCooldown();
+      if (cdCheck.onCooldown) {
+        this._toast(`Teleport on cooldown \u2014 ${cdCheck.remainingText} remaining`, "error", 3000);
+        return;
+      }
+    }
+
     const channelExists = this._ChannelStore?.getChannel(anchor.channelId);
     if (!channelExists) {
       this.removeAnchor(anchor.id);
@@ -435,6 +445,9 @@ module.exports = class ShadowStep {
 
     // Close panel first
     this.closePanel();
+
+    // Stamp shared teleport cooldown
+    if (portalCore?.stampTeleportCooldown) portalCore.stampTeleportCooldown();
 
     // Update usage stats
     anchor.lastUsed = Date.now();

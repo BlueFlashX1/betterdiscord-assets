@@ -162,7 +162,7 @@ module.exports = {
         const levelAfter = shadow.level || 1;
         if (levelAfter > before.level) {
           leveledUpShadows.push({
-            name: shadow.name || before.name || 'Shadow',
+            name: shadow.roleName || shadow.role || shadow.name || before.name || 'Shadow',
             levelBefore: before.level,
             levelAfter,
           });
@@ -171,7 +171,7 @@ module.exports = {
         const rankAfter = shadow.rank;
         if (rankAfter && rankAfter !== before.rank) {
           rankedUpShadows.push({
-            name: shadow.name || before.name || 'Shadow',
+            name: shadow.roleName || shadow.role || shadow.name || before.name || 'Shadow',
             oldRank: before.rank,
             newRank: rankAfter,
           });
@@ -196,7 +196,7 @@ module.exports = {
             const growthRankUp = this.shadowArmy.attemptAutoRankUp(shadow);
             if (growthRankUp?.success) {
               rankedUpShadows.push({
-                name: shadow.name || beforeStates.get(sid)?.name || 'Shadow',
+                name: shadow.roleName || shadow.role || shadow.name || beforeStates.get(sid)?.name || 'Shadow',
                 oldRank: growthRankUp.oldRank,
                 newRank: growthRankUp.newRank,
               });

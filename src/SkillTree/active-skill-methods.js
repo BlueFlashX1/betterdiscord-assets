@@ -696,4 +696,4 @@ const ActiveSkillMethods = {
   },
 };
 
-module.exports = { ActiveSkillMethods, ACTIVE_SKILL_PHASES };
+module.exports = { ActiveSkillMethods };

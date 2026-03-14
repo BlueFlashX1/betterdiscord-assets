@@ -40,8 +40,8 @@ module.exports = {
       };
 
       // Create throttled versions (4x per second max)
-      this.throttled.checkDailyQuests = bindIfExists(
-        'checkDailyQuests',
+      this.throttled.checkDailyReset = bindIfExists(
+        'checkDailyReset',
         500,
         this.throttle.bind(this)
       );

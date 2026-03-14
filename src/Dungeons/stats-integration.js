@@ -99,10 +99,6 @@ module.exports = {
 
     try {
       let bonuses = null;
-      const skillTree = this._SLUtils?.getPluginInstance?.('SkillTree');
-      if (skillTree && typeof skillTree.calculateSkillBonuses === 'function') {
-        bonuses = skillTree.calculateSkillBonuses() || null;
-      }
       if (this.soloLevelingStats && typeof this.soloLevelingStats.getSkillTreeBonuses === 'function') {
         bonuses = bonuses || this.soloLevelingStats.getSkillTreeBonuses() || null;
       }
@@ -121,7 +117,7 @@ module.exports = {
   },
 
   getSkillTreeInstance() {
-    return this.validatePluginReference('SkillTree') || this._SLUtils?.getPluginInstance?.('SkillTree') || null;
+    return this.validatePluginReference('SkillTree') || null;
   },
 
   getUserCombatCritChanceBonus() {
@@ -204,16 +200,20 @@ module.exports = {
         const hasMana = Number(snapshot.mana?.current || 0) >= Number(def.manaCost || 0);
         const isOnCooldown = snapshot.cooldownRemaining > 0;
         const needsDeploy = !dungeon.shadowsDeployed;
+        const bossAlive = Number(dungeon?.boss?.hp || 0) > 0;
+        const liveMobs = (dungeon.mobs?.activeMobs || []).some((m) => m && m.hp > 0);
+        const noEnemies = !bossAlive && !liveMobs;
         const disabled =
           isOnCooldown ||
           !hasMana ||
           needsDeploy ||
           dungeon.completed ||
           dungeon.failed ||
-          Number(dungeon?.boss?.hp || 0) <= 0;
+          noEnemies;
 
         let stateClass = 'is-ready';
-        let titleText = `${def.name} • ${def.manaCost} Mana • ${Math.ceil(snapshot.effectiveCooldownMs / 1000)}s cooldown`;
+        const manaPart = Number(def.manaCost) > 0 ? `${def.manaCost} Mana • ` : 'No Mana Cost • ';
+        let titleText = `${def.name} • ${manaPart}${Math.ceil(snapshot.effectiveCooldownMs / 1000)}s cooldown`;
 
         if (isOnCooldown) {
           stateClass = 'is-cooldown';
@@ -224,6 +224,9 @@ module.exports = {
         } else if (needsDeploy) {
           stateClass = 'is-blocked';
           titleText = `Deploy shadows before using ${def.name}.`;
+        } else if (noEnemies) {
+          stateClass = 'is-blocked';
+          titleText = 'No enemies to target.';
         }
 
         return {

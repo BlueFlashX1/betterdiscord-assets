@@ -309,7 +309,7 @@ const methods = {
       "main",
       "#app-mount [role='main']",
       `#app-mount ${require("../shared/discord-classes").sel.chatContent}`,
-      `#app-mount ${dc.sel.chat}`,
+      `#app-mount ${require("../shared/discord-classes").sel.chat}`,
       `#app-mount ${require("../shared/discord-classes").sel.content}`,
     ];
     for (const selector of selectors) {
@@ -2214,9 +2214,71 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
   return true;
 }
 
+// ── Shared Teleport Cooldown ────────────────────────────────────────────
+// All portal-core consumers (ShadowStep, ShadowExchange, ShadowSenses)
+// share a single cooldown stored under a neutral plugin-id key so that
+// any teleport from any plugin starts the same cooldown timer.
+
+const SHARED_COOLDOWN_KEY = "ShadowPortalCore";
+const SHARED_COOLDOWN_DATA_KEY = "_lastTeleportTime";
+
+function _getSkillTreeSkillLevel(skillId) {
+  try {
+    const plugin = BdApi.Plugins.get("SkillTree");
+    const instance = plugin?.instance || null;
+    if (!instance || typeof instance.getSkillLevel !== "function") return 0;
+    return instance.getSkillLevel(skillId) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Get the shared teleport cooldown duration in ms.
+ * Based on shadow_exchange skill level: Lv1=3h, Lv2=1.5h, Lv3=45m, Lv4=22.5m, Lv5≈11m
+ */
+function getTeleportCooldownMs() {
+  const level = _getSkillTreeSkillLevel("shadow_exchange");
+  if (level <= 0) return Infinity;
+  const BASE_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours
+  return Math.round(BASE_COOLDOWN_MS / Math.pow(2, level - 1));
+}
+
+/**
+ * Check shared cooldown. Returns { onCooldown, remainingMs, remainingText }.
+ */
+function checkTeleportCooldown() {
+  const cooldownMs = getTeleportCooldownMs();
+  const lastTeleport = BdApi.Data.load(SHARED_COOLDOWN_KEY, SHARED_COOLDOWN_DATA_KEY) || 0;
+  const elapsed = Date.now() - lastTeleport;
+  const remaining = cooldownMs - elapsed;
+  if (remaining <= 0) return { onCooldown: false, remainingMs: 0, remainingText: "" };
+  const totalSec = Math.ceil(remaining / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (h === 0 && s > 0) parts.push(`${s}s`);
+  return { onCooldown: true, remainingMs: remaining, remainingText: parts.join(" ") };
+}
+
+/**
+ * Stamp the shared teleport cooldown (call after a successful teleport).
+ */
+function stampTeleportCooldown() {
+  const now = Date.now();
+  BdApi.Data.save(SHARED_COOLDOWN_KEY, SHARED_COOLDOWN_DATA_KEY, now);
+  return now;
+}
+
 module.exports = {
   applyPortalCoreToClass,
   methods,
+  checkTeleportCooldown,
+  getTeleportCooldownMs,
+  stampTeleportCooldown,
 };
 
 if (typeof window !== "undefined") {

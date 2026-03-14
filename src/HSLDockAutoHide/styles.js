@@ -194,13 +194,7 @@ function getDockAutoHideCss() {
     `;
 }
 
-/** Legacy combined getter — returns both layers for backward compat */
-function getHslDockAutoHideCss() {
-  return getUserPanelDockCss() + getDockAutoHideCss();
-}
-
 module.exports = {
   getUserPanelDockCss,
   getDockAutoHideCss,
-  getHslDockAutoHideCss,
 };

@@ -65,7 +65,7 @@ module.exports = {
           if (rankUpResult.success) {
             this.debugLog(
               'RANK_UP',
-              `AUTO RANK-UP: ${shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${rankUpResult.newRank}!`
+              `AUTO RANK-UP: ${shadow.roleName || shadow.role || shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${rankUpResult.newRank}!`
             );
           }
         }
@@ -227,11 +227,8 @@ module.exports = {
     if (!shadow || !shadow.rank) return { success: false };
 
     const currentRank = shadow.rank;
-    const shadowRanks = [
-      'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch',
-    ];
-    const currentRankIndex = shadowRanks.indexOf(currentRank);
-    const nextRank = shadowRanks[currentRankIndex + 1];
+    const currentRankIndex = this.shadowRanks.indexOf(currentRank);
+    const nextRank = this.shadowRanks[currentRankIndex + 1];
 
     if (!nextRank) return { success: false };
     if (nextRank === 'Shadow Monarch') return { success: false };

@@ -500,12 +500,12 @@ module.exports = {
             ) {
               try {
                 const soloData = this.getSoloLevelingData();
-                const userRank = soloData?.rank || 'E';
+                const resolvedRank = soloData?.rank || 'E';
                 this.debugLog('TOTAL_POWER_UPDATE', 'Forcing aggregated power recalculation after shadow extraction', {
-                  userRank, shadowRanks: this.shadowRanks,
+                  resolvedRank, shadowRanks: this.shadowRanks,
                 });
                 const result = await this.storageManager.getAggregatedPower(
-                  userRank, this.shadowRanks, true
+                  resolvedRank, this.shadowRanks, true
                 );
                 this.debugLog('TOTAL_POWER_UPDATE', 'Aggregated power recalculation completed', {
                   totalPower: result?.totalPower || 0,

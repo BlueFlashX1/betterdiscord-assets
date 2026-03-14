@@ -232,7 +232,7 @@ module.exports = class LevelProgressBar {
     this._deferredQueueTimeout = null;
     this._lastQueuedUpdateTs = 0;
     this._minQueuedUpdateGapMs = 350;
-    this._lastMilestoneMask = null;
+    this._lastMilestoneCount = null;
     this._prefersReducedMotion = null;
     this.webpackModules = {
       UserStore: null,

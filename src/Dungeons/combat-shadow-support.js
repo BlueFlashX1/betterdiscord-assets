@@ -232,11 +232,6 @@ module.exports = {
     return hpData;
   },
 
-  async initializeShadowHP(shadow, shadowHP) {
-    // Delegate to sync version — kept async for backward compatibility with callers outside the combat tick
-    return this.initializeShadowHPSync(shadow, shadowHP);
-  },
-
   _getCachedExclusionSets() {
     const now = Date.now();
     if (this._exclusionCache && now - this._exclusionCache.ts < 5000) {

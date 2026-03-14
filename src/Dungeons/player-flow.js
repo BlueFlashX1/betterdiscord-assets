@@ -566,6 +566,7 @@ module.exports = {
       passiveDamageBonusKey = null,
       executeThreshold = 0,
       executeMultiplier = 1,
+      forceCritical = false,
     } = options || {};
 
     const bossStats = this._getBossCombatStats(dungeon);
@@ -581,14 +582,16 @@ module.exports = {
 
     let damage = Math.max(0, Number(breakdown.damage) || 0);
     const critDamageBonus = this.getUserCritDamageBonus?.() || 0;
-    let isCritical = Boolean(breakdown.wasCrit);
+    // forceCritical: lore-accurate — Mutilation's every hit is a guaranteed critical
+    let isCritical = forceCritical || Boolean(breakdown.wasCrit);
 
     if (isCritical && critDamageBonus > 0) {
-      damage = this.applyEnhancedCritMultiplier(damage, breakdown.critMultiplier || 1, critDamageBonus);
+      const critMult = forceCritical ? 2.0 : (breakdown.critMultiplier || 1);
+      damage = this.applyEnhancedCritMultiplier(damage, critMult, critDamageBonus);
     }
 
     const pluginCrit = Boolean(messageElement && this.checkCriticalHit(messageElement));
-    const passiveCrit = !pluginCrit && !isCritical && Boolean(this.rollSkillTreeCombatCrit?.());
+    const passiveCrit = !forceCritical && !pluginCrit && !isCritical && Boolean(this.rollSkillTreeCombatCrit?.());
 
     if (pluginCrit || passiveCrit) {
       isCritical = true;
@@ -654,8 +657,8 @@ module.exports = {
       this.showToast('Deploy shadows before using combat skills.', 'info');
       return false;
     }
-    if (dungeon.completed || dungeon.failed || Number(dungeon?.boss?.hp || 0) <= 0) {
-      this.showToast('There is no living boss to target right now.', 'info');
+    if (dungeon.completed || dungeon.failed) {
+      this.showToast('The dungeon is over — no enemies remain.', 'info');
       return false;
     }
 
@@ -678,9 +681,19 @@ module.exports = {
       return false;
     }
 
-    const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
-    if (!bossUnlocked) {
-      this._notifyBossGateLocked(dungeon);
+    const bossAlive = Number(dungeon?.boss?.hp || 0) > 0;
+    const liveMobs = this._countLiveMobs?.(dungeon) || 0;
+
+    // Boss is targetable only when gate has been unlocked (3-min timer + mob kills)
+    const bossTargetable = bossAlive && Boolean(
+      dungeon.bossGate?.unlockedAt &&
+      Number.isFinite(dungeon.bossGate.unlockedAt) &&
+      dungeon.bossGate.unlockedAt > 0
+    );
+
+    // No enemies at all — nothing to target
+    if (!bossAlive && liveMobs <= 0) {
+      this.showToast('No enemies to target right now.', 'info');
       return false;
     }
 
@@ -698,33 +711,79 @@ module.exports = {
     const combatEffect = def.combatEffect || 'damage';
     const passiveLevel = Math.max(1, this.getSkillTreeInstance?.()?.getSkillLevel?.(def.unlock?.passiveSkill) || 1);
 
+    // ── Boss debuff resistance ────────────────────────────────────────
+    // Two competing forces:
+    //   1. Boss rank advantage → MORE resistance (15% duration / 10% effect per rank above)
+    //   2. Player total power → LESS resistance (penetration scales with combined stats)
+    // Neither force can fully cancel the other — boss always has SOME resistance,
+    // but a powerful player always punches through SOME of it.
+    // Hard caps: boss resist 80% max, player penetration 60% max.
+    const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+    const userRankIdx = this.getRankIndexValue(userRank);
+    const bossRankIdx = bossTargetable ? this.getRankIndexValue(dungeon.boss?.rank || 'E') : 0;
+    const bossRankDiff = Math.max(0, bossRankIdx - userRankIdx);
+
+    // Player debuff penetration — stronger player = more penetration through boss resistance
+    // Total stats (str+agi+int+vit) scale penetration: ~0% at 0 stats, ~60% cap at high stats
+    // Curve: diminishing returns via sqrt so early stat gains matter most
+    let playerPenetration = 0;
+    if (bossTargetable) {
+      const pStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+      const totalPower = (Number(pStats.strength) || 0) + (Number(pStats.agility) || 0) +
+        (Number(pStats.intelligence) || 0) + (Number(pStats.vitality) || 0);
+      // sqrt curve: 100 stats → ~20%, 400 stats → ~40%, 900+ stats → ~60% cap
+      playerPenetration = Math.min(0.60, Math.sqrt(totalPower) / 50);
+    }
+
+    // Base resistance from rank difference, then reduced by player penetration
+    const rawDurationResist = Math.min(0.80, bossRankDiff * 0.15);
+    const rawEffectResist = Math.min(0.80, bossRankDiff * 0.10);
+    const effectiveDurationResist = rawDurationResist * (1 - playerPenetration);
+    const effectiveEffectResist = rawEffectResist * (1 - playerPenetration);
+
+    const bossDebuffResist = bossTargetable ? {
+      durationMult: Math.max(0.20, 1 - effectiveDurationResist),
+      effectMult: Math.max(0.20, 1 - effectiveEffectResist),
+      resistPct: Math.round(effectiveDurationResist * 100),
+      penetrationPct: Math.round(playerPenetration * 100),
+    } : { durationMult: 1, effectMult: 1, resistPct: 0, penetrationPct: 0 };
+
     // ── Debuff: Ruler's Authority Force ──────────────────────────────
     if (combatEffect === 'debuff' && def.debuff) {
       const db = def.debuff;
       const baseDuration = db.disableAttacksDurationMs || 5000;
-      const duration = db.durationScaling === 'double_per_level'
+      const fullDuration = db.durationScaling === 'double_per_level'
         ? baseDuration * Math.pow(2, passiveLevel - 1)
         : baseDuration;
-      const resistReduction = (db.damageResistReduction || 0) + (db.resistReductionPerLevel || 0) * (passiveLevel - 1);
+      const fullResistReduction = (db.damageResistReduction || 0) + (db.resistReductionPerLevel || 0) * (passiveLevel - 1);
       const mobPercent = Math.min(1, (db.mobTargetPercent || 0) + (db.mobTargetPercentPerLevel || 0) * (passiveLevel - 1));
+
+      // Mobs get full duration; boss gets resistance-reduced duration + effect
+      const mobDuration = fullDuration;
+      const bossDuration = Math.floor(fullDuration * bossDebuffResist.durationMult);
+      const bossResistReduction = fullResistReduction * bossDebuffResist.effectMult;
 
       if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
       dungeon.activeDebuffs.rulers_force = {
-        expiresAt: Date.now() + duration,
-        resistReduction: Math.min(0.9, resistReduction),
+        expiresAt: Date.now() + mobDuration,
+        resistReduction: Math.min(0.9, bossTargetable ? bossResistReduction : fullResistReduction),
         mobDisablePercent: mobPercent,
-        disableAttacksDurationMs: duration,
+        disableAttacksDurationMs: bossTargetable ? bossDuration : mobDuration,
       };
 
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
-      const durationSec = (duration / 1000).toFixed(1);
-      const resistPct = Math.round(resistReduction * 100);
       const mobPct = Math.round(mobPercent * 100);
-      this.showToast(
-        `${def.name}: Boss stunned ${durationSec}s, -${resistPct}% resist, ${mobPct}% mobs disabled.`,
-        'success'
-      );
+      const parts = [];
+      if (bossTargetable) {
+        const bossDurationSec = (bossDuration / 1000).toFixed(1);
+        const bossResistPct = Math.round(bossResistReduction * 100);
+        let bossMsg = `Boss stunned ${bossDurationSec}s, -${bossResistPct}% resist`;
+        if (bossDebuffResist.resistPct > 0) bossMsg += ` (${bossDebuffResist.resistPct}% resisted)`;
+        parts.push(bossMsg);
+      }
+      parts.push(`${mobPct}% mobs disabled`);
+      this.showToast(`${def.name}: ${parts.join(', ')}.`, 'success');
       return true;
     }
 
@@ -756,14 +815,6 @@ module.exports = {
       const fr = def.fear;
       const mobDuration = (fr.baseDurationMs || 8000) + (fr.durationPerLevel || 0) * (passiveLevel - 1);
 
-      // Boss: reduced duration based on rank difference (weaker = longer fear)
-      const userRank = this.soloLevelingStats?.settings?.rank || 'E';
-      const userRankIdx = this.getRankIndexValue(userRank);
-      const bossRankIdx = this.getRankIndexValue(dungeon.boss?.rank || 'E');
-      const rankDiff = Math.max(0, bossRankIdx - userRankIdx);
-      const bossResist = Math.min(1, (fr.bossResistPerRankAbove || 0.35) * rankDiff);
-      const bossDuration = Math.floor(mobDuration * (fr.bossDurationMultiplier || 0.4) * (1 - bossResist));
-
       if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
 
       // Mob fear: full paralysis for duration
@@ -771,22 +822,31 @@ module.exports = {
         expiresAt: Date.now() + mobDuration,
       };
 
-      // Boss fear: shorter duration, immune if boss rank far exceeds player
+      // Boss fear: base multiplier (0.4x) THEN boss rank resistance on top
       const bossToastParts = [];
-      if (bossDuration > 500) {
-        dungeon.activeDebuffs.dragons_fear_boss = {
-          expiresAt: Date.now() + bossDuration,
-        };
-        bossToastParts.push(`Boss paralyzed ${(bossDuration / 1000).toFixed(1)}s`);
-      } else {
-        bossToastParts.push('Boss resisted');
+      if (bossTargetable) {
+        const bossDuration = Math.floor(
+          mobDuration * (fr.bossDurationMultiplier || 0.4) * bossDebuffResist.durationMult
+        );
+
+        if (bossDuration > 500) {
+          dungeon.activeDebuffs.dragons_fear_boss = {
+            expiresAt: Date.now() + bossDuration,
+          };
+          let msg = `Boss paralyzed ${(bossDuration / 1000).toFixed(1)}s`;
+          if (bossDebuffResist.resistPct > 0) msg += ` (${bossDebuffResist.resistPct}% resisted)`;
+          bossToastParts.push(msg);
+        } else {
+          bossToastParts.push('Boss resisted');
+        }
       }
 
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
       const mobSec = (mobDuration / 1000).toFixed(1);
+      const suffix = bossToastParts.length ? ` ${bossToastParts.join('. ')}.` : '';
       this.showToast(
-        `${def.name}: All mobs paralyzed ${mobSec}s! ${bossToastParts.join('. ')}.`,
+        `${def.name}: All mobs paralyzed ${mobSec}s!${suffix}`,
         'success'
       );
       return true;
@@ -796,8 +856,6 @@ module.exports = {
     if (combatEffect === 'bloodlust' && def.bloodlust) {
       const bl = def.bloodlust;
       const mobDuration = (bl.baseDurationMs || 60000) + (bl.durationPerLevel || 0) * (passiveLevel - 1);
-      const bossParalysisDuration = Math.floor(mobDuration * (bl.bossDurationMultiplier || 0.5));
-      const bossReduction = Math.min(0.80, (bl.bossStatReduction || 0.50) + (bl.bossStatReductionPerLevel || 0) * (passiveLevel - 1));
 
       if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
 
@@ -806,26 +864,33 @@ module.exports = {
         expiresAt: Date.now() + mobDuration,
       };
 
-      // Boss paralysis: shorter duration (bossDurationMultiplier)
-      dungeon.activeDebuffs.bloodlust_boss = {
-        expiresAt: Date.now() + bossParalysisDuration,
-      };
+      const toastParts = [`All mobs paralyzed ${(mobDuration / 1000).toFixed(0)}s`];
 
-      // Boss stat reduction: lasts full mob duration (persists after paralysis ends)
-      dungeon.activeDebuffs.bloodlust_stats = {
-        expiresAt: Date.now() + mobDuration,
-        statReduction: bossReduction,
-      };
+      // Boss effects only if boss is targetable (gate unlocked) — reduced by boss resistance
+      if (bossTargetable) {
+        const fullParalysisDuration = Math.floor(mobDuration * (bl.bossDurationMultiplier || 0.5));
+        const bossParalysisDuration = Math.floor(fullParalysisDuration * bossDebuffResist.durationMult);
+        const fullReduction = Math.min(0.80, (bl.bossStatReduction || 0.50) + (bl.bossStatReductionPerLevel || 0) * (passiveLevel - 1));
+        const bossReduction = fullReduction * bossDebuffResist.effectMult;
+
+        dungeon.activeDebuffs.bloodlust_boss = {
+          expiresAt: Date.now() + bossParalysisDuration,
+        };
+        dungeon.activeDebuffs.bloodlust_stats = {
+          expiresAt: Date.now() + Math.floor(mobDuration * bossDebuffResist.durationMult),
+          statReduction: bossReduction,
+        };
+
+        const paralysisSec = (bossParalysisDuration / 1000).toFixed(0);
+        const reductionPct = Math.round(bossReduction * 100);
+        let bossMsg = `Boss stunned ${paralysisSec}s, -${reductionPct}% stats`;
+        if (bossDebuffResist.resistPct > 0) bossMsg += ` (${bossDebuffResist.resistPct}% resisted)`;
+        toastParts.push(bossMsg);
+      }
 
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
-      const mobSec = (mobDuration / 1000).toFixed(0);
-      const paralysisSec = (bossParalysisDuration / 1000).toFixed(0);
-      const reductionPct = Math.round(bossReduction * 100);
-      this.showToast(
-        `${def.name}: All mobs paralyzed ${mobSec}s! Boss stunned ${paralysisSec}s, -${reductionPct}% stats for ${mobSec}s.`,
-        'success'
-      );
+      this.showToast(`${def.name}: ${toastParts.join('! ')}!`, 'success');
       return true;
     }
 
@@ -855,28 +920,133 @@ module.exports = {
     }
 
     // ── Default: Direct damage ───────────────────────────────────────
-    const attackResult = this._resolveUserBossDamage(dungeon, {
-      skillMultiplier: def.damageMultiplier || 1,
-      passiveDamageBonusKey: def.passiveDamageBonusKey || null,
-      executeThreshold: def.executeThreshold || 0,
-      executeMultiplier: def.executeMultiplier || 1,
-    });
+    // Target boss if gate unlocked (bossTargetable computed above), otherwise cleave mobs
+    if (bossTargetable) {
+      const attackResult = this._resolveUserBossDamage(dungeon, {
+        skillMultiplier: def.damageMultiplier || 1,
+        passiveDamageBonusKey: def.passiveDamageBonusKey || null,
+        executeThreshold: def.executeThreshold || 0,
+        executeMultiplier: def.executeMultiplier || 1,
+        forceCritical: Boolean(def.forceCritical),
+      });
 
-    if (attackResult.damage <= 0) {
+      if (attackResult.damage <= 0) {
+        this.syncManaFromStats?.();
+        this.showToast(`${def.name} was evaded.`, 'info');
+        this.queueHPBarUpdate(channelKey);
+        return false;
+      }
+
+      await this.applyDamageToBoss(channelKey, attackResult.damage, 'user', null, attackResult.isCritical);
       this.syncManaFromStats?.();
-      this.showToast(`${def.name} was evaded.`, 'info');
+      this.queueHPBarUpdate(channelKey);
+
+      const critText = attackResult.isCritical ? ' Critical hit!' : '';
+      this.showToast(
+        `${def.name} dealt ${attackResult.damage.toLocaleString()} damage.${critText}`,
+        attackResult.isCritical ? 'success' : 'info'
+      );
+      return true;
+    }
+
+    // ── Mob targeting: skill hits live mobs when boss isn't targetable ──
+    let aliveMobs = (dungeon.mobs?.activeMobs || []).filter((m) => m && m.hp > 0);
+    if (!aliveMobs.length) {
+      this.syncManaFromStats?.();
+      this.showToast('No enemies to target.', 'info');
       this.queueHPBarUpdate(channelKey);
       return false;
     }
 
-    await this.applyDamageToBoss(channelKey, attackResult.damage, 'user', null, attackResult.isCritical);
+    // Single-target skills (e.g. Mutilation) focus the strongest mob
+    const isSingleTarget = def.targeting === 'single';
+    if (isSingleTarget) {
+      aliveMobs.sort((a, b) => (b.maxHp || 0) - (a.maxHp || 0));
+      aliveMobs = [aliveMobs[0]];
+    }
+
+    const skillMultiplier = Math.max(0.1, Number(def.damageMultiplier) || 1);
+    const forceCrit = Boolean(def.forceCritical);
+    let totalDamage = 0;
+    let mobsHit = 0;
+    let mobsKilled = 0;
+    let anyCrit = false;
+
+    for (const mob of aliveMobs) {
+      // Rank-based targeting: mobs at or below player rank take full damage,
+      // mobs above player rank take reduced damage per rank tier above
+      const mobRankIdx = this.getRankIndexValue(mob.rank || 'E');
+      const rankAbove = Math.max(0, mobRankIdx - userRankIdx);
+      const rankPenalty = Math.min(0.9, rankAbove * 0.25);
+
+      const mobStats = {
+        strength: mob.strength || 0,
+        agility: mob.agility || 0,
+        intelligence: mob.intelligence || 0,
+        vitality: mob.vitality || 0,
+      };
+
+      const breakdown =
+        typeof this.calculateUserDamageBreakdown === 'function'
+          ? this.calculateUserDamageBreakdown(mobStats, mob.rank)
+          : { damage: this.calculateUserDamage(mobStats, mob.rank), dodged: false, wasCrit: false, critMultiplier: 1 };
+
+      let damage = Math.max(0, Number(breakdown.damage) || 0);
+      // forceCritical: lore-accurate — Mutilation's every hit is a critical strike
+      let isCritical = forceCrit || Boolean(breakdown.wasCrit);
+
+      if (isCritical) {
+        const critDmgBonus = this.getUserCritDamageBonus?.() || 0;
+        const critMult = forceCrit ? 2.0 : (breakdown.critMultiplier || 1);
+        damage = this.applyEnhancedCritMultiplier(damage, critMult, critDmgBonus);
+        anyCrit = true;
+      }
+
+      // Apply skill multiplier
+      damage = Math.max(1, Math.floor(damage * skillMultiplier));
+
+      // Apply passive damage bonus (e.g. dagger throw)
+      if (def.passiveDamageBonusKey === 'daggerThrowDamageBonus' && damage > 0) {
+        const throwBonus = this.getUserDaggerThrowDamageBonus?.() || 0;
+        if (throwBonus > 0) damage = Math.max(1, Math.floor(damage * (1 + throwBonus)));
+      }
+
+      // Execute threshold works on mobs too (based on mob HP %)
+      const threshold = Math.max(0, Number(def.executeThreshold) || 0);
+      const finMult = Math.max(1, Number(def.executeMultiplier) || 1);
+      if (threshold > 0 && finMult > 1 && mob.maxHp > 0 && (mob.hp / mob.maxHp) <= threshold) {
+        damage = Math.max(1, Math.floor(damage * finMult));
+      }
+
+      // Rank penalty for mobs above player
+      if (rankPenalty > 0) damage = Math.max(1, Math.floor(damage * (1 - rankPenalty)));
+
+      // Apply status-adjusted damage
+      const mobId = this.getEnemyKey(mob, 'mob');
+      const adjDamage = this.applyStatusAdjustedIncomingDamage(channelKey, 'mob', mobId, damage, Date.now());
+      mob.hp = Math.max(0, mob.hp - adjDamage);
+      totalDamage += adjDamage;
+      mobsHit++;
+
+      if (mob.hp <= 0) {
+        this._onMobKilled(channelKey, dungeon, mob.rank);
+        this._addToCorpsePile(channelKey, mob, false);
+        mobsKilled++;
+      }
+    }
+
+    // Clean up dead mobs
+    dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter((m) => m && m.hp > 0);
+
     this.syncManaFromStats?.();
     this.queueHPBarUpdate(channelKey);
 
-    const critText = attackResult.isCritical ? ' Critical hit!' : '';
+    const critText = anyCrit ? ' Critical!' : '';
+    const killText = mobsKilled > 0 ? ` ${mobsKilled} slain.` : '';
+    const verb = isSingleTarget ? 'shredded' : 'cleaved';
     this.showToast(
-      `${def.name} dealt ${attackResult.damage.toLocaleString()} damage.${critText}`,
-      attackResult.isCritical ? 'success' : 'info'
+      `${def.name} ${verb} ${mobsHit} mob${mobsHit !== 1 ? 's' : ''} for ${totalDamage.toLocaleString()} damage.${killText}${critText}`,
+      anyCrit ? 'success' : 'info'
     );
     return true;
   },

@@ -75,7 +75,8 @@ function injectServerCounterWidget(plugin, widgetId) {
     widget = document.createElement("div");
     widget.id = widgetId;
     widget.className = "shadow-recon-widget";
-    widget.title = "Left click: Open current guild dossier | Right click: Recon/unrecon current guild";
+    widget.addEventListener("mouseenter", () => showGuildTooltip(plugin, widget));
+    widget.addEventListener("mouseleave", hideGuildTooltip);
     plugin._widgetClickHandler = () => {
       const guildId = plugin._getCurrentGuildId();
       if (guildId) plugin.openGuildDossier(guildId);
@@ -98,22 +99,20 @@ function injectServerCounterWidget(plugin, widgetId) {
 function updateServerCounterWidget(plugin, widgetId, target = null) {
   const widget = document.getElementById(widgetId);
   if (!widget) return;
-  const horizontal = syncServerCounterWidgetOrientation(plugin, widget, target);
+  syncServerCounterWidgetOrientation(plugin, widget, target);
   const guildCount = plugin.getServerCount();
   const markedGuildCount = plugin._markedGuildIds.size;
   const markedTargetCount = plugin._getShadowDeploymentMap().size;
-  const compact = (value) => {
-    const n = Number(value) || 0;
-    if (n < 1000) return String(n);
-    if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-    return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)}m`;
-  };
-  const nextText = horizontal
-    ? `R${compact(guildCount)}/${compact(markedGuildCount)}/${compact(markedTargetCount)}`
-    : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
-  if (widget.textContent !== nextText) {
-    widget.textContent = nextText;
+
+  // Widget label: always short
+  const label = "☍ Recon";
+  if (widget.textContent !== label) {
+    widget.textContent = label;
   }
+
+  // Stats go into the tooltip
+  const hint = `Guilds: ${guildCount} | Marked: ${markedGuildCount} | Targets: ${markedTargetCount} | Left click: Open guild dossier | Right click: Recon/unrecon guild`;
+  widget.setAttribute("data-shadow-recon-hint", hint);
 }
 
 function removeServerCounterWidget(plugin, widgetId) {
@@ -257,13 +256,98 @@ function shouldSkipGuildHintUpdate(plugin, node, guildId, stats) {
   return node.getAttribute("data-shadow-recon-title") === "1";
 }
 
+function getOrCreateTooltip() {
+  let tooltip = document.getElementById("shadow-recon-tooltip");
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.id = "shadow-recon-tooltip";
+    tooltip.className = "shadow-recon-tooltip";
+    document.body.appendChild(tooltip);
+  }
+  return tooltip;
+}
+
+function positionTooltip(tooltip, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const pad = 8;
+
+  // Default: position to the right of the guild icon
+  let left = rect.right + pad;
+  let top = rect.top + (rect.height / 2) - (tooltipRect.height / 2);
+
+  // If it overflows the right edge, flip to left side
+  if (left + tooltipRect.width > window.innerWidth - pad) {
+    left = rect.left - tooltipRect.width - pad;
+  }
+  // Clamp vertical
+  if (top < pad) top = pad;
+  if (top + tooltipRect.height > window.innerHeight - pad) {
+    top = window.innerHeight - tooltipRect.height - pad;
+  }
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function showGuildTooltip(plugin, node) {
+  const content = node.getAttribute("data-shadow-recon-hint");
+  if (!content) return;
+  const tooltip = getOrCreateTooltip();
+  tooltip.textContent = "";
+
+  const lines = content.split(" | ");
+  for (const line of lines) {
+    const row = document.createElement("div");
+    row.className = "shadow-recon-tooltip-row";
+    // Highlight [Marked] / [Unmarked] tag
+    if (line.startsWith("[Marked]") || line.startsWith("[Unmarked]")) {
+      const tag = document.createElement("span");
+      tag.className = line.startsWith("[Marked]")
+        ? "shadow-recon-tooltip-tag shadow-recon-tooltip-tag--marked"
+        : "shadow-recon-tooltip-tag shadow-recon-tooltip-tag--unmarked";
+      const bracketEnd = line.indexOf("]") + 1;
+      tag.textContent = line.slice(0, bracketEnd);
+      row.appendChild(tag);
+      const rest = line.slice(bracketEnd).trim();
+      if (rest) {
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "shadow-recon-tooltip-name";
+        nameSpan.textContent = ` ${rest}`;
+        row.appendChild(nameSpan);
+      }
+    } else {
+      row.textContent = line;
+    }
+    tooltip.appendChild(row);
+  }
+
+  tooltip.classList.add("shadow-recon-tooltip--visible");
+  // Position after content is set so dimensions are correct
+  requestAnimationFrame(() => positionTooltip(tooltip, node));
+}
+
+function hideGuildTooltip() {
+  const tooltip = document.getElementById("shadow-recon-tooltip");
+  if (tooltip) tooltip.classList.remove("shadow-recon-tooltip--visible");
+}
+
+function ensureTooltipHandlers(plugin, node) {
+  if (node._shadowReconHoverBound) return;
+  node._shadowReconHoverBound = true;
+  node.addEventListener("mouseenter", () => showGuildTooltip(plugin, node));
+  node.addEventListener("mouseleave", hideGuildTooltip);
+}
+
 function applyGuildHintTitle(plugin, node, guildId, guild, stats) {
   const markedLabel = stats.marked ? "[Marked]" : "[Unmarked]";
   const title = `${markedLabel} ${guild.name} | Online ${plugin._formatNumber(stats.online)} | Members ${plugin._formatNumber(stats.memberCount)}`;
   plugin._guildHintCache.set(guildId, stats);
-  if (node.getAttribute("title") === title) return;
-  node.setAttribute("title", title);
+  if (node.getAttribute("data-shadow-recon-hint") === title) return;
+  node.removeAttribute("title"); // Remove native tooltip
+  node.setAttribute("data-shadow-recon-hint", title);
   node.setAttribute("data-shadow-recon-title", "1");
+  ensureTooltipHandlers(plugin, node);
 }
 
 function refreshGuildIconHints(plugin, snowflakeRegex) {
@@ -291,22 +375,23 @@ function clearGuildIconHints() {
   const nodes = document.querySelectorAll('[data-shadow-recon-title="1"]');
   for (const node of nodes) {
     node.removeAttribute("title");
+    node.removeAttribute("data-shadow-recon-hint");
     node.removeAttribute("data-shadow-recon-title");
   }
+  removeGuildTooltip();
+}
+
+function removeGuildTooltip() {
+  const tooltip = document.getElementById("shadow-recon-tooltip");
+  if (tooltip) tooltip.remove();
 }
 
 module.exports = {
   clearGuildIconHints,
-  extractSnowflake,
   getGuildOnlineCount,
-  getGuildsTarget,
   injectServerCounterWidget,
-  isHorizontalGuildNav,
-  readOnlineCountFromObject,
-  readOnlineCountFromStore,
   refreshGuildIconHints,
+  removeGuildTooltip,
   removeServerCounterWidget,
-  safeNonNegativeInt,
-  syncServerCounterWidgetOrientation,
   updateServerCounterWidget,
 };

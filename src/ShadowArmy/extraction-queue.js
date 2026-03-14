@@ -167,14 +167,6 @@ module.exports = {
   },
 
   removeMessageListener() {
-    if (this.messageUnsubscribe) {
-      try {
-        this.messageUnsubscribe();
-      } catch (error) {
-        this.debugError('MESSAGE_LISTENER', 'Error unsubscribing message listener', error);
-      }
-      this.messageUnsubscribe = null;
-    }
     if (this.soloPlugin && this.originalProcessMessage) {
       const instance = this.soloPlugin.instance || this.soloPlugin;
       if (

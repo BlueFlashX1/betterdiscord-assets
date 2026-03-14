@@ -127,7 +127,15 @@ function writeFileBackup(plugin, data) {
         } catch (_) {}
       }
 
-      fs.copyFile(plugin.fileBackupPath, `${plugin.fileBackupPath}.bak1`, () => {});
+      try {
+        fs.copyFileSync(plugin.fileBackupPath, `${plugin.fileBackupPath}.bak1`);
+      } catch (_copyErr) {
+        // Fallback: manual copy if copyFileSync unavailable
+        try {
+          const data = fs.readFileSync(plugin.fileBackupPath);
+          fs.writeFileSync(`${plugin.fileBackupPath}.bak1`, data);
+        } catch (_) {}
+      }
     });
   } catch (error) {
     console.error("[ShadowExchange] writeFileBackup error:", error);

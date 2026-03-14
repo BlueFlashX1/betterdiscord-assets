@@ -112,12 +112,6 @@ async function getConnectionsIntel(plugin, userId, guildId, pluginName) {
 }
 
 module.exports = {
-  appendPresenceFallbackRow,
-  collectClientStatuses,
-  collectSessionClientStatuses,
   getConnectionsIntel,
   getPlatformIntel,
-  getUserProfile,
-  mapClientStatusesToRows,
-  requestUserProfile,
 };

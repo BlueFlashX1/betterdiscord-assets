@@ -69,4 +69,4 @@ function renderToContainer(container, element) {
   return () => {};
 }
 
-module.exports = { getCreateRoot, getLegacyReactDOM, renderToContainer };
+module.exports = { getCreateRoot, renderToContainer };

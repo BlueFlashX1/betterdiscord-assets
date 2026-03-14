@@ -50,9 +50,6 @@ module.exports = {
   },
 
   showLevelUpNotification(newLevel, oldLevel, actualStatPointsGained = null) {
-    // #region agent log
-    // #endregion
-  
     const levelsGained = newLevel - oldLevel;
   
     // Calculate actual stat points gained if not provided

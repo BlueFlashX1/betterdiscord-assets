@@ -35,6 +35,126 @@ module.exports = {
     `;
   },
 
+  _buildActiveEffectsRow(dungeon) {
+    const now = Date.now();
+    const effects = [];
+
+    // Buffs (green/cyan icons)
+    const domain = dungeon.activeBuffs?.domain;
+    if (domain && domain.expiresAt > now) {
+      const sec = Math.ceil((domain.expiresAt - now) / 1000);
+      const pct = Math.round((domain.statMultiplier - 1) * 100);
+      effects.push({ icon: '\u{1F451}', label: `Domain +${pct}%`, time: sec, type: 'buff' });
+    }
+    const sprint = dungeon.activeBuffs?.sprint;
+    if (sprint && sprint.expiresAt > now) {
+      const sec = Math.ceil((sprint.expiresAt - now) / 1000);
+      const pct = Math.round(sprint.cooldownReduction * 100);
+      effects.push({ icon: '\u26A1', label: `Sprint -${pct}% CD`, time: sec, type: 'buff' });
+    }
+
+    // Debuffs (red/orange icons)
+    const rulers = dungeon.activeDebuffs?.rulers_force;
+    if (rulers && rulers.expiresAt > now) {
+      const sec = Math.ceil((rulers.expiresAt - now) / 1000);
+      effects.push({ icon: '\u270A', label: 'Stunned', time: sec, type: 'debuff' });
+    }
+    const fearMobs = dungeon.activeDebuffs?.dragons_fear_mobs;
+    if (fearMobs && fearMobs.expiresAt > now) {
+      const sec = Math.ceil((fearMobs.expiresAt - now) / 1000);
+      effects.push({ icon: '\u{1F409}', label: 'Fear', time: sec, type: 'debuff' });
+    }
+    const fearBoss = dungeon.activeDebuffs?.dragons_fear_boss;
+    if (fearBoss && fearBoss.expiresAt > now) {
+      const sec = Math.ceil((fearBoss.expiresAt - now) / 1000);
+      effects.push({ icon: '\u{1F409}', label: 'Boss Fear', time: sec, type: 'debuff' });
+    }
+    const blMobs = dungeon.activeDebuffs?.bloodlust_mobs;
+    if (blMobs && blMobs.expiresAt > now) {
+      const sec = Math.ceil((blMobs.expiresAt - now) / 1000);
+      effects.push({ icon: '\u{1F480}', label: 'Bloodlust', time: sec, type: 'debuff' });
+    }
+    const blBoss = dungeon.activeDebuffs?.bloodlust_boss;
+    if (blBoss && blBoss.expiresAt > now) {
+      const sec = Math.ceil((blBoss.expiresAt - now) / 1000);
+      effects.push({ icon: '\u{1F480}', label: 'Boss Paralyzed', time: sec, type: 'debuff' });
+    }
+    const blStats = dungeon.activeDebuffs?.bloodlust_stats;
+    if (blStats && blStats.expiresAt > now) {
+      const sec = Math.ceil((blStats.expiresAt - now) / 1000);
+      const pct = Math.round((blStats.statReduction || 0.5) * 100);
+      effects.push({ icon: '\u{1F53B}', label: `-${pct}% Stats`, time: sec, type: 'debuff' });
+    }
+
+    if (!effects.length) return '';
+
+    const badges = effects.map((e) => {
+      const cls = e.type === 'buff' ? 'effect-badge-buff' : 'effect-badge-debuff';
+      const timeStr = e.time >= 60 ? `${Math.floor(e.time / 60)}m${e.time % 60}s` : `${e.time}s`;
+      return `<span class="dungeon-effect-badge ${cls}" title="${e.label} (${timeStr})">${e.icon} ${timeStr}</span>`;
+    }).join('');
+
+    return `<div class="dungeon-active-effects-row">${badges}</div>`;
+  },
+
+  _updateActiveEffectsRow(hpBar, dungeon) {
+    let row = hpBar.querySelector('.dungeon-active-effects-row');
+    const html = this._buildActiveEffectsRow(dungeon);
+    if (!html) {
+      if (row) row.remove();
+      return;
+    }
+    if (row) {
+      row.outerHTML = html;
+    } else {
+      // Insert after combat skills row (or after stats row)
+      const combatRow = hpBar.querySelector('.boss-bar-combat-row');
+      const statsRow = hpBar.querySelector('.boss-bar-stats');
+      const anchor = combatRow || statsRow;
+      if (anchor) {
+        anchor.insertAdjacentHTML('afterend', html);
+      }
+    }
+  },
+
+  _updateGateTimerFastPath(hpBar, dungeon) {
+    const timerEl = hpBar.querySelector('.boss-gate-timer');
+    if (!timerEl) return;
+
+    const bossAlive = Number(dungeon?.boss?.hp || 0) > 0;
+    const gateUnlocked = Boolean(
+      dungeon.bossGate?.unlockedAt &&
+      Number.isFinite(dungeon.bossGate.unlockedAt) &&
+      dungeon.bossGate.unlockedAt > 0
+    );
+
+    // Gate just unlocked — remove timer (structural rebuild handles the rest)
+    if (!bossAlive || gateUnlocked) {
+      timerEl.remove();
+      return;
+    }
+
+    // Update countdown text
+    const deployedAt = Number(dungeon.bossGate?.deployedAt || dungeon.deployedAt || 0);
+    const minDuration = Number(dungeon.bossGate?.minDurationMs || 180000);
+    const elapsed = Math.max(0, Date.now() - deployedAt);
+    const remaining = Math.max(0, minDuration - elapsed);
+    const kills = Number(dungeon.mobs?.killed || 0);
+    const reqKills = Number(dungeon.bossGate?.requiredMobKills || 25);
+    const killsLeft = Math.max(0, reqKills - kills);
+
+    const countdownEl = timerEl.querySelector('.boss-gate-countdown');
+    if (countdownEl) {
+      countdownEl.textContent = remaining > 0
+        ? `${Math.floor(remaining / 60000)}:${String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0')}`
+        : 'READY';
+    }
+    const killsEl = timerEl.querySelector('.boss-gate-kills');
+    if (killsEl) {
+      killsEl.textContent = killsLeft > 0 ? `${killsLeft} kills needed` : 'kills done';
+    }
+  },
+
   _updateBossBarCombatSkillButtons(hpBar, channelKey) {
     const skillStates = this.getDungeonCombatSkillHudState?.(channelKey) || [];
     if (!skillStates.length) return;
@@ -87,7 +207,9 @@ module.exports = {
       }
 
       const dungeon = this.activeDungeons.get(channelKey);
-      if (!dungeon || dungeon.boss.hp <= 0 || dungeon.completed || dungeon.failed || dungeon._completing) {
+      const bossAlive = dungeon && Number(dungeon.boss?.hp || 0) > 0;
+      const liveMobs = dungeon?.mobs?.activeMobs?.some((m) => m && m.hp > 0) || false;
+      if (!dungeon || dungeon.completed || dungeon.failed || dungeon._completing || (!bossAlive && !liveMobs)) {
         this.removeBossHPBar(channelKey);
         this._bossBarCache?.delete?.(channelKey);
         this.showChannelHeaderComments(channelKey);
@@ -147,7 +269,7 @@ module.exports = {
       // Hide comments in channel header to make room
       this.hideChannelHeaderComments(channelKey);
 
-      const hpPercent = (dungeon.boss.hp / dungeon.boss.maxHp) * 100;
+      const hpPercent = bossAlive ? (dungeon.boss.hp / dungeon.boss.maxHp) * 100 : 0;
       let hpBar = this.bossHPBars.get(channelKey);
 
       if (!hpBar) {
@@ -173,7 +295,6 @@ module.exports = {
       const now = Date.now();
       let aliveMobs = 0;
       const totalMobs = dungeon.mobs?.targetCount || 0;
-      const _killedMobs = dungeon.mobs?.killed || 0; // Used in display calculation
 
       const lastCleanup = this._mobCleanupCache.get(channelKey);
       const shouldCleanup = !lastCleanup || now - lastCleanup.time > 500;
@@ -199,9 +320,16 @@ module.exports = {
       const combatSkillStates = this.getDungeonCombatSkillHudState?.(channelKey) || [];
       const combatSignature = combatSkillStates.map((skillState) => skillState.skillId).join('|');
 
+      // Boss gate status — track whether boss HP section should show
+      const gateUnlocked = Boolean(
+        dungeon.bossGate?.unlockedAt &&
+        Number.isFinite(dungeon.bossGate.unlockedAt) &&
+        dungeon.bossGate.unlockedAt > 0
+      );
+
       // Boss bar diffing: structural vs numeric split.
-      // Structural fields (buttons, badge, name, type) require full innerHTML rebuild.
-      // Numeric fields (HP, mobs) update via targeted textContent (no DOM destruction).
+      // Structural fields (buttons, badge, name, type, gateUnlocked) require full innerHTML rebuild.
+      // Numeric fields (HP, mobs, gate countdown) update via targeted textContent (no DOM destruction).
       // PERF: ~99% of ticks hit the fast-path since structural fields rarely change during combat.
       const hpFloor = Math.floor(currentBossHP);
       const maxHpFloor = Math.floor(currentBossMaxHP);
@@ -210,7 +338,7 @@ module.exports = {
       const structuralUnchanged = prev &&
         prev.part === dungeon.userParticipating && prev.dep === dungeon.shadowsDeployed &&
         prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name &&
-        prev.combatSig === combatSignature;
+        prev.combatSig === combatSignature && prev.gateUnlocked === gateUnlocked;
 
       if (hpBar && structuralUnchanged) {
         // Fast path: update numeric values via targeted textContent (no innerHTML rebuild)
@@ -231,12 +359,16 @@ module.exports = {
         const mobTotalEl = hpBar.querySelector('.mob-total');
         if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
         this._updateBossBarCombatSkillButtons(hpBar, channelKey);
+        this._updateActiveEffectsRow(hpBar, dungeon);
+        // Fast-path: update gate timer countdown (changes every tick)
+        this._updateGateTimerFastPath(hpBar, dungeon);
         // Update cache with current numeric values
         this._bossBarCache.set(channelKey, {
           hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
           alive: aliveMobs, total: totalMobs,
           part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
-          type: dungeon.type, rank: dungeon.rank, name: dungeon.name, combatSig: combatSignature,
+          type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+          combatSig: combatSignature, gateUnlocked,
         });
         this.scheduleBossBarLayout(hpBar.parentElement);
         return;
@@ -246,7 +378,8 @@ module.exports = {
         hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
         alive: aliveMobs, total: totalMobs,
         part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
-        type: dungeon.type, rank: dungeon.rank, name: dungeon.name, combatSig: combatSignature,
+        type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+        combatSig: combatSignature, gateUnlocked,
       });
       // Preserve HP state + CSS var for recovery after React re-render
       const hpContainer = hpBar?.closest('.dungeon-boss-hp-container');
@@ -277,6 +410,55 @@ module.exports = {
         ? `<button class="dungeon-leave-btn" data-channel-key="${channelKey}">LEAVE</button>`
         : '';
       const combatSkillsRowHTML = this._buildBossBarCombatSkillsRow(channelKey);
+      const activeEffectsRowHTML = this._buildActiveEffectsRow(dungeon);
+
+      // Boss gate status — show boss HP only when gate unlocked (gateUnlocked computed above for cache)
+      const showBossSection = bossAlive && gateUnlocked;
+
+      // Gate timer countdown (how long until boss becomes targetable)
+      let gateTimerHTML = '';
+      if (bossAlive && !gateUnlocked && dungeon.shadowsDeployed) {
+        const deployedAt = Number(dungeon.bossGate?.deployedAt || dungeon.deployedAt || 0);
+        const minDuration = Number(dungeon.bossGate?.minDurationMs || 180000);
+        const elapsed = Math.max(0, Date.now() - deployedAt);
+        const remaining = Math.max(0, minDuration - elapsed);
+        const kills = Number(dungeon.mobs?.killed || 0);
+        const reqKills = Number(dungeon.bossGate?.requiredMobKills || 25);
+        const killsLeft = Math.max(0, reqKills - kills);
+
+        if (remaining > 0 || killsLeft > 0) {
+          const timeStr = remaining > 0
+            ? `${Math.floor(remaining / 60000)}:${String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0')}`
+            : 'READY';
+          const killStr = killsLeft > 0 ? `${killsLeft} kills needed` : 'kills done';
+          gateTimerHTML = `
+            <div class="boss-gate-timer">
+              <span class="boss-gate-icon">\u{1F512}</span>
+              <span class="boss-gate-label">Boss Sealed</span>
+              <span class="boss-gate-countdown">${timeStr}</span>
+              <span class="boss-gate-separator">|</span>
+              <span class="boss-gate-kills">${killStr}</span>
+            </div>`;
+        }
+      }
+
+      // Stats row — show boss HP only when gate is unlocked
+      const bossStatsHTML = showBossSection
+        ? `<div>
+            <span class="boss-bar-stat-label">Boss:</span>
+            <span class="boss-hp-current">${Math.floor(currentBossHP).toLocaleString()}</span>
+            <span class="boss-bar-stat-separator">/</span>
+            <span class="boss-hp-max">${currentBossMaxHP.toLocaleString()}</span>
+          </div>`
+        : '';
+
+      // HP bar fill — only visible when boss gate is unlocked
+      const hpBarHTML = showBossSection
+        ? `<div class="hp-bar-container">
+            <div class="hp-bar-fill"></div>
+            <div class="hp-bar-text">${Math.floor(hpPercent)}%</div>
+          </div>`
+        : '';
 
       // Multi-line layout to show all info without truncation
       hpBar.innerHTML = `
@@ -294,16 +476,9 @@ module.exports = {
             ${dungeon.type}
           </div>
         </div>
-
+        ${gateTimerHTML}
         <div class="boss-bar-stats">
-          <div>
-            <span class="boss-bar-stat-label">Boss:</span>
-            <span class="boss-hp-current">${Math.floor(
-              currentBossHP
-            ).toLocaleString()}</span>
-            <span class="boss-bar-stat-separator">/</span>
-            <span class="boss-hp-max">${currentBossMaxHP.toLocaleString()}</span>
-          </div>
+          ${bossStatsHTML}
           <div>
             <span class="boss-bar-stat-label">Mobs:</span>
             <span class="mob-alive">${aliveMobs.toLocaleString()}</span>
@@ -312,12 +487,9 @@ module.exports = {
           </div>
         </div>
         ${combatSkillsRowHTML}
+        ${activeEffectsRowHTML}
       </div>
-
-      <div class="hp-bar-container">
-        <div class="hp-bar-fill"></div>
-        <div class="hp-bar-text">${Math.floor(hpPercent)}%</div>
-      </div>
+      ${hpBarHTML}
     `;
 
       // Re-apply layout in case member list visibility changed
@@ -664,7 +836,6 @@ module.exports = {
     // Cache member list width briefly to avoid repeated reflows
     const memberWrap =
       document.querySelector("aside[aria-label*='Members' i]") ||
-      document.querySelector(dc.sel.membersWrap) ||
       document.querySelector(dc.sel.membersWrap);
     const memberVisible = this.isElementVisible(memberWrap);
 

@@ -173,9 +173,6 @@ module.exports = {
 
   checkLevelUp(oldLevel) {
     try {
-      // #region agent log
-      // #endregion
-  
       this.debugLog('CHECK_LEVEL_UP', 'Checking for level up', { oldLevel });
   
       const levelInfo = this.getCurrentLevel();

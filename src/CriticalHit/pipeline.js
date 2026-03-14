@@ -333,54 +333,7 @@ module.exports = {
     });
 
     try {
-      try {
-        this.applyCritStyle(messageElement, { animate: true });
-
-        // FIX: Find the actual message element that has the class (must match what applyCritStyle uses)
-        let elementWithClass = messageElement;
-        const isContentElement = this._isContentElement(messageElement);
-
-        if (isContentElement) {
-          // Find parent message wrapper using the SAME logic as applyCritStyle
-          // This ensures we check the same element that got the class
-          let candidate = messageElement.parentElement;
-          while (candidate && candidate !== document.body) {
-            const hasMessageClass =
-              candidate.classList &&
-              Array.from(candidate.classList).some(
-                (cls) =>
-                  cls.includes('message') &&
-                  !cls.includes('messageContent') &&
-                  !cls.includes('markup')
-              );
-            const hasDataMessageId = candidate.hasAttribute('data-message-id');
-
-            if ((hasMessageClass || hasDataMessageId) && candidate !== messageElement) {
-              elementWithClass = candidate;
-              break;
-            }
-            candidate = candidate.parentElement;
-          }
-
-          // Fallback: try closest with more specific selector (same as applyCritStyle)
-          if (elementWithClass === messageElement) {
-            elementWithClass =
-              messageElement.closest(dc.sel.messageListItem) ||
-              messageElement.closest('[class*="messageGroup"]') ||
-              messageElement.closest('[data-message-id]');
-
-            if (elementWithClass === messageElement) {
-              elementWithClass = null;
-            }
-          }
-
-          if (!elementWithClass) {
-            elementWithClass = messageElement; // Final fallback
-          }
-        }
-      } catch (error) {
-        throw error; // Re-throw to be caught by outer try-catch
-      }
+      this.applyCritStyle(messageElement, { animate: true });
       this.critMessages.add(messageElement);
 
 

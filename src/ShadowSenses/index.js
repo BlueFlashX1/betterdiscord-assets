@@ -1391,6 +1391,16 @@ module.exports = class ShadowSenses {
   }
 
   teleportToPath(path, context = {}) {
+    // Shared teleport cooldown (synced with ShadowExchange + ShadowStep)
+    const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
+    if (portalCore?.checkTeleportCooldown) {
+      const cdCheck = portalCore.checkTeleportCooldown();
+      if (cdCheck.onCooldown) {
+        this._toast(`Teleport on cooldown \u2014 ${cdCheck.remainingText} remaining`, "error", 3000);
+        return;
+      }
+    }
+
     const targetPath = this._normalizePath(path);
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       _ensureShadowPortalCoreApplied(this.constructor);
@@ -1408,6 +1418,9 @@ module.exports = class ShadowSenses {
       this._toast("Shadow Senses navigation fallback used", "warning");
       return;
     }
+
+    // Stamp shared teleport cooldown
+    if (portalCore?.stampTeleportCooldown) portalCore.stampTeleportCooldown();
 
     this.playTransition(() => {
       const fadeToken = this._beginChannelViewFadeOut();

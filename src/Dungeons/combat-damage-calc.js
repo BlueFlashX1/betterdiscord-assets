@@ -1,5 +1,4 @@
 const C = require('./constants');
-const Dungeons = { RANK_MULTIPLIERS: C.RANK_MULTIPLIERS };
 
 module.exports = {
   applyBossDamageVariance(baseDamage) {

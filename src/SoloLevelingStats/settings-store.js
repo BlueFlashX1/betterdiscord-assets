@@ -805,7 +805,7 @@ module.exports = {
       },
       _metadata: {
         lastSave: new Date().toISOString(),
-        version: '2.5.0',
+        version: this.meta?.version || '3.0.5',
       },
     };
 

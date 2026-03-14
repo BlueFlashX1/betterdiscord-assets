@@ -156,26 +156,30 @@ module.exports = class ShadowExchange {
   }
 
   /**
-   * Get teleport cooldown in ms based on shadow_exchange skill level.
-   * Lv1: 3h, Lv2: 1.5h, Lv3: 45min, Lv4: 22.5min, Lv5: ~11.25min
+   * Get teleport cooldown in ms — delegates to shared ShadowPortalCore.
    */
   _getTeleportCooldownMs() {
+    const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
+    if (portalCore?.getTeleportCooldownMs) return portalCore.getTeleportCooldownMs();
+    // Inline fallback if portal core unavailable
     const level = this._getSkillTreeSkillLevel('shadow_exchange');
-    if (level <= 0) return Infinity; // skill not unlocked
-    const BASE_COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3 hours
+    if (level <= 0) return Infinity;
+    const BASE_COOLDOWN_MS = 3 * 60 * 60 * 1000;
     return Math.round(BASE_COOLDOWN_MS / Math.pow(2, level - 1));
   }
 
   /**
-   * Check if teleport is on cooldown. Returns { onCooldown, remainingMs, remainingText }.
+   * Check if teleport is on cooldown — delegates to shared ShadowPortalCore.
    */
   _checkTeleportCooldown() {
+    const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
+    if (portalCore?.checkTeleportCooldown) return portalCore.checkTeleportCooldown();
+    // Inline fallback if portal core unavailable
     const cooldownMs = this._getTeleportCooldownMs();
     const lastTeleport = this._lastTeleportTime || 0;
     const elapsed = Date.now() - lastTeleport;
     const remaining = cooldownMs - elapsed;
     if (remaining <= 0) return { onCooldown: false, remainingMs: 0, remainingText: '' };
-    // Format remaining time
     const totalSec = Math.ceil(remaining / 1000);
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
@@ -198,7 +202,9 @@ module.exports = class ShadowExchange {
       this.fileBackupPath = null;
       this._resetRuntimeState();
       this._exchangeResourcesActive = false;
-      this._lastTeleportTime = BdApi.Data.load(SE_PLUGIN_ID, '_lastTeleportTime') || 0;
+      // Read shared cooldown (ShadowPortalCore key), fallback to legacy per-plugin key
+      this._lastTeleportTime = BdApi.Data.load('ShadowPortalCore', '_lastTeleportTime')
+        || BdApi.Data.load(SE_PLUGIN_ID, '_lastTeleportTime') || 0;
       this.defaultSettings = {
         waypoints: [],
         sortBy: "created",
@@ -225,7 +231,29 @@ module.exports = class ShadowExchange {
       if (this._getSkillTreeSkillLevel('shadow_exchange') >= 1) {
         this._activateExchangeResources();
       } else {
-        this._toast(`ShadowExchange v${SE_VERSION} \u2014 Awaiting Shadow Exchange skill`);
+        // SkillTree may not be loaded yet — retry a few times before giving up.
+        // BD plugin load order isn't guaranteed, so SkillTree.start() may run after us.
+        this._startupRetryCount = 0;
+        const RETRY_DELAYS = [1000, 3000, 6000];
+        this._startupRetryTimers = [];
+        const retryCheck = () => {
+          if (this._exchangeResourcesActive) return; // already activated
+          if (this._getSkillTreeSkillLevel('shadow_exchange') >= 1) {
+            this._activateExchangeResources();
+            // Clear remaining timers
+            this._startupRetryTimers?.forEach(t => clearTimeout(t));
+            this._startupRetryTimers = null;
+          } else {
+            this._startupRetryCount++;
+            if (this._startupRetryCount >= RETRY_DELAYS.length) {
+              this._toast(`ShadowExchange v${SE_VERSION} \u2014 Awaiting Shadow Exchange skill`);
+              this._startupRetryTimers = null;
+            }
+          }
+        };
+        for (const delay of RETRY_DELAYS) {
+          this._startupRetryTimers.push(setTimeout(retryCheck, delay));
+        }
       }
     } catch (err) {
       console.error("[ShadowExchange] start() failed:", err);
@@ -270,6 +298,11 @@ module.exports = class ShadowExchange {
     if (this._onSkillLevelChanged) {
       document.removeEventListener('SkillTree:skillLevelChanged', this._onSkillLevelChanged);
       this._onSkillLevelChanged = null;
+    }
+    // Clear startup retry timers
+    if (this._startupRetryTimers) {
+      this._startupRetryTimers.forEach(t => clearTimeout(t));
+      this._startupRetryTimers = null;
     }
     this._flushPendingSave();
     try {
@@ -439,7 +472,7 @@ module.exports = class ShadowExchange {
       channelId,
       messageId,
       shadowId: shadow.id,
-      shadowName: shadow.name,
+      shadowName: shadow.roleName || shadow.role || shadow.name || 'Shadow',
       shadowRank: shadow.rank,
       createdAt: Date.now(),
       lastVisited: null,
@@ -455,7 +488,7 @@ module.exports = class ShadowExchange {
     this.saveSettings();
     this._triggerPanelRefresh();
 
-    this._toast(`${shadow.name} stationed at message in ${label}`, "success");
+    this._toast(`${shadow.roleName || shadow.role || shadow.name || 'Shadow'} stationed at message in ${label}`, "success");
   }
 
   // ── Persistence ────────────────────────────────────────────────────────
@@ -710,7 +743,7 @@ module.exports = class ShadowExchange {
       channelId: loc.channelId,
       messageId: loc.messageId,
       shadowId: shadow.id,
-      shadowName: shadow.name,
+      shadowName: shadow.roleName || shadow.role || shadow.name || 'Shadow',
       shadowRank: shadow.rank,
       createdAt: Date.now(),
       lastVisited: null,
@@ -726,7 +759,7 @@ module.exports = class ShadowExchange {
     this.saveSettings();
     this._triggerPanelRefresh();
 
-    this._toast(`${shadow.name} stationed at ${label}`, "success");
+    this._toast(`${shadow.roleName || shadow.role || shadow.name || 'Shadow'} stationed at ${label}`, "success");
   }
 
   removeWaypoint(waypointId) {
@@ -765,9 +798,14 @@ module.exports = class ShadowExchange {
     wp.visitCount = (wp.visitCount || 0) + 1;
     this.saveSettings();
 
-    // Stamp teleport time for cooldown tracking
-    this._lastTeleportTime = Date.now();
-    BdApi.Data.save(SE_PLUGIN_ID, '_lastTeleportTime', this._lastTeleportTime);
+    // Stamp shared teleport cooldown (synced with ShadowStep + ShadowSenses)
+    const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
+    if (portalCore?.stampTeleportCooldown) {
+      this._lastTeleportTime = portalCore.stampTeleportCooldown();
+    } else {
+      this._lastTeleportTime = Date.now();
+      BdApi.Data.save(SE_PLUGIN_ID, '_lastTeleportTime', this._lastTeleportTime);
+    }
 
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       _ensureShadowPortalCoreApplied(this.constructor);

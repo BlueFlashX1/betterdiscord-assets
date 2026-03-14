@@ -127,13 +127,9 @@ function getStaffIntel(plugin, userId, guildId, constants) {
 }
 
 module.exports = {
-  allPermissionBits,
-  computeGuildPermissionBits,
   getCurrentUserPermissionSummary,
-  getPermissionBitsMap,
   getPermissionSummaryForMember,
   getStaffIntel,
-  humanizePermissionKey,
   isDetailedStaffIntelUnlocked,
   toBigInt,
 };

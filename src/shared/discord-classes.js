@@ -275,4 +275,4 @@ function queryAll(root, name) {
   return root.querySelectorAll(_fb[name]);
 }
 
-module.exports = { sel, cls, fb, refresh, isResolved, cssSelector, query, queryAll, DEFS };
+module.exports = { sel, cls, fb, refresh, isResolved, cssSelector, query, queryAll };

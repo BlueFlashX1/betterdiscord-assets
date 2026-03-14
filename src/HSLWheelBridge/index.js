@@ -108,7 +108,6 @@ module.exports = class HSLWheelBridge {
     this._fallbackTimer = null;
     this._fallbackPoll = null;
     this._toast = createToast();
-    this._warnedReactFallback = false;
     this._warnOnce = createWarnOnce();
   }
 
@@ -137,7 +136,6 @@ module.exports = class HSLWheelBridge {
     this._cleanupRuntime();
     this._isStopped = false;
     this._engineMounted = false;
-    this._warnedReactFallback = false;
     this._warnOnce = createWarnOnce();
     this._installReactPatcher();
 
@@ -145,10 +143,7 @@ module.exports = class HSLWheelBridge {
     this._fallbackTimer = setTimeout(() => {
       this._fallbackTimer = null;
       if (!this._isStopped && !this._engineMounted) {
-        if (!this._warnedReactFallback) {
-          this._warnedReactFallback = true;
-          this._warnOnce('react-fallback', '[HSLWheelBridge] React patcher did not mount — using direct DOM fallback');
-        }
+        this._warnOnce('react-fallback', '[HSLWheelBridge] React patcher did not mount — using direct DOM fallback');
         const engine = new WheelBridgeEngine();
         this._fallbackEngine = engine;
         this._engineMounted = true;

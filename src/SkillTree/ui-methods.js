@@ -203,23 +203,8 @@ const SkillTreeUiMethods = {
     };
   },
 
-  /**
-   * Handle window blur event (Discord window loses focus)
-   * Pattern from AutoIdleOnAFK - fires when user switches to another window/app
-   */
-  _handleWindowBlur() {
-    if (this._isStopped) return;
-    // Note: Don't recreate button on blur - wait for focus to return
-  },
-
-  /**
-   * Handle window focus event (Discord window gains focus)
-   * Pattern from AutoIdleOnAFK - fires when user returns to Discord window
-   */
-  _handleWindowFocus() {
-    if (this._isStopped) return;
-    // React patcher handles button persistence — no manual re-creation needed
-  },
+  _handleWindowBlur() {},
+  _handleWindowFocus() {},
 };
 
 module.exports = { SkillTreeUiMethods };

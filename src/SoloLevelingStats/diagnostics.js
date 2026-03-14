@@ -64,8 +64,6 @@ module.exports = {
       timestamp,
     });
   
-    // Also log to debug file
-    console.warn(`[SoloLevelingStats:ERROR:${operation}] ${errorMessage}`, context);
   },
 
   debugConsole(prefix, message, data = {}) {

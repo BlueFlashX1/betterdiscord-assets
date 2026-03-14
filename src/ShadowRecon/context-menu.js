@@ -120,10 +120,5 @@ function appendContextItems(BdApi, tree, items) {
 module.exports = {
   appendContextItems,
   buildGuildReconActions,
-  buildMarkedTargetContextItems,
-  buildStaffContextItems,
   buildUserContextReconItems,
-  collectContextChildrenCandidates,
-  getDirectContextChildrenArray,
-  resolveContextChildrenArray,
 };

@@ -71,8 +71,6 @@ module.exports = {
       // ---- Bonus display state ----
       const [agilityBonus, setAgilityBonus] = useState(0);
       const [skillBonus, setSkillBonus] = useState(0);
-      const [perceptionInfo, setPerceptionInfo] = useState(null);
-
       // ---- Refs to avoid stale closures in interval ----
       const piRef = useRef(pi);
       piRef.current = pi;
@@ -96,16 +94,6 @@ module.exports = {
             setSkillBonus(0);
           }
 
-          // Perception burst info
-          try {
-            const perData = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
-            const perception = Math.max(0, Number(perData.effectivePerception ?? perData.perception ?? 0) || 0);
-            const chainChance = Math.min(82, Math.round((0.08 + perception * 0.007) * 100));
-            const maxHits = Math.min(99, Math.max(1, Number(perData.maxHits) || (1 + Math.floor(perception * 1.2))));
-            setPerceptionInfo({ perception, chainChance, maxHits });
-          } catch (_) {
-            setPerceptionInfo(null);
-          }
         };
         tick();
         const id = setInterval(tick, 5000); // 5s (was 2s) — settings panel data not time-critical
@@ -238,8 +226,6 @@ module.exports = {
     this.detachCriticalHitSettingsPanelHandlers();
 
     this.updateStats();
-    this.injectSettingsCSS();
-
     const container = document.createElement('div');
     container.className = 'bd-crit-hit-settings';
 

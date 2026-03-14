@@ -34,45 +34,6 @@
  *   3.6 Event Handling (channel watcher, toolbar observer)
  * SECTION 4: DEBUGGING & DEVELOPMENT
  *
- * ============================================================================
- * VERSION HISTORY
- * ============================================================================
- *
- * - Migrated title selection modal from innerHTML + event delegation to React components
- * - Added buildTitleComponents() factory with TitleModal + TitleCard components
- * - Uses shared/react-dom getCreateRoot() with webpack fallbacks
- * - useReducer force-update bridge for imperative → React state sync
- * - Equip/unequip now trigger React diffed update (no full modal rebuild)
- * - Deleted: renderTitlesGrid, refreshModalSmooth, createTitleButtonIconSvg, escapeHtml
- * - Zero visual regression — all existing CSS class names preserved
- *
- * ADVANCED FEATURES:
- * - Added Webpack module access (ChannelStore) for better Discord integration
- * - Enhanced error handling and fallback mechanisms
- * - Improved compatibility with Discord updates
- * - Migrated CSS injection to BdApi.DOM.addStyle (official API)
- * - Fixed duplicate method definitions
- * - Added proper 4-section structure organization
- * - Enhanced debug logging with tagged format support
- *
- * PERFORMANCE IMPROVEMENTS:
- * - Better integration with Discord's internal structure
- * - More reliable button placement via webpack modules
- * - Graceful fallbacks if webpack unavailable
- *
- * RELIABILITY:
- * - Fixed incomplete createTitleButton method
- * - Proper cleanup for MutationObserver (toolbarObserver)
- * - Deep copy in constructor (prevents save corruption)
- * - All existing functionality preserved (backward compatible)
- *
- * - Fixed close button using inline onclick that bypassed cleanup
- * - Close button now routes through central modal click handler
- * - Ensures proper state cleanup (_titleManagerInstances)
- * - Enhanced memory cleanup (modal instance tracking cleared on stop)
- *
- * - Code structure improvements (section headers)
- * - Console log cleanup (removed verbose logs)
  */
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
@@ -160,14 +121,6 @@ module.exports = class SoloLevelingTitleManager {
     // Settings panel binding (delegated) references for cleanup
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
-
-    // ============================================================================
-    // WEBPACK MODULE ACCESS (Advanced BetterDiscord Integration)
-    // ============================================================================
-    this.webpackModules = {
-      ChannelStore: null,
-    };
-    this.webpackModuleAccess = false;
 
     // Performance caches
     this._cache = {
@@ -545,11 +498,6 @@ module.exports = class SoloLevelingTitleManager {
     this._components = buildTitleComponents(BdApi, this);
     this.injectCSS();
 
-    // ============================================================================
-    // WEBPACK MODULE ACCESS: Initialize Discord module access
-    // ============================================================================
-    this.initializeWebpackModules();
-
     // Register toolbar button via SLUtils React patcher (React-only, no DOM fallback).
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
@@ -583,11 +531,6 @@ module.exports = class SoloLevelingTitleManager {
       // No periodic check interval to clear — React patcher handles persistence.
 
       // Clear webpack module references
-      this.webpackModules = {
-        ChannelStore: null,
-      };
-      this.webpackModuleAccess = false;
-
       // Clear all caches
       this._cache.soloLevelingData = null;
       this._cache.soloLevelingDataTime = 0;
@@ -645,29 +588,6 @@ module.exports = class SoloLevelingTitleManager {
   /**
    * 3.5 WEBPACK & REACT INTEGRATION (Advanced BetterDiscord Integration)
    */
-
-  /**
-   * Initialize Webpack modules for better Discord integration
-   * Operations:
-   * 1. Fetch ChannelStore via BdApi.Webpack
-   * 2. Set webpackModuleAccess flag
-   */
-  initializeWebpackModules() {
-    try {
-      // Fetch ChannelStore for potential future use
-      this.webpackModules.ChannelStore = BdApi.Webpack.getStore("ChannelStore");
-
-      this.webpackModuleAccess = !!this.webpackModules.ChannelStore;
-
-      this.debugLog('WEBPACK', 'Module access initialized', {
-        hasChannelStore: !!this.webpackModules.ChannelStore,
-        access: this.webpackModuleAccess,
-      });
-    } catch (error) {
-      this.debugError('WEBPACK', `Initialization failed: ${error?.message || error}`, error);
-      this.webpackModuleAccess = false;
-    }
-  }
 
   /**
    * 3.4 UI MANAGEMENT

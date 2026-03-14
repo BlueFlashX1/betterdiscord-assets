@@ -460,12 +460,6 @@ ${childSel} {
         fontFileName = 'SpeedySpaceGoatOddity';
       }
 
-      const pluginsFolder = this._getPluginsFolderFromBdApi() || this._getPluginsFolderFromScript();
-      if (!pluginsFolder) {
-        this.debugError('FONT_LOADER', 'Could not get plugins folder path', { fontName });
-        return false;
-      }
-
       // Use embedded base64 data URIs for font loading
       let fontSrc = '';
 
@@ -819,11 +813,4 @@ ${childSel} {
     this._critCSSInjected = true;
   },
 
-  /**
-   * Settings panel CSS injection.
-   * v3.6.0: CSS is now in styles.css — this is a no-op kept for call-site compatibility.
-   */
-  injectSettingsCSS() {
-    // Static CSS is handled by injectStaticCSS() via styles.css
-  },
 };

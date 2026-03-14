@@ -609,10 +609,6 @@ module.exports = {
    * @param {number} comboCount - Combo count
    * @param {number} lastCritTime - Last crit time
    */
-  _saveUserComboToStorage(_userId, _comboCount, _lastCritTime) {
-    // Combo state is tracked in-memory via userCombos Map; no persistent storage needed.
-  },
-
   /**
    * Resets user combo after timeout
    * @param {string} key - User key
@@ -622,7 +618,6 @@ module.exports = {
       const comboObj = this.userCombos.get(key);
       comboObj.comboCount = 0;
       comboObj.lastCritTime = 0;
-      this._saveUserComboToStorage(key, 0, 0);
     }
   },
 
@@ -638,8 +633,6 @@ module.exports = {
     const combo = this.getUserCombo(key);
     combo.comboCount = comboCount;
     combo.lastCritTime = lastCritTime;
-
-    this._saveUserComboToStorage(key, comboCount, lastCritTime);
 
     this._clearTrackedTimeout(combo.timeout);
     combo.timeout = null;

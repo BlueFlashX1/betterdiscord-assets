@@ -41,14 +41,6 @@ module.exports = {
           }
         }
 
-        // Method 3: Try getting guild and its channels
-        if (!allChannels.length) {
-          const GuildStore = BdApi.Webpack?.getStore?.('GuildStore');
-          if (GuildStore?.getGuild) {
-            GuildStore.getGuild(guildId);
-          }
-        }
-
         // Filter for text channels (type 0) in this guild
         // Try multiple property names (guild_id vs guildId, etc.)
         const guildTextChannels = allChannels.filter((channel) => {

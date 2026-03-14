@@ -686,6 +686,109 @@ ${sel.settingsContainer} {
   transform: none !important;
 }
 
+.dungeon-active-effects-row {
+  display: flex !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  margin-top: 4px !important;
+}
+
+.dungeon-effect-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 2px 8px !important;
+  border-radius: 10px !important;
+  font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+  white-space: nowrap !important;
+  animation: effectPulse 2s ease-in-out infinite !important;
+}
+
+.effect-badge-buff {
+  background: linear-gradient(135deg, rgba(6, 78, 59, 0.92) 0%, rgba(16, 185, 129, 0.28) 100%) !important;
+  color: #6ee7b7 !important;
+  border: 1px solid rgba(52, 211, 153, 0.5) !important;
+  text-shadow: 0 0 6px rgba(52, 211, 153, 0.45) !important;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.2) !important;
+}
+
+.effect-badge-debuff {
+  background: linear-gradient(135deg, rgba(127, 29, 29, 0.92) 0%, rgba(239, 68, 68, 0.28) 100%) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(248, 113, 113, 0.5) !important;
+  text-shadow: 0 0 6px rgba(248, 113, 113, 0.45) !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.2) !important;
+}
+
+@keyframes effectPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* Boss Gate Timer — sealed boss countdown */
+.boss-gate-timer {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 6px 12px !important;
+  margin: 4px 0 !important;
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.35) 0%, rgba(30, 27, 75, 0.6) 100%) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  border-radius: 4px !important;
+  font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
+  animation: gateTimerPulse 2.5s ease-in-out infinite !important;
+}
+
+.boss-gate-icon {
+  font-size: 14px !important;
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.6)) !important;
+}
+
+.boss-gate-label {
+  color: #c4b5fd !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.5) !important;
+}
+
+.boss-gate-countdown {
+  color: #f9a8d4 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.1em !important;
+  text-shadow: 0 0 6px rgba(236, 72, 153, 0.6) !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+.boss-gate-separator {
+  color: #64748b !important;
+  font-size: 10px !important;
+}
+
+.boss-gate-kills {
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+}
+
+@keyframes gateTimerPulse {
+  0%, 100% {
+    border-color: rgba(139, 92, 246, 0.4);
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.15);
+  }
+  50% {
+    border-color: rgba(139, 92, 246, 0.7);
+    box-shadow: 0 0 16px rgba(139, 92, 246, 0.3);
+  }
+}
+
 .boss-bar-stat-label {
   color: #94a3b8 !important;
 }

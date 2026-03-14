@@ -81,6 +81,7 @@ module.exports = {
       ],
       c: Math.round((shadow.totalCombatTime || 0) * 10) / 10,
       e: shadow.extractedAt,
+      lng: shadow.lastNaturalGrowth || shadow.extractedAt,
       s: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100,
       ol: shadow.ownerLevelAtExtraction || 1,
 
@@ -251,7 +252,7 @@ module.exports = {
       extractedAt: compressed.e,
       growthVarianceSeed: compressed.s || Math.random(),
       ownerLevelAtExtraction: compressed.ol || 1,
-      lastNaturalGrowth: compressed.e,
+      lastNaturalGrowth: compressed.lng || compressed.e,
       strength: 0,
       _compressed: true,
     };

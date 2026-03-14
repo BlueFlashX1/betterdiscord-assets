@@ -381,7 +381,7 @@ module.exports = {
           resurrectedCount++;
 
           if (!shadowHPData.maxHp || shadowHPData.maxHp <= 0) {
-            const recalculatedHP = await this.initializeShadowHP(targetShadow, shadowHP);
+            const recalculatedHP = this.initializeShadowHPSync(targetShadow, shadowHP);
             if (recalculatedHP) shadowHPData.maxHp = recalculatedHP.maxHp;
           }
           shadowHPData.hp = shadowHPData.maxHp || 1;
