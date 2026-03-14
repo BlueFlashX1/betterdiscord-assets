@@ -232,8 +232,10 @@ const methods = {
         _gsapLoaded = true;
         if (!_gsapLogSent) {
           _gsapLogSent = true;
-          const plugins = [window.CustomEase && "CustomEase", window.Physics2DPlugin && "Physics2D"].filter(Boolean);
-          console.log(`[ShadowPortalCore] GSAP v${window.gsap.version} loaded` + (plugins.length ? ` + ${plugins.join(" + ")}` : ""));
+          if (this.settings?.debugMode) {
+            const plugins = [window.CustomEase && "CustomEase", window.Physics2DPlugin && "Physics2D"].filter(Boolean);
+            console.log(`[ShadowPortalCore] GSAP v${window.gsap.version} loaded` + (plugins.length ? ` + ${plugins.join(" + ")}` : ""));
+          }
         }
         return window.gsap;
       } catch (err) {

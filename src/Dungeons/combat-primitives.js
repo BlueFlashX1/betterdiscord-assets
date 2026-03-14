@@ -640,7 +640,7 @@ module.exports = {
   },
 
   _normalizeCombatStatBlock(statsSource) {
-    const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const { STAT_KEYS: statNames } = require('../shared/safe-numbers');
     return statNames.reduce((acc, statName) => {
       const rawValue = Number(statsSource?.[statName]);
       acc[statName] = Number.isFinite(rawValue) ? rawValue : 0;

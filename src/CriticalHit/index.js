@@ -169,9 +169,6 @@ const CriticalHit = class CriticalHit {
     // Cached DOM queries (animation)
     this._cachedChatInput = null;
     this._cachedMessageList = null;
-    this._cacheTimestamp = 0;
-    this._cacheMaxAge = 5000; // 5 seconds cache validity
-
     // Lifecycle safety (stop-safe scheduling + cleanup)
     this._isStopped = true;
     this._trackedTimeouts = new Set();
