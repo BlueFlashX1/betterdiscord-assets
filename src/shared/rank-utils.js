@@ -13,10 +13,10 @@
  *   getRankAtIndex(12)          // => "Shadow Monarch"
  */
 
-const RANK_ORDER = [
+const RANK_ORDER = Object.freeze([
   'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+',
   'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'
-];
+]);
 
 /**
  * Get the index of a rank string. Returns 0 (E-rank) if rank is invalid or unknown.

@@ -36,9 +36,9 @@ const ActiveSkillMethods = {
   _computeMaxManaFromStats() {
     const soloData = this.getSoloLevelingData();
     const intelligence = soloData?.stats?.intelligence || 0;
-    const level = soloData?.level || 1;
-    // Must match SoloLevelingStats formula: 100 + INT*12 + level*8
-    return 100 + intelligence * 12 + level * 8;
+    // Must match SoloLevelingStats hp-mana.js calculateMana: 100 + INT*10 + flatMana
+    // flatMana comes from SkillTree bonuses — not available here in the fallback path, so use 0
+    return 100 + intelligence * 10;
   },
 
   _getSoloLevelingInstance(now = Date.now()) {

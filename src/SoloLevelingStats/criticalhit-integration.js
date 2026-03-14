@@ -107,7 +107,7 @@ module.exports = {
                     const chPlugin = BdApi.Plugins.isEnabled('CriticalHit') && BdApi.Plugins.get('CriticalHit');
                     const chInstance = chPlugin?.instance;
                     if (chInstance?.getUserCombo) {
-                      const userId = this.UserStore?.getCurrentUser?.()?.id;
+                      const userId = this.webpackModules?.UserStore?.getCurrentUser?.()?.id;
                       liveCombo = userId ? chInstance.getUserCombo(userId) : null;
                     }
                   } catch (_) { /* CriticalHit unavailable */ }
