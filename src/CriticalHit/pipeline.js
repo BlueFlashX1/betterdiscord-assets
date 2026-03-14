@@ -576,10 +576,9 @@ module.exports = {
       }
 
       // Content-hash dedup removed in v3.6.0 — FluxDispatcher handles own messages once;
-      // observer fallback relies on processedMessages ID check (above) for dedup.
+      // observer fallback relies on processedMessages ID check above.
       if (!this.markAsProcessed(messageId)) return;
 
-      // Guard clauses: early returns for invalid states
       if (this.isLoadingChannel) return;
       if (this.shouldFilterMessage(messageElement)) return;
 
@@ -595,7 +594,6 @@ module.exports = {
         }
       }
 
-      // Verify it's actually a message (has some text content)
       const hasText =
         messageElement.textContent?.trim().length > 0 ||
         dc.query(messageElement, 'content')?.textContent?.trim().length > 0 ||
@@ -603,28 +601,20 @@ module.exports = {
 
       if (!hasText) return;
 
-      // Calculate crit roll using helper function
       const effectiveCritChance = this.getEffectiveCritChance();
       const roll = this.calculateCritRoll(messageId, messageElement);
       const isCrit = roll <= effectiveCritChance;
 
-      // Get message info
       const messageContent = messageElement.textContent?.trim() || '';
       const author =
         dc.query(messageElement, 'username')?.textContent?.trim() ||
         messageElement.querySelector(dc.sel.author)?.textContent?.trim() ||
         '';
-
-      // Extract author ID (user ID) from message element
       const authorId = this.getAuthorId(messageElement);
 
-      // Update stats
       this.stats.totalMessages++;
 
-      // Already marked as processed by markAsProcessed above (atomic check-and-add)
-
       if (isCrit) {
-        // Process new crit using helper function
         this.processNewCrit(
           messageElement,
           messageId,
@@ -635,7 +625,6 @@ module.exports = {
           isValidDiscordId
         );
       } else {
-        // Process non-crit using helper function
         this.processNonCrit(messageId, authorId, messageContent, author);
       }
     } catch (error) {

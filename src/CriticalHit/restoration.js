@@ -10,12 +10,6 @@ const dc = require('../shared/discord-classes');
 module.exports = {
   // Core Restoration
 
-  /**
-   * Performs crit restoration on a message element
-   * @param {Object} historyEntry - History entry with crit settings
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {HTMLElement} messageElement - Message DOM element
-   */
   performCritRestoration(historyEntry, normalizedMsgId, messageElement) {
     if (!historyEntry?.critSettings || !messageElement) return;
     this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings);
@@ -36,14 +30,6 @@ module.exports = {
     });
   },
 
-  /**
-   * Restores a single crit message with retry logic
-   * @param {HTMLElement} msgElement - Message element
-   * @param {Object} matchedEntry - Matched history entry
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {number} retryCount - Retry attempt number
-   * @returns {boolean} True if restoration was successful
-   */
   restoreSingleCrit(msgElement, matchedEntry, normalizedMsgId, retryCount) {
     if (!matchedEntry?.critSettings || !msgElement) return false;
 
@@ -65,11 +51,6 @@ module.exports = {
     }
   },
 
-  /**
-   * Finds message element in a node for restoration checking
-   * @param {Node} node - DOM node to check
-   * @returns {HTMLElement|null} Message element or null
-   */
   findMessageElementForRestoration(node) {
     let messageElement = null;
     if (node.classList) {
@@ -91,10 +72,6 @@ module.exports = {
 
   // Restoration Throttling
 
-  /**
-   * Cleans up old throttle entries
-   * @param {number} now - Current timestamp
-   */
   _cleanupThrottleEntries(now) {
     if (this._restorationCheckThrottle.size <= C.MAX_THROTTLE_MAP_SIZE) return;
 
@@ -103,11 +80,6 @@ module.exports = {
       .forEach(([id]) => this._restorationCheckThrottle.delete(id));
   },
 
-  /**
-   * Checks if restoration should be throttled for a message ID
-   * @param {string} normalizedId - Normalized message ID
-   * @returns {boolean} True if should skip (throttled)
-   */
   shouldThrottleRestorationCheck(normalizedId) {
     if (!normalizedId || normalizedId.startsWith('hash_')) return false;
 
@@ -126,11 +98,6 @@ module.exports = {
 
   // Content Hash Matching
 
-  /**
-   * Creates a simple hash from content string (for content-based matching)
-   * @param {string} content - Content string to hash
-   * @returns {string} Hash string
-   */
   _createSimpleContentHash(content) {
     let hash = 0;
     for (let i = 0; i < content.length; i++) {
@@ -140,12 +107,6 @@ module.exports = {
     return `hash_${Math.abs(hash)}`;
   },
 
-  /**
-   * Checks if entry matches by content hash
-   * @param {Object} entry - History entry
-   * @param {string} contentHash - Target content hash
-   * @returns {boolean} True if matches
-   */
   _matchesByContentHash(entry, contentHash) {
     if (!entry.messageContent || !entry.author) return false;
     const entryContent = entry.messageContent.substring(0, 100);
@@ -156,12 +117,6 @@ module.exports = {
 
   // History Entry Matching
 
-  /**
-   * Creates history entry from pending crit
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {Object} pendingCrit - Pending crit data
-   * @returns {Object} History entry object
-   */
   _createHistoryEntryFromPending(normalizedMsgId, pendingCrit) {
     return {
       messageId: normalizedMsgId,
@@ -173,13 +128,6 @@ module.exports = {
     };
   },
 
-  /**
-   * Finds entry by exact ID match
-   * @param {Array} channelCrits - Channel crit history
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {string} pureMessageId - Pure Discord ID
-   * @returns {Object|null} Matched entry or null
-   */
   _findEntryByExactId(channelCrits, normalizedMsgId, pureMessageId) {
     return channelCrits.find((entry) => {
       const entryId = String(entry.messageId).trim();
@@ -188,13 +136,6 @@ module.exports = {
     });
   },
 
-  /**
-   * Finds entry by pure ID match
-   * @param {Array} channelCrits - Channel crit history
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {string} pureMessageId - Pure Discord ID
-   * @returns {Object|null} Matched entry or null
-   */
   _findEntryByPureId(channelCrits, normalizedMsgId, pureMessageId) {
     return channelCrits.find((entry) => {
       const entryId = String(entry.messageId).trim();
@@ -210,12 +151,6 @@ module.exports = {
     });
   },
 
-  /**
-   * Finds entry by content hash match
-   * @param {Array} channelCrits - Channel crit history
-   * @param {string} contentHash - Content hash to match
-   * @returns {Object|null} Matched entry or null
-   */
   _findEntryByContentHash(channelCrits, contentHash) {
     return channelCrits.find((entry) => {
       const entryId = String(entry.messageId).trim();
@@ -224,16 +159,6 @@ module.exports = {
     });
   },
 
-  /**
-   * Finds history entry for restoration by matching multiple strategies
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {string} pureMessageId - Pure Discord ID
-   * @param {Array} channelCrits - Channel crit history
-   * @param {string} contentHash - Content hash for matching
-   * @param {string} messageContent - Message content
-   * @param {string} author - Author username
-   * @returns {Object|null} History entry or null
-   */
   findHistoryEntryForRestoration(
     normalizedMsgId,
     pureMessageId,
@@ -244,22 +169,18 @@ module.exports = {
   ) {
     if (!this.isValidDiscordId(normalizedMsgId)) return null;
 
-    // Check pending queue first
     const pendingCrit =
       this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
     if (pendingCrit?.channelId === this.currentChannelId) {
       return this._createHistoryEntryFromPending(normalizedMsgId, pendingCrit);
     }
 
-    // Try exact match
     let historyEntry = this._findEntryByExactId(channelCrits, normalizedMsgId, pureMessageId);
 
-    // Try matching pure IDs
     if (!historyEntry) {
       historyEntry = this._findEntryByPureId(channelCrits, normalizedMsgId, pureMessageId);
     }
 
-    // Try content-based matching
     if (!historyEntry && contentHash && messageContent && author) {
       historyEntry = this._findEntryByContentHash(channelCrits, contentHash);
 
@@ -281,13 +202,7 @@ module.exports = {
 
   // Visual State Checks
 
-  /**
-   * Determines whether a crit message needs restoration.
-   * v3.4.0: Per-message CSS handles styling — only check class + CSS rule presence.
-   * @param {HTMLElement} messageElement - Message wrapper element
-   * @param {Object|null} critSettings - Saved crit settings (optional)
-   * @returns {boolean} True when restoration should run
-   */
+  /** v3.4.0: Per-message CSS handles styling — only check class + CSS rule presence. */
   shouldRestoreCritVisuals(messageElement, critSettings = null) {
     if (!messageElement) return false;
 
@@ -478,15 +393,9 @@ module.exports = {
 
   // Main Restoration Check
 
-  /**
-   * Checks if a message needs crit styling restoration from history
-   * Handles race conditions with pending crits queue and throttling
-   * @param {Node} node - DOM node to check
-   */
   checkForRestoration(node) {
     if (!this.currentChannelId || this.isLoadingChannel) return;
 
-    // Find message element and throttle
     const messageElement = this.findMessageElementForRestoration(node);
     if (messageElement) {
       const msgId = this.getMessageIdentifier(messageElement);
@@ -495,30 +404,21 @@ module.exports = {
       }
     }
 
-    // Invalidate cache before checking to ensure we see latest history
-    // This fixes race condition where restoration checks happen before crit is added
+    // Invalidate cache to avoid race where restoration checks before crit is saved
     this._cachedCritHistory = null;
     this._cachedCritHistoryTimestamp = null;
 
-    // messageElement already found above for throttling, reuse it
-
     if (messageElement) {
-      // Get message ID using improved extraction (only log if verbose)
       let msgId = this.getMessageIdentifier(messageElement);
 
       if (msgId) {
         const channelCrits = this.getCritHistory(this.currentChannelId);
         const normalizedMsgId = String(msgId).trim();
 
-        // Skip hash IDs (unsent/pending messages) - they shouldn't be restored
-        if (normalizedMsgId.startsWith('hash_')) {
-          return; // Don't restore hash IDs
-        }
+        if (normalizedMsgId.startsWith('hash_')) return;
 
-        // Extract pure Discord message ID if in composite format
         const pureMessageId = this.extractPureDiscordId(normalizedMsgId) || normalizedMsgId;
 
-        // Calculate content hash for matching
         const messageContent = messageElement.textContent?.trim() || '';
         const author =
           dc.query(messageElement, 'username')?.textContent?.trim() ||
