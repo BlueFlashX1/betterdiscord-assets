@@ -373,12 +373,6 @@ Object.assign(
   SensesEngineEvents
 );
 
-// CSS
-
-// Shared Utilities
-
-// Plugin Class
-
 module.exports = class ShadowSenses {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
@@ -493,7 +487,6 @@ module.exports = class ShadowSenses {
       this._startDispatcherWait();
     }
 
-    // CSS
     this.injectCSS();
 
     // React components

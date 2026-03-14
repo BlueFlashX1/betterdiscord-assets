@@ -14,8 +14,6 @@ const { buildSoloLevelingToastsSettingsPanel } = require("./settings-panel");
 // SoloLevelingToasts — Unified Toast Engine v2
 
 module.exports = class SoloLevelingToasts {
-  // SECTION 1: CONSTRUCTOR & LOW-LEVEL HELPERS
-
   constructor() {
     // Default settings
     this.defaultSettings = {
@@ -139,8 +137,6 @@ module.exports = class SoloLevelingToasts {
     this._settingsPanelHandlers = null;
   }
 
-  // SECTION 2: WEBPACK & SETTINGS
-
   initializeWebpackModules() {
     try {
       this.webpackModules.UserStore = BdApi.Webpack.getStore("UserStore");
@@ -179,8 +175,6 @@ module.exports = class SoloLevelingToasts {
       this.debugError("SETTINGS", error);
     }
   }
-
-  // SECTION 3: LIFECYCLE (start / stop)
 
   start() {
     // Restart-safe: clear any stale hooks/timers/container/styles before re-initializing.
@@ -240,8 +234,6 @@ module.exports = class SoloLevelingToasts {
     this.debugLog("PLUGIN_STOP", "Plugin stopped successfully");
   }
 
-  // SECTION 4: CSS INJECTION
-
   injectCSS() {
     const styleId = "solo-leveling-toasts-css";
 
@@ -292,8 +284,6 @@ module.exports = class SoloLevelingToasts {
     root.style.removeProperty("--sl-fade-duration");
   }
 
-  // SECTION 5: TOAST CONTAINER
-
   createToastContainer() {
     if (this.toastContainer) {
       this.debugLog("CREATE_CONTAINER", "Container already exists");
@@ -318,8 +308,6 @@ module.exports = class SoloLevelingToasts {
       this.toastContainer.className = `sl-toast-container ${this.settings.position}`;
     }
   }
-
-  // SECTION 6: PARTICLES
 
   createParticles(toastElement, count) {
     if (this._isStopped) return;
@@ -355,8 +343,6 @@ module.exports = class SoloLevelingToasts {
     // Single timeout removes all particles at once (was 20 individual timeouts)
     this._setTrackedTimeout(() => wrapper.remove(), 1500);
   }
-
-  // SECTION 7: SHOW TOAST (public API) + GROUPING
 
   showToast(message, type = "info", timeout = null, options = {}) {
     if (this._isStopped) return;
@@ -490,8 +476,6 @@ module.exports = class SoloLevelingToasts {
     this._scheduleToastFadeOut(toast, timeout);
   }
 
-  // SECTION 8: INTERNAL TOAST RENDERING
-
   _showToastInternal(message, type = "info", timeout = null, options = {}) {
     if (this._isStopped) return;
 
@@ -618,8 +602,6 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
-  // SECTION 9: FADE OUT & REMOVAL
-
   startFadeOut(toast) {
     if (!toast || !toast.parentElement) return;
     if (toast.classList.contains("fading-out")) return;
@@ -682,8 +664,6 @@ module.exports = class SoloLevelingToasts {
     this.activeToasts.forEach((toast) => toast.remove());
     this.activeToasts = [];
   }
-
-  // SECTION 10: CARD TOAST API + RATE LIMITING (Toast Engine v2)
 
   _checkRateLimit(callerId, maxPerMinute = 15) {
     const now = Date.now();
@@ -845,8 +825,6 @@ module.exports = class SoloLevelingToasts {
     });
   }
 
-  // SECTION 11: SOLOLEVELINGSTATS HOOK
-
   _canRetrySoloHook() {
     if (!this._hookRetryCount) this._hookRetryCount = 0;
     if (this._hookRetryCount >= 10) {
@@ -958,13 +936,9 @@ module.exports = class SoloLevelingToasts {
     this._hookRetryCount = 0;
   }
 
-  // SECTION 12: SETTINGS PANEL
-
   getSettingsPanel() {
     return buildSoloLevelingToastsSettingsPanel(BdApi, this);
   }
-
-  // SECTION 13: DEBUGGING & UTILITIES
 
   debugLog(operation, message, data = null) {
     if (!this.debugMode) return;

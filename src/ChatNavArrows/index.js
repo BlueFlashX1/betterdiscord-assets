@@ -5,7 +5,6 @@ const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createWarnOnce } = require("../shared/warn-once");
 
 /**
- * TABLE OF CONTENTS
  * 1) Lifecycle + Settings
  * 2) React Patcher + DOM Fallback
  * 3) Arrow Manager Component

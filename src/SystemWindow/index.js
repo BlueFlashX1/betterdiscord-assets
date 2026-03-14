@@ -4,7 +4,6 @@ const { createToast } = require("../shared/toast");
 const dc = require("../shared/discord-classes");
 
 /**
- * TABLE OF CONTENTS
  * 1) Lifecycle
  * 2) Observer + Classification
  * 3) Message Classification

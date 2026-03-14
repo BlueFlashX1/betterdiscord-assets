@@ -5,18 +5,6 @@ const { FRIENDORFOEBB_WOFF2_DATA, SPEEDYSPACEGOATODDITY_WOFF2_DATA } = require("
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
-// SECTION 1: IMPORTS & DEPENDENCIES
-// No external imports (BetterDiscord plugin)
-
-// SECTION 2: CONFIGURATION & HELPERS
-// (Configuration constants and helper methods organized below in class)
-
-// SECTION 3: MAJOR OPERATIONS
-// (Core plugin logic organized below in class)
-
-// SECTION 4: DEBUGGING & DEVELOPMENT
-// (Debug system organized below in class)
-
 let _ReactUtils;
 try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
@@ -24,9 +12,6 @@ let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const CriticalHit = class CriticalHit {
-  // SECTION 2: CONFIGURATION & HELPERS
-
-  // CONSTRUCTOR & INITIALIZATION
   constructor() {
     this.defaultSettings = C.DEFAULT_SETTINGS;
     this.settings = structuredClone(C.DEFAULT_SETTINGS);
@@ -167,8 +152,6 @@ const CriticalHit = class CriticalHit {
     this._settingsRoot = null; // React 18 createRoot instance
   }
 
-  // HELPER FUNCTIONS - EXTRACTED FROM LONG FUNCTIONS
-
   _setTrackedTimeout(callback, delayMs) {
     const timeoutId = setTimeout(() => {
       this._trackedTimeouts.delete(timeoutId);
@@ -235,10 +218,6 @@ const CriticalHit = class CriticalHit {
 
   // FLUX DISPATCHER — Instant crit detection via MESSAGE_CREATE (v3.6.0)
 
-  /**
-   * Acquires Discord's FluxDispatcher and subscribes to MESSAGE_CREATE.
-   * Uses the proven ShadowSenses 3-tier acquisition pattern.
-   */
   _initDispatcher() {
     try {
       const { Webpack } = BdApi;
@@ -259,9 +238,6 @@ const CriticalHit = class CriticalHit {
     }
   }
 
-  /**
-   * Polls for FluxDispatcher if not immediately available (30 attempts × 500ms).
-   */
   _startDispatcherWait() {
     let attempts = 0;
     const maxAttempts = 30;
@@ -289,9 +265,6 @@ const CriticalHit = class CriticalHit {
     this._setTrackedTimeout(poll, 500);
   }
 
-  /**
-   * Subscribes the MESSAGE_CREATE handler to the Dispatcher.
-   */
   _subscribeDispatcher() {
     if (!this._Dispatcher) return;
 
@@ -304,15 +277,6 @@ const CriticalHit = class CriticalHit {
     }
   }
 
-  // BETTERDISCORD PLUGIN LIFECYCLE METHODS
-  // Required by BetterDiscord: start() and stop() methods
-
-  /**
-   * BetterDiscord plugin start method
-   * Called when plugin is enabled or Discord starts
-   * Initializes the plugin: loads history, injects CSS, starts observers
-   */
-
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("criticalHit") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this._pluginUtils = _PluginUtils;
@@ -323,12 +287,11 @@ const CriticalHit = class CriticalHit {
       }
       this._isStopped = false;
 
-      // Defensive: clear any leftover scheduled work (in case BD reuses instance)
+      // BUGFIX: Clear leftover scheduled work — BD may reuse instance on hot reload
       this._clearTrackedTimeouts();
       this._clearTrackedIntervals();
       this._cancelTrackedRafs();
 
-      // Load settings first (before any debug logging)
       this.loadSettings();
 
       // PERSISTENT STARTUP LOG: Always show this so user knows if debug mode is on
@@ -344,36 +307,23 @@ const CriticalHit = class CriticalHit {
         },
       });
 
-      // Load message history from storage
       this.loadMessageHistory();
 
-      // Load fonts first, then inject CSS styles
-      // This ensures fonts are available before CSS tries to use them
       const critFontName = this._extractFontName(this.settings.critFont) || C.DEFAULT_CRIT_FONT;
       const animationFontName = this.settings.animationFont || C.DEFAULT_ANIMATION_FONT;
 
-      // Force load both fonts immediately
       this.loadCritFont(critFontName);
       this.loadCritAnimationFont(animationFontName);
-
-      // Inject all static CSS (keyframes, base classes, settings panel) + load fonts
       this.injectStaticCSS();
       this.injectCritCSS();
       this.injectAnimationCSS();
 
-      // are available before observer-based processing starts.
       this.initializeWebpackModules();
-
-      // Get current user ID before setting up hooks
       this.getCurrentUserId();
 
-      // FluxDispatcher: instant crit detection for own messages (v3.6.0)
       this._initDispatcher();
-
-      // Start observing for new messages (animation trigger + restoration)
       this.startObserving();
 
-      // Start periodic cleanup if enabled
       if (this.settings.autoCleanupHistory) {
         this.startPeriodicCleanup();
       }
@@ -385,11 +335,6 @@ const CriticalHit = class CriticalHit {
     }
   }
 
-  /**
-   * BetterDiscord plugin stop method
-   * Called when plugin is disabled or Discord closes
-   * Cleans up: saves history, stops observers, removes CSS
-   */
   stop() {
     try {
       this._isStopped = true;
@@ -399,30 +344,24 @@ const CriticalHit = class CriticalHit {
         critCount: this.getCritHistory().length,
       });
 
-      // Stop-safe: prevent any pending retries from firing after stop()
       this._clearTrackedTimeouts();
       this._clearTrackedIntervals();
       this._cancelTrackedRafs();
 
-      // Restore global navigation hooks + disconnect URL observer
       this.teardownChannelChangeListener();
 
-      // Flush any debounced settings save before stopping
       if (this._saveDebounceTimer) {
         clearTimeout(this._saveDebounceTimer);
         this._saveDebounceTimer = null;
         this._flushSaveSettings();
       }
 
-      // OPTIMIZED: Force immediate save before stopping (bypass throttle)
-      // Clear any pending throttled save
+      // CRITICAL: Force save now — bypass throttle before shutdown
       this._clearTrackedTimeout(this._saveHistoryThrottle);
       this._saveHistoryThrottle = null;
       this._saveHistoryPending = false;
-      // Save immediately (no throttle on stop - critical for data persistence)
       this.saveMessageHistory();
 
-      // Unsubscribe FluxDispatcher
       if (this._Dispatcher && this._handleMessageCreate) {
         try { this._Dispatcher.unsubscribe('MESSAGE_CREATE', this._handleMessageCreate); } catch (_) {}
       }
@@ -430,13 +369,11 @@ const CriticalHit = class CriticalHit {
       this._handleMessageCreate = null;
       this._pendingAnimations?.clear();
 
-      // Stop all observers
       if (this.messageObserver) {
         this.messageObserver.disconnect();
         this.messageObserver = null;
       }
 
-      // Disconnect all transient observers (visual recheck observers, etc.)
       if (this._transientObservers?.size) {
         this._transientObservers.forEach((obs) => {
           try { obs.disconnect(); } catch (_) {}
@@ -444,7 +381,6 @@ const CriticalHit = class CriticalHit {
         this._transientObservers.clear();
       }
 
-      // Clear pending recheck timers and map
       if (this._pendingRechecks?.size) {
         this._pendingRechecks.forEach((timers) => {
           timers.forEach((id) => clearTimeout(id));
@@ -452,19 +388,16 @@ const CriticalHit = class CriticalHit {
         this._pendingRechecks.clear();
       }
 
-      // Stop periodic cleanup
       if (this.historyCleanupInterval) {
         clearInterval(this.historyCleanupInterval);
         this.historyCleanupInterval = null;
       }
 
-      // Clear combo timers
       this.userCombos?.forEach((combo) => {
         this._clearTrackedTimeout(combo?.timeout);
         combo && (combo.timeout = null);
       });
 
-      // Clear all caches
       if (this._cache) {
         this._cache.currentChannelId = null;
         this._cache.currentChannelIdTime = 0;
@@ -480,35 +413,30 @@ const CriticalHit = class CriticalHit {
         this._cache.urlGuildIdSource = null;
       }
 
-      // Clear cached DOM element references (prevent GC blocking on reload)
       this._cachedMessageContainer = null;
       this._cachedMessageContainerTimestamp = 0;
 
-      // Remove injected CSS via BdApi
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.static);
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.crit);
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.critMessages);
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.settings);
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.animation);
-      this._critCSSInjected = false; // Reset so CSS re-injects on next start()
+      this._critCSSInjected = false;
       this.critCSSRules?.clear();
       if (this._critCSSRebuildRAF) {
         cancelAnimationFrame(this._critCSSRebuildRAF);
         this._critCSSRebuildRAF = null;
       }
 
-      // Remove font link (manual DOM - dynamic ID)
       const fontLink = document.getElementById('bd-crit-hit-nova-flat-font');
       fontLink && fontLink.remove();
 
-      // Unpatch all BetterDiscord patches (including message send hook and receive hook)
       try {
         BdApi.Patcher.unpatchAll('CriticalHit');
       } catch (error) {
         this.debugError('PLUGIN_STOP', error, { phase: 'unpatch' });
       }
 
-      // Clear webpack module references
       if (this.webpackModules) {
         this.webpackModules.MessageStore = null;
         this.webpackModules.UserStore = null;
@@ -516,7 +444,6 @@ const CriticalHit = class CriticalHit {
       }
       this.messageStorePatch = null;
 
-      // Clear tracking data (with null checks)
       this.clearSessionTracking();
       this.pendingCrits && this.pendingCrits.clear();
       this.animatedMessages && this.animatedMessages.clear();
@@ -524,13 +451,11 @@ const CriticalHit = class CriticalHit {
       this.activeAnimations?.forEach((el) => this._cancelComboCountUp(el));
       this.activeAnimations && this.activeAnimations.clear();
 
-      // Remove persistent animation container from DOM
       if (this.animationContainer) {
         this.animationContainer.remove();
         this.animationContainer = null;
       }
 
-      // Remove screen-shake style element (injected by animation.js)
       if (this._shakeStyleEl) {
         this._shakeStyleEl.remove();
         this._shakeStyleEl = null;
@@ -541,44 +466,27 @@ const CriticalHit = class CriticalHit {
       this.debugLog('PLUGIN_STOP', 'SUCCESS: CriticalHit plugin stopped successfully');
     } catch (error) {
       this.debugError('PLUGIN_STOP', error, { phase: 'cleanup' });
-      // Error already logged via debugError (only if debug enabled)
     }
   }
 
-  // SECTION 4: DEBUGGING & DEVELOPMENT
-  // Moved to end of file for better organization
-
-  // SETTINGS MANAGEMENT
-
-  /**
-   * Loads settings from BetterDiscord storage
-   * Syncs debug.enabled with settings.debugMode
-   */
   loadSettings() {
     try {
       const saved = BdApi.Data.load('CriticalHit', 'settings');
       if (saved && typeof saved === 'object') {
-        // Merge saved settings with defaults (preserve defaults for new settings)
         this.settings = { ...this.defaultSettings, ...saved };
       } else {
-        // No saved settings, use defaults
         this.settings = structuredClone(this.defaultSettings);
       }
 
-      // Force debug off — re-enable manually via settings when needed
+      // Force debug/diagnostic off — opt-in only; never persist ON across restarts
       this.settings.debugMode = false;
-      // Diagnostic stream is intentionally opt-in to avoid noisy consoles during normal play.
       this.settings.diagnosticLogs = false;
 
-      // Sync debug.enabled with settings.debugMode
       this.debug.enabled = this.settings.debugMode === true;
-
-      // OPTIMIZED: Update history limits from settings
       this.maxHistorySize = this.settings.maxHistorySize ?? 2000;
       this.maxCritHistory = this.settings.maxCritHistory ?? 1000;
       this.maxHistoryPerChannel = this.settings.maxHistoryPerChannel ?? 500;
 
-      // Only log if debug mode is enabled (avoid circular logging)
       if (this.settings.debugMode === true) {
         this.debugLog('LOAD_SETTINGS', 'Settings loaded', {
           debugMode: this.settings.debugMode,
@@ -590,28 +498,17 @@ const CriticalHit = class CriticalHit {
       }
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error);
-      // Fallback to defaults on error
       this.settings = structuredClone(this.defaultSettings);
-      // Ensure debugMode is false (default)
       this.settings.debugMode = false;
       this.settings.diagnosticLogs = false;
       this.debug.enabled = false;
     }
   }
 
-  /**
-   * Saves settings to BetterDiscord storage
-   * Syncs debug.enabled with settings.debugMode before saving
-   */
-  /**
-   * Debounced save — batches rapid settings changes (e.g. slider adjustments)
-   * into a single disk write + CSS rebuild after 300ms of inactivity.
-   */
+  /** Debounced save — batches rapid settings changes into a single disk write after 300ms. */
   saveSettings() {
-    // Sync debug state immediately (in-memory, no disk I/O)
     this.debug.enabled = this.settings.debugMode === true;
 
-    // Debounce actual disk write + CSS rebuild
     if (this._saveDebounceTimer) clearTimeout(this._saveDebounceTimer);
     this._saveDebounceTimer = setTimeout(() => {
       this._saveDebounceTimer = null;
@@ -619,12 +516,9 @@ const CriticalHit = class CriticalHit {
     }, 300);
   }
 
-  /** Immediate disk write + CSS rebuild — called by debounce timer */
   _flushSaveSettings() {
     try {
       BdApi.Data.save('CriticalHit', 'settings', this.settings);
-
-      // Only rebuild CSS if visual settings could have changed
       this._critCSSInjected = false;
       this.injectCritCSS();
 
@@ -636,8 +530,6 @@ const CriticalHit = class CriticalHit {
       this.debugError('SAVE_SETTINGS', error);
     }
   }
-
-  // debug.js: updateDebugMode, diagLog, debugLog, debugError
 
 };
 

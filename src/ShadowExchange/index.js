@@ -76,7 +76,6 @@ const {
   writeFileBackup,
 } = require("./persistence");
 
-// Shared Utilities
 let _ReactUtils;
 try { _ReactUtils = loadBdModuleFromPlugins('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
@@ -88,8 +87,6 @@ try { _SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloL
 
 let _TransitionCleanupUtils;
 try { _TransitionCleanupUtils = loadBdModuleFromPlugins("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
-
-// Plugin Class
 
 module.exports = class ShadowExchange {
   // Lifecycle
@@ -1104,8 +1101,6 @@ module.exports = class ShadowExchange {
     this._panelContainer = null;
     this._panelForceUpdate = null;
   }
-
-  // CSS
 
   injectCSS() {
     const css = getShadowExchangeCss(PORTAL_TRANSITION_CSS);

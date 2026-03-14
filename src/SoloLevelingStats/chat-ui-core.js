@@ -238,17 +238,14 @@ module.exports = {
   
       this.debugLog('CREATE_CHAT_UI', 'Starting chat UI creation');
   
-      // Remove existing UI if present
       this.removeChatUI();
   
-      // Inject CSS for chat UI
       this.injectChatUICSS();
   
       // Keep the strip composer-anchored. Top-level React injection can place it away from
       // the message box in certain Discord layouts, so we intentionally use DOM insertion.
       this.debugLog('CREATE_CHAT_UI', 'Using DOM injection path');
   
-      // Function to actually create the UI
       const tryCreateUI = () => {
         try {
           if (!this._canShowChatUIInCurrentView()) return false;
@@ -299,7 +296,6 @@ module.exports = {
         }
       };
   
-      // Try to create immediately
       if (!tryCreateUI()) {
         // Retry after a delay if Discord hasn't loaded yet
         this.chatUICreationRetryInterval = setInterval(() => {

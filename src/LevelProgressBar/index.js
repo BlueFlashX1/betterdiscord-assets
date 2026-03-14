@@ -1,5 +1,4 @@
 /**
- * TABLE OF CONTENTS
  * 1) Module Bootstrap + Shared Dependencies
  * 2) Plugin Lifecycle
  * 3) Settings + Persistence

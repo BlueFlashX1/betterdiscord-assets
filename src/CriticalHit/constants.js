@@ -3,8 +3,6 @@
  */
 const dc = require('../shared/discord-classes');
 
-// DEFAULT SETTINGS
-
 const DEFAULT_SETTINGS = {
   enabled: false,
   critChance: 10,
@@ -41,8 +39,6 @@ const DEFAULT_SETTINGS = {
   diagnosticLogs: false,
 };
 
-// DOM / SELECTOR CONSTANTS
-
 const HEADER_CLASS_PATTERNS = [
   'header', 'username', 'timestamp', 'author',
   'topSection', 'messageHeader', 'messageGroup', 'messageGroupWrapper',
@@ -70,8 +66,6 @@ const SYSTEM_MESSAGE_SELECTORS = Object.freeze([
 ]);
 const BOT_SELECTORS = Object.freeze([dc.sel.botTag, dc.sel.bot, dc.sel.botText]);
 
-// TIMING / THRESHOLD CONSTANTS
-
 const CHANNEL_CHANGE_DELAY = 500;
 const OBSERVER_RETRY_DELAY_MS = 500;
 const LOAD_OBSERVER_TIMEOUT_MS = 5000;
@@ -91,8 +85,6 @@ const MAX_THROTTLE_MAP_SIZE = 1000;
 const THROTTLE_ENTRY_MAX_AGE_MS = 1000;
 
 const MAX_REPLY_FIBER_DEPTH = 10;
-
-// ANIMATION CONSTANTS
 
 const ANIMATION_POSITION_TOLERANCE = 100;
 const ANIMATION_TIME_TOLERANCE = 1000;
@@ -115,8 +107,6 @@ const SCREEN_SHAKE_CLASS = 'cha-screen-shake-active';
 const SCREEN_SHAKE_KEYFRAME = 'chaShake';
 const DISCORD_APP_SELECTOR = dc.sel.app;
 
-// CRIT SYSTEM CONSTANTS
-
 const CRIT_ROLL_DIVISOR = 10000;
 const CRIT_ROLL_SCALE = 100;
 const GRADIENT_VERIFICATION_DELAY_MS = 100;
@@ -131,8 +121,6 @@ const MAX_BASE_CRIT_CHANCE = 30;
 const DEFAULT_CRIT_CHANCE = 10;
 const BONUS_TO_PERCENT = 100;
 
-// STYLING CONSTANTS
-
 const DEFAULT_GRADIENT_COLORS = 'linear-gradient(to right, #8a2be2 0%, #9b30ff 15%, #7b21c6 30%, #8a2be2 50%, #9b30ff 70%, #7b21c6 85%, #8a2be2 100%)';
 
 const CSS_STYLE_IDS = {
@@ -146,8 +134,6 @@ const CSS_STYLE_IDS = {
 
 const GOOGLE_FONTS_BASE_URL = 'https://fonts.googleapis.com/css2';
 
-// FONT CONSTANTS
-
 const DEFAULT_CRIT_FONT = 'Friend or Foe BB';
 const DEFAULT_ANIMATION_FONT = 'Speedy Space Goat Oddity';
 const FONT_VERIFICATION_DELAY_MS = 100;
@@ -160,11 +146,8 @@ const FONT_FILENAME_MAP = {
 };
 const LOCAL_ONLY_FONTS = ['friend or foe', 'friend or foe bb', 'speedy space goat', 'speedy goat'];
 
-// EXPORTS
-
 module.exports = {
   DEFAULT_SETTINGS,
-  // DOM / Selectors
   HEADER_CLASS_PATTERNS,
   HEADER_SELECTORS,
   MESSAGE_CONTENT_SELECTORS,
@@ -176,7 +159,6 @@ module.exports = {
   REPLY_SELECTORS,
   SYSTEM_MESSAGE_SELECTORS,
   BOT_SELECTORS,
-  // Timing / Thresholds
   CHANNEL_CHANGE_DELAY,
   OBSERVER_RETRY_DELAY_MS,
   LOAD_OBSERVER_TIMEOUT_MS,
@@ -192,7 +174,6 @@ module.exports = {
   MAX_THROTTLE_MAP_SIZE,
   THROTTLE_ENTRY_MAX_AGE_MS,
   MAX_REPLY_FIBER_DEPTH,
-  // Animation
   ANIMATION_POSITION_TOLERANCE,
   ANIMATION_TIME_TOLERANCE,
   ANIMATION_SPAWN_PADDING,
@@ -211,7 +192,6 @@ module.exports = {
   SCREEN_SHAKE_CLASS,
   SCREEN_SHAKE_KEYFRAME,
   DISCORD_APP_SELECTOR,
-  // Crit System
   CRIT_ROLL_DIVISOR,
   CRIT_ROLL_SCALE,
   GRADIENT_VERIFICATION_DELAY_MS,
@@ -224,11 +204,9 @@ module.exports = {
   MAX_BASE_CRIT_CHANCE,
   DEFAULT_CRIT_CHANCE,
   BONUS_TO_PERCENT,
-  // Styling
   DEFAULT_GRADIENT_COLORS,
   CSS_STYLE_IDS,
   GOOGLE_FONTS_BASE_URL,
-  // Fonts
   DEFAULT_CRIT_FONT,
   DEFAULT_ANIMATION_FONT,
   FONT_VERIFICATION_DELAY_MS,

@@ -28,8 +28,6 @@ function findChannelSidebar() {
   }
   return null;
 }
-// §8  Macro Panel Control
-
 export function togglePanel(ctx, panelName) {
   const def = PANEL_DEFS[panelName];
   if (!def) return;
@@ -92,8 +90,6 @@ export function restorePanelStates(ctx) {
 export function getPushedPanelCount(ctx) {
   return Object.values(ctx.settings.panels).filter((p) => p.pushed).length;
 }
-
-// §9  Hover-to-Expand System
 
 /**
  * Shared timer-based reveal/hide logic for hover-to-expand panels.
@@ -334,8 +330,6 @@ export function setupHoverHandlers(ctx) {
     signal: ctx._controller.signal,
   });
 }
-
-// §11  Micro: Push Channel + Crush Category
 
 export function getGuildData(ctx, guildId) {
   if (!ctx.settings.guilds[guildId]) {
@@ -585,8 +579,6 @@ export function applyMicroStateForCurrentGuild(ctx) {
   }
 }
 
-// §12  Micro: Grip DM
-
 export function gripDM(ctx, channelId, username) {
   if (ctx.settings.grippedDMs.some((d) => d.channelId === channelId)) return;
   ctx.settings.grippedDMs.push({ channelId, username });
@@ -688,8 +680,6 @@ export function patchContextMenus(ctx) {
     ctx.debugError("ContextMenu", "Failed to patch:", err);
   }
 }
-
-// §14  Toolbar Icon + Observer
 
 export function getChannelHeaderToolbar(ctx) {
   const selectors = ctx._resolvedSelectors.toolbar || TOOLBAR_FALLBACKS;
@@ -832,8 +822,6 @@ export function teardownToolbarObserver(ctx) {
     ctx._iconReinjectTimeout = null;
   }
 }
-
-// §15  Visual Effects + Animations
 
 export function showPushEffect(ctx, panelName) {
   if (!ctx.settings.animationsEnabled) return;

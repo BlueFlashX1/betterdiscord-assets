@@ -1,5 +1,4 @@
 /**
- * TABLE OF CONTENTS
  * 1) Bootstrap + Constants
  * 2) React Components (AnchorCard/AnchorPanel)
  * 3) Plugin Lifecycle + Webpack
@@ -54,8 +53,6 @@ const { createSingleValueCache: _ttl } = require("../shared/ttl-cache");
 const { buildComponents } = require("./components");
 const { buildShadowStepSettingsPanel } = require("./settings-panel");
 const { getShadowStepCss } = require("./styles");
-
-// Plugin Class
 
 module.exports = class ShadowStep {
   constructor() {
@@ -605,8 +602,6 @@ module.exports = class ShadowStep {
     this._panelForceUpdate = null;
     this.debugLog("Panel", "Closed");
   }
-
-  // CSS
 
   injectCSS() {
     try {

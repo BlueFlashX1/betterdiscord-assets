@@ -1,8 +1,6 @@
 import bdModuleLoader from "../shared/bd-module-loader.js";
 import dc from "../shared/discord-classes";
 
-// §1  Constants + Fallback Selectors
-
 export const RA_PLUGIN_NAME = "RulersAuthority";
 export const RA_VERSION = "2.1.2";
 export const RA_STYLE_ID = "rulers-authority-css";
@@ -62,8 +60,6 @@ export const PANEL_DEFS = {
   search:  { label: "Search Results",  hoverCapable: false, moduleName: "search",  moduleKey: "searchResultsWrap" },
 };
 
-// §3  Default Settings
-
 export const DEFAULT_SETTINGS = {
   enabled: true,
   debugMode: false,
@@ -99,8 +95,6 @@ export const DEFAULT_SETTINGS = {
   grippedDMs: [],
   // [{ channelId, username }]
 };
-
-// §4  Shared PluginUtils
 
 const { loadBdModuleFromPlugins } = bdModuleLoader;
 const _bdLoad = loadBdModuleFromPlugins;

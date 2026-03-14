@@ -2,7 +2,6 @@ function buildChatUIComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
 
-  // COMPONENT SECTION A: CORE STATUS DISPLAYS
   // HPManaDisplay / LevelInfo / ActiveTitle
 
   // HPManaDisplay: Compact HP/MP strip shown near chat composer
@@ -29,7 +28,6 @@ function buildChatUIComponents(pluginInstance) {
       id: 'sls-chat-hp-mana-display',
       style: { display: 'flex', alignItems: 'center', gap: compact ? '8px' : '12px', flex: '1', minWidth: '0' }
     },
-      // HP bar
       ce('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: containerFlex, minWidth: containerMinWidth } },
         ce('div', { style: { color: '#ec4899', fontSize: '11px', fontWeight: '600', minWidth: '30px', flexShrink: '0' } }, 'HP'),
         ce('div', { style: { flex: '1', height: barHeight, minHeight: barHeight, background: 'rgba(20, 20, 30, 0.8)', borderRadius: '6px', overflow: 'hidden', position: 'relative', minWidth: barMinWidth } },
@@ -38,7 +36,6 @@ function buildChatUIComponents(pluginInstance) {
         ce('div', { id: 'sls-hp-text', style: { color: 'rgba(255, 255, 255, 0.7)', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: '0', display: textDisplay } },
           `${Math.floor(s.userHP)}/${s.userMaxHP}`)
       ),
-      // MP bar
       ce('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: containerFlex, minWidth: containerMinWidth } },
         ce('div', { style: { color: '#3b82f6', fontSize: '11px', fontWeight: '600', minWidth: '30px', flexShrink: '0' } }, 'MP'),
         ce('div', { id: 'sls-mp-bar-container', style: { flex: '1', height: barHeight, minHeight: barHeight, background: 'rgba(20, 20, 30, 0.8)', borderRadius: '6px', overflow: 'hidden', position: 'relative', minWidth: barMinWidth } },
@@ -98,7 +95,6 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // COMPONENT SECTION B: STATS + ALLOCATION
   // Shared render-context builder keeps popup stat reads coherent and cheap.
 
   function buildStatsRenderContext() {
@@ -257,7 +253,6 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // COMPONENT SECTION C: POPUP SUMMARY + COLLAPSIBLE DETAILS
   // Buff summary, activity cards, and quest progress sections.
 
   // BuffSummaryList: Unified buff summary across plugin ecosystem
@@ -369,7 +364,6 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // COMPONENT SECTION D: HEADER POPUP SURFACE
   // Top-level popup renderer that composes all sections.
 
   // StatsPopup: Dedicated popup for stats, allocation, and buff summary

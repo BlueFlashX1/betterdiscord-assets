@@ -6,8 +6,6 @@ const { version: PLUGIN_VERSION } = require("./manifest.json");
 let _PluginUtils = null;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
-// PLUGIN
-
 module.exports = class UserPanelDockMover {
   constructor() {
     this.pluginId = "UserPanelDockMover";

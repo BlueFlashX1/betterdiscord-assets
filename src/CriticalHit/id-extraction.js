@@ -6,29 +6,14 @@
 const dc = require('../shared/discord-classes');
 
 module.exports = {
-  /**
-   * Normalizes an ID to string and trims whitespace
-   * @param {string|number|null|undefined} id - ID to normalize
-   * @returns {string|null} Normalized ID or null
-   */
   normalizeId(id) {
     return id ? String(id).trim() : null;
   },
 
-  /**
-   * Validates if a string is a valid Discord ID (17-19 digits)
-   * @param {string|null|undefined} id - ID to validate
-   * @returns {boolean} True if valid Discord ID
-   */
   isValidDiscordId(id) {
     return id ? /^\d{17,19}$/.test(String(id).trim()) : false;
   },
 
-  /**
-   * Extracts pure Discord ID from composite formats
-   * @param {string} id - ID that may contain Discord ID
-   * @returns {string|null} Pure Discord ID or null
-   */
   extractPureDiscordId(id) {
     if (!id) return null;
     const normalized = String(id).trim();
@@ -37,12 +22,6 @@ module.exports = {
     return match ? match[0] : null;
   },
 
-  /**
-   * Validates an ID and ensures it's not a channel ID
-   * @param {string} id - ID to validate
-   * @param {string|null} currentChannelId - Current channel ID to exclude
-   * @returns {boolean} True if ID is valid and not a channel ID
-   */
   isValidMessageId(id, currentChannelId) {
     return id && (!currentChannelId || id !== currentChannelId);
   },
@@ -90,12 +69,6 @@ module.exports = {
     return false;
   },
 
-  /**
-   * Determines whether a message ID equal to current channel ID should be rejected.
-   * @param {HTMLElement} messageElement - Message element being processed
-   * @param {string|null} messageId - Candidate message ID
-   * @returns {boolean} True if candidate should be rejected as likely channel ID
-   */
   shouldRejectChannelMatchedMessageId(messageElement, messageId) {
     if (!messageId || !this.currentChannelId) return false;
     if (messageId !== this.currentChannelId) return false;
@@ -103,13 +76,6 @@ module.exports = {
     return !this.hasStrongMessageIdEvidence(messageElement, messageId);
   },
 
-  /**
-   * Unified content hash calculation
-   * @param {string|null} author - Author username (can be null for content-only hash)
-   * @param {string} content - Message content
-   * @param {string|number|null} timestamp - Optional timestamp
-   * @returns {string|null} Content hash or null if invalid input
-   */
   calculateContentHash(author, content, timestamp = null) {
     if (!content) return null;
     const authorPart = author || 'unknown';
@@ -122,11 +88,6 @@ module.exports = {
     return `hash_${Math.abs(hash)}`;
   },
 
-  /**
-   * Gets React fiber instance from a DOM element
-   * @param {HTMLElement} element - DOM element
-   * @returns {Object|null} React fiber or null if not found
-   */
   getReactFiber(element) {
     if (!element) return null;
 
@@ -140,13 +101,6 @@ module.exports = {
     }
   },
 
-  /**
-   * Traverse React fiber tree to find a value
-   * @param {Object} fiber - React fiber to start from
-   * @param {Function} getter - Function to extract value from fiber
-   * @param {number} maxDepth - Maximum traversal depth
-   * @returns {any} Found value or null
-   */
   traverseFiber(fiber, getter, maxDepth = 50) {
     if (!fiber) return null;
 
@@ -170,11 +124,6 @@ module.exports = {
     return null;
   },
 
-  /**
-   * Extract message ID candidate from a React fiber node.
-   * @param {Object|null} currentFiber - React fiber node
-   * @returns {string|number|null}
-   */
   _extractFiberMessageId(currentFiber) {
     return (
       currentFiber?.memoizedProps?.message?.id ||
@@ -209,12 +158,6 @@ module.exports = {
     return null;
   },
 
-  /**
-   * Extracts message ID from a message element using multiple methods
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @param {Object} [debugContext]
-   * @returns {string|null} messageId
-   */
   getMessageIdFromElement(messageElement, debugContext = {}) {
     // PERF: Check WeakMap cache first
     if (messageElement && this._msgIdCache?.has(messageElement)) {
@@ -332,7 +275,6 @@ module.exports = {
       }
     }
 
-    // Normalize to string and trim, then validate
     if (messageId) {
       messageId = String(messageId).trim();
       if (!this.isValidDiscordId(messageId)) {
@@ -404,11 +346,6 @@ module.exports = {
     return messageId;
   },
 
-  /**
-   * Extracts author/user ID from a message element
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @returns {string|null} Author ID or null if not found
-   */
   getAuthorId(messageElement) {
     try {
       const fiber = this.getReactFiber(messageElement);
@@ -477,21 +414,10 @@ module.exports = {
     return null;
   },
 
-  /**
-   * Extracts message ID from a message element (alias for getMessageIdFromElement)
-   * @param {HTMLElement} element - The message DOM element
-   * @param {Object} [debugContext] - Optional debug context
-   * @returns {string|null} Message ID or null if not found
-   */
   getMessageIdentifier(element, debugContext = {}) {
     return this.getMessageIdFromElement(element, debugContext);
   },
 
-  /**
-   * Extracts user/author ID from a message element using React fiber traversal
-   * @param {HTMLElement} element - The message DOM element
-   * @returns {string|null} User ID or null if not found
-   */
   getUserId(element) {
     try {
       const fiber = this.getReactFiber(element);
@@ -511,12 +437,6 @@ module.exports = {
     return null;
   },
 
-  /**
-   * Applies multiple style properties to an element in batch
-   * @param {HTMLElement} element - Element to style
-   * @param {Object} styles - Object with CSS property names and values
-   * @param {boolean} important - Whether to use !important flag
-   */
   applyStyles(element, styles, important = true) {
     if (!element) return;
     const flag = important ? 'important' : '';
@@ -525,10 +445,6 @@ module.exports = {
     });
   },
 
-  /**
-   * Gets the current user's Discord ID from Webpack modules
-   * Stores it in settings for persistence
-   */
   getCurrentUserId() {
     try {
       const UserStore = this.webpackModules.UserStore || BdApi.Webpack.getStore('UserStore');
@@ -541,12 +457,6 @@ module.exports = {
     } catch (_) {}
   },
 
-  /**
-   * Checks if a message belongs to the current user
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @param {string} userId - The user ID to check
-   * @returns {boolean} True if message belongs to current user
-   */
   isOwnMessage(messageElement, userId) {
     if (this.settings?.ownUserId && userId === this.settings.ownUserId) return true;
     if (this.currentUserId && userId === this.currentUserId) return true;

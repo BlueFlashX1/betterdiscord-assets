@@ -7,10 +7,6 @@
 const C = require('./constants');
 
 module.exports = {
-  /**
-   * Loads agility bonus from SoloLevelingStats
-   * @returns {number} Agility bonus percentage
-   */
   _loadAgilityBonus() {
     try {
       const agilityData = BdApi.Data.load('SoloLevelingStats', 'agilityBonus');
@@ -21,10 +17,6 @@ module.exports = {
     }
   },
 
-  /**
-   * Loads skill tree bonus from SkillTree plugin
-   * @returns {number} Skill tree crit bonus percentage
-   */
   _loadSkillTreeBonus() {
     try {
       const skillBonuses = BdApi.Data.load('SkillTree', 'bonuses');
@@ -43,11 +35,6 @@ module.exports = {
     return 0;
   },
 
-  /**
-   * Simple hash function for deterministic random number generation
-   * @param {string} str - Input string to hash
-   * @returns {number} Positive 32-bit integer hash
-   */
   simpleHash(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -57,21 +44,11 @@ module.exports = {
     return Math.abs(hash);
   },
 
-  /**
-   * Seeded unit roll using simpleHash for deterministic results
-   * @param {string} seed - Seed string
-   * @param {string} step - Step identifier for chained rolls
-   * @returns {number} Value between 0 and 1
-   */
   _seededUnitRoll(seed, step = '0') {
     const hash = this.simpleHash(`${seed}:${step}`);
     return (hash % 10000) / 10000;
   },
 
-  /**
-   * Loads perception burst profile from SoloLevelingStats
-   * @returns {Object} Burst profile with perception, extraHitChance, maxHits, jackpotChance
-   */
   _loadPerceptionBurstProfile() {
     try {
       const saved = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
@@ -108,12 +85,6 @@ module.exports = {
     }
   },
 
-  /**
-   * Calculates burst hit count using seeded RNG and perception stats
-   * @param {string} messageId - Message ID for seed
-   * @param {HTMLElement} messageElement - Message element for author extraction
-   * @returns {number} Number of hits (1-99)
-   */
   calculateBurstHitCount(messageId, messageElement) {
     const profile = this._loadPerceptionBurstProfile();
     if (profile.maxHits <= 1) return 1;
@@ -148,11 +119,6 @@ module.exports = {
     return Math.max(1, Math.min(99, hits));
   },
 
-  /**
-   * Marks a combo as updated to prevent duplicate processing
-   * @param {string} messageId - Message ID
-   * @param {string|null} contentHash - Optional content hash
-   */
   _markComboUpdated(messageId, contentHash = null) {
     if (messageId) {
       this._comboUpdatedMessages.add(messageId);
@@ -169,11 +135,6 @@ module.exports = {
     }
   },
 
-  /**
-   * Syncs burst combo for a message
-   * @param {Object} params - Message params
-   * @returns {number} Number of burst hits
-   */
   _syncBurstComboForMessage({ messageId, messageElement, userId, timestamp = Date.now() }) {
     const safeUserId = userId || 'unknown';
     const profile = this._loadPerceptionBurstProfile();
@@ -190,10 +151,6 @@ module.exports = {
     return burstHits;
   },
 
-  /**
-   * Persists last crit burst data
-   * @param {Object} params - Burst data to persist
-   */
   persistLastCritBurst({ messageId, userId, burstHits, profile }) {
     try {
       BdApi.Data.save('CriticalHit', 'lastCritBurst', {
@@ -211,10 +168,6 @@ module.exports = {
     }
   },
 
-  /**
-   * Calculates effective crit chance (base + AGI + skill tree, capped)
-   * @returns {number} Effective crit chance percentage (0-50)
-   */
   getEffectiveCritChance() {
     let baseChance = this.settings.critChance || C.DEFAULT_CRIT_CHANCE;
     baseChance += this._loadAgilityBonus();

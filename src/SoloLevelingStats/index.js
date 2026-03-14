@@ -42,7 +42,6 @@
  * - Zero visual regressions (all existing CSS classes preserved)
  *
  * ============================================================================
- * FILE STRUCTURE & TABLE OF CONTENTS
  * ============================================================================
  *
  * ~11,500 lines organized into 4 major sections.
@@ -398,7 +397,6 @@ const SoloLevelingStats = class SoloLevelingStats {
     this.messageStorePatch = null; // Track message store patch for cleanup
     this.reactInjectionActive = false; // Track if React injection is active
   
-    // §2.2 PERFORMANCE OPTIMIZATION SYSTEM
     // DOM Cache (eliminates 84 querySelector calls per update)
     // Performance Caches (tiered TTL for expensive calculations)
   
@@ -602,7 +600,6 @@ const SoloLevelingStats = class SoloLevelingStats {
       perfectStreak: { name: 'Perfect Streak', desc: 'Send 10 messages', xp: 150, statPoints: 1 },
     };
   
-    // §2.5 DEBUG & EVENT SYSTEM STATE
     // Debug system uses settings.debugMode (unified toggle)
     // Event system provides xpChanged/levelChanged/rankChanged/statsChanged hooks
     this.debug = {

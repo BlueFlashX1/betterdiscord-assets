@@ -38,8 +38,6 @@ import {
 
 const { createToast } = require("../shared/toast");
 
-// §2  Webpack Module Definitions (lazy getter pattern — matches CollapsibleUI)
-
 // CRITICAL FIX: Use _resolved flags to avoid repeated Webpack lookups.
 const _createModules = () => ({
   _members: undefined, _membersResolved: false,
@@ -139,8 +137,6 @@ function sanitizeLoadedSettings(saved, deepMerge) {
   normalizeHoverDelays(settings);
   return settings;
 }
-
-// §5  Core Class
 
 module.exports = class RulersAuthority {
   constructor() {
@@ -514,8 +510,6 @@ module.exports = class RulersAuthority {
     this._dragPanel = null;
   }
 
-  // §6  Webpack Init + Dynamic Selectors
-
   initWebpack() {
     const { Webpack } = BdApi;
 
@@ -633,8 +627,6 @@ module.exports = class RulersAuthority {
   }
 
   getSettingsPanel() { return getSettingsPanel(this); }
-
-  // §18  Utilities
 
   loadSettings() {
     try {

@@ -19,7 +19,6 @@
  * window.  safeTick() is retained at reduced scope for alert rail, geometry,
  * and typing lock enforcement.
  *
- * TABLE OF CONTENTS
  * 1) Loader + Selector Constants
  * 2) DockEngine (imperative state machine)
  * 3) HSLDockAutoHide (plugin lifecycle)

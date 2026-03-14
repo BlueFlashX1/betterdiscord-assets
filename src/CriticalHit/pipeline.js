@@ -15,12 +15,6 @@ module.exports = {
 
   // FluxDispatcher MESSAGE_CREATE Handler (v3.6.0)
 
-  /**
-   * Handles MESSAGE_CREATE from FluxDispatcher.
-   * Filters for own messages in current channel, rolls crit deterministically,
-   * injects per-message CSS immediately (before DOM renders), and queues animation.
-   * @param {Object} payload - Dispatcher payload { message, channelId, ... }
-   */
   _onMessageCreate(payload) {
     try {
       if (this._isStopped) return;
@@ -28,15 +22,12 @@ module.exports = {
       const msg = payload?.message;
       if (!msg?.id || !msg?.author?.id || !msg?.channel_id) return;
 
-      // OWN MESSAGES ONLY — same filter as checkForCrit's USER-ONLY guard
       const ownId = this.currentUserId || this.settings?.ownUserId;
       if (!ownId || msg.author.id !== ownId) return;
 
-      // Current channel only — don't process messages from background channels
       const currentChannel = this._getCurrentChannelId?.() || this.currentChannelId;
       if (msg.channel_id !== currentChannel) return;
 
-      // Already processed (e.g., observer beat us to it)
       if (this.processedMessages.has(msg.id)) return;
 
       // Deterministic crit roll using real snowflake ID
@@ -68,8 +59,7 @@ module.exports = {
         this.injectCritCSS();
         this.injectCritMessageCSS(msg.id, critSettings);
 
-        // Queue animation — MutationObserver will trigger it when element appears.
-        // Include ALL data needed for deferred stats/history/processedMessages.
+        // Queue animation for MutationObserver — includes all data for deferred stats/history.
         this._pendingAnimations.set(msg.id, {
           critSettings,
           timestamp: Date.now(),
@@ -94,7 +84,6 @@ module.exports = {
           effectiveCritChance,
         });
       } else {
-        // Non-crit: mark as processed immediately (no observer handling needed)
         this.processedMessages.add(msg.id);
         this.stats.totalMessages++;
 
@@ -119,20 +108,11 @@ module.exports = {
 
   // DOM Node Processing
 
-  /**
-   * Processes a DOM node to detect and handle new messages
-   * Checks for crit status and applies styling if needed
-   * @param {Node} node - DOM node to process
-   */
   processNode(node) {
     if (this._isStopped) return;
     _scheduleCallback(() => {
     try {
       if (this._isStopped) return;
-      // Only process nodes that were just added (not existing messages)
-      // and wasn't there before the observer started
-
-      // More flexible message detection
       let messageElement = null;
 
       // OPTIMIZED: Direct matching for message classes
@@ -146,15 +126,12 @@ module.exports = {
         }
       }
 
-      // Check for message in children if node itself isn't a message
       if (!messageElement && node.querySelectorAll) {
-        // PERF: Only search depth 1-2 for messages to avoid heavy recursion
+        // PERF: Only search depth 1-2 to avoid heavy recursion
         messageElement = node.querySelector(`:scope > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`) ||
                          node.querySelector(`:scope > * > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`);
       }
 
-        // Get message ID *inside* callback (heavy operation)
-        // Get message ID to check against processedMessages (which now uses IDs, not element references)
         let messageId = messageElement ? this.getMessageIdentifier(messageElement) : null;
 
         // Reject likely channel IDs unless message metadata strongly supports this candidate
@@ -162,7 +139,6 @@ module.exports = {
           messageId = null; // Reject it, will use content hash fallback
         }
 
-        // Only log in verbose mode to reduce console spam during startup
         this.debug?.verbose &&
           this.debugLog('PROCESS_NODE', 'processNode detected message', {
             messageId: messageId,
@@ -170,34 +146,28 @@ module.exports = {
             isLoadingChannel: this.isLoadingChannel,
           });
 
-        // CRITICAL FIX: Process messages even if messageId is null (new messages might not have ID yet)
-        // Also process if messageId exists and hasn't been processed
-        // But skip if messageId exists and is already processed (to avoid duplicates)
+        // CRITICAL FIX: Process if no ID yet (new messages may lack it), skip if already processed
         const shouldProcess =
           messageElement &&
           (!messageId || // No ID yet - process it (will get ID later)
             !this.processedMessages.has(messageId)); // Has ID and not processed
 
         if (shouldProcess) {
-          // Skip if channel is still loading (but use shorter delay for better responsiveness)
           if (this.isLoadingChannel) {
-            // Only log in verbose mode - this is expected behavior during channel load
             this.debug?.verbose && this.debugLog('PROCESS_NODE', 'Skipping - channel loading');
             return;
           }
 
-          // AGE GATE: Skip crit rolling for old messages (e.g., jump-to-message, scroll-back).
-          // Discord snowflake IDs encode timestamps: (id >> 22) + 1420070400000.
-          // Messages older than 5 minutes only get restoration (via checkForRestoration),
-          // not new crit rolls. This prevents flooding the main thread when hundreds
-          // of old messages load at once during a jump.
+          // AGE GATE: Skip crit roll for old messages (jump-to-message, scroll-back).
+          // Snowflake IDs encode timestamp: (id >> 22) + 1420070400000.
+          // Messages >5 min old are handled by restoration, not new crit rolls.
           if (messageId && this.isValidDiscordId(messageId)) {
             const DISCORD_EPOCH = 1420070400000;
-            const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000; // 5 minutes
+            const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000;
             const messageTimestamp = Number(BigInt(messageId) >> 22n) + DISCORD_EPOCH;
             if (Date.now() - messageTimestamp > MESSAGE_AGE_GATE_MS) {
               this.processedMessages.add(messageId);
-              return; // Old message — skip crit roll, restoration handles it
+              return;
             }
           }
 
@@ -214,10 +184,6 @@ module.exports = {
 
   // Crit Settings & Roll Helpers
 
-  /**
-   * Creates crit settings object from current settings
-   * @returns {Object} Crit settings object
-   */
   _createCritSettings() {
     return {
       gradient: this.settings.critGradient !== false,
@@ -228,11 +194,6 @@ module.exports = {
     };
   },
 
-  /**
-   * Calculates crit roll from seed string
-   * @param {string} seed - Seed string for deterministic randomness
-   * @returns {number} Roll value (0-100)
-   */
   _calculateRollFromSeed(seed) {
     const hash = this.simpleHash(seed);
     return (hash % C.CRIT_ROLL_DIVISOR) / C.CRIT_ROLL_SCALE;
@@ -242,22 +203,10 @@ module.exports = {
 
   // Crit Roll Calculation
 
-  /**
-   * Creates seed string for crit roll calculation
-   * @param {string} messageId - Message ID
-   * @param {string} author - Author ID
-   * @returns {string} Seed string
-   */
   _createCritRollSeed(messageId, author) {
     return `${messageId}:${this.currentChannelId}:${author}`;
   },
 
-  /**
-   * Calculates deterministic crit roll for a message
-   * @param {string} messageId - The message ID
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @returns {number} Roll value (0-100)
-   */
   calculateCritRoll(messageId, messageElement) {
     if (!messageId) return Math.random() * 100;
     const author = this.getAuthorId(messageElement) || '';
@@ -267,16 +216,6 @@ module.exports = {
 
   // Crit Processing
 
-  /**
-   * Processes a new crit detection - applies styling, saves to history, triggers animation
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @param {string} messageId - The message ID
-   * @param {string} authorId - The author ID
-   * @param {string} messageContent - The message content
-   * @param {string} author - The author username
-   * @param {number} roll - The crit roll value
-   * @param {boolean} isValidDiscordId - Whether message has valid Discord ID
-   */
   processNewCrit(
     messageElement,
     messageId,
@@ -322,8 +261,6 @@ module.exports = {
       this.applyCritStyle(messageElement, { animate: true });
       this.critMessages.add(messageElement);
 
-      // Direct animation trigger — bypass the onCritHit/handleCriticalHit gate chain.
-      // Crit styling was already applied above; just need to show the floating text.
       {
         const animTarget = messageElement;
         const animId = messageId;
@@ -416,7 +353,6 @@ module.exports = {
         }
       }
 
-      // Save to history using short-circuit
       messageId &&
         this.currentChannelId &&
         this.addToHistory({
@@ -439,21 +375,11 @@ module.exports = {
     }
   },
 
-  /**
-   * Processes a non-crit message - saves to history
-   * @param {string} messageId - The message ID
-   * @param {string} authorId - The author ID
-   * @param {string} messageContent - The message content
-   * @param {string} author - The author username
-   */
   processNonCrit(messageId, authorId, messageContent, author) {
-    // Clean up any stale per-message CSS (e.g., from optimistic processing that rolled crit
-    // but real message didn't)
     if (messageId) {
       this.removeCritMessageCSS(messageId);
     }
 
-    // Only log non-crit messages in verbose debug mode to reduce console noise
     this.debug?.verbose &&
       this.debugLog('CHECK_FOR_CRIT', 'Non-crit message detected', {
         messageId,
@@ -479,37 +405,23 @@ module.exports = {
 
   // Main Crit Detection Logic
 
-  /**
-   * Main crit detection logic: determines if a message should be a crit
-   * Uses deterministic randomness based on message/channel ID for consistency
-   * Applies styling and adds to history if crit is detected
-   * @param {HTMLElement} messageElement - The message DOM element
-   */
   checkForCrit(messageElement) {
     try {
-      // Verify element is still valid FIRST
       if (!messageElement || !messageElement.offsetParent) {
         return;
       }
 
-      // Get message identifier EARLY to use for tracking
-      // Use verbose debug context to ensure we get the correct message ID
       let messageId = this.getMessageIdentifier(messageElement, {
         phase: 'check_for_crit',
         verbose: true,
-      }); // Validate message ID is correct (not channel ID)
+      });
 
       // Reject likely channel IDs unless message metadata strongly supports this candidate
       if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
-        // Try to get real message ID from React fiber
-        messageId = null; // Will retry with React fiber traversal
+        messageId = null;
       }
 
-      // Atomically check and mark as processed - return early if no ID or already processed
-      // BUT: Allow processing if messageId is null (new messages might not have ID yet)
-      // We'll get the ID during processing
       if (!messageId) {
-        // Try one more time with React fiber traversal (might not have been ready before)
         const retryMessageId = this.getMessageIdentifier(messageElement, {
           phase: 'check_for_crit_retry',
           verbose: true,
@@ -521,7 +433,6 @@ module.exports = {
         ) {
           messageId = retryMessageId;
         } else {
-          // Still no valid ID - use content hash as fallback but still process
           const content = messageElement.textContent?.trim() || '';
           const author = this.getAuthorId(messageElement);
           if (content) {
@@ -534,33 +445,24 @@ module.exports = {
         }
       }
 
-      // Define isValidDiscordId at the top so it's available throughout the method
       if (!messageId) return;
 
       const isValidDiscordId = this.isValidDiscordId(messageId);
 
-      // Check history FIRST before marking as processed
-      // This ensures we use the saved determination if message was already processed
+      // O(1) MAP LOOKUP — check history before marking processed
       let historyEntry = null;
       if (messageId) {
-        // O(1) MAP LOOKUP - Replaces O(N) this.messageHistory.find()
         historyEntry = this._historyMap.get(messageId);
-
-        // Verify entry matches current channel/guild context if needed
-        // (Usually messageId is globally unique in Discord, but we double-check for safety)
         if (historyEntry) {
           const guildId = this.currentGuildId || 'dm';
           const contextMatch = historyEntry.channelId === this.currentChannelId &&
                                (historyEntry.guildId || 'dm') === guildId;
           if (!contextMatch) historyEntry = null;
         }
-
         // Hash ID → real ID reconciliation removed in v3.6.0 — FluxDispatcher provides real IDs instantly.
         // pendingCrits is still populated by addToHistory() for restoration use.
       }
-      // If message is in history, use saved determination and skip reprocessing
       if (historyEntry) {
-        // Message already processed - use saved determination
         const isCrit = historyEntry.isCrit || false;
         this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
           messageId,
@@ -569,20 +471,13 @@ module.exports = {
         });
 
         if (isCrit) {
-          // It's a crit - restore style with saved settings and trigger animation
-          // Always restore gradient even if class is present (Discord might have removed it)
-          // Fix infinite loop: Check ONLY for the class. The inline style check was too aggressive
-          // and caused re-application when DOM structure didn't match perfectly, triggering
-          // a MutationObserver loop.
-          // v3.4.0: Only check for bd-crit-hit class (bd-crit-text-content was removed)
-          // Also check if per-message CSS is missing (may have been cleaned up)
+          // BUGFIX: Check ONLY for bd-crit-hit class (inline style check was too aggressive,
+          // caused MutationObserver loop). Also check if per-message CSS is missing.
           const msgIdForRestore = this.getMessageIdentifier(messageElement);
           const cssNeedsRestore = msgIdForRestore && !this.critCSSRules.has(msgIdForRestore);
           const needsRestore = !messageElement.classList.contains('bd-crit-hit') || cssNeedsRestore;
 
           if (needsRestore) {
-            // Use saved critSettings for proper gradient restoration
-            // Use dictionary pattern for style application
             const styleHandlers = {
               withSettings: () =>
                 this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings),
@@ -596,15 +491,10 @@ module.exports = {
             this.critMessages.add(messageElement);
           }
 
-          // NO animation for restored crits — only newly sent messages trigger animation.
-          // Styling is restored above; animation is exclusively handled by processNewCrit().
-
-          // Don't mark as processed again - already in history
-          // But mark in processedMessages to skip future checks (efficiency)
+          // NO animation for restored crits — animation is exclusively for new messages (processNewCrit).
           messageId && this.processedMessages.add(messageId);
           return;
         }
-        // It's NOT a crit - clean up any stale per-message CSS rules
         if (messageId) {
           this.removeCritMessageCSS(messageId);
         }
@@ -669,8 +559,6 @@ module.exports = {
           });
         }
 
-        // Reset combo for non-crit messages (even if in history)
-        // This handles queued messages that were incorrectly detected as crits
         const authorId = this.getAuthorId(messageElement);
         if (authorId && this.isOwnMessage(messageElement, authorId)) {
           // Reset combo immediately for non-crit messages
@@ -680,9 +568,7 @@ module.exports = {
           }
         }
 
-        // Don't mark as processed again - already in history
-        // But mark in processedMessages to skip future checks (efficiency)
-        // CRITICAL: Only mark if it's not a channel ID
+        // CRITICAL: Only mark as processed if it's not a channel ID
         if (!this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
           this.processedMessages.add(messageId);
         }

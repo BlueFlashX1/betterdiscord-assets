@@ -12,10 +12,6 @@ module.exports = {
 
   // Message Container Discovery
 
-  /**
-   * Checks if cached message container is still valid
-   * @returns {boolean} True if cache is valid
-   */
   _isMessageContainerCacheValid() {
     const now = Date.now();
     return (
@@ -26,10 +22,6 @@ module.exports = {
     );
   },
 
-  /**
-   * Gets message container selectors for discovery
-   * @returns {Array<string>} Array of CSS selectors
-   */
   _getMessageContainerSelectors() {
     return [
       `main${dc.sel.chatContent} ${dc.sel.messagesWrapper}`,
@@ -45,11 +37,6 @@ module.exports = {
     ];
   },
 
-  /**
-   * Verifies element is a message container
-   * @param {HTMLElement} element - Element to verify
-   * @returns {boolean} True if element is a message container
-   */
   _isMessageContainer(element) {
     if (!element) return false;
     const hasMessages = dc.query(element, 'message') !== null;
@@ -61,10 +48,6 @@ module.exports = {
     return hasMessages || !!hasMessageList || !!hasChatMessageAnchor || isMessageList;
   },
 
-  /**
-   * Finds message container using fallback methods
-   * @returns {HTMLElement|null} Message container or null
-   */
   _findMessageContainerFallback() {
     const msgEl = document.querySelector(dc.sel.message);
     if (!msgEl) return null;
@@ -79,17 +62,12 @@ module.exports = {
     return null;
   },
 
-  /**
-   * Finds message container with caching
-   * @returns {HTMLElement|null} Message container or null
-   */
   _findMessageContainer() {
-    // Check cache first
     if (this._isMessageContainerCacheValid()) {
       return this._cachedMessageContainer;
     }
 
-    // Try selectors and score candidates to avoid binding observer to unrelated scrollers.
+    // Score candidates to avoid binding observer to unrelated scrollers.
     const selectors = this._getMessageContainerSelectors();
     const candidates = [];
     const seen = new Set();
@@ -132,19 +110,13 @@ module.exports = {
       return foundElement;
     }
 
-    // Fallback method
     return this._findMessageContainerFallback();
   },
 
   // Observer Setup
 
-  /**
-   * Starts MutationObserver to watch for new messages in the DOM
-   * Sets up channel change listeners and processes existing messages
-   */
   startObserving() {
     if (this._isStopped) return;
-    // Stop existing observer if any
     if (this.messageObserver) {
       this.messageObserver.disconnect();
       this.messageObserver = null;
@@ -161,12 +133,10 @@ module.exports = {
       return;
     }
 
-    // Get channel/guild IDs and update tracking
     const channelId =
       this._getCurrentChannelId() || this._extractChannelIdFromContainer(messageContainer);
     const guildId = this._getCurrentGuildId();
 
-    // Update channel/guild IDs if changed (event-driven, no polling)
     const channelChanged = channelId !== this.currentChannelId;
     channelChanged &&
       (this.currentChannelId && this._throttledSaveHistory(false),
@@ -184,10 +154,8 @@ module.exports = {
       (this._cache.urlGuildId = null),
       (this._cache.urlGuildIdTime = 0));
 
-    // Clear session tracking (preserve history for restoration)
     this.clearSessionTracking();
 
-    // Wait for channel to load, then restore crits (event-driven via MutationObserver)
     this.isLoadingChannel = true;
     this.observerStartTime = Date.now();
     let channelMarkedLoaded = false;
@@ -211,7 +179,6 @@ module.exports = {
       });
     };
 
-    // Use MutationObserver to detect when messages are loaded (no polling)
     const loadObserver = this._trackTransientObserver(
       new MutationObserver((mutations) => {
         // PERF: Check added nodes directly instead of querySelectorAll on every mutation.
@@ -246,7 +213,6 @@ module.exports = {
       }, C.LOAD_OBSERVER_TIMEOUT_MS);
     }
 
-    // Create mutation observer to watch for new messages
     this.messageObserver = new MutationObserver((mutations) => {
       // PERF: Prune disconnected DOM refs from critMessages every 100 additions
       if (this.critMessages.size > 100) this.pruneCritMessages();
@@ -299,8 +265,7 @@ module.exports = {
         }
 
         uniqueMessageElements.forEach((messageElement) => {
-          // FluxDispatcher path: check if this element has a pending crit animation
-          // Fix: wrapper elements (li.messageListItem) don't have data-message-id directly —
+            // BUGFIX: wrapper elements (li.messageListItem) don't have data-message-id directly —
           // it's on a child div. Check both the element and its children.
           const pendingMsgId = messageElement.getAttribute?.('data-message-id') ||
             messageElement.querySelector?.('[data-message-id]')?.getAttribute('data-message-id');
@@ -309,10 +274,8 @@ module.exports = {
           const pendingAnim = pendingMsgId ? this._pendingAnimations?.get(pendingMsgId) : null;
           if (pendingMsgId) this._pendingAnimations?.delete(pendingMsgId);
           if (pendingAnim && !this.processedMessages.has(pendingMsgId)) {
-
-            // Complete deferred processing from _onMessageCreate:
-            // Stats, history, and processedMessages were intentionally NOT set
-            // by the Dispatcher handler so that this path can find the message.
+            // CRITICAL: Stats/history/processedMessages intentionally deferred from _onMessageCreate
+            // so this observer path can find the element and trigger animation properly.
             this.processedMessages.add(pendingMsgId);
             this.stats.totalMessages++;
             this.stats.totalCrits++;
@@ -329,7 +292,6 @@ module.exports = {
               author: pendingAnim.author || '',
             });
 
-            // CSS was already injected by _onMessageCreate — just mark and animate
             messageElement.classList.add('bd-crit-hit');
             messageElement.setAttribute('data-bd-crit-locked', '1');
             this.critMessages.add(messageElement);
@@ -351,7 +313,6 @@ module.exports = {
               });
             });
           } else {
-            // Legacy path: observer-detected message — let pipeline handle it
             this.processNode(messageElement);
           }
           this.checkForRestoration(messageElement);
@@ -359,14 +320,12 @@ module.exports = {
       });
     });
 
-    // Start observing - watch direct children AND subtree for messages
     try {
       this.messageObserver.observe(messageContainer, {
         childList: true,
-        subtree: true, // Need subtree: true to catch nested messages
+        subtree: true,
       });
 
-      // Only log in verbose mode to reduce console noise
       this.debug?.verbose &&
         this.debugLog('START_OBSERVING', 'Observer started successfully', {
           container: messageContainer.tagName,
@@ -381,24 +340,16 @@ module.exports = {
       return;
     }
 
-    // Don't check existing messages - only new ones!
-    // This prevents applying crits to old messages
-
-    // Re-observe when channel changes (listen for navigation events)
     this.setupChannelChangeListener();
   },
 
   // Webpack Module Initialization
 
-  /**
-   * Initialize webpack modules for advanced Discord integration
-   * Enhances message tracking with MessageStore access
-   */
   initializeWebpackModules() {
     try {
       const { Webpack } = BdApi;
 
-      // Stores — getStore() is the modern, reliable API
+      // getStore() is the modern, reliable API for Flux stores
       this.webpackModules.MessageStore = Webpack.getStore('MessageStore');
       if (!this.webpackModules.UserStore) {
         this.webpackModules.UserStore = Webpack.getStore('UserStore');

@@ -1,5 +1,4 @@
 /**
- * TABLE OF CONTENTS
  * 1) Bootstrap + Constants
  * 2) Lifecycle + Settings
  * 3) Dispatcher + Flux Wiring

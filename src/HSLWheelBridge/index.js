@@ -1,5 +1,4 @@
 /**
- * TABLE OF CONTENTS
  * 1) Scroller Discovery + Wheel Engine
  * 2) Plugin Lifecycle
  * 3) React Patcher + Fallback Mount
@@ -94,8 +93,6 @@ class WheelBridgeEngine {
     this.detach();
   }
 }
-
-// Plugin Class
 
 module.exports = class HSLWheelBridge {
   constructor() {

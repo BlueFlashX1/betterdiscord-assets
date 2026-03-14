@@ -10,7 +10,6 @@ module.exports = {
       font-family: 'Segoe UI', sans-serif;
     `;
   
-    // Title
     const title = document.createElement('h2');
     title.textContent = 'Solo Leveling Stats - Settings';
     title.style.cssText = `
@@ -21,7 +20,6 @@ module.exports = {
     `;
     container.appendChild(title);
   
-    // Debug Mode Toggle
     const debugToggle = this.createToggle(
       'debugMode',
       'Debug Mode',
@@ -30,7 +28,6 @@ module.exports = {
     );
     container.appendChild(debugToggle);
   
-    // Info section
     const info = document.createElement('div');
     info.style.cssText = `
       margin-top: 20px;
@@ -208,7 +205,6 @@ module.exports = {
     const toggleContainer = document.createElement('div');
     toggleContainer.style.cssText = 'display: flex; align-items: center; margin-bottom: 8px;';
   
-    // Toggle switch
     const toggle = document.createElement('input');
     toggle.type = 'checkbox';
     toggle.checked = defaultValue;
@@ -221,7 +217,6 @@ module.exports = {
       cursor: pointer;
     `;
   
-    // Label
     const labelEl = document.createElement('label');
     labelEl.textContent = label;
     labelEl.setAttribute('for', toggle.id);
@@ -232,7 +227,6 @@ module.exports = {
       cursor: pointer;
     `;
   
-    // Description
     const desc = document.createElement('div');
     desc.textContent = description;
     desc.style.cssText = `
