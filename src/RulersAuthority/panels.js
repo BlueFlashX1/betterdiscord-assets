@@ -1,7 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
 // Panel Control — Sidebar, Members, Profile, Search
-// ═══════════════════════════════════════════════════════════════════════════
-//
 // Macro panel control (toggle, restore, count), hover-to-expand system,
 // micro channel/category/DM operations, context menus, toolbar icon,
 // visual effects, channel observer, guild change listener, settings guard.
@@ -23,7 +20,7 @@ import {
 } from "./constants";
 import { applyChannelContextMenuPatch } from "./context-menu-helpers";
 import dc from "../shared/discord-classes";
-// ── Helper: find channel sidebar element ──
+// Helper: find channel sidebar element
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
     const el = document.querySelector(sel);
@@ -31,9 +28,7 @@ function findChannelSidebar() {
   }
   return null;
 }
-// ═══════════════════════════════════════════════════════════════════════════
 // §8  Macro Panel Control
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function togglePanel(ctx, panelName) {
   const def = PANEL_DEFS[panelName];
@@ -98,9 +93,7 @@ export function getPushedPanelCount(ctx) {
   return Object.values(ctx.settings.panels).filter((p) => p.pushed).length;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §9  Hover-to-Expand System
-// ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Shared timer-based reveal/hide logic for hover-to-expand panels.
@@ -342,9 +335,7 @@ export function setupHoverHandlers(ctx) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §11  Micro: Push Channel + Crush Category
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function getGuildData(ctx, guildId) {
   if (!ctx.settings.guilds[guildId]) {
@@ -353,7 +344,7 @@ export function getGuildData(ctx, guildId) {
   return ctx.settings.guilds[guildId];
 }
 
-// ── Push Channel ──
+// Push Channel
 
 export function pushChannel(ctx, guildId, channelId, channelName) {
   const guildData = getGuildData(ctx, guildId);
@@ -487,7 +478,7 @@ export function restoreAllHiddenChannels() {
   document.body.classList.remove("ra-channels-hover-reveal");
 }
 
-// ── Crush Category ──
+// Crush Category
 
 export function crushCategory(ctx, guildId, categoryId, categoryName) {
   const guildData = getGuildData(ctx, guildId);
@@ -594,9 +585,7 @@ export function applyMicroStateForCurrentGuild(ctx) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §12  Micro: Grip DM
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function gripDM(ctx, channelId, username) {
   if (ctx.settings.grippedDMs.some((d) => d.channelId === channelId)) return;
@@ -700,9 +689,7 @@ export function patchContextMenus(ctx) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §14  Toolbar Icon + Observer
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function getChannelHeaderToolbar(ctx) {
   const selectors = ctx._resolvedSelectors.toolbar || TOOLBAR_FALLBACKS;
@@ -846,9 +833,7 @@ export function teardownToolbarObserver(ctx) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §15  Visual Effects + Animations
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function showPushEffect(ctx, panelName) {
   if (!ctx.settings.animationsEnabled) return;
@@ -868,9 +853,7 @@ export function showPullEffect(ctx, panelName) {
   }, 350);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Inter-Plugin Integration (SoloLevelingStats, SkillTree)
-// ═══════════════════════════════════════════════════════════════════════════
 
 export function getSoloLevelingData(ctx) {
   const cached = ctx._statsCache.get();
@@ -892,7 +875,6 @@ export function getSoloLevelingData(ctx) {
   ctx._statsCache.set(data);
   return data;
 }
-
 
 export function setupGuildChangeListener(ctx) {
   if (!ctx._SelectedGuildStore) return;
@@ -964,9 +946,7 @@ export function setupChannelObserver(ctx, retries = 0) {
   ctx._channelObserver.observe(channelList, { childList: true, subtree: true });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Settings Guard (detects settings modal open/close)
-// ═══════════════════════════════════════════════════════════════════════════
 
 // PERF(P5-5): Replaced document.body subtree MutationObserver with 1.5s polling.
 export function setupSettingsGuard(ctx) {

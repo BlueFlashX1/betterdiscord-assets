@@ -10,7 +10,7 @@
 
 import { getElementSummary, truncateMiddle } from "./element-summary.js";
 
-// ── Helpers ──────────────────────────────────────────────────────
+// Helpers
 
 export function escapeHtml(text) {
   return String(text ?? "")
@@ -23,9 +23,9 @@ export function escapeHtml(text) {
 
 export { getElementSummary, truncateMiddle };
 
-// ── Element summary ───────────────────────────────────────────────
+// Element summary
 
-// ── Class-based selector generators ──────────────────────────────
+// Class-based selector generators
 
 export function getSemanticClassSelectors(el) {
   if (!el?.classList) return [];
@@ -48,7 +48,7 @@ export function getExactClassSelectors(el) {
   return Array.from(el.classList).map((c) => `.${CSS.escape(c)}`);
 }
 
-// ── Structural selector generators ───────────────────────────────
+// Structural selector generators
 
 export function buildNthOfTypePath(el, maxDepth = 6) {
   const parts = [];
@@ -123,7 +123,6 @@ export function getSelectorCandidates(el) {
 
   const candidates = [];
 
-  // #id if unique
   if (el.id) {
     const idSel = `#${CSS.escape(el.id)}`;
     candidates.push(idSel);
@@ -151,7 +150,7 @@ export function getBestSelector(el, stableSelectors) {
   );
 }
 
-// ── Element state flags ──────────────────────────────────────────
+// Element state flags
 
 const addVisibilityFlags = (flags, cs) => {
   if (cs.display === "none") {
@@ -208,9 +207,8 @@ export function detectElementFlags(el) {
   return Object.keys(flags).length ? flags : null;
 }
 
-// ── Identity & promotion ─────────────────────────────────────────
+// Identity & promotion
 
-// Check if element has any meaningful identity (classes, ID, aria-label, role, data-testid)
 export function hasElementIdentity(el) {
   if (!el || !(el instanceof Element)) return false;
   if (el.id) return true;
@@ -236,7 +234,7 @@ export function promoteToMeaningfulAncestor(el, maxClimb = 3) {
   return { el, promoted: false };
 }
 
-// ── Full element details snapshot ────────────────────────────────
+// Full element details snapshot
 
 import {
   splitComputedStyles,

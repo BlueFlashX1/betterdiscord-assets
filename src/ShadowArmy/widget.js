@@ -5,9 +5,7 @@
  */
 
 module.exports = {
-  // ============================================================================
   // WIDGET MANAGEMENT
-  // ============================================================================
 
   /**
    * Inject CSS for shadow rank widget (using BdApi.DOM for persistence)

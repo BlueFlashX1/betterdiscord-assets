@@ -17,7 +17,6 @@ module.exports = {
         return;
       }
   
-      // Check if achievement is unlocked
       if (this.checkAchievementCondition(achievement)) {
         this.unlockAchievement(achievement);
         this._unlockedAchievementSet.add(achievement.id);
@@ -77,7 +76,6 @@ module.exports = {
     // Add to unlocked list
     this.settings.achievements.unlocked.push(achievement.id);
   
-    // Add title if provided
     if (achievement.title && !this.settings.achievements.titles.includes(achievement.title)) {
       this.settings.achievements.titles.push(achievement.title);
     }
@@ -124,7 +122,6 @@ module.exports = {
       }
     }
   
-    // Unequip if active
     if (
       this.settings.achievements?.activeTitle &&
       unwantedTitles.includes(this.settings.achievements.activeTitle)

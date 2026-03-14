@@ -192,7 +192,6 @@ module.exports = {
         // Boss attacks N shadows per round (AOE). After each round, shadows that died
         // are removed from the target pool so they don't absorb subsequent attacks.
         // This prevents overkill: a shadow that dies in round 1 can't be hit in round 2.
-        //
         // Performance: O(attacksInSpan × targets) random picks + O(unique shadows hit) damage calcs.
         // For rank-S boss: ~5 attacks × 12 targets = 60 picks + ~30 unique calcs. Very fast.
 
@@ -347,7 +346,6 @@ module.exports = {
       this.deadShadows.set(channelKey, deadShadows);
     } catch (error) {
       this.errorLog('CRITICAL', 'Fatal error in processBossAttacks', { channelKey, error });
-      // Don't throw - let combat continue
     }
   },
 
@@ -377,7 +375,6 @@ module.exports = {
         dungeon
       );
 
-      // Check if any shadows are alive
       // Get alive shadows ONCE before all mob attack processing (not per-attack)
       const aliveShadows = this.getCombatReadyShadows(assignedShadows, deadShadows, shadowHP);
 
@@ -766,7 +763,6 @@ module.exports = {
 
     } catch (error) {
       this.errorLog('CRITICAL', 'Fatal error in processMobAttacks', { channelKey, error });
-      // Don't throw - let combat continue
     }
   },
 
@@ -808,7 +804,6 @@ module.exports = {
       // Mobs will be extracted after dungeon ends (boss defeated or timeout)
 
       // AGGRESSIVE CLEANUP: Remove dead mobs (extraction data already stored)
-      // Keep only alive mobs
       // Keep only alive mobs (dead mobs are already processed for extraction)
       const nextActiveMobs = [];
       for (const m of dungeon.mobs.activeMobs) {
@@ -849,8 +844,7 @@ module.exports = {
       );
     }
 
-    // ── BOSS DURABILITY PIPELINE ──────────────────────────────────────
-    // Lore: Dungeon bosses are apex creatures — they don't die in one swing.
+    // BOSS DURABILITY PIPELINE
 
     // 1) PHASE SHIELD — brief invulnerability at HP thresholds (75%, 50%, 25%)
     if (dungeon.boss._phaseShieldExpiresAt && now < dungeon.boss._phaseShieldExpiresAt) {
@@ -874,7 +868,6 @@ module.exports = {
       damage = Math.floor(damage * (1 / (1 - resistReduction)));
     }
 
-    // Apply damage
     const hpBefore = dungeon.boss.hp;
     dungeon.boss.hp = Math.max(0, dungeon.boss.hp - damage);
 

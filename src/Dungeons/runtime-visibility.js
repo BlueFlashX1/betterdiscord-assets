@@ -57,7 +57,6 @@ module.exports = {
           return;
         }
 
-        // Check if HP bar exists and is in DOM (isConnected for React re-render resilience)
         const existingBar = this.bossHPBars.get(channelKey);
         const container = existingBar?.closest('.dungeon-boss-hp-container');
         const barInDOM = existingBar && existingBar.isConnected;
@@ -88,7 +87,6 @@ module.exports = {
   startVisibilityTracking() {
     if (this._visibilityChangeHandler) return;
 
-    // Initialize visibility state
     this._isWindowVisible = !document.hidden;
 
     // PERF: Only use visibilitychange — blur/focus fire on every window switch,
@@ -128,7 +126,6 @@ module.exports = {
 
     document.addEventListener('visibilitychange', this._visibilityChangeHandler);
 
-    // Track for cleanup
     this._listeners.set('visibility_doc', { target: document, event: 'visibilitychange', handler: this._visibilityChangeHandler });
   },
 
@@ -168,7 +165,6 @@ module.exports = {
         lastMobTime: this._lastMobAttackTime.get(channelKey) || Date.now(),
       };
 
-      // Stop all intervals
       this.stopShadowAttacks(channelKey);
       this.stopBossAttacks(channelKey);
       this.stopMobAttacks(channelKey);

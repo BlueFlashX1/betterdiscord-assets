@@ -13,9 +13,7 @@ const _scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 
 
 module.exports = {
 
-  // --------------------------------------------------------------------------
   // FluxDispatcher MESSAGE_CREATE Handler (v3.6.0)
-  // --------------------------------------------------------------------------
 
   /**
    * Handles MESSAGE_CREATE from FluxDispatcher.
@@ -119,9 +117,7 @@ module.exports = {
     }
   },
 
-  // --------------------------------------------------------------------------
   // DOM Node Processing
-  // --------------------------------------------------------------------------
 
   /**
    * Processes a DOM node to detect and handle new messages
@@ -134,7 +130,6 @@ module.exports = {
     try {
       if (this._isStopped) return;
       // Only process nodes that were just added (not existing messages)
-      // Check if this node was just added by checking if it's in the viewport
       // and wasn't there before the observer started
 
       // More flexible message detection
@@ -157,8 +152,6 @@ module.exports = {
         messageElement = node.querySelector(`:scope > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`) ||
                          node.querySelector(`:scope > * > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`);
       }
-
-
 
         // Get message ID *inside* callback (heavy operation)
         // Get message ID to check against processedMessages (which now uses IDs, not element references)
@@ -219,9 +212,7 @@ module.exports = {
     }, { timeout: 1000 });
   },
 
-  // --------------------------------------------------------------------------
   // Crit Settings & Roll Helpers
-  // --------------------------------------------------------------------------
 
   /**
    * Creates crit settings object from current settings
@@ -249,9 +240,7 @@ module.exports = {
 
   // handleQueuedMessage removed in v3.6.0 — FluxDispatcher provides real IDs instantly
 
-  // --------------------------------------------------------------------------
   // Crit Roll Calculation
-  // --------------------------------------------------------------------------
 
   /**
    * Creates seed string for crit roll calculation
@@ -276,9 +265,7 @@ module.exports = {
     return this._calculateRollFromSeed(seed);
   },
 
-  // --------------------------------------------------------------------------
   // Crit Processing
-  // --------------------------------------------------------------------------
 
   /**
    * Processes a new crit detection - applies styling, saves to history, triggers animation
@@ -317,7 +304,6 @@ module.exports = {
     this.stats.totalCrits++;
     this.updateStats();
 
-    // Check if currently processing
     if (messageId && this._processingCrits.has(messageId)) {
       return;
     }
@@ -335,7 +321,6 @@ module.exports = {
     try {
       this.applyCritStyle(messageElement, { animate: true });
       this.critMessages.add(messageElement);
-
 
       // Direct animation trigger — bypass the onCritHit/handleCriticalHit gate chain.
       // Crit styling was already applied above; just need to show the floating text.
@@ -364,7 +349,6 @@ module.exports = {
                 const hasCritOnSelf = currentElement?.classList?.contains('bd-crit-hit');
                 const critChild = !hasCritOnSelf && currentElement?.isConnected ? currentElement.querySelector?.('.bd-crit-hit') : null;
                 const animElement = hasCritOnSelf ? currentElement : critChild;
-
 
                 // If element is connected and styled (on self or child), animate immediately
                 if (animElement?.isConnected) {
@@ -493,9 +477,7 @@ module.exports = {
     }
   },
 
-  // --------------------------------------------------------------------------
   // Main Crit Detection Logic
-  // --------------------------------------------------------------------------
 
   /**
    * Main crit detection logic: determines if a message should be a crit

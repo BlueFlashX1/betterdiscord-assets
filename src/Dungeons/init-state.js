@@ -172,7 +172,6 @@ module.exports = {
     this._memberWidthCache = new Map(); // Short-lived cache for member list width
     this._containerCache = new Map(); // Cache for progress/header containers (short TTL)
 
-    // CACHE MANAGEMENT
     this._shadowCountCache = null; // Shadow count cache (5s TTL)
     this._shadowsCache = null; // Shadows data cache (10s TTL — invalidated explicitly on mutations)
     this._deployStarterPoolCache = null; // Rank-aware sampled pool for fast deploy allocation (not a full-army cache)
@@ -288,7 +287,6 @@ module.exports = {
     this._isWindowVisible = !document.hidden; // Track if Discord window is visible
     this._windowHiddenTime = null; // Timestamp when window became hidden (for simulation)
 
-    // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
     this.saveManager = null;
     if (UnifiedSaveManager) {
       this.saveManager = new UnifiedSaveManager('Dungeons');

@@ -20,9 +20,7 @@ module.exports = class ChatNavArrows {
     this._warnOnce = createWarnOnce();
   }
 
-  // ==========================================================================
   // 1) LIFECYCLE + SETTINGS
-  // ==========================================================================
 
   _debugLog(...args) {
     if (!this._settings.debug) return;
@@ -133,9 +131,7 @@ module.exports = class ChatNavArrows {
     }
   }
 
-  // ==========================================================================
   // 2) REACT PATCHER + DOM FALLBACK
-  // ==========================================================================
 
   _installReactPatcher() {
     let ReactUtils;
@@ -190,9 +186,7 @@ module.exports = class ChatNavArrows {
     stopDomFallback(this);
   }
 
-  // ==========================================================================
   // 3) ARROW MANAGER COMPONENT
-  // ==========================================================================
 
   get _ArrowManager() {
     // Cache the component so React doesn't re-create it every render

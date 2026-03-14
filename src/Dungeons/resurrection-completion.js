@@ -162,7 +162,7 @@ module.exports = {
     let dungeonSnapshot = null;
     let shadowDeathCount = 0;
 
-    // ── PHASE A: Synchronous cleanup (dungeon disappears from UI immediately) ──
+    // PHASE A: Synchronous cleanup (dungeon disappears from UI immediately)
     try {
 
     // Track end time for spawn cooldowns
@@ -243,7 +243,6 @@ module.exports = {
       this.settings.userActiveDungeon = null;
     }
 
-    // Release channel lock
     this.channelLocks.delete(channelKey);
 
     // KEY LINE: Dungeon disappears from UI
@@ -262,7 +261,7 @@ module.exports = {
       return;
     }
 
-    // ── PHASE B: Fire-and-forget background work (ARISE, XP, DB cleanup) ──
+    // PHASE B: Fire-and-forget background work (ARISE, XP, DB cleanup)
     this._completeDungeonBackground(
       channelKey, reason, dungeonSnapshot, corpsePileSnapshot,
       hadShadowsDeployed, shadowDeathCount
@@ -322,7 +321,7 @@ module.exports = {
       phaseTimings[phaseKey] = Date.now() - startedAt;
     };
 
-    // ── Collect summary stats ──
+    // Collect summary stats
     const combatAnalytics = snap.combatAnalytics || {};
     const summaryStats = {
       dungeonName: snap.name,
@@ -342,7 +341,7 @@ module.exports = {
       shadowsAttackedMobs: combatAnalytics.shadowsAttackedMobs || 0,
     };
 
-    // ── Batched mob-kill XP grant ──
+    // Batched mob-kill XP grant
     let phaseStartAt = Date.now();
     const xpBatchKey = this._resolveDungeonXPBatchKey(channelKey, snap);
     const { pendingXP: pendingMobXP, pendingKills: pendingMobKills } =
@@ -363,7 +362,7 @@ module.exports = {
     summaryStats.mobKillsAwarded = pendingMobKills;
     markPhase('userMobBatchXpMs', phaseStartAt);
 
-    // ── User XP calculation + early boss ARISE UI ──
+    // User XP calculation + early boss ARISE UI
     phaseStartAt = Date.now();
     const rankIndex = this.getRankIndexValue(snap.rank);
 
@@ -421,7 +420,7 @@ module.exports = {
     // Yield before heavy post-processing to keep UI responsive
     await this._yieldToEventLoop(0);
 
-    // ── ARISE Extraction (mob corpses) ──
+    // ARISE Extraction (mob corpses)
     phaseStartAt = Date.now();
     let extractionResults = { extracted: 0, attempted: 0 };
     const pileSize = corpsePileSnapshot.length;
@@ -452,7 +451,7 @@ module.exports = {
     }
     markPhase('corpseExtractionMs', phaseStartAt);
 
-    // ── Shadow XP grants ──
+    // Shadow XP grants
     phaseStartAt = Date.now();
     if (reason === 'boss' || reason === 'complete') {
       const contributionEntries = Object.values(snap.shadowContributions || {}).filter((entry) => {
@@ -489,7 +488,7 @@ module.exports = {
     }
     markPhase('shadowXpGrantMs', phaseStartAt);
 
-    // ── Shadow XP mirror to user ──
+    // Shadow XP mirror to user
     phaseStartAt = Date.now();
     if (summaryStats.shadowTotalXP > 0 && this.soloLevelingStats) {
       const shadowSharePercent = 1.0;
@@ -514,7 +513,7 @@ module.exports = {
     summaryStats.shadowsExtracted = extractionResults.extracted;
     summaryStats.extractionAttempts = extractionResults.attempted;
 
-    // ── Debug logging ──
+    // Debug logging
     if (this.settings.debug) {
       const duration = snap.startTime ? Math.round((Date.now() - snap.startTime) / 1000) : 0;
       const durationStr = duration > 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
@@ -526,14 +525,14 @@ module.exports = {
       );
     }
 
-    // ── Summary toast ──
+    // Summary toast
     if (reason !== 'timeout') {
       this.showDungeonCompletionSummary(summaryStats);
     } else {
       this.showToast(`${snap.name} Failed (Timeout)`, 'error');
     }
 
-    // ── DB cleanup (skip for boss ARISE path — kept for extraction UI) ──
+    // DB cleanup (skip for boss ARISE path — kept for extraction UI)
     if (reason !== 'boss' || !snap.userParticipating) {
       if (this.storageManager) {
         try {

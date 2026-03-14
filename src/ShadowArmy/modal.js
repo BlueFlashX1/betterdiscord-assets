@@ -6,9 +6,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // UI HELPERS
-  // ============================================================================
 
   /**
    * Format combat time dynamically (seconds, minutes, or hours)
@@ -98,9 +96,7 @@ module.exports = {
     });
   },
 
-  // ============================================================================
   // SHADOW ARMY MODAL
-  // ============================================================================
 
   /**
    * Cached React component factory for the Shadow Army Generals Modal.

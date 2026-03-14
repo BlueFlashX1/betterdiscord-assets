@@ -5,9 +5,7 @@ module.exports = {
       return this._cache.achievementDefinitions;
     }
   
-    // ============================================================================
     // ACHIEVEMENT DEFINITIONS (791 lines)
-    //
     // CATEGORIES:
     // 1. Early Game (E-Rank) - Lines 5505-5550
     // 2. Mid Game (D-C Rank) - Lines 5550-5650
@@ -16,11 +14,8 @@ module.exports = {
     // 5. Legendary (SSS+ & NH) - Lines 6000-6150
     // 6. Monarch Tier - Lines 6150-6250
     // 7. Special Achievements - Lines 6250-6291
-    // ============================================================================
     const achievements = [
-      // ========================================
       // CATEGORY 1: EARLY GAME (E-RANK)
-      // ========================================
       {
         id: 'weakest_hunter',
         name: 'The Weakest Hunter',
@@ -38,9 +33,7 @@ module.exports = {
         titleBonus: { xp: 0.08, strengthPercent: 0.05 }, // +8% XP, +5% STR
       },
   
-      // ========================================
       // CATEGORY 2: MID GAME (D-C RANK)
-      // ========================================
       {
         id: 'd_rank',
         name: 'D-Rank Hunter',
@@ -58,9 +51,7 @@ module.exports = {
         titleBonus: { xp: 0.18, critChance: 0.01, strengthPercent: 0.05 }, // +18% XP, +1% Crit, +5% STR
       },
   
-      // ========================================
       // CATEGORY 3: ADVANCED (B-A RANK)
-      // ========================================
       {
         id: 'b_rank',
         name: 'B-Rank Hunter',
@@ -78,9 +69,7 @@ module.exports = {
         titleBonus: { xp: 0.32, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +2% Crit, +5% STR, +5% AGI
       },
   
-      // ========================================
       // CATEGORY 4: ELITE (S-SS RANK)
-      // ========================================
       {
         id: 's_rank',
         name: 'S-Rank Hunter',

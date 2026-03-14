@@ -38,7 +38,6 @@ module.exports = {
         return;
       }
   
-      // Check if this is our own message
       if (message.author && message.author.id === currentUserId) {
         // Mark as processed
         this.addProcessedMessageId(message.id);
@@ -92,7 +91,6 @@ module.exports = {
 
   tryReactInjection() {
     try {
-      // Check if webpack modules are available
       if (!this.webpackModuleAccess) {
         this.debugLog('REACT_INJECTION', 'Webpack modules not available, skipping React injection');
         return false;

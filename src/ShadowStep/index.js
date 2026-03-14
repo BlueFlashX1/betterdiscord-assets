@@ -14,7 +14,7 @@ const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+// Constants
 const PLUGIN_NAME = "ShadowStep";
 const PLUGIN_VERSION = "1.0.1";
 const STYLE_ID = "shadow-step-css";
@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = {
   debugMode: false,
 };
 
-// ─── Hotkey Utilities (from BetterDiscordPluginUtils) ────────────────────────
+// Hotkey Utilities (from BetterDiscordPluginUtils)
 let _PluginUtils;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
@@ -55,7 +55,7 @@ const { buildComponents } = require("./components");
 const { buildShadowStepSettingsPanel } = require("./settings-panel");
 const { getShadowStepCss } = require("./styles");
 
-// ─── Plugin Class ───────────────────────────────────────────────────────────
+// Plugin Class
 
 module.exports = class ShadowStep {
   constructor() {
@@ -85,7 +85,7 @@ module.exports = class ShadowStep {
     this._onSkillLevelChanged = null;
   }
 
-  // ── SkillTree gate helpers ──────────────────────────────────
+  // SkillTree gate helpers
 
   _isShadowExchangeUnlocked() {
     try {
@@ -93,13 +93,13 @@ module.exports = class ShadowStep {
     } catch (_) { return false; }
   }
 
-  // ── Lifecycle ───────────────────────────────────────────────
+  // Lifecycle
 
   start() {
     this.stop(false);
     this._toast = _PluginUtils?.createToastHelper?.("shadowStep") || createToast();
 
-    // ── SkillTree gate: shadow_exchange >= 1 ──
+    // SkillTree gate: shadow_exchange >= 1
     this._onSkillLevelChanged = (e) => {
       if (e.detail?.skillId !== "shadow_exchange") return;
       const level = e.detail.level || 0;
@@ -181,7 +181,7 @@ module.exports = class ShadowStep {
     if (showToast) this._toast(`${PLUGIN_NAME} \u2014 Anchors dormant`, "info");
   }
 
-  // ── Webpack ─────────────────────────────────────────────────
+  // Webpack
 
   initWebpack() {
     const { Webpack } = BdApi;
@@ -197,7 +197,7 @@ module.exports = class ShadowStep {
     });
   }
 
-  // ── Settings ────────────────────────────────────────────────
+  // Settings
 
   loadSettings() {
     try {
@@ -242,7 +242,7 @@ module.exports = class ShadowStep {
     this.saveSettings();
   }
 
-  // ── Context Menu ────────────────────────────────────────────
+  // Context Menu
 
   patchContextMenu() {
     try {
@@ -301,7 +301,7 @@ module.exports = class ShadowStep {
     }
   }
 
-  // ── Anchor CRUD ─────────────────────────────────────────────
+  // Anchor CRUD
 
   addAnchor(channelId, guildId) {
     if (this.hasAnchor(channelId)) {
@@ -387,7 +387,7 @@ module.exports = class ShadowStep {
     }
   }
 
-  // ── Stats Integration ───────────────────────────────────────
+  // Stats Integration
 
   _getAgiStat() {
     const cached = this._statsCache.get();
@@ -412,7 +412,7 @@ module.exports = class ShadowStep {
     }
   }
 
-  // ── Navigation ──────────────────────────────────────────────
+  // Navigation
 
   teleportTo(anchorId) {
     const anchor = this.settings.anchors.find((a) => a.id === anchorId);
@@ -443,7 +443,6 @@ module.exports = class ShadowStep {
       ? `/channels/${anchor.guildId}/${anchor.channelId}`
       : `/channels/@me/${anchor.channelId}`;
 
-    // Close panel first
     this.closePanel();
 
     // Stamp shared teleport cooldown
@@ -507,7 +506,7 @@ module.exports = class ShadowStep {
     this.debugLog("Teleport", anchor.name, path);
   }
 
-  // ── Hotkey ──────────────────────────────────────────────────
+  // Hotkey
 
   _registerHotkey() {
     this._unregisterHotkey();
@@ -538,7 +537,7 @@ module.exports = class ShadowStep {
     }
   }
 
-  // ── Panel ───────────────────────────────────────────────────
+  // Panel
 
   togglePanel() {
     if (this._panelOpen) {
@@ -607,7 +606,7 @@ module.exports = class ShadowStep {
     this.debugLog("Panel", "Closed");
   }
 
-  // ── CSS ─────────────────────────────────────────────────────
+  // CSS
 
   injectCSS() {
     try {
@@ -645,7 +644,7 @@ module.exports = class ShadowStep {
     return this._cssCache;
   }
 
-  // ── Settings Panel ──────────────────────────────────────────
+  // Settings Panel
 
   getSettingsPanel() {
     return buildShadowStepSettingsPanel(BdApi, this, {
@@ -654,7 +653,7 @@ module.exports = class ShadowStep {
     });
   }
 
-  // ── Debug ───────────────────────────────────────────────────
+  // Debug
 
   debugLog(tag, ...args) {
     if (this.settings.debugMode) {

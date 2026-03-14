@@ -7,7 +7,7 @@
 
 import { truncateMiddle, getElementSummary } from "./element-summary.js";
 
-// ── Formatting helpers ───────────────────────────────────────────
+// Formatting helpers
 
 export function formatCssValueCompact(value) {
   return truncateMiddle(
@@ -45,7 +45,7 @@ export function shortenStylesheetLabel(label) {
   }
 }
 
-// ── Computed visual summary for toast ────────────────────────────
+// Computed visual summary for toast
 
 export function buildComputedVisualSummary(computedStyle) {
   if (!computedStyle) return [];
@@ -155,7 +155,7 @@ export function buildRuleHints({ appliedRules, matchedCssRules, maxRuleCount }) 
     .slice(0, Math.max(0, maxRuleCount || 0));
 }
 
-// ── Capture toast message builder ────────────────────────────────
+// Capture toast message builder
 
 export function buildCaptureToastMessage({ elementDetails, saveResult, clipboardResult, settings, pluginVersion }) {
   const elementSummary = elementDetails?.summary || "unknown";
@@ -189,7 +189,7 @@ export function buildCaptureToastMessage({ elementDetails, saveResult, clipboard
   return truncateMiddle(message, settings.toastMaxChars || defaultMaxChars);
 }
 
-// ── Computed style picking ───────────────────────────────────────
+// Computed style picking
 
 // Full computed style keys for the target element
 const COMPUTED_KEYS_FULL = [
@@ -327,7 +327,7 @@ export function extractInlineStyles(el) {
   return Object.keys(inline).length ? inline : null;
 }
 
-// ── Stylesheet label helpers ─────────────────────────────────────
+// Stylesheet label helpers
 
 const getStylesheetLabel = (sheet, index) => {
   const href = sheet?.href || null;
@@ -363,7 +363,7 @@ const simplifySheetLabel = (label) => {
   return label;
 };
 
-// ── Rule origin classification ───────────────────────────────────
+// Rule origin classification
 
 // Origin types:
 //   discord  -- Discord CDN stylesheets (discord.com/assets/*.css)
@@ -404,7 +404,7 @@ export function classifyRuleOrigin(sheetLabel, sheetHref, ownerNode) {
   return { type: "unknown", name: sheetLabel };
 }
 
-// ── Rule scope analysis ──────────────────────────────────────────
+// Rule scope analysis
 
 // Scope analysis: count how many elements a rule selector matches + sample others.
 const getRuleScopeLabel = (totalMatches) => {
@@ -439,7 +439,7 @@ export function analyzeRuleScope(selectorText, pickedEl) {
   }
 }
 
-// ── CSS rule iteration and flat rule cache ────────────────────────
+// CSS rule iteration and flat rule cache
 
 // Returns true for global CSS reset rules (massive comma-separated tag selectors)
 const isResetRule = (selectorText) => {
@@ -528,7 +528,7 @@ export function _getFlatRules() {
   return flat;
 }
 
-// ── CSS rule matching ────────────────────────────────────────────
+// CSS rule matching
 
 const ruleTouchesAnyKey = (rule, keys) => {
   for (const key of keys) {
@@ -590,7 +590,7 @@ export function findMatchingCssRules(el, keys, maxMatches = 30) {
   return matches;
 }
 
-// ── Compact CSS rules: filter resets, simplify labels, flatten props ──
+// Compact CSS rules: filter resets, simplify labels, flatten props
 
 export function getCompactCssRules(el, keys, maxMatches = 30) {
   const raw = findMatchingCssRules(el, keys, maxMatches);
@@ -614,7 +614,7 @@ export function getCompactCssRules(el, keys, maxMatches = 30) {
     });
 }
 
-// ── CSS match keys (exported for use by selectors.js) ────────────
+// CSS match keys (exported for use by selectors.js)
 
 export const MATCH_KEYS = [
   "background",
@@ -641,7 +641,7 @@ export const MATCH_KEYS = [
   "-webkit-mask-image",
 ];
 
-// ── Report save / clipboard ──────────────────────────────────────
+// Report save / clipboard
 
 const getTimestampForFilename = () => new Date().toISOString().replace(/[:.]/g, "-");
 

@@ -693,7 +693,6 @@ module.exports = {
 
     stats = this.normalizeShadowCombatStatsByRank(stats, shadow?.rank || 'E');
 
-    // Cache result
     if (this._shadowStatsCache) {
       this._shadowStatsCache.set(cacheKey, { stats, timestamp: now });
     }

@@ -26,11 +26,8 @@ module.exports = {
 
       this.debugLog('START', 'Plugin start time recorded', { startTime: this.pluginStartTime });
 
-      // ============================================================================
       // PERFORMANCE OPTIMIZATION: Initialize systems
-      // ============================================================================
 
-      // Initialize DOM cache (eliminates 84 querySelector calls per update!)
       this.initDOMCache();
 
       // FUNCTIONAL: Safe method binding (NO IF-ELSE!)
@@ -53,7 +50,6 @@ module.exports = {
 
       this.debugLog('START', 'Performance optimizations initialized');
 
-      // Initialize UnifiedSaveManager (IndexedDB)
       if (this.saveManager) {
         try {
           await this.saveManager.init();
@@ -80,7 +76,6 @@ module.exports = {
         totalXP: this.settings.totalXP,
       });
 
-      // Initialize date values if not set
       if (!this.settings.activity.lastActiveTime) {
         this.settings.activity.lastActiveTime = Date.now();
         bootstrapSettingsChanged = true;
@@ -94,7 +89,6 @@ module.exports = {
         bootstrapSettingsChanged = true;
       }
 
-      // Initialize rank if not set
       if (!this.settings.rank) {
         this.settings.rank = 'E';
         bootstrapSettingsChanged = true;
@@ -112,7 +106,6 @@ module.exports = {
       // Expose backup helpers to console for quick checks/restores
       this.registerBackupConsoleHooks();
 
-      // Initialize shadow power cache from saved settings or default to '0'
       // Also check ShadowArmy's cached value as fallback
       const shadowArmyInstance = this._SLUtils?.getPluginInstance?.('ShadowArmy');
       const shadowArmyCachedPower = shadowArmyInstance?.settings?.cachedTotalPower;
@@ -137,7 +130,6 @@ module.exports = {
         });
       }
 
-      // Initialize shadow power immediately on startup (don't wait for interval)
       if (typeof this.updateShadowPower === 'function') {
         this.updateShadowPower().catch((error) => {
           this.debugError('START', 'Failed to initialize shadow power', error);
@@ -181,7 +173,6 @@ module.exports = {
       bootstrapSettingsChanged = true;
     }
 
-    // Initialize HP/Mana from stats
     const vitality = this.settings.stats.vitality || 0;
     const intelligence = this.settings.stats.intelligence || 0;
     const userRank = this.settings.rank || 'E';
@@ -205,13 +196,11 @@ module.exports = {
     // Start real-time channel change detection
     this.startChannelTracking();
 
-    // Start activity tracking
     this.startActivityTracking();
 
     // Start message observation
     this.startObserving();
 
-    // Start auto-save interval
     this.startAutoSave();
 
     // Cleanup unwanted titles from saved data
@@ -414,7 +403,6 @@ module.exports = {
       this.messageInputHandler = null;
     }
 
-    // Remove chat UI
     this.removeChatUI();
 
     // Cleanup webpack patches

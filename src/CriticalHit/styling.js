@@ -10,9 +10,7 @@ const { FRIENDORFOEBB_WOFF2_DATA, SPEEDYSPACEGOATODDITY_WOFF2_DATA } = require('
 const STATIC_CSS = require('./styles.css');
 
 module.exports = {
-  // ============================================================================
   // Per-Message CSS Injection (survives Discord React re-renders)
-  // ============================================================================
 
   /**
    * Builds a CSS rule string targeting a specific message by data-message-id.
@@ -210,9 +208,7 @@ ${childSel} {
     }
   },
 
-  // ============================================================================
   // CRIT STYLING — Content Element Discovery & Style Application
-  // ============================================================================
 
   /**
    * Checks if element is already a content element
@@ -300,7 +296,6 @@ ${childSel} {
       const elements = messageElement.querySelectorAll(selector);
       const found = Array.from(elements).find((el) => !this.isInHeaderArea(el));
       if (found) {
-        // Check if parent has header elements - if so, find more specific text element
         if (this._parentHasHeaderElements(found)) {
           const textElement = this._findTextElementInContent(found);
           if (textElement) return textElement;
@@ -378,9 +373,7 @@ ${childSel} {
     }
   },
 
-  // ============================================================================
   // FONT LOADING HELPERS
-  // ============================================================================
 
   /**
    * Gets plugins folder from BdApi
@@ -460,7 +453,6 @@ ${childSel} {
     }
 
     try {
-      // Check if font is already loaded
       const existingStyle = document.getElementById(
         `cha-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`
       );
@@ -755,9 +747,7 @@ ${childSel} {
     return this.loadFont(fontToLoad, false);
   },
 
-  // ============================================================================
   // CSS INJECTION METHODS
-  // ============================================================================
 
   /**
    * Injects all static CSS (keyframes, base classes, settings panel) from styles.css.

@@ -11,14 +11,10 @@ import {
 } from "./formatting";
 const { buildSoloLevelingToastsSettingsPanel } = require("./settings-panel");
 
-// ============================================================================
 // SoloLevelingToasts — Unified Toast Engine v2
-// ============================================================================
 
 module.exports = class SoloLevelingToasts {
-  // ==========================================================================
   // SECTION 1: CONSTRUCTOR & LOW-LEVEL HELPERS
-  // ==========================================================================
 
   constructor() {
     // Default settings
@@ -73,7 +69,7 @@ module.exports = class SoloLevelingToasts {
     return 2;
   }
 
-  // ── Tracked timeout helpers ──
+  // Tracked timeout helpers
 
   _setTrackedTimeout(callback, delayMs) {
     const timeoutId = setTimeout(() => {
@@ -95,7 +91,7 @@ module.exports = class SoloLevelingToasts {
     this._trackedTimeouts.delete(timeoutId);
   }
 
-  // ── Toast timeout helpers ──
+  // Toast timeout helpers
 
   _getToastTimeout(timeout) {
     return timeout || this.settings.defaultTimeout;
@@ -130,7 +126,7 @@ module.exports = class SoloLevelingToasts {
     oldestToast.remove();
   }
 
-  // ── Settings panel cleanup ──
+  // Settings panel cleanup
 
   detachSoloLevelingToastsSettingsPanelHandlers() {
     const root = this._settingsPanelRoot;
@@ -143,9 +139,7 @@ module.exports = class SoloLevelingToasts {
     this._settingsPanelHandlers = null;
   }
 
-  // ==========================================================================
   // SECTION 2: WEBPACK & SETTINGS
-  // ==========================================================================
 
   initializeWebpackModules() {
     try {
@@ -186,9 +180,7 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
-  // ==========================================================================
   // SECTION 3: LIFECYCLE (start / stop)
-  // ==========================================================================
 
   start() {
     // Restart-safe: clear any stale hooks/timers/container/styles before re-initializing.
@@ -248,9 +240,7 @@ module.exports = class SoloLevelingToasts {
     this.debugLog("PLUGIN_STOP", "Plugin stopped successfully");
   }
 
-  // ==========================================================================
   // SECTION 4: CSS INJECTION
-  // ==========================================================================
 
   injectCSS() {
     const styleId = "solo-leveling-toasts-css";
@@ -302,9 +292,7 @@ module.exports = class SoloLevelingToasts {
     root.style.removeProperty("--sl-fade-duration");
   }
 
-  // ==========================================================================
   // SECTION 5: TOAST CONTAINER
-  // ==========================================================================
 
   createToastContainer() {
     if (this.toastContainer) {
@@ -331,9 +319,7 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
-  // ==========================================================================
   // SECTION 6: PARTICLES
-  // ==========================================================================
 
   createParticles(toastElement, count) {
     if (this._isStopped) return;
@@ -370,9 +356,7 @@ module.exports = class SoloLevelingToasts {
     this._setTrackedTimeout(() => wrapper.remove(), 1500);
   }
 
-  // ==========================================================================
   // SECTION 7: SHOW TOAST (public API) + GROUPING
-  // ==========================================================================
 
   showToast(message, type = "info", timeout = null, options = {}) {
     if (this._isStopped) return;
@@ -390,7 +374,6 @@ module.exports = class SoloLevelingToasts {
     const now = Date.now();
     const messageText = extractMessageText(message);
 
-    // Check if we have an existing group for this message
     if (this.messageGroups.has(groupKey)) {
       const group = this.messageGroups.get(groupKey);
 
@@ -507,9 +490,7 @@ module.exports = class SoloLevelingToasts {
     this._scheduleToastFadeOut(toast, timeout);
   }
 
-  // ==========================================================================
   // SECTION 8: INTERNAL TOAST RENDERING
-  // ==========================================================================
 
   _showToastInternal(message, type = "info", timeout = null, options = {}) {
     if (this._isStopped) return;
@@ -637,9 +618,7 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
-  // ==========================================================================
   // SECTION 9: FADE OUT & REMOVAL
-  // ==========================================================================
 
   startFadeOut(toast) {
     if (!toast || !toast.parentElement) return;
@@ -704,9 +683,7 @@ module.exports = class SoloLevelingToasts {
     this.activeToasts = [];
   }
 
-  // ==========================================================================
   // SECTION 10: CARD TOAST API + RATE LIMITING (Toast Engine v2)
-  // ==========================================================================
 
   _checkRateLimit(callerId, maxPerMinute = 15) {
     const now = Date.now();
@@ -868,9 +845,7 @@ module.exports = class SoloLevelingToasts {
     });
   }
 
-  // ==========================================================================
   // SECTION 11: SOLOLEVELINGSTATS HOOK
-  // ==========================================================================
 
   _canRetrySoloHook() {
     if (!this._hookRetryCount) this._hookRetryCount = 0;
@@ -983,17 +958,13 @@ module.exports = class SoloLevelingToasts {
     this._hookRetryCount = 0;
   }
 
-  // ==========================================================================
   // SECTION 12: SETTINGS PANEL
-  // ==========================================================================
 
   getSettingsPanel() {
     return buildSoloLevelingToastsSettingsPanel(BdApi, this);
   }
 
-  // ==========================================================================
   // SECTION 13: DEBUGGING & UTILITIES
-  // ==========================================================================
 
   debugLog(operation, message, data = null) {
     if (!this.debugMode) return;

@@ -28,7 +28,7 @@ const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createToast } = require("../shared/toast");
 const { isEditableTarget, matchesHotkey } = require("../shared/hotkeys");
 
-// ── Config & settings ────────────────────────────────────────────
+// Config & settings
 
 const PLUGIN_NAME = "CSS Picker";
 const PLUGIN_VERSION = "1.5.0";
@@ -63,7 +63,7 @@ const saveSettings = (settings) => {
   }
 };
 
-// ── Shared utilities (runtime, with inline fallback) ─────────────
+// Shared utilities (runtime, with inline fallback)
 
 let _PluginUtils = null;
 try {
@@ -74,7 +74,7 @@ try {
 
 // Hotkey + editable-target utilities — from shared/hotkeys.js
 
-// ── Root context helper (cached — root/body classes rarely change mid-session) ──
+// Root context helper (cached — root/body classes rarely change mid-session)
 
 let _rootCtxCache = null;
 let _rootCtxClassKey = "";
@@ -107,7 +107,7 @@ const getRootContext = () => {
   return _rootCtxCache;
 };
 
-// ── DOM element creation (overlay, launcher, tooltip) ────────────
+// DOM element creation (overlay, launcher, tooltip)
 
 const createOverlay = () => {
   const overlay = document.createElement("div");
@@ -236,7 +236,7 @@ const positionOverlayOnElement = ({ overlay, el }) => {
   overlay.style.height = `${Math.max(0, rect.height)}px`;
 };
 
-// ── CSSPicker class ──────────────────────────────────────────────
+// CSSPicker class
 
 module.exports = class CSSPicker {
   start() {

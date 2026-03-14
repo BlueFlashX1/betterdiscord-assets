@@ -22,7 +22,6 @@ module.exports = {
       return true;
     }
 
-    // Check if element contains username/timestamp/author elements as children
     if (
       dc.query(element, 'username') ||
       dc.query(element, 'timestamp') ||
@@ -36,7 +35,6 @@ module.exports = {
       return true;
     }
 
-    // Check if element's text content looks like a username or timestamp
     const text = element.textContent?.trim() || '';
     if (text.match(/^\d{1,2}:\d{2}$/) || text.length < 3) {
       return true;
@@ -171,7 +169,6 @@ module.exports = {
       return true;
     }
 
-    // Check if message has system message classes
     return this._hasSystemClasses(messageElement);
   },
 

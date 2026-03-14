@@ -3,7 +3,6 @@ module.exports = {
     // UNIFIED DEBUG SYSTEM: Check settings.debugMode instead of this.debug.enabled
     if (!this.settings?.debugMode) return;
   
-    // Check if this is a frequent operation
     const isFrequent = this.debug.frequentOperations.has(operation);
   
     if (isFrequent && !this.debug.verbose) {

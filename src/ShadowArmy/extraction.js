@@ -5,9 +5,7 @@
  */
 
 module.exports = {
-  // ============================================================================
   // SHADOW ARMY CAPACITY — Lore-Accurate Cap Enforcement
-  // ============================================================================
 
   /**
    * Calculate shadow army capacity for a given player rank + intelligence.
@@ -56,9 +54,7 @@ module.exports = {
     return { atCap: currentCount >= cap, currentCount, cap, overBy };
   },
 
-  // ============================================================================
   // SOLO LEVELING INTEGRATION
-  // ============================================================================
 
   integrateWithSoloLeveling() {
     try {
@@ -120,9 +116,7 @@ module.exports = {
     return soloData;
   },
 
-  // ============================================================================
   // SKILLTREE GATING
-  // ============================================================================
 
   /**
    * Check if a SkillTree passive skill is unlocked (level >= 1).
@@ -171,9 +165,7 @@ module.exports = {
     return Math.floor(total);
   },
 
-  // ============================================================================
   // SHADOW EXTRACTION PIPELINE
-  // ============================================================================
 
   /**
    * Message-based extraction (humanoid shadows only, no magic beasts).
@@ -634,9 +626,7 @@ module.exports = {
     return null;
   },
 
-  // ============================================================================
   // DUNGEON EXTRACTION
-  // ============================================================================
 
   /**
    * Attempt shadow extraction from dungeon mob or boss.
@@ -976,9 +966,7 @@ module.exports = {
     return { extracted: totalExtracted, attempted: totalAttempted };
   },
 
-  // ============================================================================
   // BOSS ATTEMPT TRACKING
-  // ============================================================================
 
   /**
    * Check if can extract from boss (max 3 attempts per corpse per day).

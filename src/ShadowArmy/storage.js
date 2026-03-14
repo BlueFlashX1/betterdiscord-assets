@@ -17,9 +17,7 @@ const {
 } = require('./constants');
 
 class ShadowStorageManager {
-  // ============================================================================
   // CONSTRUCTOR & CONFIGURATION
-  // ============================================================================
 
   /**
    * Initialize ShadowStorageManager with user ID
@@ -69,9 +67,7 @@ class ShadowStorageManager {
     }
   }
 
-  // ============================================================================
   // CACHE MANAGEMENT
-  // ============================================================================
 
   getCacheKey(shadow) {
     if (!shadow) return null;
@@ -162,9 +158,7 @@ class ShadowStorageManager {
     this.debugLog('CACHE', 'Recent cache cleared');
   }
 
-  // ============================================================================
   // SHADOW DATA HELPERS
-  // ============================================================================
 
   /**
    * Get shadow in correct format (decompress if needed).
@@ -182,9 +176,7 @@ class ShadowStorageManager {
     return typeof decompressor === 'function' ? decompressor.call(this, shadow) : shadow;
   }
 
-  // ============================================================================
   // DATABASE INITIALIZATION
-  // ============================================================================
 
   async init() {
     return new Promise((resolve, reject) => {
@@ -285,9 +277,7 @@ class ShadowStorageManager {
     });
   }
 
-  // ============================================================================
   // MIGRATION FROM LOCALSTORAGE
-  // ============================================================================
 
   async migrateFromLocalStorage() {
     if (this.migrationCompleted) {
@@ -431,9 +421,7 @@ class ShadowStorageManager {
     return { migrated: true, ...result };
   }
 
-  // ============================================================================
   // SHADOW CRUD OPERATIONS
-  // ============================================================================
 
   async saveShadow(shadow) {
     if (!shadow || !this.getCacheKey(shadow)) {
@@ -740,9 +728,7 @@ class ShadowStorageManager {
     });
   }
 
-  // ============================================================================
   // BATCH OPERATIONS
-  // ============================================================================
 
   async updateShadowsBatch(shadows) {
     if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
@@ -816,9 +802,7 @@ class ShadowStorageManager {
     });
   }
 
-  // ============================================================================
   // AGGREGATION
-  // ============================================================================
 
   async getAggregatedPower(userRank, shadowRanks) {
     const emptyResult = { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
@@ -883,9 +867,7 @@ class ShadowStorageManager {
     });
   }
 
-  // ============================================================================
   // DATABASE CLEANUP
-  // ============================================================================
 
   close() {
     if (this.db) {

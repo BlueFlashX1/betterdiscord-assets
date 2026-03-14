@@ -26,7 +26,7 @@ function buildWidgetComponents(pluginInstance) {
     return String(Math.floor(raw));
   }
 
-  // ── RankBox ──
+  // RankBox
   function RankBox({ rank, count, color, isElite }) {
     const label = RANK_LABELS[rank] || rank;
     const boxStyle = {
@@ -55,7 +55,7 @@ function buildWidgetComponents(pluginInstance) {
     );
   }
 
-  // ── ShadowArmyWidget ──
+  // ShadowArmyWidget
   function ShadowArmyWidget() {
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [data, setData] = React.useState(null);

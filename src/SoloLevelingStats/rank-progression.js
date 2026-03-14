@@ -340,7 +340,6 @@ module.exports = {
       const nextRank = currentReq.next;
       const nextReq = rankRequirements[nextRank];
   
-      // Check if requirements are met
       const levelMet = this.settings.level >= nextReq.level;
       const achievementsMet = this.settings.achievements.unlocked.length >= nextReq.achievements;
   

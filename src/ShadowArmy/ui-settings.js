@@ -7,9 +7,7 @@
 const dc = require('../shared/discord-classes');
 
 module.exports = {
-  // ============================================================================
   // USER ID DETECTION
-  // ============================================================================
 
   /**
    * Get Discord user ID for storage isolation.
@@ -73,9 +71,7 @@ module.exports = {
     return 'default';
   },
 
-  // ============================================================================
   // SETTINGS MANAGEMENT
-  // ============================================================================
 
   /**
    * Load settings from all 3 tiers, picking the newest valid candidate.
@@ -151,7 +147,7 @@ module.exports = {
         this.settings = { ...this.defaultSettings };
       }
 
-      // ── Post-load validation & backfill ──
+      // Post-load validation & backfill
       if (!Array.isArray(this.settings.shadows)) {
         this.settings.shadows = [];
       } else if (this.settings.shadows.length > 0 && this.storageManager) {
@@ -216,7 +212,7 @@ module.exports = {
     }
   },
 
-  // ── FILE BACKUP (Tier 3) ─────────────────────────────────────────────────
+  // FILE BACKUP (Tier 3)
   // Stored OUTSIDE BetterDiscord folder so it survives BD reinstall/repair
 
   _getFileBackupPath() {
@@ -319,9 +315,7 @@ module.exports = {
     }
   },
 
-  // ============================================================================
   // SETTINGS PANEL
-  // ============================================================================
 
   detachShadowArmySettingsPanelHandlers() {
     const root = this._shadowArmySettingsPanelRoot;
@@ -569,9 +563,7 @@ module.exports = {
     return container;
   },
 
-  // ============================================================================
   // DEBUG SYSTEM
-  // ============================================================================
 
   debugLog(tag, message, data = null) {
     if (!this.debug.enabled) return;
@@ -606,9 +598,7 @@ module.exports = {
     }
   },
 
-  // ============================================================================
   // DIAGNOSTIC TOOLS
-  // ============================================================================
 
   async diagnoseStorage() {
     const diagnostic = {

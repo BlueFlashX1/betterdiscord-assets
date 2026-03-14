@@ -1,7 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
 // CSS Builder (custom properties + dynamic selectors)
-// ═══════════════════════════════════════════════════════════════════════════
-//
 // Dynamic CSS built via JS — uses runtime Webpack module references and
 // settings values. Cannot be a static .css file.
 

@@ -6,9 +6,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // SHADOW GROWTH & LEVELING SYSTEM
-  // ============================================================================
 
   async grantShadowXP(baseAmount, reason = 'message', shadowIds = null, options = {}) {
     const perShadowAmounts =
@@ -220,9 +218,7 @@ module.exports = {
     return Math.max(0.8, Math.min(1.2, softened));
   },
 
-  // ============================================================================
   // AUTO RANK-UP SYSTEM
-  // ============================================================================
 
   attemptAutoRankUp(shadow) {
     if (!shadow || !shadow.rank) return { success: false };
@@ -286,9 +282,7 @@ module.exports = {
     return { success: false };
   },
 
-  // ============================================================================
   // NATURAL GROWTH SYSTEM
-  // ============================================================================
 
   applyNaturalGrowth(shadow, combatTimeHours = 0) {
     if (!shadow) return false;

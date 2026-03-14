@@ -101,14 +101,11 @@ module.exports = {
     try {
       const lastActiveDate = this.settings.activity?.lastActiveDate;
   
-      // Initialize streak tracking if needed
       if (!this.settings.activity.streakDays) {
         this.settings.activity.streakDays = 0;
       }
   
-      // Check if this is a new day
       if (lastActiveDate !== today) {
-        // Check if streak continues (yesterday was active)
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toDateString();

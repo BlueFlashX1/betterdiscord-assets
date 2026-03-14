@@ -6,9 +6,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // SHADOW GENERATION & STATS
-  // ============================================================================
 
   _pickRandom(items) {
     if (!Array.isArray(items) || items.length === 0) return null;
@@ -253,9 +251,7 @@ module.exports = {
     return Math.floor(totalStats * multiplier);
   },
 
-  // ============================================================================
   // POWER CALCULATION & CACHING
-  // ============================================================================
 
   calculateShadowPower(effectiveStats, multiplier = 1) {
     return this.calculateShadowStrength(effectiveStats, multiplier);

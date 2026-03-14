@@ -12,7 +12,6 @@ module.exports = {
     // Reset observer start time when plugin starts
     this.observerStartTime = Date.now();
 
-    // Initialize UnifiedSaveManager FIRST (IndexedDB) — must be ready before loadSettings
     if (this.saveManager) {
       try {
         await this.saveManager.init();
@@ -176,7 +175,6 @@ module.exports = {
       this._bossBarLayoutFrame = null;
     }
 
-    // Stop HP bar restoration
     this.stopHPBarRestoration();
 
     // Stop window visibility tracking

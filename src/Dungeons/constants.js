@@ -92,9 +92,8 @@ module.exports = {
     tickIntervalMs: 1000,
     maxTrackedMobsPerDungeon: 600,
   },
-  // ── BOSS DURABILITY SYSTEM ──────────────────────────────────────────
+  // BOSS DURABILITY SYSTEM
   // Prevents bosses from being one-shot by shadow armies.
-  // Lore: Dungeon bosses are apex predators — they don't die in one swing.
 
   // 1) BOSS DAMAGE RESISTANCE — rank-scaled % reduction on ALL incoming damage
   //    Higher-rank bosses shrug off more damage (S-rank boss resists 55%)
@@ -109,7 +108,6 @@ module.exports = {
   BOSS_DAMAGE_CAP_PCT: 0.06, // 6% of maxHP per hit (boss needs 17+ hits minimum)
 
   // 3) BOSS PHASE SHIELD — brief invulnerability at HP thresholds
-  //    Lore: Boss enters a rage state, briefly becoming untouchable
   BOSS_PHASE_THRESHOLDS: [0.75, 0.50, 0.25], // HP% triggers
   BOSS_PHASE_SHIELD_MS: 2500, // 2.5s invulnerability window
 
@@ -118,7 +116,6 @@ module.exports = {
   BOSS_HP_ARMY_MULTIPLIER: 8, // 8x base HP to survive sustained shadow DPS
 
   // 5) SHADOW VS BOSS DAMAGE REDUCTION — shadows deal reduced damage to bosses
-  //    Mirrors the existing 0.6x boss→shadow reduction (lore: bosses are tougher than mobs)
   SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of their calculated damage to bosses
   RANK_MULTIPLIERS: {
     E: 1,

@@ -480,14 +480,12 @@ module.exports = {
       assignedIds.add(id);
     }
 
-    // ──────────────────────────────────────────────────────────────
     // RANK-TIERED ALLOCATION: Deploy shadows by rank proximity
     //   • 90% of same-rank shadows → dungeon of that rank
     //   • 25% of one-rank-higher shadows → supplement the dungeon
     //   • Lower-rank shadows fill remaining gaps (spillover)
     //   • Multiple dungeons of the same rank share proportionally
     // This preserves high-rank shadows for high-rank dungeons.
-    // ──────────────────────────────────────────────────────────────
 
     // Step 1: Bucket available combat-pool shadows by rank index
     const rankBuckets = new Map(); // rankIndex → [shadow, ...]
@@ -813,7 +811,6 @@ module.exports = {
       // Window hidden - use much longer intervals (60-120s) to prevent crashes
       backgroundInterval = 60000 + Math.random() * 60000; // 60-120s (much slower)
     }
-    // Initialize last processing time
     this._lastShadowAttackTime.set(channelKey, Date.now());
 
     // Store cadence for global combat loop
@@ -869,7 +866,6 @@ module.exports = {
       // Window hidden - use much longer intervals (60-120s) to prevent crashes
       backgroundInterval = 60000 + Math.random() * 60000; // 60-120s (much slower)
     }
-    // Initialize last processing time
     this._lastBossAttackTime.set(channelKey, Date.now());
 
     this._bossBackgroundIntervalMs.set(channelKey, backgroundInterval);
@@ -920,7 +916,6 @@ module.exports = {
       // Window hidden - use much longer intervals (60-120s) to prevent crashes
       backgroundInterval = 60000 + Math.random() * 60000; // 60-120s (much slower)
     }
-    // Initialize last processing time
     this._lastMobAttackTime.set(channelKey, Date.now());
 
     this._mobBackgroundIntervalMs.set(channelKey, backgroundInterval);

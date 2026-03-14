@@ -72,11 +72,11 @@ module.exports = class HSLDockAutoHide {
       });
     this._isStopped = false;
 
-    // ── Always-on: user panel nameplate positioning ──
+    // Always-on: user panel nameplate positioning
     BdApi.DOM.addStyle(STYLE_ID_USERPANEL, getUserPanelDockCss());
     this._startUserPanelPoller();
 
-    // ── SkillTree gate: rulers_authority >= 1 (dock auto-hide only) ──
+    // SkillTree gate: rulers_authority >= 1 (dock auto-hide only)
     this._onSkillLevelChanged = (e) => {
       if (e.detail?.skillId !== "rulers_authority") return;
       const level = e.detail.level || 0;
@@ -103,7 +103,7 @@ module.exports = class HSLDockAutoHide {
     }
   }
 
-  // ── Always-on user panel poller ─────────────────────────────────────────────
+  // Always-on user panel poller
   // Finds the user panel element and adds sl-userpanel-docked class.
   // Once found, slows to a background heartbeat to handle Discord re-renders.
 
@@ -156,7 +156,7 @@ module.exports = class HSLDockAutoHide {
     BdApi.DOM.removeStyle(STYLE_ID_USERPANEL);
   }
 
-  // ── Gated dock auto-hide resources ──────────────────────────────────────────
+  // Gated dock auto-hide resources
 
   _activateDockResources() {
     if (this._dockResourcesActive || this._isStopped) return;

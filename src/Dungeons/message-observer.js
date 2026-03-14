@@ -220,7 +220,6 @@ module.exports = {
     if (!this.settings.enabled) return;
 
     try {
-      // Check if message is old (before observer started) - skip old messages
       const messageTimestamp = this.getMessageTimestamp(messageElement);
       if (messageTimestamp && messageTimestamp < this.observerStartTime) return;
 

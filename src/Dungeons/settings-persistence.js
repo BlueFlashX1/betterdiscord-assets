@@ -7,7 +7,6 @@ module.exports = {
       this.storageManager = new DungeonStorageManager(userId);
       await this.storageManager.init();
 
-      // Initialize MobBossStorageManager for dedicated mob/boss database
       this.mobBossStorageManager = new MobBossStorageManager(userId);
       this.mobBossStorageManager.setLogHandlers({
         debug: (message, context) => this.debugLog('MOB_BOSS_STORAGE', message, context),
@@ -184,7 +183,6 @@ module.exports = {
           }
         }
 
-        // Initialize user HP/Mana from stats if not set
         await this.initializeUserStats();
       } else {
         await this.initializeUserStats();
@@ -435,7 +433,6 @@ module.exports = {
       }
 
       if (!saveSuccess) {
-        // Don't throw - IndexedDB save might have succeeded
         this.errorLog('SAVE_SETTINGS', 'BdApi.Data save failed after 3 attempts', lastError);
       }
 

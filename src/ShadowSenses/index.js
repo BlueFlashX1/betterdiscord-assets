@@ -47,7 +47,7 @@ function parseEnvValue(content, key) {
   return value.trim();
 }
 
-// ─── SensesEngine ──────────────────────────────────────────────────────────
+// SensesEngine
 
 class SensesEngine {
   constructor(pluginRef) {
@@ -373,11 +373,11 @@ Object.assign(
   SensesEngineEvents
 );
 
-// ─── CSS ───────────────────────────────────────────────────────────────────
+// CSS
 
-// ─── Shared Utilities ─────────────────────────────────────────────────────
+// Shared Utilities
 
-// ─── Plugin Class ──────────────────────────────────────────────────────────
+// Plugin Class
 
 module.exports = class ShadowSenses {
   constructor() {
@@ -475,7 +475,6 @@ module.exports = class ShadowSenses {
     if (this._sensesResourcesActive) return;
     this._sensesResourcesActive = true;
 
-    // DeploymentManager
     this.deploymentManager = new DeploymentManager(
       (...args) => this.debugLog(...args),
       (...args) => this.debugError(...args)
@@ -485,7 +484,6 @@ module.exports = class ShadowSenses {
     // Webpack modules
     this.initWebpack();
 
-    // SensesEngine
     this.sensesEngine = new SensesEngine(this);
 
     // Subscribe immediately if Dispatcher ready, otherwise poll until available

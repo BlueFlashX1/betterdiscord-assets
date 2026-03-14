@@ -70,7 +70,6 @@ module.exports = {
     return DEFAULT_STATUS_EFFECTS?.[effectName] || null;
   },
 
-  // Check if a shadow is a magic beast (retains creature abilities → family-based status effects)
   _isShadowMagicBeast(shadow) {
     if (!shadow) return false;
     const roleKey = shadow.role || shadow.roleName || shadow.ro || '';

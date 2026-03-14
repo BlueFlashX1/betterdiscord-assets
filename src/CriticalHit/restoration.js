@@ -8,9 +8,7 @@ const C = require('./constants');
 const dc = require('../shared/discord-classes');
 
 module.exports = {
-  // ----------------------------------------------------------------------------
   // Core Restoration
-  // ----------------------------------------------------------------------------
 
   /**
    * Performs crit restoration on a message element
@@ -91,9 +89,7 @@ module.exports = {
     return messageElement;
   },
 
-  // ----------------------------------------------------------------------------
   // Restoration Throttling
-  // ----------------------------------------------------------------------------
 
   /**
    * Cleans up old throttle entries
@@ -128,9 +124,7 @@ module.exports = {
     return false;
   },
 
-  // ----------------------------------------------------------------------------
   // Content Hash Matching
-  // ----------------------------------------------------------------------------
 
   /**
    * Creates a simple hash from content string (for content-based matching)
@@ -160,9 +154,7 @@ module.exports = {
     return entryHash === contentHash;
   },
 
-  // ----------------------------------------------------------------------------
   // History Entry Matching
-  // ----------------------------------------------------------------------------
 
   /**
    * Creates history entry from pending crit
@@ -287,9 +279,7 @@ module.exports = {
     return historyEntry;
   },
 
-  // ----------------------------------------------------------------------------
   // Visual State Checks
-  // ----------------------------------------------------------------------------
 
   /**
    * Determines whether a crit message needs restoration.
@@ -303,12 +293,10 @@ module.exports = {
 
     const messageId = this.getMessageIdentifier(messageElement);
 
-    // Check if bd-crit-hit class is present (needed for animation positioning)
     if (!messageElement.classList?.contains('bd-crit-hit')) {
       return true;
     }
 
-    // Check if per-message CSS rule exists for this message
     if (messageId && !messageId.startsWith('hash_') && !this.critCSSRules.has(messageId)) {
       return true;
     }
@@ -488,9 +476,7 @@ module.exports = {
     this._pendingRechecks.set(messageId, timers);
   },
 
-  // ----------------------------------------------------------------------------
   // Main Restoration Check
-  // ----------------------------------------------------------------------------
 
   /**
    * Checks if a message needs crit styling restoration from history
@@ -498,7 +484,6 @@ module.exports = {
    * @param {Node} node - DOM node to check
    */
   checkForRestoration(node) {
-    // Check if a newly added node is a message that should have a crit restored
     if (!this.currentChannelId || this.isLoadingChannel) return;
 
     // Find message element and throttle
@@ -522,7 +507,6 @@ module.exports = {
       let msgId = this.getMessageIdentifier(messageElement);
 
       if (msgId) {
-        // Check if this message should have a crit
         const channelCrits = this.getCritHistory(this.currentChannelId);
         const normalizedMsgId = String(msgId).trim();
 
@@ -627,7 +611,6 @@ module.exports = {
               return true;
             }
 
-            // Check if element now has crit class (crit was detected)
             if (retryElement?.classList?.contains('bd-crit-hit')) {
               // Invalidate cache and check history
               this._cachedCritHistory = null;

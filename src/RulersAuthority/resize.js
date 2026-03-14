@@ -1,7 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
 // Resize Handle System (CollapsibleUI pattern)
-// ═══════════════════════════════════════════════════════════════════════════
-//
 // Resize handles are ::before pseudo-elements on the panel itself.
 // mousedown on the panel edge -> track mousemove -> mouseup commits width.
 // CSS for handles is in styles.js buildCSS().
@@ -52,12 +49,12 @@ export function setupResizeHandlers(ctx) {
   if (!ctx._controller) return;
   const signal = ctx._controller.signal;
 
-  // ── mousedown: detect drag start (on document for full coverage) ──
+  // mousedown: detect drag start (on document for full coverage)
   document.addEventListener("mousedown", (e) => {
     handleResizeMouseDown(ctx, e);
   }, { passive: false, signal });
 
-  // ── mousemove: update width while dragging (RAF-throttled for perf) ──
+  // mousemove: update width while dragging (RAF-throttled for perf)
   let _resizeRafId = null;
   document.addEventListener("mousemove", (e) => {
     if (!ctx._dragging || !ctx._dragPanel) return;
@@ -84,7 +81,7 @@ export function setupResizeHandlers(ctx) {
     });
   }, { passive: true, signal });
 
-  // ── mouseup: commit width and restore transitions (on document for full coverage) ──
+  // mouseup: commit width and restore transitions (on document for full coverage)
   document.addEventListener("mouseup", (e) => {
     if (!ctx._dragging || !ctx._dragPanel) return;
     if (e.button !== 0) return; // Only commit on left-click release

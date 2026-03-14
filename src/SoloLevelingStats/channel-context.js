@@ -559,7 +559,6 @@ module.exports = {
   },
 
   isSystemMessage(messageElement) {
-    // Check if message is a system message
     const systemClasses = ['systemMessage', 'systemText', 'joinMessage', 'leaveMessage'];
     const classes = Array.from(messageElement.classList || []);
     return classes.some((c) => systemClasses.some((sc) => c.includes(sc)));

@@ -10,9 +10,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // PERSONALITY HELPERS (wrappers around constants.js)
-  // ============================================================================
 
   normalizePersonalityValue(value) {
     return C.normalizeShadowPersonalityValue(value);
@@ -39,9 +37,7 @@ module.exports = {
     return this.derivePersonalityFromRole(shadow.role || shadow.ro || '');
   },
 
-  // ============================================================================
   // COMPRESSION (regular _c:1, 80% savings)
-  // ============================================================================
 
   /**
    * Compress shadow data (80% memory reduction per shadow).
@@ -95,9 +91,7 @@ module.exports = {
     };
   },
 
-  // ============================================================================
   // ULTRA-COMPRESSION (_c:2, 95% savings)
-  // ============================================================================
 
   /**
    * Ultra-compress shadow data (95% memory reduction).
@@ -145,9 +139,7 @@ module.exports = {
     };
   },
 
-  // ============================================================================
   // DECOMPRESSION
-  // ============================================================================
 
   /**
    * Decompress ultra-compressed shadow (_c:2) back to usable format.
@@ -259,9 +251,7 @@ module.exports = {
     };
   },
 
-  // ============================================================================
   // CACHE INVALIDATION & BATCH DELETE
-  // ============================================================================
 
   _invalidateShadowStateCaches(oldShadow) {
     if (!oldShadow) return;
@@ -291,9 +281,7 @@ module.exports = {
     }
   },
 
-  // ============================================================================
   // TIERED COMPRESSION PIPELINE
-  // ============================================================================
 
   /**
    * Process shadow compression — compress weak shadows to save memory.
@@ -462,9 +450,7 @@ module.exports = {
     }
   },
 
-  // ============================================================================
   // ESSENCE CONVERSION
-  // ============================================================================
 
   /**
    * Convert shadows to essence by rank and quantity.
@@ -584,9 +570,7 @@ module.exports = {
     }
   },
 
-  // ============================================================================
   // DATA ACCESS & SAVE PREP
-  // ============================================================================
 
   /**
    * Get shadow in correct format (decompress if needed).

@@ -42,7 +42,7 @@ module.exports = {
       return { extracted: 0, attempted: 0 };
     }
 
-    // ── Shadow army cap gate: skip ALL mob extractions if already at/over cap ──
+    // Shadow army cap gate: skip ALL mob extractions if already at/over cap
     // This avoids hundreds of wasted IDB reads (each attemptDungeonExtraction checks cap individually).
     // Mob extractions remain skipped until cap is below limit (e.g., player ranks up or releases shadows).
     if (typeof shadowArmy.checkShadowArmyCap === 'function') {
@@ -542,7 +542,7 @@ module.exports = {
         }
       }
 
-      // ── DOT tick processing (Dagger Rush etc.) ──
+      // DOT tick processing (Dagger Rush etc.)
       if (dungeon.activeDots && Object.keys(dungeon.activeDots).length > 0) {
         this._processDotTicks(channelKey, dungeon, now);
       }

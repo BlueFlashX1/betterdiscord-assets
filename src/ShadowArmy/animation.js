@@ -15,9 +15,7 @@ const STATIC_CSS = require('./styles.css');
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // FONT LOADING
-  // ============================================================================
 
   /**
    * Load font for ARISE animation (Speedy Space Goat Oddity).
@@ -27,7 +25,6 @@ module.exports = {
     const fontName = this.settings?.ariseAnimation?.animationFont || 'Speedy Space Goat Oddity';
     const fontStyleId = `cha-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`;
 
-    // Check if font is already loaded (by CriticalHit or previous load)
     if (document.getElementById(fontStyleId)) {
       this.debugLog('FONT_LOADER', 'Font already loaded (likely by CriticalHit plugin)', {
         fontName,
@@ -151,9 +148,7 @@ module.exports = {
     return false;
   },
 
-  // ============================================================================
   // CSS INJECTION / REMOVAL
-  // ============================================================================
 
   /**
    * Inject all static CSS + dynamic font-family override for .sa-arise-text.
@@ -192,9 +187,7 @@ module.exports = {
     this.removeCSSById(styleId);
   },
 
-  // ============================================================================
   // ARISE ANIMATION SYSTEM
-  // ============================================================================
 
   /**
    * Initialize ARISE animation system.
@@ -410,9 +403,7 @@ module.exports = {
       (this.animationContainer = null));
   },
 
-  // ============================================================================
   // EXTRACTION ANIMATION (Simple fallback when ARISE disabled)
-  // ============================================================================
 
   /**
    * Show extraction animation for a shadow.
@@ -477,9 +468,7 @@ module.exports = {
     this._retryTimeouts?.add(fadeOutId);
   },
 
-  // ============================================================================
   // ARISE QUEUE / THROTTLE
-  // ============================================================================
 
   getAriseAnimationMinGapMs() {
     const ariseConfig = this.settings?.ariseAnimation || this.defaultSettings.ariseAnimation;
@@ -539,9 +528,7 @@ module.exports = {
     }
   },
 
-  // ============================================================================
   // ARISE ANIMATION — triggerArise (SVG + styled text fallback + particles)
-  // ============================================================================
 
   /**
    * Trigger ARISE animation for a given shadow.
@@ -561,7 +548,6 @@ module.exports = {
       this.loadAriseAnimationFont();
     }
 
-    // Debug: Verify font is loaded
     if (this.debug.enabled && document.fonts && document.fonts.check) {
       const fontLoaded = document.fonts.check(`16px '${fontName}'`);
       this.debugLog('ARISE_ANIMATION', 'Font verification check', {
@@ -656,7 +642,6 @@ module.exports = {
 
     container.appendChild(wrapper);
 
-    // Debug: Verify font after render
     if (this.debug.enabled) {
       const fontVerifyTimeoutId = setTimeout(() => {
         this._retryTimeouts?.delete(fontVerifyTimeoutId);
@@ -685,9 +670,7 @@ module.exports = {
     this._retryTimeouts?.add(wrapperRemoveId);
   },
 
-  // ============================================================================
   // CSS MANAGEMENT HELPERS — Theme Integration
-  // ============================================================================
 
   /**
    * Inject or update CSS with automatic theme variable integration.

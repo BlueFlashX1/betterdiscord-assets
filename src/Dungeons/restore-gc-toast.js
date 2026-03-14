@@ -306,7 +306,6 @@ module.exports = {
         this._discardPendingDungeonMobXP(this._resolveDungeonXPBatchKey(dungeon.channelKey, dungeon));
         this._markAllocationDirty('restore-cleanup-stale-dungeon');
 
-        // Delete from IndexedDB
         this.storageManager.deleteDungeon(dungeon.channelKey);
 
         // Clear from memory if somehow still present

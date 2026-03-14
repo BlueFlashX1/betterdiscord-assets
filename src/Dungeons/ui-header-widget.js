@@ -9,7 +9,7 @@ const HEADER_POPUP_ID = 'dungeons-header-popup';
 // are the proven-working path. dc.sel.toolbar is kept as a first-try optimistic
 // check only — it falls through to wildcards if it matched the wrong element.
 const HEADER_TOOLBAR_SELECTORS = [
-  // ── Wildcards (proven, always correct) ──
+  // Wildcards (proven, always correct)
   '[aria-label="Channel header"] [class*="toolbar_"]',
   '[class*="titleWrapper_"] [class*="toolbar_"]',
   'header [class*="toolbar_"]',

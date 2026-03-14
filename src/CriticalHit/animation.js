@@ -9,9 +9,7 @@ const C = require('./constants');
 const dc = require('../shared/discord-classes');
 
 module.exports = {
-  // --------------------------------------------------------------------------
   // Duplicate Detection
-  // --------------------------------------------------------------------------
 
   /**
    * Calculates the center position of an element from its bounding rect
@@ -85,9 +83,7 @@ module.exports = {
     );
   },
 
-  // --------------------------------------------------------------------------
   // Position Calculation
-  // --------------------------------------------------------------------------
 
   /**
    * Gets default center position for fallback
@@ -155,9 +151,7 @@ module.exports = {
     return { x, y };
   },
 
-  // --------------------------------------------------------------------------
   // Combo Calculation
-  // --------------------------------------------------------------------------
 
   /**
    * Calculates combo size multiplier based on combo count
@@ -179,9 +173,7 @@ module.exports = {
     return combo > 1 ? ` X${combo}` : '';
   },
 
-  // --------------------------------------------------------------------------
   // Animation Element Creation
-  // --------------------------------------------------------------------------
 
   /**
    * Creates the base animation text element with class and attributes
@@ -343,9 +335,7 @@ module.exports = {
     return textElement;
   },
 
-  // --------------------------------------------------------------------------
   // Animation Deduplication & Display
-  // --------------------------------------------------------------------------
 
   /**
    * Checks if animation should be allowed based on existing data
@@ -456,7 +446,6 @@ module.exports = {
     // Fade out existing animations before starting new one
     this.fadeOutExistingAnimations();
 
-    // Create animation element
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
     this.activeAnimations.add(textElement);
@@ -586,9 +575,7 @@ module.exports = {
     textElement._chaCleanupTimeout = cleanupTimeout;
   },
 
-  // --------------------------------------------------------------------------
   // User Combo Management
-  // --------------------------------------------------------------------------
 
   /**
    * Gets or creates user combo object
@@ -642,9 +629,7 @@ module.exports = {
     );
   },
 
-  // --------------------------------------------------------------------------
   // Animation Container & Position
-  // --------------------------------------------------------------------------
 
   /**
    * Gets or creates the animation container element
@@ -683,9 +668,7 @@ module.exports = {
     return { x: window.innerWidth / 2, y: window.innerHeight / 2 + 50 };
   },
 
-  // --------------------------------------------------------------------------
   // Screen Shake Effect
-  // --------------------------------------------------------------------------
 
   /**
    * Creates screen shake CSS keyframes

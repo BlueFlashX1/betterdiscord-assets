@@ -10,9 +10,7 @@ const dc = require('../shared/discord-classes');
 
 module.exports = {
 
-  // --------------------------------------------------------------------------
   // Message Container Discovery
-  // --------------------------------------------------------------------------
 
   /**
    * Checks if cached message container is still valid
@@ -138,9 +136,7 @@ module.exports = {
     return this._findMessageContainerFallback();
   },
 
-  // --------------------------------------------------------------------------
   // Observer Setup
-  // --------------------------------------------------------------------------
 
   /**
    * Starts MutationObserver to watch for new messages in the DOM
@@ -392,9 +388,7 @@ module.exports = {
     this.setupChannelChangeListener();
   },
 
-  // --------------------------------------------------------------------------
   // Webpack Module Initialization
-  // --------------------------------------------------------------------------
 
   /**
    * Initialize webpack modules for advanced Discord integration

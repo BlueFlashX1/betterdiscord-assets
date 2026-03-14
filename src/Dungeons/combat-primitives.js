@@ -296,7 +296,6 @@ module.exports = {
       const oldHP = this.settings.userHP;
       this.settings.userHP = Math.min(this.settings.userMaxHP, this.settings.userHP + hpRegen);
 
-      // Debug: Log HP regeneration (first 3 times only, debug mode only)
       if (!this._hpRegenCount) this._hpRegenCount = 0;
       if (this._hpRegenCount < 3 && this.settings.userHP !== oldHP) {
         this.debugLog(
@@ -411,7 +410,6 @@ module.exports = {
 
     const dungeon = this.activeDungeons.get(channelKey);
 
-    // Check if shadows are actually all dead BEFORE clearing them
     let shadowsWereAlive = false;
     if (dungeon) {
       const allShadows = await this.getAllShadows();

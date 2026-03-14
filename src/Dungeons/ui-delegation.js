@@ -141,7 +141,7 @@ module.exports = {
       if (ariseBtn) {
         e.preventDefault();
         e.stopPropagation();
-        // ── Immediate visual disable to block spam clicks ──
+        // Immediate visual disable to block spam clicks
         if (ariseBtn.dataset.ariseDisabled === 'true') return;
         ariseBtn.dataset.ariseDisabled = 'true';
         ariseBtn.style.opacity = '0.5';

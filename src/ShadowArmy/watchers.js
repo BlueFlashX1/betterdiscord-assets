@@ -7,9 +7,7 @@
 const dc = require('../shared/discord-classes');
 
 module.exports = {
-  // ============================================================================
   // CHANNEL & MEMBER LIST WATCHERS
-  // ============================================================================
 
   /**
    * Setup channel watcher for URL changes (event-based, no polling).

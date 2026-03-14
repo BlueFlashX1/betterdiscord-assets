@@ -59,7 +59,7 @@ module.exports = {
     const now = Date.now();
     const effects = [];
 
-    // ── Buffs (green/cyan icons) ──────────────────────────────────────
+    // Buffs (green/cyan icons)
     const domain = dungeon.activeBuffs?.domain;
     if (domain && domain.expiresAt > now) {
       const sec = Math.ceil((domain.expiresAt - now) / 1000);
@@ -73,7 +73,7 @@ module.exports = {
       effects.push({ icon: '\u26A1', label: `Sprint -${pct}% CD`, time: sec, type: 'buff' });
     }
 
-    // ── Skill debuffs (red/orange icons) ──────────────────────────────
+    // Skill debuffs (red/orange icons)
     const rulers = dungeon.activeDebuffs?.rulers_force;
     if (rulers && rulers.expiresAt > now) {
       const sec = Math.ceil((rulers.expiresAt - now) / 1000);
@@ -106,14 +106,13 @@ module.exports = {
       effects.push({ icon: '\u{1F53B}', label: `-${pct}% Stats`, time: sec, type: 'debuff' });
     }
 
-    // ── Combat status ailments on BOSS (from _combatStatusByChannel) ──
+    // Combat status ailments on BOSS (from _combatStatusByChannel)
     const channelKey = dungeon.channelKey;
     const statusState = this._combatStatusByChannel?.get?.(channelKey);
     if (statusState?.boss && statusState.hasActive) {
       const bossBucket = statusState.boss;
       for (const [effectName, effect] of Object.entries(bossBucket)) {
         if (!effect || typeof effect !== 'object') continue;
-        // Check if effect is still active
         const isActive = effect.expiresAt === Infinity ||
           (Number.isFinite(effect.expiresAt) && effect.expiresAt > now);
         if (!isActive) continue;
@@ -138,7 +137,7 @@ module.exports = {
       }
     }
 
-    // ── Mob ailment summary counts (aggregated across all mobs) ──
+    // Mob ailment summary counts (aggregated across all mobs)
     if (statusState?.mobs && statusState.mobs.size > 0) {
       // Tally: { effectName: count }
       const mobAilmentCounts = {};
@@ -165,7 +164,7 @@ module.exports = {
       }
     }
 
-    // ── Combat status ailments on USER (debuffs applied by enemies) ──
+    // Combat status ailments on USER (debuffs applied by enemies)
     if (statusState?.user && statusState.hasActive) {
       const userBucket = statusState.user;
       for (const [effectName, effect] of Object.entries(userBucket)) {
@@ -689,7 +688,6 @@ module.exports = {
       // JOIN/LEAVE buttons are handled via delegated click handler (prevents per-rerender listeners).
     } catch (error) {
       this.errorLog('CRITICAL', 'Error updating boss HP bar', { channelKey, error });
-      // Don't throw - just log and continue
     }
   },
 
@@ -724,7 +722,6 @@ module.exports = {
         document.querySelector('[class*="channelHeader_"]');
     }
 
-    // Cache result
     if (header) {
       this._containerCache.set(cacheKey, { value: header, timestamp: now });
     }
@@ -775,7 +772,6 @@ module.exports = {
         document.querySelector('[class*="chatContent_"]');
     }
 
-    // Cache result
     if (container) {
       this._containerCache.set(cacheKey, { value: container, timestamp: now });
     }
@@ -833,7 +829,6 @@ module.exports = {
       });
 
       if (!bossHpContainer) {
-        // Create container
         bossHpContainer = document.createElement('div');
         bossHpContainer.className = 'dungeon-boss-hp-container';
         bossHpContainer.setAttribute('data-channel-key', channelKey);
@@ -859,7 +854,6 @@ module.exports = {
           container.appendChild(bossHpContainer);
         }
       } else {
-        // Clear existing content
         bossHpContainer.innerHTML = '';
       }
 
@@ -877,7 +871,6 @@ module.exports = {
       this.bossHPBars.set(channelKey, hpBar);
     } catch (error) {
       this.errorLog('CRITICAL', 'Error creating boss HP bar in container', { channelKey, error });
-      // Don't throw - just log and continue
     }
   },
 
@@ -897,7 +890,6 @@ module.exports = {
       const className = (button.className || '').toLowerCase();
       const textContent = (button.textContent || '').toLowerCase();
 
-      // Check if it's a comment/thread related button
       const isCommentButton =
         ariaLabel.includes('comment') ||
         ariaLabel.includes('thread') ||

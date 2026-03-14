@@ -40,7 +40,7 @@ const {
 } = require("./debug");
 const dc = require("../shared/discord-classes");
 
-// ─── Selector Configuration ─────────────────────────────────────────────────
+// Selector Configuration
 // Centralized for easy updating when Discord changes class names.
 
 const DOCK_SELECTORS = [
@@ -93,7 +93,7 @@ const ALERT_SELECTOR_STR = ALERT_SELECTORS.join(",");
 const DIGITS_RE = /\d+/;
 const DIGITS_ONLY_RE = /^\d+$/;
 
-// ─── DockEngine — Imperative State Machine ──────────────────────────────────
+// DockEngine — Imperative State Machine
 // A plain JS class that holds ALL dock interaction state and logic.
 // Created once per mount by the React component.  NOT a React component itself.
 
@@ -103,7 +103,7 @@ class DockEngine {
     this.stateTarget = document.body;
     this.root = document.documentElement;
 
-    // ── Config ──
+    // Config
     this.peekPx = 8;
     this.revealZonePx = 85;
     this.hideDelayMs = 500;
@@ -115,7 +115,7 @@ class DockEngine {
     this.typingLockMs = 2600;
     this.railHeightPx = 9;
 
-    // ── Dynamic state ──
+    // Dynamic state
     this.lockOpenUntil = Date.now() + this.startupLockMs;
     this.revealHoldUntil = 0;
     this.suppressOpenUntil = 0;
@@ -128,7 +128,7 @@ class DockEngine {
     this.lastMouseMoveAt = 0;
     this.hasMouseMoved = false;
 
-    // ── DOM references ──
+    // DOM references
     this.dock = null;
     this.dockMoveTarget = null;
     this.rail = null;
@@ -143,7 +143,7 @@ class DockEngine {
     this._lastDockHeight = null;
     this._origPanelsHeight = document.body.style.getPropertyValue("--custom-app-panels-height") || null;
 
-    // ── Timers ──
+    // Timers
     this.hideTimer = null;
     this.revealTimer = null;
     this.syncInterval = null;
@@ -155,7 +155,7 @@ class DockEngine {
     this._cachedComposerEl = null;
     this._cachedComposerResult = false;
 
-    // ── Debug ──
+    // Debug
     this.tickCount = 0;
     this.debugEnabled = false;
     this.debugConsole = false;
@@ -166,7 +166,7 @@ class DockEngine {
     this.debugFilePath = null;
     this.fs = null;
 
-    // ── Bind event handlers ──
+    // Bind event handlers
     this.onMouseMove = this.onMouseMove.bind(this);
     this.onDockEnter = this.onDockEnter.bind(this);
     this.onDockLeave = this.onDockLeave.bind(this);
@@ -180,7 +180,7 @@ class DockEngine {
     this.safeTick = this.safeTick.bind(this);
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  // Lifecycle
 
   mount() {
     this.initDebugFileSink();
@@ -281,7 +281,7 @@ class DockEngine {
     this._cachedComposerResult = false;
   }
 
-  // ── Dock Discovery (called by React effect + safeTick) ────────────────────
+  // Dock Discovery (called by React effect + safeTick)
 
   syncDock() {
     if (this.dock?.isConnected) return;
@@ -353,7 +353,7 @@ class DockEngine {
     }
   }
 
-  // ── User Panel (called by React effect + safeTick) ────────────────────────
+  // User Panel (called by React effect + safeTick)
 
   trySetupUserPanel() {
     const panel = document.querySelector(PANEL_SELECTOR_STR);
@@ -418,7 +418,7 @@ class DockEngine {
     this._onPanelLeave = null;
   }
 
-  // ── safeTick — Reduced Scope ──────────────────────────────────────────────
+  // safeTick — Reduced Scope
   // Discovery (syncDock, trySetupUserPanel) is now handled by React effects.
   // Tick focuses on: typing enforcement, pointer refresh, alerts, rail, height.
 
@@ -470,7 +470,7 @@ class DockEngine {
     }
   }
 
-  // ── Show / Hide State Machine ─────────────────────────────────────────────
+  // Show / Hide State Machine
 
   showDock(trigger = "unknown") {
     if (!this.stateTarget) { this.debug("dock:show-blocked", { reason: "no-root" }, true); return; }
@@ -526,7 +526,7 @@ class DockEngine {
     return false;
   }
 
-  // ── Timer Management ──────────────────────────────────────────────────────
+  // Timer Management
 
   scheduleHide(delayMs) {
     if (this.shouldKeepDockOpen()) { this.clearHideTimer(); return; }
@@ -563,7 +563,7 @@ class DockEngine {
     this.revealTimer = null;
   }
 
-  // ── Enforcement ───────────────────────────────────────────────────────────
+  // Enforcement
 
   enforceAutoHideState() {
     if (!this.stateTarget) return;
@@ -601,7 +601,7 @@ class DockEngine {
     );
   }
 
-  // ── Event Handlers ────────────────────────────────────────────────────────
+  // Event Handlers
 
   onMouseMove(event) {
     // PERF: Always capture coords (cheap), but coalesce heavy work to 1x per RAF
@@ -729,7 +729,7 @@ class DockEngine {
     }
   }
 
-  // ── Typing Detection ──────────────────────────────────────────────────────
+  // Typing Detection
 
   touchTypingLock(source, target) {
     const active = target instanceof Element
@@ -791,7 +791,7 @@ class DockEngine {
     return result;
   }
 
-  // ── Cursor Geometry ───────────────────────────────────────────────────────
+  // Cursor Geometry
 
   isCursorInRevealStrip(x = this.lastMouseX, y = this.lastMouseY) {
     if (typeof x !== "number" || typeof y !== "number") return false;
@@ -835,7 +835,7 @@ class DockEngine {
     return Date.now() - this.lastMouseMoveAt <= maxAgeMs;
   }
 
-  // ── Dock Height ───────────────────────────────────────────────────────────
+  // Dock Height
 
   updateDockHeightVar() {
     // PERF: Only re-measure when dock geometry may have changed (resize, dock swap)
@@ -851,7 +851,7 @@ class DockEngine {
     this._dockHeightDirty = false;
   }
 
-  // ── Alert Rail ────────────────────────────────────────────────────────────
+  // Alert Rail
 
   createRail() {
     if (this.rail) return;
@@ -977,7 +977,7 @@ class DockEngine {
     return this._isBadgeClassActive(className, text);
   }
 
-  // ── Debug Infrastructure ──────────────────────────────────────────────────
+  // Debug Infrastructure
 
   debug(event, data = {}, includeState = false) {
     return debugDockEngine(this, event, data, includeState);

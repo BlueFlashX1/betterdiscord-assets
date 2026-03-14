@@ -48,7 +48,6 @@ module.exports = {
       this.soloLevelingStats.updateChatUI();
     }
 
-    // Save if requested
     if (saveImmediately && typeof this.soloLevelingStats.saveSettings === 'function') {
       this.soloLevelingStats.saveSettings();
     }
@@ -64,7 +63,6 @@ module.exports = {
       this.soloLevelingStats.updateChatUI();
     }
 
-    // Save if requested
     if (saveImmediately && typeof this.soloLevelingStats.saveSettings === 'function') {
       this.soloLevelingStats.saveSettings();
     }

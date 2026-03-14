@@ -203,7 +203,7 @@ function buildComponents(pluginRef) {
     return () => onNavigate(entry);
   }
 
-  // ── FeedCard ──────────────────────────────────────────────────────────
+  // FeedCard
   function FeedCard({ entry, onNavigate }) {
     const time = new Date(entry.timestamp);
     const timeStr = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}`;
@@ -237,7 +237,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── DeploymentRow ─────────────────────────────────────────────────────
+  // DeploymentRow
   function DeploymentRow({ deployment, onRecall }) {
     const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
 
@@ -257,7 +257,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── FeedTab ───────────────────────────────────────────────────────────
+  // FeedTab
   function FeedTab({ onNavigate }) {
     const [feed, setFeed] = useState([]);
     const scrollRef = useRef(null);
@@ -317,7 +317,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── DeploymentsTab ────────────────────────────────────────────────────
+  // DeploymentsTab
   function DeploymentsTab({ onRecall, onDeployNew }) {
     const [deployments, setDeployments] = useState([]);
 
@@ -365,7 +365,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── KeywordAlertsTab ──────────────────────────────────────────────────
+  // KeywordAlertsTab
   function KeywordAlertsTab() {
     const [deployments, setDeployments] = useState([]);
     const [keywordDrafts, setKeywordDrafts] = useState({});
@@ -573,7 +573,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── SensesPanel ───────────────────────────────────────────────────────
+  // SensesPanel
   function SensesPanel({ onClose }) {
     const [activeTab, setActiveTab] = useState("feed");
 
@@ -651,7 +651,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── SensesWidget ──────────────────────────────────────────────────────
+  // SensesWidget
   function SensesWidget() {
     const [, forceUpdate] = useReducer(x => x + 1, 0);
 

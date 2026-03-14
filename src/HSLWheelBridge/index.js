@@ -23,9 +23,7 @@ const _scrollerCache = {};
 let _PluginUtils;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
-// ============================================================================
 // 1) SCROLLER DISCOVERY + WHEEL ENGINE
-// ============================================================================
 
 function findHSLScroller() {
   if (_PluginUtils) {
@@ -69,7 +67,7 @@ function handleWheel(event) {
   event.stopPropagation();
 }
 
-// ─── WheelBridgeEngine — lightweight imperative manager ─────────────────────
+// WheelBridgeEngine — lightweight imperative manager
 
 class WheelBridgeEngine {
   constructor() {
@@ -97,7 +95,7 @@ class WheelBridgeEngine {
   }
 }
 
-// ─── Plugin Class ───────────────────────────────────────────────────────────
+// Plugin Class
 
 module.exports = class HSLWheelBridge {
   constructor() {
@@ -130,9 +128,7 @@ module.exports = class HSLWheelBridge {
     BdApi.Patcher.unpatchAll(this._patcherId);
   }
 
-  // =========================================================================
   // 2) PLUGIN LIFECYCLE
-  // =========================================================================
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("HSLWheelBridge") || createToast();
     this._cleanupRuntime();
@@ -167,9 +163,7 @@ module.exports = class HSLWheelBridge {
     this._toast('HSLWheelBridge stopped', "info", 2000);
   }
 
-  // =========================================================================
   // 3) REACT PATCHER + FALLBACK MOUNT
-  // =========================================================================
 
   _installReactPatcher() {
     let ReactUtils;
@@ -198,7 +192,7 @@ module.exports = class HSLWheelBridge {
     }
   }
 
-  // ── WheelController — React Functional Component ──────────────────────────
+  // WheelController — React Functional Component
 
   get _WheelController() {
     if (this.__WheelControllerCached) return this.__WheelControllerCached;

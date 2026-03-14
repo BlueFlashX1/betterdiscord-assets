@@ -238,9 +238,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         this._queuedReturnSignal = null;
         this._queuedReturnSignalToastShown = false;
       }
-      // ==========================================================================
       // 1) CONSTANTS + SETTINGS
-      // ==========================================================================
       _normalizeSettingsInPlace() {
         this.settings.requestTimeoutMs = clampInt(this.settings.requestTimeoutMs, 500, 15e3, 3e3);
         this.settings.minReturnSignalGapMs = clampInt(this.settings.minReturnSignalGapMs, 1e3, 36e5, 6e4);
@@ -294,9 +292,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           return { guildId: null, channelId: null };
         }
       }
-      // ==========================================================================
       // 2) LIFECYCLE + DISPATCHER WIRING
-      // ==========================================================================
       start() {
         if (!this._isStopped) this.stop();
         this._isStopped = false;
@@ -415,9 +411,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         }
         return false;
       }
-      // ==========================================================================
       // 3) BRIDGE TRANSPORT + SIGNING
-      // ==========================================================================
       async _sendBridgeEvent(eventType, payload, options = {}) {
         if (!this.settings.enabled) {
           return { ok: false, reason: "bridge_disabled" };
@@ -514,9 +508,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         this.debugLog("BRIDGE", "Bridge event accepted", { eventType, status: result.status });
         return true;
       }
-      // ==========================================================================
       // 4) AUTO RETURN DETECTION
-      // ==========================================================================
       async _onMessageCreate(payload) {
         if (this._isStopped) return;
         if (!this.settings.enabled || !this.settings.autoReturnOnOutboundMessage) return;
@@ -582,9 +574,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           "Manual return signal sent via bridge."
         );
       }
-      // ==========================================================================
       // 5) CHANNEL HEADER WIDGET + PRIVATE DIGEST VIEW
-      // ==========================================================================
       _injectHeaderWidgetStyles() {
         const css = `
 #${HEADER_WIDGET_ID} {
@@ -1119,9 +1109,7 @@ Open plugin debug logs if you need full raw details.`;
           BdApi.UI.alert(title, fallbackText);
         }
       }
-      // ==========================================================================
       // 6) SETTINGS UI
-      // ==========================================================================
       _createRow(labelText) {
         const row = document.createElement("div");
         row.style.cssText = "margin-bottom:12px;";

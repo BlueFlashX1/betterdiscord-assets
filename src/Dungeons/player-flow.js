@@ -7,7 +7,6 @@ module.exports = {
     const channelKey = this.settings.userActiveDungeon;
     const dungeon = this.activeDungeons.get(channelKey);
 
-    // Check if dungeon exists and is still active
     if (!dungeon || dungeon.completed || dungeon.failed) {
       // Dungeon doesn't exist or is completed/failed - clear active status
       this.debugLog(
@@ -21,7 +20,6 @@ module.exports = {
       // completeDungeon sets completed=true, so deleting here would race and nuke it.
       // Corpse pile is cleaned up by _processCorpsePile itself after extraction.
 
-      // Save settings
       this.saveSettings();
 
       return false; // Status was invalid, now cleared
@@ -190,7 +188,6 @@ module.exports = {
       );
     }
 
-    // Check if user has HP
     if (this.settings.userHP <= 0) {
       dungeon._deploying = false;
       this.showToast('You need HP to deploy shadows! Wait for HP to regenerate.', 'error');
@@ -361,7 +358,6 @@ module.exports = {
       );
     }
 
-    // Initialize boss and mob attack times to prevent one-shot burst
     const now = Date.now();
     if (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0) {
       dungeon.boss.lastAttackTime = now;
@@ -551,7 +547,6 @@ module.exports = {
         );
       }
     } else {
-      // Attack mobs
       await this.attackMobs(channelKey, 'user');
     }
   },
@@ -740,7 +735,7 @@ module.exports = {
       passiveLevel = Math.max(1, st?.getSkillLevel?.(def.unlock?.passiveSkill) || 1);
     }
 
-    // ── Boss debuff resistance ────────────────────────────────────────
+    // Boss debuff resistance
     // Two competing forces:
     //   1. Boss rank advantage → MORE resistance (15% duration / 10% effect per rank above)
     //   2. Player total power → LESS resistance (penetration scales with combined stats)
@@ -777,7 +772,7 @@ module.exports = {
       penetrationPct: Math.round(playerPenetration * 100),
     } : { durationMult: 1, effectMult: 1, resistPct: 0, penetrationPct: 0 };
 
-    // ── Debuff: Ruler's Authority Force ──────────────────────────────
+    // Debuff: Ruler's Authority Force
     if (combatEffect === 'debuff' && def.debuff) {
       const db = def.debuff;
       const baseDuration = db.disableAttacksDurationMs || 5000;
@@ -850,7 +845,7 @@ module.exports = {
       return true;
     }
 
-    // ── Shadow Buff: Domain Expansion ────────────────────────────────
+    // Shadow Buff: Domain Expansion
     if (combatEffect === 'shadow_buff' && def.shadowBuff) {
       const sb = def.shadowBuff;
       const duration = (sb.durationMs || 30000) + (sb.durationPerLevel || 0) * (passiveLevel - 1);
@@ -874,7 +869,7 @@ module.exports = {
       return true;
     }
 
-    // ── Fear: Dragon's Fear ────────────────────────────────────────────
+    // Fear: Dragon's Fear
     if (combatEffect === 'fear' && def.fear) {
       const fr = def.fear;
       const mobDuration = (fr.baseDurationMs || 8000) + (fr.durationPerLevel || 0) * (passiveLevel - 1);
@@ -916,7 +911,7 @@ module.exports = {
       return true;
     }
 
-    // ── Bloodlust: AoE fear + boss stat reduction ────────────────────
+    // Bloodlust: AoE fear + boss stat reduction
     if (combatEffect === 'bloodlust' && def.bloodlust) {
       const bl = def.bloodlust;
       const mobDuration = (bl.baseDurationMs || 60000) + (bl.durationPerLevel || 0) * (passiveLevel - 1);
@@ -958,7 +953,7 @@ module.exports = {
       return true;
     }
 
-    // ── DOT AOE: Dagger Rush ─────────────────────────────────────────
+    // DOT AOE: Dagger Rush
     if (combatEffect === 'dot_aoe' && def.dot) {
       const dt = def.dot;
 
@@ -1001,7 +996,7 @@ module.exports = {
       return true;
     }
 
-    // ── Speed Boost (Sprint): attack cooldown reduction ─────────────
+    // Speed Boost (Sprint): attack cooldown reduction
     if (combatEffect === 'speed_boost' && def.speedBoost) {
       const sb = def.speedBoost;
       const duration = (sb.durationMs || 180000) + (sb.durationPerLevel || 0) * (passiveLevel - 1);
@@ -1026,7 +1021,7 @@ module.exports = {
       return true;
     }
 
-    // ── Default: Direct damage ───────────────────────────────────────
+    // Default: Direct damage
     // Target boss if gate unlocked (bossTargetable computed above), otherwise cleave mobs
     if (bossTargetable) {
       const attackResult = this._resolveUserBossDamage(dungeon, {
@@ -1076,13 +1071,12 @@ module.exports = {
       return true;
     }
 
-    // ── Mob targeting: skill hits live mobs when boss isn't targetable ──
+    // Mob targeting: skill hits live mobs when boss isn't targetable
     // PERF: Don't .filter() the entire array — collect alive mobs up to the targeting cap.
     const isPiercing = def.targeting === 'piercing';
     const isSingleTarget = def.targeting === 'single';
 
     // Piercing cap: scales with agility + level. Base 50, +2 per agility, +3 per level, max 500.
-    // Lore: dagger pierces through a LINE of enemies, not the whole battlefield.
     const pStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
     const playerLevel = this.soloLevelingStats?.settings?.level || 1;
     const piercingCap = isPiercing
@@ -1225,7 +1219,7 @@ module.exports = {
     return true;
   },
 
-  // ── Combat buff/debuff helpers ──────────────────────────────────────
+  // Combat buff/debuff helpers
   _getActiveDebuff(dungeon, key) {
     const debuff = dungeon?.activeDebuffs?.[key];
     if (!debuff) return null;

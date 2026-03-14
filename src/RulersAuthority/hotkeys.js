@@ -1,6 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
 // Hotkey Utilities — delegates to shared/hotkeys with PluginUtils override
-// ═══════════════════════════════════════════════════════════════════════════
 
 const { isEditableTarget: _sharedIsEditableTarget, matchesHotkey: _sharedMatchesHotkey } = require("../shared/hotkeys");
 

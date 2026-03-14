@@ -217,12 +217,9 @@ let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
-// ============================================================================
 // REACT COMPONENT FACTORY (v3.0.0 — replaces innerHTML chat UI rendering)
-// ============================================================================
 
 const C = require('./constants');
-
 
 const SoloLevelingStats = class SoloLevelingStats {
   constructor() {
@@ -308,7 +305,6 @@ const SoloLevelingStats = class SoloLevelingStats {
       isDeepCopy: JSON.stringify(this.settings) === JSON.stringify(this.defaultSettings),
     });
   
-    // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
     this.saveManager = null;
     if (UnifiedSaveManager) {
       this.saveManager = new UnifiedSaveManager('SoloLevelingStats');
@@ -402,7 +398,7 @@ const SoloLevelingStats = class SoloLevelingStats {
     this.messageStorePatch = null; // Track message store patch for cleanup
     this.reactInjectionActive = false; // Track if React injection is active
   
-    // ── §2.2 PERFORMANCE OPTIMIZATION SYSTEM ────────────────────────────────
+    // §2.2 PERFORMANCE OPTIMIZATION SYSTEM
     // DOM Cache (eliminates 84 querySelector calls per update)
     // Performance Caches (tiered TTL for expensive calculations)
   
@@ -606,7 +602,7 @@ const SoloLevelingStats = class SoloLevelingStats {
       perfectStreak: { name: 'Perfect Streak', desc: 'Send 10 messages', xp: 150, statPoints: 1 },
     };
   
-    // ── §2.5 DEBUG & EVENT SYSTEM STATE ──────────────────────────────────────
+    // §2.5 DEBUG & EVENT SYSTEM STATE
     // Debug system uses settings.debugMode (unified toggle)
     // Event system provides xpChanged/levelChanged/rankChanged/statsChanged hooks
     this.debug = {

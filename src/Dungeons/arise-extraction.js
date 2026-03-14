@@ -27,7 +27,7 @@ module.exports = {
     const bossData = this.defeatedBosses.get(channelKey);
     if (!bossData) return;
 
-    // ── Shadow army cap gate: don't show ARISE if already at/over cap ──
+    // Shadow army cap gate: don't show ARISE if already at/over cap
     try {
       const shadowArmy = this.shadowArmy;
       if (shadowArmy && typeof shadowArmy.checkShadowArmyCap === 'function') {
@@ -91,14 +91,14 @@ module.exports = {
   },
 
   async attemptBossExtraction(channelKey) {
-    // ── SkillTree gate: shadow_extraction must be unlocked ──
+    // SkillTree gate: shadow_extraction must be unlocked
     const skillTree = this.getSkillTreeInstance?.();
     if (!skillTree || typeof skillTree.getSkillLevel !== 'function' || !(Number(skillTree.getSkillLevel('shadow_extraction')) >= 1)) {
       this.showToast('Shadow Extraction skill not unlocked. Unlock it in the Skill Tree.', 'error');
       return;
     }
 
-    // ── Mutex: block concurrent extraction on same channel ──
+    // Mutex: block concurrent extraction on same channel
     if (this.extractionInProgress.has(channelKey)) return;
 
     const bossData = this.defeatedBosses.get(channelKey);
@@ -120,7 +120,7 @@ module.exports = {
       .toLowerCase()
       .replace(/\s+/g, '_')}`;
 
-    // ── Guard: prevent arising a boss that was already successfully extracted ──
+    // Guard: prevent arising a boss that was already successfully extracted
     if (this._arisedBossIds.has(bossId)) {
       this.showToast('Shadow already extracted from this boss.', 'info');
       return;
@@ -129,7 +129,6 @@ module.exports = {
     // Lock extraction for this channel
     this.extractionInProgress.add(channelKey);
 
-    // Check if ShadowArmy plugin is available
     if (!this.shadowArmy) {
       this.extractionInProgress.delete(channelKey);
       this.showToast('Shadow Army plugin not found. Cannot extract shadow.', 'error');
@@ -184,7 +183,7 @@ module.exports = {
         result.success && result.shadow ? 'success' : result.error ? 'error' : 'fail';
       const extractionHandlers = {
         success: async () => {
-          // ── Mark boss as arose — permanently blocks re-extraction ──
+          // Mark boss as arose — permanently blocks re-extraction
           this._arisedBossIds.add(bossId);
           // Immediately remove from defeatedBosses to prevent the combat loop's
           // UI guard (needsUiGuard) from re-creating the ARISE button during cleanup delay.
@@ -225,7 +224,7 @@ module.exports = {
       // Re-enable on system error so user can retry
       this._reEnableAriseButton(channelKey);
     } finally {
-      // ── Always release mutex so next click can enter ──
+      // Always release mutex so next click can enter
       this.extractionInProgress.delete(channelKey);
     }
   },
@@ -432,7 +431,6 @@ module.exports = {
       return;
     }
 
-    // Delete from IndexedDB (safe only when channel isn't hosting a new dungeon)
     if (this.storageManager) {
       try {
         await this.storageManager.deleteDungeon(channelKey);

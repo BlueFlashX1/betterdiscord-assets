@@ -64,7 +64,6 @@ const SkillTreeUiMethods = {
       return;
     }
 
-    // Create container
     let container = document.getElementById("st-modal-root");
     if (!container) {
       container = document.createElement("div");

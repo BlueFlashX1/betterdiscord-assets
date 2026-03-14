@@ -54,7 +54,7 @@ const ShadowSensesUiMethods = {
     console.error(`[${PLUGIN_NAME}][${system}]`, ...args);
   },
 
-  // ── Widget Injection ────────────────────────────────────────────────────
+  // Widget Injection
 
   _getMembersWrap() {
     try {
@@ -204,7 +204,7 @@ const ShadowSensesUiMethods = {
     }
   },
 
-  // ── Panel ───────────────────────────────────────────────────────────────
+  // Panel
 
   openPanel() {
     try {
@@ -223,7 +223,6 @@ const ShadowSensesUiMethods = {
         this._panelReactRoot = null;
       }
 
-      // Toggle if already open
       if (this._panelOpen) {
         this.closePanel();
         return;
@@ -272,7 +271,7 @@ const ShadowSensesUiMethods = {
     }
   },
 
-  // ── ESC Handler ─────────────────────────────────────────────────────────
+  // ESC Handler
 
   registerEscHandler() {
     try {
@@ -290,7 +289,7 @@ const ShadowSensesUiMethods = {
     }
   },
 
-  // ── Context Menu ────────────────────────────────────────────────────────
+  // Context Menu
 
   patchContextMenu() {
     try {

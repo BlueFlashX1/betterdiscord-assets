@@ -263,14 +263,12 @@ module.exports = {
 
   _loadQuestFont() {
     try {
-      // Check if font is already loaded (by CriticalHit plugin or previous call)
       const fontName = 'Friend or Foe BB';
       const existingStyle = document.getElementById('sls-quest-font-friend-or-foe-bb');
       if (existingStyle) {
         return; // Font already loaded
       }
   
-      // Check if CriticalHit plugin has loaded the font
       if (document.fonts && document.fonts.check) {
         document.fonts.ready.then(() => {
           setTimeout(() => {

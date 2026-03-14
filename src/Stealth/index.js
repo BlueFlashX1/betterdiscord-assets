@@ -100,7 +100,7 @@ module.exports = class Stealth {
     this._toastImpl?.(message, type, timeout);
   }
 
-  // ── Lifecycle + Settings ───────────────────────────────────────────────
+  // Lifecycle + Settings
   start() {
     this._clearRuntimeArtifacts();
     this._toastImpl = _PluginUtils?.createToastHelper?.("stealth")
@@ -395,7 +395,7 @@ module.exports = class Stealth {
     this._handleStealthGateTransition(prevState, nextState, reason);
   }
 
-  // ── Store + Flux Dispatcher Wiring ─────────────────────────────────────
+  // Store + Flux Dispatcher Wiring
   _initStores() {
     try {
       this._stores.user = BdApi.Webpack.getStore("UserStore");
@@ -512,7 +512,7 @@ module.exports = class Stealth {
     this._fluxHandlers.clear();
   }
 
-  // ── Patch Installation ─────────────────────────────────────────────────
+  // Patch Installation
   _installPatches() {
     this._patchTypingIndicators();
     this._patchActivityUpdates();
@@ -926,7 +926,7 @@ module.exports = class Stealth {
     return unique;
   }
 
-  // ── Diagnostics / Warning Throttle ────────────────────────────────────
+  // Diagnostics / Warning Throttle
   _trimWarningTimestamps(now, targetSize = 192) {
     if (this._warningTimestamps.size <= 256) return;
     const staleBefore = now - 5 * 60 * 1000;
@@ -1022,7 +1022,7 @@ module.exports = class Stealth {
     }
   }
 
-  // ── Settings UI ────────────────────────────────────────────────────────
+  // Settings UI
   getSettingsPanel() {
     return buildStealthSettingsPanel(BdApi, this);
   }

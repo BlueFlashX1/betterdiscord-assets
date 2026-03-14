@@ -29,7 +29,7 @@ const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 
-// ─── Constants ─────────────────────────────────────────────────────────────
+// Constants
 
 const SE_PLUGIN_ID = "ShadowExchange";
 const SE_VERSION = "2.1.1";
@@ -76,7 +76,7 @@ const {
   writeFileBackup,
 } = require("./persistence");
 
-// ─── Shared Utilities ─────────────────────────────────────────────────────
+// Shared Utilities
 let _ReactUtils;
 try { _ReactUtils = loadBdModuleFromPlugins('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
@@ -89,10 +89,10 @@ try { _SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloL
 let _TransitionCleanupUtils;
 try { _TransitionCleanupUtils = loadBdModuleFromPlugins("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
 
-// ─── Plugin Class ──────────────────────────────────────────────────────────
+// Plugin Class
 
 module.exports = class ShadowExchange {
-  // ── Lifecycle ──────────────────────────────────────────────────────────
+  // Lifecycle
 
   _flushPendingSave() {
     if (!this._saveDebounceTimer) return;
@@ -314,7 +314,7 @@ module.exports = class ShadowExchange {
     }
   }
 
-  // ── Webpack Modules ────────────────────────────────────────────────────
+  // Webpack Modules
 
   initWebpack() {
     const { Webpack } = BdApi;
@@ -331,7 +331,7 @@ module.exports = class ShadowExchange {
     this.UserStore = Webpack.getStore("UserStore");
   }
 
-  // ── Context Menu (right-click → Shadow Mark) ──────────────────────────
+  // Context Menu (right-click → Shadow Mark)
 
   patchContextMenu() {
     try {
@@ -491,7 +491,7 @@ module.exports = class ShadowExchange {
     this._toast(`${shadow.roleName || shadow.role || shadow.name || 'Shadow'} stationed at message in ${label}`, "success");
   }
 
-  // ── Persistence ────────────────────────────────────────────────────────
+  // Persistence
 
   initBackupPath() {
     return initBackupPath(this);
@@ -534,7 +534,7 @@ module.exports = class ShadowExchange {
     this._waypointByLocationCache = null;
   }
 
-  // ── Public API (for cross-plugin integration) ─────────────────────────
+  // Public API (for cross-plugin integration)
 
   /**
    * Returns a Set of shadow IDs currently stationed at waypoints.
@@ -566,7 +566,7 @@ module.exports = class ShadowExchange {
     return this._waypointByLocationCache.get(`${channelId}:${messageId || ''}`) || null;
   }
 
-  // ── Shadow Assignment ────────────────────────────────────────────────
+  // Shadow Assignment
 
   async getWeakestAvailableShadow() {
     if (!BdApi.Plugins.isEnabled("ShadowArmy")) return this.getFallbackShadow();
@@ -668,7 +668,7 @@ module.exports = class ShadowExchange {
     }
   }
 
-  // ── Location Detection ─────────────────────────────────────────────────
+  // Location Detection
 
   _parseCurrentLocationFromUrl(url) {
     const match = url.match(/channels\/(@me|(\d+))\/(\d+)(?:\/(\d+))?/);
@@ -721,7 +721,7 @@ module.exports = class ShadowExchange {
     return { guildId, channelId, messageId, channelName, guildName, locationType };
   }
 
-  // ── Marking ────────────────────────────────────────────────────────────
+  // Marking
 
   async markCurrentLocation() {
     const loc = this.getCurrentLocation();
@@ -785,7 +785,7 @@ module.exports = class ShadowExchange {
     this._toast(`${wp.shadowName} recalled from ${wp.label}`, "info");
   }
 
-  // ── Navigation ─────────────────────────────────────────────────────────
+  // Navigation
 
   teleportTo(waypointId) {
     const wp = this.settings.waypoints.find((w) => w.id === waypointId);
@@ -854,7 +854,7 @@ module.exports = class ShadowExchange {
     this._toast(`Exchanged to ${wp.label}`, "success", 2500);
   }
 
-  // ── Panel refresh bridge (imperative → React) ─────────────────────────
+  // Panel refresh bridge (imperative → React)
 
   _triggerPanelRefresh() {
     if (this._panelForceUpdate) {
@@ -862,7 +862,7 @@ module.exports = class ShadowExchange {
     }
   }
 
-  // ── Swirl Icon (channel-header anchored) ───────────────────────────────
+  // Swirl Icon (channel-header anchored)
 
   _getChannelHeaderToolbar() {
     // Find visible channel header host, then query toolbar inside it.
@@ -1006,7 +1006,7 @@ module.exports = class ShadowExchange {
     this.swirlIcon = null;
   }
 
-  // ── Panel (React-rendered) ─────────────────────────────────────────────
+  // Panel (React-rendered)
 
   togglePanel() {
     if (this.panelOpen) this.closePanel();
@@ -1105,7 +1105,7 @@ module.exports = class ShadowExchange {
     this._panelForceUpdate = null;
   }
 
-  // ── CSS ────────────────────────────────────────────────────────────────
+  // CSS
 
   injectCSS() {
     const css = getShadowExchangeCss(PORTAL_TRANSITION_CSS);

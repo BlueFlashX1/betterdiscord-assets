@@ -2,12 +2,10 @@ function buildChatUIComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
 
-  // ============================================================================
   // COMPONENT SECTION A: CORE STATUS DISPLAYS
-  // ============================================================================
   // HPManaDisplay / LevelInfo / ActiveTitle
 
-  // ── HPManaDisplay: Compact HP/MP strip shown near chat composer ──
+  // HPManaDisplay: Compact HP/MP strip shown near chat composer
   function HPManaDisplay({ compact = false, totalStatsOverride = null }) {
     const s = pluginInstance.settings;
     const totalStats = totalStatsOverride || pluginInstance.getTotalEffectiveStats();
@@ -52,7 +50,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── LevelInfo: Rank, Level, XP progress bar, Shadow Power ──
+  // LevelInfo: Rank, Level, XP progress bar, Shadow Power
   function LevelInfo() {
     const s = pluginInstance.settings;
     const progressSnapshot = pluginInstance.getLevelProgressSnapshot({ allowFallback: true, logContext: 'REACT_CHAT_UI' });
@@ -70,7 +68,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── ActiveTitle: Conditional title display with buff badges ──
+  // ActiveTitle: Conditional title display with buff badges
   function ActiveTitle() {
     const s = pluginInstance.settings;
     if (!s.achievements.activeTitle) return null;
@@ -100,9 +98,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ============================================================================
   // COMPONENT SECTION B: STATS + ALLOCATION
-  // ============================================================================
   // Shared render-context builder keeps popup stat reads coherent and cheap.
 
   function buildStatsRenderContext() {
@@ -113,7 +109,7 @@ function buildChatUIComponents(pluginInstance) {
     };
   }
 
-  // ── StatsList: 5-stat grid (read-only display) ──
+  // StatsList: 5-stat grid (read-only display)
   function StatsList({ totalStats }) {
     const effectiveStats = totalStats || pluginInstance.getTotalEffectiveStats();
 
@@ -129,7 +125,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── StatsRadarGraph: Spider-web chart for effective stat distribution ──
+  // StatsRadarGraph: Spider-web chart for effective stat distribution
   function StatsRadarGraph({ totalStats }) {
     const effectiveStats = totalStats || pluginInstance.getTotalEffectiveStats();
     const statKeys = pluginInstance.STAT_KEYS.filter((key) => Boolean(pluginInstance.STAT_METADATA[key]));
@@ -215,7 +211,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── StatButton: Single allocation button ──
+  // StatButton: Single allocation button
   function StatButton({ statKey, onAllocate, totalStats, titleBonus, shadowBuffs }) {
     const s = pluginInstance.settings;
     const effectiveStats = totalStats || pluginInstance.getTotalEffectiveStats();
@@ -246,7 +242,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── StatAllocation: Points display + 5 allocation buttons ──
+  // StatAllocation: Points display + 5 allocation buttons
   function StatAllocation({ onAllocate, totalStats, titleBonus, shadowBuffs }) {
     const s = pluginInstance.settings;
     if (s.unallocatedStatPoints <= 0) return null;
@@ -261,12 +257,10 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ============================================================================
   // COMPONENT SECTION C: POPUP SUMMARY + COLLAPSIBLE DETAILS
-  // ============================================================================
   // Buff summary, activity cards, and quest progress sections.
 
-  // ── BuffSummaryList: Unified buff summary across plugin ecosystem ──
+  // BuffSummaryList: Unified buff summary across plugin ecosystem
   function BuffSummaryList() {
     const groups = pluginInstance.getUnifiedBuffSummary();
 
@@ -287,7 +281,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── CollapsibleSection: Reusable toggle for Activity/Quests ──
+  // CollapsibleSection: Reusable toggle for Activity/Quests
   function CollapsibleSection({ sectionId, title, children }) {
     const [isOpen, setIsOpen] = React.useState(false);
 
@@ -308,7 +302,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── ActivityGrid: 4-item activity summary ──
+  // ActivityGrid: 4-item activity summary
   function ActivityGrid() {
     const a = pluginInstance.settings?.activity || {};
     const messagesSent = a.messagesSent ?? 0;
@@ -335,7 +329,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── QuestList: Daily quest progress items ──
+  // QuestList: Daily quest progress items
   function QuestList() {
     const quests = pluginInstance.settings.dailyQuests.quests;
 
@@ -360,7 +354,7 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── StatsPanel: Composer strip only (full panel moved to popup) ──
+  // StatsPanel: Composer strip only (full panel moved to popup)
   function StatsPanel() {
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
@@ -375,12 +369,10 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ============================================================================
   // COMPONENT SECTION D: HEADER POPUP SURFACE
-  // ============================================================================
   // Top-level popup renderer that composes all sections.
 
-  // ── StatsPopup: Dedicated popup for stats, allocation, and buff summary ──
+  // StatsPopup: Dedicated popup for stats, allocation, and buff summary
   function StatsPopup({ onClose }) {
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const renderContext = buildStatsRenderContext();

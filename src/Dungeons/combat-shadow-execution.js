@@ -120,7 +120,6 @@ module.exports = {
         const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
         this.maybePruneDungeonShadowState({ dungeon, channelKey, assignedShadows, deadShadows });
 
-        // Initialize shadow combat data if not exists
         // Each shadow has individual cooldowns and behaviors for chaotic combat
         if (!dungeon.shadowCombatData || !(dungeon.shadowCombatData instanceof Map)) {
           dungeon.shadowCombatData = new Map();
@@ -139,7 +138,6 @@ module.exports = {
           try {
             this.initializeShadowHPSync(shadow, shadowHP);
 
-            // Initialize combat data if missing
             !dungeon.shadowCombatData.has(shadowId) &&
               dungeon.shadowCombatData.set(shadowId, this.initializeShadowCombatData(shadow, dungeon));
           } catch (error) {
@@ -414,7 +412,6 @@ module.exports = {
 
           let combatData = dungeon.shadowCombatData.get(shadowId);
           if (!combatData) {
-            // Initialize combat data if missing
             combatData = {
               lastAttackTime: Date.now() - 2000, // Allow immediate attack
               attackInterval: 2000,
@@ -511,7 +508,6 @@ module.exports = {
             // Domain buff applied inline (same as mob path) for consistency
             totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier * domainMultiplier);
             // Shadow vs boss damage reduction — shadows deal reduced damage to bosses
-            // Mirrors the boss→shadow 0.6x reduction (lore: bosses are tougher than mobs)
             const shadowBossReduction = C.SHADOW_VS_BOSS_DAMAGE_MULT || 0.35;
             totalBossDamage = Math.max(1, Math.floor(totalBossDamage * shadowBossReduction));
             totalBossDamage > 0 && analytics.shadowsAttackedBoss++;
@@ -521,7 +517,6 @@ module.exports = {
             // RANK-STRATIFIED MOB DAMAGE WITH REALISTIC KILL DISTRIBUTION:
             // Each sampled shadow represents `scaleFactor` shadows. Spread scaled damage across
             // multiple mobs so kill count is realistic (not overkill on one mob).
-            //
             // PERFORMANCE: Uses indexed round-robin traversal per rank group instead of
             // random picks. Each rank group maintains an `aliveIdx` pointer that advances
             // through mobs sequentially. O(1) per target instead of O(5) random retries.
@@ -554,7 +549,6 @@ module.exports = {
               const groupMobs = rankGroup.mobsInGroup;
               const groupLen = groupMobs.length;
 
-              // Initialize round-robin pointer on first use (persists across shadows within this tick)
               if (rankGroup._rrIdx == null) rankGroup._rrIdx = 0;
 
               // Spread damage across enough mobs to be realistic — scale with both scaleFactor and group size.
@@ -571,7 +565,6 @@ module.exports = {
                 rankGroup._rrIdx = (rankGroup._rrIdx + 1) % groupLen;
                 const mob = groupMobs[idx];
                 if (!mob || mob.hp <= 0) {
-                  // Check if we've looped the full group without finding a live mob
                   if (iter >= groupLen) fullLoopWithoutHit = true;
                   continue;
                 }
@@ -749,7 +742,6 @@ module.exports = {
       }
     } catch (error) {
       this.errorLog('CRITICAL', 'Fatal error in processShadowAttacks', { channelKey, error });
-      // Don't throw - let combat continue
     }
   },
 
@@ -805,7 +797,6 @@ module.exports = {
         s.id || (s.id = s.i);
       });
 
-      // Cache result
       this._shadowsCache = { shadows: decompressed, timestamp: Date.now() };
       return decompressed;
     } catch (error) {

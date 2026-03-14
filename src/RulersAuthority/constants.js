@@ -1,9 +1,7 @@
 import bdModuleLoader from "../shared/bd-module-loader.js";
 import dc from "../shared/discord-classes";
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §1  Constants + Fallback Selectors
-// ═══════════════════════════════════════════════════════════════════════════
 
 export const RA_PLUGIN_NAME = "RulersAuthority";
 export const RA_VERSION = "2.1.2";
@@ -64,9 +62,7 @@ export const PANEL_DEFS = {
   search:  { label: "Search Results",  hoverCapable: false, moduleName: "search",  moduleKey: "searchResultsWrap" },
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §3  Default Settings
-// ═══════════════════════════════════════════════════════════════════════════
 
 export const DEFAULT_SETTINGS = {
   enabled: true,
@@ -104,9 +100,7 @@ export const DEFAULT_SETTINGS = {
   // [{ channelId, username }]
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §4  Shared PluginUtils
-// ═══════════════════════════════════════════════════════════════════════════
 
 const { loadBdModuleFromPlugins } = bdModuleLoader;
 const _bdLoad = loadBdModuleFromPlugins;

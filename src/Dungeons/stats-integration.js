@@ -140,8 +140,6 @@ module.exports = {
     return Math.max(0, Number(bonuses?.daggerThrowDamageBonus || 0));
   },
 
-
-
   rollSkillTreeCombatCrit() {
     const critChance = this.getUserCombatCritChanceBonus();
     return critChance > 0 && Math.random() < critChance;
@@ -304,7 +302,6 @@ module.exports = {
       const soloPlugin = this.validatePluginReference('SoloLevelingStats', 'settings');
       if (soloPlugin) {
         this.soloLevelingStats = soloPlugin;
-        // Initialize user stats after loading plugin reference
         await this.initializeUserStats();
 
         // Subscribe to stats changes to update HP/Mana bars
@@ -330,7 +327,6 @@ module.exports = {
       const shadowPlugin = this.validatePluginReference('ShadowArmy', 'storageManager');
       if (shadowPlugin) {
         this.shadowArmy = shadowPlugin;
-        // Check if storageManager is available (may be null if not initialized yet)
         if (shadowPlugin.storageManager) {
           this.debugLog('ShadowArmy plugin loaded successfully with storageManager');
         } else {
@@ -357,9 +353,7 @@ module.exports = {
             );
           }
 
-          // Invalidate shadow count cache
           this.invalidateShadowCountCache();
-          // Invalidate shadows cache
           this.invalidateShadowsCache();
 
           // BUGFIX INTEGRITY-2: Immediately remove extracted shadow from active allocations.
@@ -409,7 +403,6 @@ module.exports = {
       }
     } catch (error) {
       this.debugLog('Error loading plugin references', error);
-      // Don't throw - plugin can still function without integrations
     }
   }
 };

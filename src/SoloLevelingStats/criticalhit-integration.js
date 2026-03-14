@@ -17,7 +17,6 @@ module.exports = {
   },
 
   checkCriticalHitBonus() {
-    // Check if the last message was a critical hit
     // CriticalHit plugin adds 'bd-crit-hit' class to crit messages
     // Agility affects EXP multiplier: base 0.25 (25%) + agility bonus
     try {
@@ -196,7 +195,6 @@ module.exports = {
     // AGI = crit chance provider, PER = burst-hit provider for CriticalHit.
     // Data is shared through BdApi.Data.
   
-    // Initialize variables at function scope to prevent ReferenceError in catch block
     let cappedCritBonus = 0;
     let enhancedAgilityBonus = 0;
     let baseAgilityBonus = 0;

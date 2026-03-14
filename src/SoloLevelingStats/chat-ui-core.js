@@ -257,7 +257,6 @@ module.exports = {
           const messageInputArea = this._getMessageInputAreaInPrimaryChat();
           if (!messageInputArea) return false;
   
-          // Check if UI already exists
           if (document.getElementById('sls-chat-ui')) {
             return true;
           }

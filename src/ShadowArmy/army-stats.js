@@ -6,9 +6,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // DUNGEON COMBAT OPTIMIZATION HELPERS
-  // ============================================================================
 
   _getShadowPowerValue(shadow) {
     const indexedStrength = Number(shadow?.strength);
@@ -149,9 +147,7 @@ module.exports = {
     return this.settings.cachedTotalPower || 0;
   },
 
-  // ============================================================================
   // ARMY STATS AGGREGATION
-  // ============================================================================
 
   logShadowAggregationSamples(allShadows) {
     this.debugLog('COMBAT', 'Retrieved shadows for aggregation', {

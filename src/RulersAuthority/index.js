@@ -38,9 +38,7 @@ import {
 
 const { createToast } = require("../shared/toast");
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §2  Webpack Module Definitions (lazy getter pattern — matches CollapsibleUI)
-// ═══════════════════════════════════════════════════════════════════════════
 
 // CRITICAL FIX: Use _resolved flags to avoid repeated Webpack lookups.
 const _createModules = () => ({
@@ -65,9 +63,7 @@ const _createModules = () => ({
 
 const { createSingleValueCache: _ttl } = require("../shared/ttl-cache");
 
-// ═══════════════════════════════════════════════════════════════════════════
 // Module imports
-// ═══════════════════════════════════════════════════════════════════════════
 
 import { setPluginUtils, isEditableTarget, matchesHotkey } from "./hotkeys";
 import { setupResizeHandlers, removeAllResizeStyles } from "./resize";
@@ -144,9 +140,7 @@ function sanitizeLoadedSettings(saved, deepMerge) {
   return settings;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // §5  Core Class
-// ═══════════════════════════════════════════════════════════════════════════
 
 module.exports = class RulersAuthority {
   constructor() {
@@ -215,7 +209,7 @@ module.exports = class RulersAuthority {
     this._onAuthorityLevelChanged = null;
   }
 
-  // ── SkillTree gate helpers ──────────────────────────────────
+  // SkillTree gate helpers
 
   _getRulersAuthorityLevel() {
     try {
@@ -233,14 +227,14 @@ module.exports = class RulersAuthority {
     return false; // members, profile, search all available at lv 2+
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────
+  // Lifecycle
 
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("rulersAuthority") || createToast();
     try {
       if (this._controller) this.stop({ silent: true });
 
-      // ── SkillTree gate: rulers_authority >= 2 for core, >= 3 for sidebar ──
+      // SkillTree gate: rulers_authority >= 2 for core, >= 3 for sidebar
       this._onAuthorityLevelChanged = (e) => {
         if (e.detail?.skillId !== "rulers_authority") return;
         const level = e.detail.level || 0;
@@ -520,24 +514,22 @@ module.exports = class RulersAuthority {
     this._dragPanel = null;
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
   // §6  Webpack Init + Dynamic Selectors
-  // ═══════════════════════════════════════════════════════════════════════
 
   initWebpack() {
     const { Webpack } = BdApi;
 
-    // ── Flux stores ──
+    // Flux stores
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
 
-    // ── CSS class modules (lazy getters — CollapsibleUI pattern) ──
+    // CSS class modules (lazy getters — CollapsibleUI pattern)
     this._modules = _createModules();
     this._builtCSS = null; // invalidate cached CSS on module refresh
 
-    // ── Build resolved selectors from Webpack + fallbacks ──
+    // Build resolved selectors from Webpack + fallbacks
     this._buildResolvedSelectors();
 
     this.debugLog("Webpack", "Modules acquired", {
@@ -618,7 +610,7 @@ module.exports = class RulersAuthority {
     return null;
   }
 
-  // ── Delegated methods (call module functions with `this` context) ──
+  // Delegated methods (call module functions with `this` context)
 
   togglePanel(panelName) { togglePanel(this, panelName); }
   updateCSSVars() { updateCSSVars(this); }
@@ -642,9 +634,7 @@ module.exports = class RulersAuthority {
 
   getSettingsPanel() { return getSettingsPanel(this); }
 
-  // ═══════════════════════════════════════════════════════════════════════
   // §18  Utilities
-  // ═══════════════════════════════════════════════════════════════════════
 
   loadSettings() {
     try {
@@ -663,7 +653,7 @@ module.exports = class RulersAuthority {
     }
   }
 
-  // ── DOM Helpers ──
+  // DOM Helpers
 
   _findElement(selectorArray) {
     for (const selector of selectorArray) {
@@ -683,7 +673,7 @@ module.exports = class RulersAuthority {
     );
   }
 
-  // ── General Helpers ──
+  // General Helpers
 
   _throttle(fn, wait) {
     if (_PluginUtils?.createThrottle) return _PluginUtils.createThrottle(fn, wait);

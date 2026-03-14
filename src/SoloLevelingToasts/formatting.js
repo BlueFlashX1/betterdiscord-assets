@@ -1,6 +1,4 @@
-// ============================================================================
 // SoloLevelingToasts — Message Formatting & Combination Helpers
-// ============================================================================
 
 /**
  * Extract plain text from a message (string, {message}, or {text} object).
@@ -144,7 +142,7 @@ export function getMessageGroupKey(message, type) {
   return `${normalized}_${type}`;
 }
 
-// ── Number extraction / summing for combination ──
+// Number extraction / summing for combination
 
 /**
  * Pull all numeric-looking tokens from an array of { message } objects.
@@ -245,7 +243,7 @@ export function combineMessages(messages) {
   return `${firstMsg.substring(0, 50)}... x${count}`;
 }
 
-// ── Notification filtering helpers ──
+// Notification filtering helpers
 
 /**
  * Normalise message text for filter comparisons (lowercase, collapse whitespace).

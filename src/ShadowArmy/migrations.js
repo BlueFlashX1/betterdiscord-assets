@@ -6,9 +6,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // ============================================================================
   // DATA MIGRATIONS
-  // ============================================================================
 
   async _loadShadowsForMigration() {
     let allShadows = [];

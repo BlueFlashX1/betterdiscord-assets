@@ -8,9 +8,7 @@
 const C = require('./constants');
 
 module.exports = {
-  // --------------------------------------------------------------------------
   // History Trimming
-  // --------------------------------------------------------------------------
 
   /**
    * Smart history trimming with crit prioritization
@@ -94,9 +92,7 @@ module.exports = {
     });
   },
 
-  // --------------------------------------------------------------------------
   // History Saving & Loading
-  // --------------------------------------------------------------------------
 
   /**
    * Counts crits by channel from crit history
@@ -344,9 +340,7 @@ module.exports = {
     return { messageId, authorId, channelId };
   },
 
-  // --------------------------------------------------------------------------
   // Pending Crits Queue Management
-  // --------------------------------------------------------------------------
 
   /**
    * Updates the pending crits queue with a new crit entry
@@ -404,9 +398,7 @@ module.exports = {
     contentHash && isHashId && this.pendingCrits.set(contentHash, pendingEntry);
   },
 
-  // --------------------------------------------------------------------------
   // History Entry Management
-  // --------------------------------------------------------------------------
 
   /**
    * Finds history entry by direct ID match
@@ -567,7 +559,6 @@ module.exports = {
         this._cachedCritHistoryTimestamp = null;
       }
 
-      // Check if message already exists in history (update if exists)
       const isValidId = this.isValidDiscordId(messageId);
       const isHashId = messageId?.startsWith('hash_');
 
@@ -699,9 +690,7 @@ module.exports = {
     }
   },
 
-  // --------------------------------------------------------------------------
   // History Retrieval
-  // --------------------------------------------------------------------------
 
   /**
    * Gets all crit messages from history, optionally filtered by channel
@@ -736,16 +725,13 @@ module.exports = {
       return !!entry.authorId && String(entry.authorId) === String(ownUserId);
     });
 
-    // Cache result
     this._cachedCritHistory = { data: crits, channelId: cacheKey };
     this._cachedCritHistoryTimestamp = now;
 
     return crits;
   },
 
-  // --------------------------------------------------------------------------
   // Crit Restoration
-  // --------------------------------------------------------------------------
 
   /**
    * Restores critical hit styles for messages in the current channel

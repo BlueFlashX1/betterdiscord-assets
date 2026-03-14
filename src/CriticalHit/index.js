@@ -5,24 +5,16 @@ const { FRIENDORFOEBB_WOFF2_DATA, SPEEDYSPACEGOATODDITY_WOFF2_DATA } = require("
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
-// ============================================
 // SECTION 1: IMPORTS & DEPENDENCIES
-// ============================================
 // No external imports (BetterDiscord plugin)
 
-// ============================================
 // SECTION 2: CONFIGURATION & HELPERS
-// ============================================
 // (Configuration constants and helper methods organized below in class)
 
-// ============================================
 // SECTION 3: MAJOR OPERATIONS
-// ============================================
 // (Core plugin logic organized below in class)
 
-// ============================================
 // SECTION 4: DEBUGGING & DEVELOPMENT
-// ============================================
 // (Debug system organized below in class)
 
 let _ReactUtils;
@@ -32,13 +24,9 @@ let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const CriticalHit = class CriticalHit {
-  // ============================================
   // SECTION 2: CONFIGURATION & HELPERS
-  // ============================================
 
-  // ============================================================================
   // CONSTRUCTOR & INITIALIZATION
-  // ============================================================================
   constructor() {
     this.defaultSettings = C.DEFAULT_SETTINGS;
     this.settings = structuredClone(C.DEFAULT_SETTINGS);
@@ -74,7 +62,6 @@ const CriticalHit = class CriticalHit {
     this.currentChannelId = null; // Track current channel ID
     this.currentGuildId = null; // Track current guild ID (for accuracy across guilds)
     // OPTIMIZED: Smart history limits with crit prioritization (configurable via settings)
-    // Initialize from settings, fallback to defaults if not set
     this.maxHistorySize = this.settings.maxHistorySize ?? 2000;
     this.maxCritHistory = this.settings.maxCritHistory ?? 1000;
     this.maxHistoryPerChannel = this.settings.maxHistoryPerChannel ?? 500;
@@ -142,9 +129,7 @@ const CriticalHit = class CriticalHit {
       lastUpdated: Date.now(),
     };
 
-    // ============================================================================
     // ANIMATION STATE (from CriticalHitAnimation)
-    // ============================================================================
     this.animationContainer = null;
     this.activeAnimations = new Set();
     this.userCombos = new Map();
@@ -182,9 +167,7 @@ const CriticalHit = class CriticalHit {
     this._settingsRoot = null; // React 18 createRoot instance
   }
 
-  // ============================================================================
   // HELPER FUNCTIONS - EXTRACTED FROM LONG FUNCTIONS
-  // ============================================================================
 
   _setTrackedTimeout(callback, delayMs) {
     const timeoutId = setTimeout(() => {
@@ -250,9 +233,7 @@ const CriticalHit = class CriticalHit {
   // crit-engine.js, history.js, animation.js, styling.js, settings-panel.js, observer.js,
   // pipeline.js, restoration.js — merged via Object.assign at bottom of file.
 
-  // ============================================================================
   // FLUX DISPATCHER — Instant crit detection via MESSAGE_CREATE (v3.6.0)
-  // ============================================================================
 
   /**
    * Acquires Discord's FluxDispatcher and subscribes to MESSAGE_CREATE.
@@ -323,12 +304,8 @@ const CriticalHit = class CriticalHit {
     }
   }
 
-
-  // ============================================================================
   // BETTERDISCORD PLUGIN LIFECYCLE METHODS
-  // ============================================================================
   // Required by BetterDiscord: start() and stop() methods
-  // ============================================================================
 
   /**
    * BetterDiscord plugin start method
@@ -384,7 +361,6 @@ const CriticalHit = class CriticalHit {
       this.injectCritCSS();
       this.injectAnimationCSS();
 
-      // Initialize webpack modules first so SelectedChannelStore/SelectedGuildStore
       // are available before observer-based processing starts.
       this.initializeWebpackModules();
 
@@ -569,15 +545,10 @@ const CriticalHit = class CriticalHit {
     }
   }
 
-  // ============================================================================
   // SECTION 4: DEBUGGING & DEVELOPMENT
-  // ============================================================================
   // Moved to end of file for better organization
-  // ============================================================================
 
-  // ============================================================================
   // SETTINGS MANAGEMENT
-  // ============================================================================
 
   /**
    * Loads settings from BetterDiscord storage

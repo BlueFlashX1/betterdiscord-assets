@@ -17,13 +17,13 @@
 
 const { Webpack } = BdApi;
 
-// ─── Internal cache ──────────────────────────────────────────────────────────
+// Internal cache
 let _resolved = false;
 const _cls = {};   // raw class names  (e.g. "chatContent_a1b2c3")
 const _sel = {};   // CSS selectors     (e.g. ".chatContent_a1b2c3")
 const _fb  = {};   // fallback selectors (e.g. '[class*="chatContent_"]')
 
-// ─── Module definitions ──────────────────────────────────────────────────────
+// Module definitions
 // Each entry: [webpackFilterKeys, propertyName, fallbackSelector]
 // webpackFilterKeys: passed to Webpack.getByKeys() to find the module
 //   — use null to fall back to getModule() scan (for stems where getByKeys
@@ -32,7 +32,7 @@ const _fb  = {};   // fallback selectors (e.g. '[class*="chatContent_"]')
 // fallbackSelector: attribute wildcard selector used when Webpack fails
 
 const DEFS = {
-  // ── Layout / Panels ──
+  // Layout / Panels
   chatContent:         [["chatContent"],         "chatContent",         '[class*="chatContent_"]'],
   sidebar:             [["sidebar"],             "sidebar",             '[class*="sidebar_"]'],
   sidebarList:         [["sidebar", "sidebarList"], "sidebarList",      '[class*="sidebar_"]'],
@@ -43,12 +43,12 @@ const DEFS = {
   userProfileOuter:    [["userProfileOuter"],     "userProfileOuter",   '[class*="userProfileOuter_"]'],
   searchResultsWrap:   [["searchResultsWrap"],    "searchResultsWrap",  '[class*="searchResultsWrap_"]'],
 
-  // ── Scrolling ──
+  // Scrolling
   scroller:            [["scroller", "thin"],     "scroller",           '[class*="scroller_"]'],
   scrollerBase:        [["scrollerBase"],         "scrollerBase",       '[class*="scrollerBase_"]'],
   thin:                [["scroller", "thin"],     "thin",               '[class*="thin_"]'],
 
-  // ── Messages ──
+  // Messages
   messageListItem:     [["messageListItem"],      "messageListItem",    '[class*="messageListItem_"]'],
   message:             [["message", "groupStart"], "message",           '[class*="message_"]'],
   groupStart:          [["message", "groupStart"], "groupStart",        '[class*="groupStart_"]'],
@@ -57,7 +57,7 @@ const DEFS = {
   markup:              [["markup"],               "markup",             '[class*="markup_"]'],
   mentioned:           [["mentioned"],            "mentioned",          '[class*="mentioned_"]'],
 
-  // ── Message parts ──
+  // Message parts
   author:              [null,                     "author",             '[class*="author_"]'],
   username:            [["username"],             "username",           '[class*="username_"]'],
   timestamp:           [["timestamp"],            "timestamp",          '[class*="timestamp_"]'],
@@ -68,13 +68,13 @@ const DEFS = {
   embedWrapper:        [["embedWrapper"],         "embedWrapper",       '[class*="embedWrapper_"]'],
   botTag:              [["botTag"],               "botTag",             '[class*="botTag_"]'],
 
-  // ── Header / Toolbar ──
+  // Header / Toolbar
   toolbar:             [["updateIconForeground", "search", "toolbar"], "toolbar", '[class*="toolbar_"]'],
   titleWrapper:        [["titleWrapper"],         "titleWrapper",       '[class*="titleWrapper_"]'],
   title:               [["title", "lineClamp"],    "title",             '[class*="title_"]'],
   channelHeader:       [["channelHeader"],        "channelHeader",      '[class*="channelHeader_"]'],
 
-  // ── Input / Composer ──
+  // Input / Composer
   channelTextArea:     [["channelTextArea"],      "channelTextArea",    '[class*="channelTextArea_"]'],
   textContainer:       [["textContainer"],        "textContainer",      '[class*="textContainer_"]'],
   slateContainer:      [["slateContainer"],       "slateContainer",     '[class*="slateContainer_"]'],
@@ -83,14 +83,14 @@ const DEFS = {
   scrollableContainer: [["scrollableContainer"],  "scrollableContainer",'[class*="scrollableContainer_"]'],
   inner:               [["inner"],                "inner",              '[class*="inner_"]'],
 
-  // ── User panel / profile ──
+  // User panel / profile
   user:                [["user"],                 "user",               '[class*="user_"]'],
   nameTag:             [["nameTag"],              "nameTag",            '[class*="nameTag_"]'],
   withTagAsButton:     [["withTagAsButton"],      "withTagAsButton",    '[class*="withTagAsButton_"]'],
   panelSubtextContainer: [["panelSubtextContainer"], "panelSubtextContainer", '[class*="panelSubtextContainer_"]'],
   panelTitleContainer: [["panelTitleContainer"],  "panelTitleContainer", '[class*="panelTitleContainer_"]'],
 
-  // ── App layout ──
+  // App layout
   base:                [["base", "content"],       "base",              '[class*="base_"]'],
   content:             [["base", "content"],       "content",           '[class*="content_"]'],
   layers:              [["layers"],               "layers",             '[class*="layers_"]'],
@@ -99,14 +99,14 @@ const DEFS = {
   layerContainer:      [["layerContainer"],       "layerContainer",      '[class*="layerContainer_"]'],
   panels:              [["panels"],               "panels",              '[class*="panels_"]'],
 
-  // ── Settings ──
+  // Settings
   userSettings:        [["standardSidebarView"],  "standardSidebarView", '[class*="userSettings_"]'],
   standardSidebarView: [["standardSidebarView"],  "standardSidebarView", '[class*="standardSidebarView_"]'],
   settingsContainer:   [["settingsContainer"],    "settingsContainer",   '[class*="settingsContainer_"]'],
   searchBar:           [["searchBar"],            "searchBar",           '[class*="searchBar_"]'],
   privateChannelsHeaderContainer: [["privateChannelsHeaderContainer"], "privateChannelsHeaderContainer", '[class*="privateChannelsHeaderContainer_"]'],
 
-  // ── Messages (extended) ──
+  // Messages (extended)
   messageList:         [["messageList"],            "messageList",         '[class*="messageList_"]'],
   messageContainer:    [["messageContainer"],       "messageContainer",    '[class*="messageContainer_"]'],
   messageGroupWrapper: [["messageGroupWrapper"],    "messageGroupWrapper", '[class*="messageGroupWrapper_"]'],
@@ -116,23 +116,23 @@ const DEFS = {
   systemMessage:       [["systemMessage"],          "systemMessage",       '[class*="systemMessage_"]'],
   headerText:          [["headerText"],             "headerText",          '[class*="headerText_"]'],
 
-  // ── Guilds / Dock ──
+  // Guilds / Dock
   guilds:              [["guilds", "wrapper"],      "guilds",             '[class*="guilds_"]'],
   wrapper:             [["guilds", "wrapper"],      "wrapper",            '[class*="wrapper_"]'],
 
-  // ── Forms / Composer ──
+  // Forms / Composer
   form:                [["form"],                  "form",                '[class*="form_"]'],
   textArea:            [["textArea"],              "textArea",            '[class*="textArea_"]'],
   slateTextArea:       [["slateTextArea"],         "slateTextArea",       '[class*="slateTextArea_"]'],
 
-  // ── Alerts / Badges / UI ──
+  // Alerts / Badges / UI
   button:              [["button"],               "button",              '[class*="button_"]'],
   listItem:            [["listItem"],              "listItem",            '[class*="listItem_"]'],
   numberBadge:         [["numberBadge"],           "numberBadge",         '[class*="numberBadge_"]'],
   mentionsBadge:       [["mentionsBadge"],         "mentionsBadge",       '[class*="mentionsBadge_"]'],
   pill:                [["pill"],                  "pill",                '[class*="pill_"]'],
 
-  // ── Probed 2026-03-13 (8 new stems) ──
+  // Probed 2026-03-13 (8 new stems)
   app:                 [null,                      "app",                 '[class*="app_"]'],
   bot:                 [["bot"],                   "bot",                 '[class*="bot_"]'],
   botText:             [["botText"],               "botText",             '[class*="botText_"]'],
@@ -143,7 +143,7 @@ const DEFS = {
   thread:              [["thread"],                "thread",              '[class*="thread_"]'],
 };
 
-// ─── Resolver ────────────────────────────────────────────────────────────────
+// Resolver
 
 function _resolve() {
   // Module-level cache: group DEFS by their filterKeys to avoid redundant
@@ -190,7 +190,7 @@ function _resolve() {
   _resolved = true;
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// Public API
 
 /** Lazily-resolved selector map. First access triggers Webpack lookups. */
 const sel = new Proxy(_sel, {

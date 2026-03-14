@@ -239,7 +239,6 @@ module.exports = {
       },
     });
   
-    // Debug log
     this.debugLog('ALLOCATE_STAT', 'Stat point allocated successfully', {
       statName,
       oldValue,
@@ -253,7 +252,6 @@ module.exports = {
 
   applyRetroactiveNaturalStatGrowth() {
     try {
-      // Check if we've already applied retroactive growth
       if (this.settings._retroactiveStatGrowthApplied) {
         return; // Already applied
       }

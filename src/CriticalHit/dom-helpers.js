@@ -197,7 +197,6 @@ module.exports = {
       const channelIdAttr = messageElement?.getAttribute('data-channel-id');
       const result = channelIdAttr || null;
 
-      // Cache result
       this._cache.currentChannelId = result;
       this._cache.currentChannelIdTime = now;
 

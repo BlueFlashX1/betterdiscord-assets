@@ -9,12 +9,12 @@
 
 "use strict";
 
-// ── GSAP CDN loader state (shared across all portal-core consumers) ──
+// GSAP CDN loader state (shared across all portal-core consumers)
 let _gsapLoadPromise = null;
 let _gsapLoaded = false;
 let _gsapLogSent = false;
 
-// ── CSS Portal spiral mask (PropJockey technique) ──
+// CSS Portal spiral mask (PropJockey technique)
 // Preferred: imgur PNG. Fallback: procedurally generated spiral.
 let _spiralMaskUrl = null;
 let _spiralMaskReady = false;
@@ -601,7 +601,7 @@ const methods = {
     this._transitionRunId = Number(this._transitionRunId || 0) + 1;
     const runId = this._transitionRunId;
 
-    // ── Timing: Two profiles based on whether target channel is cached ──
+    // Timing: Two profiles based on whether target channel is cached
     // Fast (cached):     ~1000ms total, same full portal but sped up
     // Cinematic (uncached): user's configured duration (default 550), full portal
     const configuredDuration = this.settings.animationDuration || 550;
@@ -612,7 +612,7 @@ const methods = {
     const totalDuration = 1500;                                     // Total overlay lifetime (1.5s)
     const transitionStartedAt = performance.now();
 
-    // ── Portal Diagnostic Timeline (gated behind debugMode) ──
+    // Portal Diagnostic Timeline (gated behind debugMode)
     const _debugMode = !!this.settings?.debugMode;
     const _diag = { t0: transitionStartedAt, events: [] };
     const _diagLog = (phase) => {
@@ -639,7 +639,7 @@ const methods = {
     overlay.style.setProperty("--ss-duration", `${duration}ms`);
     overlay.style.setProperty("--ss-total-duration", `${totalDuration}ms`);
 
-    // ── CSS Portal (PropJockey spiral-mask counter-rotation technique) ──
+    // CSS Portal (PropJockey spiral-mask counter-rotation technique)
     // Appended BEFORE canvas so canvas (dark overlay + aperture punch) stacks on top.
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
@@ -863,12 +863,12 @@ const methods = {
   },
 
   startPortalCanvasAnimation(canvas, duration, cssPortalEl, perfProfile) {
-    // ── GSAP-enhanced path — uses main-thread canvas only (GSAP depends on DOM) ──
+    // GSAP-enhanced path — uses main-thread canvas only (GSAP depends on DOM)
     if (_gsapLoaded && window.gsap) {
       return this._startPortalCanvasGSAP(canvas, duration, cssPortalEl, perfProfile);
     }
 
-    // ── Vanilla fallback: OffscreenCanvas Worker → main-thread canvas ──
+    // Vanilla fallback: OffscreenCanvas Worker → main-thread canvas
     if (typeof canvas.transferControlToOffscreen === "function") {
       try {
         return this._startPortalCanvasWorker(canvas, duration, perfProfile);
@@ -889,7 +889,7 @@ const methods = {
     const gsap = window.gsap;
     if (!gsap) return this._startPortalCanvasMainThread(canvas, duration, null, false, perfProfile);
 
-    // ── GSAP state object — timeline tweens these, draw loop reads them ──
+    // GSAP state object — timeline tweens these, draw loop reads them
     const gs = {
       portalForm: 0.38,      // 0.38→1.0 (formation envelope)
       formEase: 0,           // 0→1 (formation progress)
@@ -910,7 +910,7 @@ const methods = {
 
     const dur = duration / 1000; // GSAP uses seconds
 
-    // ── Master timeline ──
+    // Master timeline
     const tl = gsap.timeline();
 
     // Formation: 0→25% — back.out gives subtle overshoot snap
@@ -974,7 +974,7 @@ const methods = {
       ease: "power2.in",
     }, 0);
 
-    // ── Phase 5: Glow breathing — infinite yoyo loops during portal lifetime ──
+    // Phase 5: Glow breathing — infinite yoyo loops during portal lifetime
     const breathingTweens = [
       gsap.to(gs, { ringGlow: 1.6, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: -1 }),
       gsap.to(gs, { coreGlow: 2.0, duration: 1.1, ease: "sine.inOut", yoyo: true, repeat: -1 }),
@@ -983,7 +983,7 @@ const methods = {
       gsap.to(gs, { tendrilPulse: 1, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: -1 }),
     ];
 
-    // ── CSS Portal GSAP animations (formation → expand → fade) ──
+    // CSS Portal GSAP animations (formation → expand → fade)
     const cssPortalTweens = [];
     if (cssPortalEl) {
       const revealAt = dur * 0.60; // sync with canvas revealStart (synced with darkness clear)
@@ -1164,7 +1164,7 @@ const methods = {
     window.addEventListener("resize", onResize, { passive: true });
 
     const start = performance.now();
-    // ── Canvas phase diagnostics (log once per phase) ──
+    // Canvas phase diagnostics (log once per phase)
     const _canvasDiag = { formDone: false, revealStarted: false, fadeStarted: false, done: false };
     const _cdLog = (phase) => { if (this.settings?.debugMode) console.log(`%c[PortalDiag]%c ${phase} %c@ ${Math.round(performance.now() - start)}ms (canvas)`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8"); };
 
@@ -1181,7 +1181,7 @@ const methods = {
       const swirl = elapsed * 0.0044;
       const revealStart = 0.60;
 
-      // ── Phase state: GSAP-driven or vanilla-computed ──
+      // Phase state: GSAP-driven or vanilla-computed
       let easeInOut, fadeOut, darknessOverlay, formT, formEase, portalForm, revealProgress, revealEase;
       // darknessOverlay: always computed from t (not GSAP) — avoids two-tween conflict
       // Timing: slow dim → hold → clear synced with reveal/shockwave
@@ -1241,7 +1241,7 @@ const methods = {
         ctx.fillRect(0, 0, width, height);
       }
 
-      // ── Darkness overlay: drawn BEFORE aperture so the reveal punches through it ──
+      // Darkness overlay: drawn BEFORE aperture so the reveal punches through it
       // This creates the dramatic "shockwave breaks through the blackout" effect.
       // The aperture's destination-out compositing erases both portal effects AND darkness.
       if (darknessOverlay > 0.005) {
@@ -1932,7 +1932,7 @@ function startDrawLoop() {
       ctx.restore();
     }
 
-    // ── Darkness overlay: drawn BEFORE aperture so the reveal punches through it ──
+    // Darkness overlay: drawn BEFORE aperture so the reveal punches through it
     if (darknessOverlay > 0.005) {
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
@@ -2159,7 +2159,6 @@ function startDrawLoop() {
     };
     window.addEventListener("resize", onResize, { passive: true });
 
-    // Return stop function
     return () => {
       window.removeEventListener("resize", onResize);
       if (resizeTimer) clearTimeout(resizeTimer);
@@ -2216,7 +2215,7 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
   return true;
 }
 
-// ── Shared Teleport Cooldown ────────────────────────────────────────────
+// Shared Teleport Cooldown
 // All portal-core consumers (ShadowStep, ShadowExchange, ShadowSenses)
 // share a single cooldown stored under a neutral plugin-id key so that
 // any teleport from any plugin starts the same cooldown timer.

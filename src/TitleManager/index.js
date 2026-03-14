@@ -85,15 +85,11 @@ let _PluginUtils;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 module.exports = class SoloLevelingTitleManager {
-  // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
-  // ============================================================================
   // Reserved for future external library imports
   // Currently all functionality is self-contained
 
-  // ============================================================================
   // SECTION 2: CONFIGURATION & HELPERS
-  // ============================================================================
 
   /**
    * 2.1 CONSTRUCTOR & DEFAULT SETTINGS
@@ -414,7 +410,6 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-
   _appendPercentBonusLine(lines, bonus, key, label) {
     if (bonus[key] > 0) {
       lines.push(`+${(bonus[key] * 100).toFixed(0)}% ${label}`);
@@ -442,7 +437,6 @@ module.exports = class SoloLevelingTitleManager {
     );
     return lines;
   }
-
 
   /**
    * Get human-readable sort label
@@ -477,10 +471,7 @@ module.exports = class SoloLevelingTitleManager {
     return { sorted, bonusMap };
   }
 
-
-  // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
-  // ============================================================================
 
   /**
    * 3.1 PLUGIN LIFECYCLE
@@ -740,8 +731,6 @@ module.exports = class SoloLevelingTitleManager {
     this.debugLog('MODAL', 'Title modal closed');
   }
 
-  // ============================================================================
   // SECTION 4: DEBUGGING & DEVELOPMENT
-  // ============================================================================
   // Debug logging helpers are in Section 2.2 (Helper Functions)
 };

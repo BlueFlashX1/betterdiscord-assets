@@ -1,6 +1,4 @@
-// ═══════════════════════════════════════════════════════════════════════════
 // Settings Panel
-// ═══════════════════════════════════════════════════════════════════════════
 
 import { PANEL_DEFS } from "./constants";
 import {
@@ -37,7 +35,7 @@ export function getSettingsPanel(ctx) {
       forceUpdate();
     }, []);
 
-    // ── Styles ──
+    // Styles
     const containerStyle = {
       background: "#1e1e2e", padding: "16px", borderRadius: "8px",
       color: "#ccc", fontFamily: "inherit", fontSize: "14px",
@@ -56,7 +54,7 @@ export function getSettingsPanel(ctx) {
     };
     const btnDimStyle = { ...btnStyle, background: "#444" };
 
-    // ── Toggle Helper ──
+    // Toggle Helper
     const Toggle = ({ label, checked, onChange }) =>
       ce("label", { style: labelStyle },
         ce("span", null, label),
@@ -67,7 +65,7 @@ export function getSettingsPanel(ctx) {
         })
       );
 
-    // ── Status Display ──
+    // Status Display
     const StatusSection = () =>
       ce("div", { style: sectionStyle },
         ce("div", { style: headerStyle }, "Ruler's Authority"),
@@ -90,7 +88,7 @@ export function getSettingsPanel(ctx) {
         )
       );
 
-    // ── Panel Toggles ──
+    // Panel Toggles
     const PanelSection = () =>
       ce("div", { style: sectionStyle },
         ce("div", { style: subHeaderStyle }, "Panel Controls"),
@@ -132,7 +130,7 @@ export function getSettingsPanel(ctx) {
         )
       );
 
-    // ── Hidden Channels (per guild) ──
+    // Hidden Channels (per guild)
     const HiddenChannelsSection = () => {
       const guildEntries = Object.entries(ctx.settings.guilds).filter(
         ([, data]) => data.hiddenChannels?.length > 0 || data.crushedCategories?.length > 0
@@ -163,7 +161,7 @@ export function getSettingsPanel(ctx) {
       );
     };
 
-    // ── Gripped DMs ──
+    // Gripped DMs
     const GrippedDMsSection = () => {
       if (ctx.settings.grippedDMs.length === 0) return null;
       return ce("div", { style: sectionStyle },
@@ -177,7 +175,7 @@ export function getSettingsPanel(ctx) {
       );
     };
 
-    // ── General Settings ──
+    // General Settings
     const GeneralSection = () =>
       ce("div", { style: sectionStyle },
         ce("div", { style: subHeaderStyle }, "General"),

@@ -20,15 +20,12 @@ const dc = require("../shared/discord-classes");
  * @returns {string}
  */
 function buildCSS() {
-  // ── Resolved selectors used in this file ──────────────────────────────────
-  //
+  // Resolved selectors used in this file
   // dc.sel.toolbar        → ".toolbar_abc123"   or  '[class*="toolbar_"]'
   // dc.sel.userSettings   → ".standardSidebarView_abc"  or  '[class*="userSettings_"]'
-  //
   // Selectors NOT in the shared resolver (no stable Webpack module found):
   //   comment, reply          — still wildcard (toolbar child icons)
   //   layer / baseLayer       — Discord layer stack, still wildcard
-  //
   // For the :has() combos we substitute dc.sel.userSettings for both
   //   [class*='userSettings'] and [class*='standardSidebarView'] since the
   //   resolver maps "userSettings" → standardSidebarView class.

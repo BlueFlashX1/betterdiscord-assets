@@ -36,16 +36,13 @@ let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const ShadowArmy = class ShadowArmy {
-  // ============================================================================
   // CONSTRUCTOR & INITIALIZATION
-  // ============================================================================
 
   constructor() {
     // Default settings (deep-copied to prevent mutation)
     this.defaultSettings = C.DEFAULT_SETTINGS;
     this.settings = structuredClone(this.defaultSettings);
 
-    // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
     this.saveManager = null;
     if (typeof UnifiedSaveManager === 'function') {
       try {
@@ -68,9 +65,7 @@ const ShadowArmy = class ShadowArmy {
     // Shadow army capacity per player rank (lore-accurate, Shadow Monarch = Infinity)
     this.shadowArmyCapacity = C.SHADOW_ARMY_CAPACITY;
 
-    // ============================================================================
     // COMPONENT REFERENCES - Storage, UI, Integration
-    // ============================================================================
     this.storageManager = null;
     this.userId = null;
     this._sessionToken = 0; // guards against orphaned async start() continuations
@@ -113,9 +108,7 @@ const ShadowArmy = class ShadowArmy {
     this.webpackModuleAccess = false;
     this.reactInjectionActive = false;
 
-    // ============================================================================
     // LIFECYCLE STATE - Cleanup Tracking
-    // ============================================================================
     this._retryTimeouts = new Set();
     this._memberListSetupRetryTimeout = null;
     this._isStopped = true;
@@ -142,9 +135,7 @@ const ShadowArmy = class ShadowArmy {
     this._ReactUtils = _ReactUtils;
     this._PluginUtils = _PluginUtils;
 
-    // ============================================================================
     // DEBUG SYSTEM
-    // ============================================================================
     this.debug = {
       enabled: false,
       errorCount: 0,
@@ -154,9 +145,7 @@ const ShadowArmy = class ShadowArmy {
     };
   }
 
-  // ============================================================================
   // PLUGIN LIFECYCLE
-  // ============================================================================
 
   async start() {
     if (!this._isStopped) {
@@ -183,7 +172,6 @@ const ShadowArmy = class ShadowArmy {
     this.userId = await this.getUserId();
     if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
-    // Initialize IndexedDB storage
     try {
       this.storageManager = new ShadowStorageManager(
         this.userId,
@@ -194,7 +182,6 @@ const ShadowArmy = class ShadowArmy {
       this.storageManager.decompressShadowUltra = (shadow) => this.decompressShadowUltra(shadow);
       await this.storageManager.init();
 
-      // Initialize UnifiedSaveManager (IndexedDB) for settings
       if (this.saveManager) {
         try {
           await this.saveManager.init();
@@ -372,7 +359,6 @@ const ShadowArmy = class ShadowArmy {
     // Build React components for the widget
     this._widgetComponents = buildWidgetComponents(this);
 
-    // Inject widget CSS
     this.injectWidgetCSS();
 
     // Setup channel/member list watcher (MutationObserver + NavigationBus)
@@ -432,7 +418,6 @@ const ShadowArmy = class ShadowArmy {
       this._navBusUnsub = null;
     }
 
-    // Remove widget CSS
     this.removeWidgetCSS();
 
     // Clear widget components
@@ -441,9 +426,7 @@ const ShadowArmy = class ShadowArmy {
     this.debugLog('SKILL_GATE', 'Widget resources deactivated (skill reset)');
   }
 
-  // ============================================================================
   // NATURAL GROWTH INTERVAL & WIDGET TIMERS
-  // ============================================================================
 
   startNaturalGrowthInterval() {
     if (this.naturalGrowthInterval) {
@@ -492,9 +475,7 @@ const ShadowArmy = class ShadowArmy {
     }
   }
 
-  // ============================================================================
   // DISCORD MEDIA ERROR SUPPRESSION
-  // ============================================================================
 
   _setupDiscordMediaErrorSuppression() {
     if (typeof window === 'undefined' || this._discordMediaErrorHandlerAdded) return;
@@ -518,9 +499,7 @@ const ShadowArmy = class ShadowArmy {
     window.addEventListener('unhandledrejection', this._discordMediaUnhandledRejectionHandler);
   }
 
-  // ============================================================================
   // STOP — CLEANUP
-  // ============================================================================
 
   stop() {
     this._isStopped = true;
@@ -543,7 +522,6 @@ const ShadowArmy = class ShadowArmy {
       this._saveSettingsImmediate();
     }
 
-    // Cleanup ARISE animation system
     this.cleanupAriseAnimationSystem();
 
     this.removeMessageListener();
@@ -680,9 +658,7 @@ const ShadowArmy = class ShadowArmy {
   }
 };
 
-// ============================================================================
 // MIXIN WIRING — all methods assigned to ShadowArmy.prototype
-// ============================================================================
 Object.assign(
   ShadowArmy.prototype,
   require('./watchers'),

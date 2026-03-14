@@ -121,7 +121,6 @@ const KANDIARU_RANK_EFFECTS = Object.freeze({
 // f(x) = round((Q*x^2 + L*x) / D), where x = level - 1.
 // Constraints:
 // - level 1 -> 0 SP
-// - level 2 -> 1 SP
 // - level 2000 -> 36229 SP (current total max cost)
 const SP_CURVE = Object.freeze({
   quadraticNumerator: 5705,
@@ -130,9 +129,7 @@ const SP_CURVE = Object.freeze({
 });
 
 module.exports = class SkillTree {
-  // ============================================================================
   // §1 CONSTRUCTOR & INITIALIZATION
-  // ============================================================================
   constructor() {
     const data = createSkillTreeData();
     this.defaultSettings = data.defaultSettings;
@@ -182,9 +179,7 @@ module.exports = class SkillTree {
     };
   }
 
-  // ============================================================================
   // §2 LIFECYCLE METHODS (start/stop)
-  // ============================================================================
 
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("skillTree") || createToast();
@@ -242,7 +237,6 @@ module.exports = class SkillTree {
     this.restoreActiveSkillTimers();
     this.saveActiveBuffs();
 
-    // Start mana regeneration
     this.startManaRegen();
 
     // Broadcast current skill levels so plugins that started before us
@@ -369,9 +363,7 @@ module.exports = class SkillTree {
     this.levelCheckInterval = null;
   }
 
-  // ============================================================================
   // §3 EVENT HANDLING & WATCHERS
-  // ============================================================================
   setupLevelUpWatcher() {
     // Return early if plugin is stopped to prevent recreating watchers
     if (this._isStopped) {
@@ -426,7 +418,6 @@ module.exports = class SkillTree {
       console.error('[SkillTree] Failed to unregister toolbar button:', error);
     }
 
-    // Unsubscribe from events
     this.unsubscribeFromEvents();
 
     // Clear intervals
@@ -510,9 +501,7 @@ module.exports = class SkillTree {
     this._settingsPanelHandlers = null;
   }
 
-  // ============================================================================
   // §4 LEVEL-UP & SP MANAGEMENT
-  // ============================================================================
   checkForLevelUp() {
     try {
       const soloData = this.getSoloLevelingData();
@@ -735,9 +724,7 @@ module.exports = class SkillTree {
     }
   }
 
-  // ============================================================================
   // §5 SETTINGS MANAGEMENT
-  // ============================================================================
   loadSettings() {
     try {
       const saved = BdApi.Data.load('SkillTree', 'settings');
@@ -915,9 +902,7 @@ module.exports = class SkillTree {
     }
   }
 
-  // ============================================================================
   // §6 SKILL BONUS CALCULATION
-  // ============================================================================
   /**
    * Save skill bonuses to shared storage for SoloLevelingStats to read
    */
@@ -1184,9 +1169,7 @@ module.exports = class SkillTree {
 
   // Active-skill methods are mixed in from active-skill-methods.js
 
-  // ============================================================================
   // §8 DATA ACCESS METHODS
-  // ============================================================================
   /**
    * Get SoloLevelingStats data
    * @returns {Object|null} - SoloLevelingStats data or null if unavailable
@@ -1326,9 +1309,7 @@ module.exports = class SkillTree {
 
   // UI helpers/watchers are mixed in from ui-methods.js
 
-  // ============================================================================
   // §12 DEBUGGING & DEVELOPMENT
-  // ============================================================================
 
   getSettingsPanel() {
     this.detachSkillTreeSettingsPanelHandlers();
