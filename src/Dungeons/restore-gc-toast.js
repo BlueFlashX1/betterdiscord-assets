@@ -33,7 +33,7 @@ module.exports = {
         const elapsed = Date.now() - dungeon.startTime;
         if (elapsed < this.settings.dungeonDuration && !dungeon.completed && !dungeon.failed) {
           // Ensure activeMobs array exists
-          if (!dungeon.mobs.activeMobs) {
+          if (!dungeon.mobs?.activeMobs) {
             dungeon.mobs.activeMobs = [];
           }
           // Ensure shadowHP exists as a Map (convert from plain object if loaded from JSON)
@@ -206,10 +206,11 @@ module.exports = {
                     const baseHP = 200 + mob.vitality * 15 + mobRankIndex * 100;
                     const hpVariance = 0.7 + Math.random() * 0.3;
                     const newHP = Math.max(1, Math.floor(baseHP * hpVariance));
+                    const prevMaxHp = mob.maxHp || newHP;
                     mob.maxHp = newHP;
                     // Preserve current HP ratio if mob is alive
-                    if (mob.hp > 0 && mob.maxHp) {
-                      const hpRatio = mob.hp / mob.maxHp;
+                    if (mob.hp > 0 && prevMaxHp) {
+                      const hpRatio = mob.hp / prevMaxHp;
                       mob.hp = Math.max(1, Math.floor(newHP * hpRatio));
                     } else {
                       mob.hp = newHP;

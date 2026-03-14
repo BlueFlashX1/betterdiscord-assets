@@ -307,6 +307,7 @@ module.exports = {
 
         // Subscribe to stats changes to update HP/Mana bars
         if (typeof this.soloLevelingStats.on === 'function') {
+          this._onStatsChangedUnsubscribe?.();
           const callback = () => {
             // Invalidate stats cache when stats change
             this._cache.userEffectiveStats = null;

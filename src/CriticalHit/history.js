@@ -61,18 +61,21 @@ module.exports = {
     const channelMessages = this._groupHistoryByChannel();
 
     // Find and trim channels exceeding limit
+    // Collect all indices to remove across all channels, then splice once
+    // in descending order to prevent stale-index corruption
+    const allIndicesToRemove = [];
     Object.entries(channelMessages)
       .filter(([, messages]) => messages.length > this.maxHistoryPerChannel)
       .forEach(([, messages]) => {
         const excess = messages.length - this.maxHistoryPerChannel;
         const toRemove = messages
           .sort((a, b) => (a.entry.timestamp || 0) - (b.entry.timestamp || 0))
-          .slice(0, excess)
-          .sort((a, b) => b.index - a.index);
-
-        // Remove from history (reverse order to maintain indices)
-        toRemove.forEach(({ index }) => this.messageHistory.splice(index, 1));
+          .slice(0, excess);
+        toRemove.forEach(({ index }) => allIndicesToRemove.push(index));
       });
+
+    // Sort descending and splice once to maintain correct indices
+    allIndicesToRemove.sort((a, b) => b - a).forEach(i => this.messageHistory.splice(i, 1));
 
     // Invalidate cache and rebuild map
     this._cachedCritHistory = null;

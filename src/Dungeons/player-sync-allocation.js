@@ -952,5 +952,40 @@ module.exports = {
     }
 
     return true;
+  },
+
+  // Pure read-only predicate — checks boss gate status without mutating dungeon state.
+  // Use this in simulation/offline paths (e.g. simulateShadowAttacks, simulateBossAttacks)
+  // to avoid permanently unlocking the boss gate as a side effect of simulation.
+  isBossGateUnlocked(dungeon) {
+    if (!dungeon?.boss || !dungeon.shadowsDeployed) return false;
+    if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') return false;
+
+    if (dungeon.bossGate.enabled === false) {
+      const hasSpawnedMobs =
+        this._countLiveMobs(dungeon) > 0 ||
+        (Number.isFinite(dungeon?.mobs?.total) && dungeon.mobs.total > 0) ||
+        (Number.isFinite(dungeon?.mobs?.killed) && dungeon.mobs.killed > 0);
+      return hasSpawnedMobs;
+    }
+
+    const now = Date.now();
+    const deployedAt = Math.max(
+      Number.isFinite(Number(dungeon.bossGate.deployedAt)) ? Number(dungeon.bossGate.deployedAt) : 0,
+      Number.isFinite(Number(dungeon.deployedAt)) ? Number(dungeon.deployedAt) : 0
+    );
+    if (deployedAt <= 0) return false;
+
+    const elapsed = Math.max(0, now - deployedAt);
+    const kills = Number.isFinite(dungeon?.mobs?.killed) ? dungeon.mobs.killed : 0;
+    const minDurationMs = Number.isFinite(dungeon.bossGate.minDurationMs) ? dungeon.bossGate.minDurationMs : 180000;
+    const requiredMobKills = Number.isFinite(dungeon.bossGate.requiredMobKills) ? dungeon.bossGate.requiredMobKills : 0;
+
+    const unlockedAt = Number(dungeon.bossGate.unlockedAt);
+    if (Number.isFinite(unlockedAt) && unlockedAt >= deployedAt) {
+      return elapsed >= minDurationMs && kills >= requiredMobKills;
+    }
+
+    return elapsed >= minDurationMs && kills >= requiredMobKills;
   }
 };

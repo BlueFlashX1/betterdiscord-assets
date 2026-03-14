@@ -171,6 +171,7 @@ module.exports = {
     if (!shadow) return this.createZeroStatBlock();
 
     shadow = this.getShadowData(shadow);
+    if (!shadow) return this.createZeroStatBlock?.() || { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
     const base = shadow.baseStats || {};
     const growth = shadow.growthStats || {};
     const naturalGrowth = shadow.naturalGrowthStats || {};

@@ -265,6 +265,7 @@ class ShadowStorageManager {
    */
   async _withStore(mode, fn) {
     if (!this.db) await this.init();
+    if (!this.db) throw new Error('ShadowArmy: Database not initialized');
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], mode, { durability: 'relaxed' });
       const store = transaction.objectStore(this.storeName);
@@ -455,11 +456,12 @@ class ShadowStorageManager {
   async saveShadowsBatch(shadows) {
     if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
 
-    return this._withStore('readwrite', (store, tx, resolve) => {
+    return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
       let errors = 0;
 
       tx.oncomplete = () => resolve(completed);
+      tx.onabort = () => reject(tx.error || new Error('saveShadowsBatch transaction aborted'));
 
       shadows.forEach((shadow, index) => {
         const shadowId = this.getCacheKey(shadow);
@@ -734,11 +736,12 @@ class ShadowStorageManager {
   async updateShadowsBatch(shadows) {
     if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
 
-    return this._withStore('readwrite', (store, tx, resolve) => {
+    return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
       let errors = 0;
 
       tx.oncomplete = () => resolve(completed);
+      tx.onabort = () => reject(tx.error || new Error('updateShadowsBatch transaction aborted'));
 
       shadows.forEach((shadow, index) => {
         if (!shadow) { errors++; return; }
@@ -773,11 +776,12 @@ class ShadowStorageManager {
   async deleteShadowsBatch(shadowIds) {
     if (!shadowIds || !Array.isArray(shadowIds) || shadowIds.length === 0) return 0;
 
-    return this._withStore('readwrite', (store, tx, resolve) => {
+    return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
       let errors = 0;
 
       tx.oncomplete = () => resolve(completed);
+      tx.onabort = () => reject(tx.error || new Error('deleteShadowsBatch transaction aborted'));
 
       shadowIds.forEach((id, index) => {
         if (!id) { errors++; return; }

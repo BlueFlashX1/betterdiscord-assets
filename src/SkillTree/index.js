@@ -576,7 +576,7 @@ module.exports = class SkillTree {
     this.saveSettings();
 
     // FUNCTIONAL: Show notification (optional chaining, no if-else)
-    BdApi?.showToast?.(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
+    BdApi?.UI?.showToast?.(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
       type: 'success',
       timeout: 3000,
     });
@@ -598,7 +598,10 @@ module.exports = class SkillTree {
   recalculateSPFromLevel() {
     try {
       const soloData = this.getSoloLevelingData();
-      if (!soloData || !soloData.level) return;
+      if (!soloData || (soloData.level || 0) <= 1) {
+        if (typeof this.debugLog === 'function') this.debugLog('SP_RECALC', 'Skipping SP recalculation — SoloLevelingStats data unavailable or stale');
+        return;
+      }
 
       const currentLevel = soloData.level;
       const expectedSP = this.calculateSPForLevel(currentLevel);
@@ -643,7 +646,7 @@ module.exports = class SkillTree {
         this.debugLog(`Reset all skills due to calculation error. Available SP: ${expectedSP}`);
 
         // Show toast notification
-        BdApi?.showToast?.(
+        BdApi?.UI?.showToast?.(
           `Skills reset due to calculation error. You have ${expectedSP} SP for level ${currentLevel}`,
           { type: 'warning', timeout: 5000 }
         );
@@ -672,7 +675,7 @@ module.exports = class SkillTree {
     try {
       const soloData = this.getSoloLevelingData();
       if (!soloData || !soloData.level) {
-        BdApi?.showToast?.('Cannot reset: SoloLevelingStats not available', {
+        BdApi?.UI?.showToast?.('Cannot reset: SoloLevelingStats not available', {
           type: 'error',
           timeout: 3000,
         });
@@ -729,7 +732,7 @@ module.exports = class SkillTree {
         } catch (_) { /* ignore dispatch errors */ }
       });
 
-      BdApi?.showToast?.(`Skills Reset! You have ${expectedSP} SP for level ${currentLevel}`, {
+      BdApi?.UI?.showToast?.(`Skills Reset! You have ${expectedSP} SP for level ${currentLevel}`, {
         type: 'success',
         timeout: 4000,
       });

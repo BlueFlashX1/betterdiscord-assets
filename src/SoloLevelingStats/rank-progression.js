@@ -51,7 +51,11 @@ module.exports = {
         ? this.settings.ranks
         : fallbackRanks;
     const rankIndex = ranks.indexOf(rank);
-    if (rankIndex <= 0) return [];
+    if (rankIndex < 0) {
+      if (typeof this.debugError === 'function') this.debugError('RANK_PROGRESSION', new Error(`Rank not found: ${rank}`));
+      return [];
+    }
+    if (rankIndex === 0) return [];
     return ranks.slice(1, rankIndex + 1);
   },
 

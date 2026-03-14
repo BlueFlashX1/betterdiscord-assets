@@ -39,7 +39,11 @@ module.exports = {
     const cap = this.getShadowArmyCap(playerRank, intelligence);
 
     if (cap === Infinity) {
-      return { atCap: false, currentCount: 0, cap: Infinity, overBy: 0 };
+      let infinityCount = 0;
+      if (this.storageManager && typeof this.storageManager.getTotalCount === 'function') {
+        try { infinityCount = await this.storageManager.getTotalCount(); } catch (_) { /* ignore */ }
+      }
+      return { atCap: false, currentCount: infinityCount, cap: Infinity, overBy: 0 };
     }
 
     let currentCount = 0;
@@ -236,8 +240,6 @@ module.exports = {
       intelligence, perception, strength, rank, targetRank, estimatedTargetStrength,
     });
 
-    this._extractionTimestamps.push(now);
-
     const extractedShadow = await this.attemptExtractionWithRetries(
       rank, level, stats, targetRank,
       null, null,
@@ -248,6 +250,7 @@ module.exports = {
     );
 
     if (extractedShadow) {
+      this._extractionTimestamps.push(now);
       this.debugLog('MESSAGE_EXTRACTION', 'Shadow extracted from message', {
         rank: extractedShadow.rank,
         role: extractedShadow.role,
@@ -518,7 +521,6 @@ module.exports = {
                   detail: eventData,
                   bubbles: true,
                 });
-                window.dispatchEvent(domEvent);
                 document.dispatchEvent(domEvent);
               } catch (error) {
                 this.debugError('EXTRACTION', 'Failed to emit DOM event', error);
@@ -943,7 +945,6 @@ module.exports = {
           BdApi.Events.emit('ShadowArmy:batchExtractionComplete', eventData);
         }
         if (typeof window?.dispatchEvent === 'function') {
-          window.dispatchEvent(new CustomEvent('shadowExtracted', { detail: eventData, bubbles: true }));
           document.dispatchEvent(new CustomEvent('shadowExtracted', { detail: eventData, bubbles: true }));
         }
 

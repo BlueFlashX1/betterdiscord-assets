@@ -79,7 +79,7 @@ module.exports = {
   async attemptBossExtraction(channelKey) {
     // ── SkillTree gate: shadow_extraction must be unlocked ──
     const skillTree = this.getSkillTreeInstance?.();
-    if (!skillTree || typeof skillTree.getSkillLevel !== 'function' || skillTree.getSkillLevel('shadow_extraction') < 1) {
+    if (!skillTree || typeof skillTree.getSkillLevel !== 'function' || !(Number(skillTree.getSkillLevel('shadow_extraction')) >= 1)) {
       this.showToast('Shadow Extraction skill not unlocked. Unlock it in the Skill Tree.', 'error');
       return;
     }

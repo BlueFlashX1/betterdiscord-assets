@@ -834,7 +834,7 @@ module.exports = {
     }
 
     const statSum = Object.values(cleanSettings.stats || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-    if (statSum === 0 && cleanSettings.level > 1) {
+    if (statSum === 0 && cleanSettings.level > 5 && (cleanSettings.unallocatedStatPoints || 0) === 0) {
       this.debugError(
         'SAVE_SETTINGS',
         new Error(

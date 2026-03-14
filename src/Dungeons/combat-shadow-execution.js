@@ -25,7 +25,7 @@ module.exports = {
       }
 
       // Stop attacking if boss is already dead (0 HP)
-      if (dungeon.boss.hp <= 0 && dungeon.mobs.activeMobs.length === 0) {
+      if (dungeon.boss.hp <= 0 && dungeon.mobs?.activeMobs?.length === 0) {
         this.stopShadowAttacks(channelKey);
         return;
       }

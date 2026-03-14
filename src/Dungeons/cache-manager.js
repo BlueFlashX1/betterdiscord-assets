@@ -25,6 +25,10 @@ class CacheManager {
     return cached.value;
   }
 
+  delete(key) {
+    this.caches.delete(key);
+  }
+
   clear() {
     this.caches.clear();
   }

@@ -549,6 +549,7 @@ const ShadowArmy = class ShadowArmy {
     this.cleanupAllCSS();
     this.clearCombatCache();
     this.closeShadowArmyModal();
+    this.__ShadowArmyModalCached = null;
 
     // Remove global error suppression handler
     if (this._discordMediaUnhandledRejectionHandler) {

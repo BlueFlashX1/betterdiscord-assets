@@ -166,8 +166,8 @@ module.exports = {
       return false;
     }
   
-    const oldValue = this.settings.stats[statName];
-    this.settings.stats[statName]++;
+    const oldValue = Number(this.settings.stats[statName]) || 0;
+    this.settings.stats[statName] = oldValue + 1;
     this.settings.unallocatedStatPoints--;
     const newValue = this.settings.stats[statName];
   

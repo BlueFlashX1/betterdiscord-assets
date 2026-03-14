@@ -13,7 +13,7 @@ module.exports = {
           return;
         }
         this._mobKillChannels.forEach((ck) => this.showMobKillSummary(ck));
-      }, this.settings.mobKillNotificationInterval);
+      }, Math.max(1000, this.settings.mobKillNotificationInterval || 10000));
       this._intervals.add(this._mobKillGlobalTimer);
     }
   },

@@ -268,7 +268,7 @@ module.exports = {
       }
     }
     const hasMobs = aliveMobCount > 0;
-    const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
+    const bossUnlocked = this.isBossGateUnlocked(dungeon);
     const bossAlive = (dungeon.boss?.hp || 0) > 0 && bossUnlocked;
     const bossShare =
       bossAlive && hasMobs
@@ -280,12 +280,10 @@ module.exports = {
 
     const shadowsPerCycle = Math.floor(aliveShadows.length * 0.5); // ~50% of shadows attack per cycle
     const totalBossDamageOverTime = Math.floor(
-      ((avgBossDamagePerShadow * shadowsPerCycle * cycles * bossShare) / sampleSize) *
-        aliveShadows.length
+      avgBossDamagePerShadow * shadowsPerCycle * cycles * bossShare
     );
     const totalMobDamageOverTime = Math.floor(
-      ((avgMobDamagePerShadow * shadowsPerCycle * cycles * mobShare) / sampleSize) *
-        aliveShadows.length
+      avgMobDamagePerShadow * shadowsPerCycle * cycles * mobShare
     );
 
     // Apply boss damage
@@ -360,7 +358,7 @@ module.exports = {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon || dungeon.boss.hp <= 0) return;
     const bossRole = this.ensureMonsterRole(dungeon.boss);
-    const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
+    const bossUnlocked = this.isBossGateUnlocked(dungeon);
     if (!bossUnlocked) return;
 
     const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());

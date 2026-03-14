@@ -305,10 +305,11 @@ module.exports = {
           // it's on a child div. Check both the element and its children.
           const pendingMsgId = messageElement.getAttribute?.('data-message-id') ||
             messageElement.querySelector?.('[data-message-id]')?.getAttribute('data-message-id');
-          const pendingAnim = pendingMsgId && !this.processedMessages.has(pendingMsgId) &&
-            this._pendingAnimations?.get(pendingMsgId);
-          if (pendingAnim) {
-            this._pendingAnimations.delete(pendingMsgId);
+          // Always clean up pending animation entry to prevent stale buildup,
+          // then only process if message hasn't been handled yet
+          const pendingAnim = pendingMsgId ? this._pendingAnimations?.get(pendingMsgId) : null;
+          if (pendingMsgId) this._pendingAnimations?.delete(pendingMsgId);
+          if (pendingAnim && !this.processedMessages.has(pendingMsgId)) {
 
             // Complete deferred processing from _onMessageCreate:
             // Stats, history, and processedMessages were intentionally NOT set
