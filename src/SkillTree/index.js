@@ -99,21 +99,7 @@ const STATIC_PASSIVE_BONUS_KEYS = Object.freeze([
   'shadowGrowthMultiplier',
 ]);
 
-const SOLO_RANK_ORDER = Object.freeze([
-  'E',
-  'D',
-  'C',
-  'B',
-  'A',
-  'S',
-  'SS',
-  'SSS',
-  'SSS+',
-  'NH',
-  'Monarch',
-  'Monarch+',
-  'Shadow Monarch',
-]);
+const { RANK_ORDER: SOLO_RANK_ORDER } = require('../shared/rank-utils');
 
 const KANDIARU_RANK_EFFECTS = Object.freeze({
   E: { xpBonus: 0.03, naturalGrowthMultiplier: 1.08 },

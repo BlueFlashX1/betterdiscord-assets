@@ -1,7 +1,4 @@
-// Duplicated from index.js — kept in sync for rank requirement checks
-const SOLO_RANK_ORDER = Object.freeze([
-  'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch',
-]);
+const { RANK_ORDER: SOLO_RANK_ORDER } = require('../shared/rank-utils');
 
 const SkillTreeUpgradeMethods = {
   _syncUnlockedSkillState(skillId) {

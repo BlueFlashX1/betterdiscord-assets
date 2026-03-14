@@ -76,13 +76,17 @@ module.exports = {
     try {
       const saved = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
       const perception = Math.max(0, Number(saved.effectivePerception ?? saved.perception ?? 0) || 0);
-      const extraHitChance = Math.min(0.82, 0.08 + perception * 0.007); // 8% base + 0.7%/PER
-      const maxHits = Math.min(99, Math.max(1, Number(saved.maxHits) || (1 + Math.floor(perception * 1.2))));
+      // Use SLS-provided values when available, otherwise match SLS formula exactly:
+      // 5% base + 0.35%/PER, capped at 45% (from SoloLevelingStats/calculation-bonuses.js)
+      const extraHitChance = Number.isFinite(saved.burstChance)
+        ? Math.max(0, Math.min(0.45, Number(saved.burstChance)))
+        : Math.min(0.45, 0.05 + perception * 0.0035);
+      const maxHits = Math.min(40, Math.max(1, Number(saved.maxHits) || (1 + Math.floor(perception * 0.5))));
       const jackpotChance =
         Number.isFinite(saved.jackpotChance)
-          ? Math.max(0, Math.min(0.06, Number(saved.jackpotChance)))
-          : perception >= 25
-          ? Math.min(0.06, (perception - 24) * 0.0012)
+          ? Math.max(0, Math.min(0.02, Number(saved.jackpotChance)))
+          : perception >= 40
+          ? Math.min(0.02, (perception - 39) * 0.0004)
           : 0;
 
       return {
@@ -97,7 +101,7 @@ module.exports = {
       });
       return {
         perception: 0,
-        extraHitChance: 0.08,
+        extraHitChance: 0.05,
         maxHits: 1,
         jackpotChance: 0,
       };

@@ -39,11 +39,8 @@ module.exports = {
     const cap = this.getShadowArmyCap(playerRank, intelligence);
 
     if (cap === Infinity) {
-      let infinityCount = 0;
-      if (this.storageManager && typeof this.storageManager.getTotalCount === 'function') {
-        try { infinityCount = await this.storageManager.getTotalCount(); } catch (_) { /* ignore */ }
-      }
-      return { atCap: false, currentCount: infinityCount, cap: Infinity, overBy: 0 };
+      // No IDB read needed — no caller uses currentCount when atCap is always false
+      return { atCap: false, currentCount: 0, cap: Infinity, overBy: 0 };
     }
 
     let currentCount = 0;

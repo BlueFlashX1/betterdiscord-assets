@@ -584,7 +584,19 @@ module.exports = class ShadowExchange {
         return this.getFallbackShadow();
       }
 
-      const available = allShadows.filter((s) => s?.id && !this.isShadowMarked(s.id));
+      // Exclude shadows deployed by ShadowSenses to prevent double-assignment
+      let sensesDeployedIds = new Set();
+      try {
+        if (BdApi.Plugins.isEnabled("ShadowSenses")) {
+          const ssInstance = BdApi.Plugins.get("ShadowSenses")?.instance;
+          const deployments = ssInstance?.deploymentManager?.getDeployments?.();
+          if (Array.isArray(deployments)) {
+            sensesDeployedIds = new Set(deployments.map((d) => String(d.shadowId)));
+          }
+        }
+      } catch (_) { /* ShadowSenses unavailable — proceed without exclusion */ }
+
+      const available = allShadows.filter((s) => s?.id && !this.isShadowMarked(s.id) && !sensesDeployedIds.has(String(s.id)));
 
       if (available.length === 0) {
         return this.getFallbackShadow();
