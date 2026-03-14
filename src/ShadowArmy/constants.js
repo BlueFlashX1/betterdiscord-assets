@@ -338,25 +338,29 @@ const SHADOW_ROLE_STAT_WEIGHTS = {
 // ============================================================================
 // SHADOW ARMY CAPACITY — Lore-Accurate Storage Limits Per Player Rank
 // ============================================================================
-// Based on Solo Leveling novel: initial 20-slot cap (Job Change arc),
-// scaling with Intelligence/power, limitless only at Shadow Monarch.
+// Based on Solo Leveling novel ch.100: "the sole method to increase storage
+// was to increase his Intelligence Stat." Capacity = base + sqrt(INT) × scale.
+// Base caps from novel anchor points; Intelligence provides scaling on top.
+// Shadow Monarch = Infinity (limitless, full Ashborn power).
 // Existing shadows that exceed the cap are grandfathered — never deleted.
-// New extractions are blocked until count drops below cap (or player ranks up).
+//
+// Formula: cap = baseCap + floor(sqrt(intelligence) × intScale)
 
 const SHADOW_ARMY_CAPACITY = {
-  E: 0,                 // No Shadow Extraction skill yet
-  D: 20,               // First gaining Shadow Extraction (ch.100 — 20 slots)
-  C: 50,               // Growing intelligence stat
-  B: 100,              // Mid-tier hunter growth
-  A: 250,              // Post-Igris, significant army
-  S: 500,              // Jeju Island arc, hundreds+
-  SS: 1000,            // Late S-rank power
-  SSS: 2000,           // ~ch.227 "near two thousand"
-  'SSS+': 5000,        // Approaching Monarch
-  NH: 10000,           // National Hunter level
-  Monarch: 50000,      // Partial Ashborn inheritance
-  'Monarch+': 130000,  // ch.240 "over 130 thousand elite shadows"
-  'Shadow Monarch': Infinity, // Full Ashborn power — limitless
+  //                     base    intScale
+  E:                  { base: 0,      intScale: 0 },       // No Shadow Extraction skill yet
+  D:                  { base: 10,     intScale: 2 },       // Job Change arc — ~20 at INT 25
+  C:                  { base: 25,     intScale: 5 },       // Growing power
+  B:                  { base: 50,     intScale: 10 },      // Mid-tier hunter
+  A:                  { base: 100,    intScale: 20 },      // Post-Igris, significant army
+  S:                  { base: 200,    intScale: 35 },      // Jeju Island arc
+  SS:                 { base: 400,    intScale: 60 },      // Late S-rank power
+  SSS:                { base: 800,    intScale: 100 },     // ~ch.227 "near two thousand"
+  'SSS+':             { base: 1500,   intScale: 170 },     // Approaching Monarch
+  NH:                 { base: 3000,   intScale: 300 },     // National Hunter level
+  Monarch:            { base: 10000,  intScale: 550 },     // Partial Ashborn inheritance
+  'Monarch+':         { base: 50000,  intScale: 1000 },    // ch.240 "over 130 thousand elite"
+  'Shadow Monarch':   { base: Infinity, intScale: 0 },     // Full Ashborn power — limitless
 };
 
 // ============================================================================

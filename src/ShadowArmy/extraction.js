@@ -10,23 +10,33 @@ module.exports = {
   // ============================================================================
 
   /**
-   * Get the shadow army capacity for a given player rank.
+   * Calculate shadow army capacity for a given player rank + intelligence.
+   * Formula: cap = baseCap + floor(sqrt(intelligence) × intScale)
    * Shadow Monarch = Infinity (limitless). E-rank = 0 (no extraction skill).
    */
-  getShadowArmyCap(playerRank) {
-    const cap = this.shadowArmyCapacity?.[playerRank];
-    return Number.isFinite(cap) ? cap : (cap === Infinity ? Infinity : 0);
+  getShadowArmyCap(playerRank, intelligence = 0) {
+    const entry = this.shadowArmyCapacity?.[playerRank];
+    if (!entry) return 0;
+
+    const base = entry.base;
+    if (base === Infinity) return Infinity;
+    if (!Number.isFinite(base)) return 0;
+
+    const intScale = Number(entry.intScale) || 0;
+    const safeInt = Math.max(0, Number(intelligence) || 0);
+    return base + Math.floor(Math.sqrt(safeInt) * intScale);
   },
 
   /**
-   * Check if the army is at or over capacity for the current player rank.
+   * Check if the army is at or over capacity for the current player rank + INT.
    * Returns { atCap, currentCount, cap, overBy }.
    * Grandfathered shadows (existing over-cap) are NOT deleted — only new extractions are blocked.
    */
   async checkShadowArmyCap() {
     const soloData = this.getSoloLevelingData();
     const playerRank = soloData?.rank || 'E';
-    const cap = this.getShadowArmyCap(playerRank);
+    const intelligence = soloData?.stats?.intelligence || 0;
+    const cap = this.getShadowArmyCap(playerRank, intelligence);
 
     if (cap === Infinity) {
       return { atCap: false, currentCount: 0, cap: Infinity, overBy: 0 };

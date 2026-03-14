@@ -422,11 +422,29 @@ module.exports = {
     };
 
     // Filter cached sorted army by real-time exclusions.
-    const shadowsSorted = shadowsSortedAll
+    let shadowsSorted = shadowsSortedAll
       .filter((s) => {
         const id = getShadowId(s);
         return id && !exchangeMarkedIds.has(id) && !sensesDeployedIds.has(id);
       });
+
+    // SHADOW ARMY CAP: Only deploy up to capacity (strongest first).
+    // Shadows over-cap are stored but can't fight until player ranks up or gains INT.
+    // Shadow Monarch = Infinity (no cap). shadowArmy.getShadowArmyCap() handles the formula.
+    if (this.shadowArmy && typeof this.shadowArmy.getShadowArmyCap === 'function') {
+      const soloData = this.shadowArmy.getSoloLevelingData?.();
+      const playerRank = soloData?.rank || 'E';
+      const intelligence = soloData?.stats?.intelligence || 0;
+      const cap = this.shadowArmy.getShadowArmyCap(playerRank, intelligence);
+      if (Number.isFinite(cap) && shadowsSorted.length > cap) {
+        const benched = shadowsSorted.length - cap;
+        this.debugLog('ALLOCATION', `Shadow army over capacity: deploying ${cap}/${shadowsSorted.length} (${benched} benched)`, {
+          playerRank, intelligence, cap, total: shadowsSorted.length, benched,
+        });
+        // shadowsSorted is already strongest-first — take the top `cap` shadows
+        shadowsSorted = shadowsSorted.slice(0, cap);
+      }
+    }
 
     // Reserve pool: hold back weakest shadows for ShadowSenses deployment.
     // Base 10% reserve, reduced to 5% if all active dungeons are A-rank or above.
