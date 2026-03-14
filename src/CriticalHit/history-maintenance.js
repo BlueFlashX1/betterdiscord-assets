@@ -54,6 +54,16 @@ module.exports = {
   },
 
   /**
+   * PERF: Prune critMessages of disconnected DOM elements to prevent memory leak.
+   * Discord's virtualised message list removes nodes from the DOM — we must release refs.
+   */
+  pruneCritMessages() {
+    for (const el of this.critMessages) {
+      if (!el.isConnected) this.critMessages.delete(el);
+    }
+  },
+
+  /**
    * Atomically check and add message ID to processedMessages (fixes race condition)
    * Returns true if message was added (not already present), false if already processed
    */

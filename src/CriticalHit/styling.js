@@ -137,23 +137,35 @@ ${childSel} {
         cancelAnimationFrame(this._critCSSRebuildRAF);
         this._critCSSRebuildRAF = null;
       }
-      BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.critMessages);
-      if (this.critCSSRules.size > 0) {
-        const allRules = Array.from(this.critCSSRules.values()).join('\n');
-        BdApi.DOM.addStyle(C.CSS_STYLE_IDS.critMessages, allRules);
-      }
+      this._applyCritCSS();
       return;
     }
     // Debounced path — batch via requestAnimationFrame
     if (this._critCSSRebuildRAF) return; // Already scheduled
     this._critCSSRebuildRAF = requestAnimationFrame(() => {
       this._critCSSRebuildRAF = null;
-      BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.critMessages);
-      if (this.critCSSRules.size > 0) {
-        const allRules = Array.from(this.critCSSRules.values()).join('\n');
-        BdApi.DOM.addStyle(C.CSS_STYLE_IDS.critMessages, allRules);
-      }
+      this._applyCritCSS();
     });
+  },
+
+  /**
+   * PERF: Apply crit CSS by updating the existing <style> element in-place
+   * rather than remove+add (which causes full CSSOM invalidation).
+   */
+  _applyCritCSS() {
+    const styleId = C.CSS_STYLE_IDS.critMessages;
+    if (this.critCSSRules.size === 0) {
+      BdApi.DOM.removeStyle(styleId);
+      return;
+    }
+    const allRules = Array.from(this.critCSSRules.values()).join('\n');
+    // Update existing <style> element in-place if it exists
+    const existing = document.getElementById(styleId);
+    if (existing) {
+      existing.textContent = allRules;
+    } else {
+      BdApi.DOM.addStyle(styleId, allRules);
+    }
   },
 
   /**

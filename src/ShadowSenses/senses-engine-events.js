@@ -252,15 +252,10 @@ function seedUserActivityFromFeeds() {
 
 function pruneUserActivityCache(ctx) {
   if (ctx._userLastActivity.size <= ctx._USER_ACTIVITY_MAX) return;
-  let oldestUserId = null;
-  let oldestTs = Infinity;
-  for (const [uid, data] of ctx._userLastActivity) {
-    if ((data?.timestamp || 0) < oldestTs) {
-      oldestUserId = uid;
-      oldestTs = data.timestamp || 0;
-    }
-  }
-  if (oldestUserId) ctx._userLastActivity.delete(oldestUserId);
+  // PERF: O(1) — Map preserves insertion order; oldest entry is first key.
+  // upsertUserLastActivity deletes+re-inserts on update, so insertion order = recency.
+  const oldest = ctx._userLastActivity.keys().next().value;
+  if (oldest != null) ctx._userLastActivity.delete(oldest);
 }
 
 function trimUserActivitySeedCache(ctx) {

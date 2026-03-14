@@ -30,6 +30,7 @@ module.exports = {
 
     const tick = () => {
       if (!this.started) return;
+      if (document.hidden) return; // PERF: Skip DOM work when window not visible
       this.ensureDungeonHeaderWidget();
       if (this._dungeonHeaderPopup?.isConnected) {
         this.renderDungeonHeaderPopup();
@@ -229,7 +230,7 @@ module.exports = {
 
     document.addEventListener('mousedown', this._dungeonHeaderPopupDocClickHandler, true);
     window.addEventListener('resize', this._dungeonHeaderPopupResizeHandler);
-    window.addEventListener('scroll', this._dungeonHeaderPopupScrollHandler, true);
+    window.addEventListener('scroll', this._dungeonHeaderPopupScrollHandler, { passive: true, capture: true });
   },
 
   closeDungeonHeaderPopup() {

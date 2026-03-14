@@ -334,7 +334,7 @@ export function setupHoverHandlers(ctx) {
     handleMembersHover(ctx, runtime);
     handleProfileHover(ctx, runtime);
     handleChannelHover(ctx, runtime);
-  }, 16); // ~60fps throttle
+  }, 32); // ~30fps throttle — hover reveal doesn't need 60fps
 
   document.addEventListener("mousemove", handler, {
     passive: true,

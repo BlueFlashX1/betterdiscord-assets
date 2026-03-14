@@ -252,6 +252,9 @@ module.exports = {
 
     // Create mutation observer to watch for new messages
     this.messageObserver = new MutationObserver((mutations) => {
+      // PERF: Prune disconnected DOM refs from critMessages every 100 additions
+      if (this.critMessages.size > 100) this.pruneCritMessages();
+
       // PERF: Batch all added nodes from the mutation batch, process in single RAF chain
       const addedElements = [];
       for (let i = 0; i < mutations.length; i++) {

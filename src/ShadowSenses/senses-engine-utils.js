@@ -167,18 +167,11 @@ function resolveUserAvatarUrl(userId) {
     const user = userStore.getUser(userId);
     if (!user) return null;
 
-    const candidateCalls = [
-      () => user.getAvatarURL?.(null, 64, true),
-      () => user.getAvatarURL?.(),
-      () => user.getAvatarURL?.(64),
-      () => user.getDefaultAvatarURL?.(),
-    ];
-    for (const call of candidateCalls) {
-      try {
-        const value = call();
-        if (typeof value === "string" && value.length > 4) return value;
-      } catch (_) {}
-    }
+    // PERF: Direct try/catch sequence — avoids allocating 4 closures per call
+    try { const v = user.getAvatarURL?.(null, 64, true); if (typeof v === "string" && v.length > 4) return v; } catch (_) {}
+    try { const v = user.getAvatarURL?.(); if (typeof v === "string" && v.length > 4) return v; } catch (_) {}
+    try { const v = user.getAvatarURL?.(64); if (typeof v === "string" && v.length > 4) return v; } catch (_) {}
+    try { const v = user.getDefaultAvatarURL?.(); if (typeof v === "string" && v.length > 4) return v; } catch (_) {}
 
     if (typeof user.defaultAvatarURL === "string" && user.defaultAvatarURL.length > 4) {
       return user.defaultAvatarURL;

@@ -367,11 +367,21 @@ module.exports = {
       );
     };
 
-    this.memberListObserver = new MutationObserver(onMemberListMutated);
+    // PERF: Debounce member list mutations — Discord fires many during scroll/online status changes
+    let _memberListDebounceTimer = null;
+    this.memberListObserver = new MutationObserver(() => {
+      if (_memberListDebounceTimer) return;
+      _memberListDebounceTimer = setTimeout(() => {
+        _memberListDebounceTimer = null;
+        onMemberListMutated();
+      }, 80);
+    });
 
     this.memberListObserver.observe(observeRoot, {
       childList: true,
       subtree: true,
+      attributes: false,
+      characterData: false,
     });
 
     // Periodic observer health check

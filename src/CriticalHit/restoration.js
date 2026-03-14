@@ -655,7 +655,9 @@ module.exports = {
           }
 
           // OPTIMIZED: Set up MutationObserver with throttling
-          const parentContainer = messageElement?.parentElement || document.body;
+          // PERF: Never observe document.body with subtree — too expensive
+          const parentContainer = messageElement?.parentElement;
+          if (!parentContainer || parentContainer === document.body) return;
           let lastRestorationCheck = 0;
 
           const restorationObserver = this._trackTransientObserver(

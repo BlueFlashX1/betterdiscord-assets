@@ -779,9 +779,14 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           this._scheduleHeaderWidgetReinject(80);
         });
         try {
-          this._headerObserver.observe(document.body, {
+          // PERF: Scope observer to toolbar area instead of document.body
+          // to avoid firing on every DOM mutation in Discord
+          const toolbar = document.querySelector('[class*="toolbar_"]')
+            || document.querySelector('[class*="headerBar_"]');
+          const observeTarget = toolbar?.parentElement || document.querySelector('[class*="title_"]')?.closest('[class*="container_"]') || document.body;
+          this._headerObserver.observe(observeTarget, {
             childList: true,
-            subtree: true
+            subtree: observeTarget !== document.body
           });
         } catch (_) {
           this._headerObserver = null;
@@ -879,6 +884,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
       _startHeaderBadgePolling() {
         this._stopHeaderBadgePolling();
         this._headerBadgePollTimer = setInterval(async () => {
+          if (document.hidden) return; // PERF: Skip when window not visible
           try {
             await this._flushQueuedReturnSignal();
             if (document.getElementById(HEADER_WIDGET_ID)) {

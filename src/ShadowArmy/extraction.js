@@ -260,9 +260,13 @@ module.exports = {
   },
 
   _getAvailableDungeonBeastRoles(rank, beastFamilies = null) {
-    let availableBeastRoles = Object.keys(this.shadowRoles).filter(
-      (key) => this.shadowRoles[key].isMagicBeast
-    );
+    // PERF: Use pre-computed beast role lists instead of filtering Object.keys on every call
+    if (!this._allBeastRoleKeys) {
+      this._allBeastRoleKeys = Object.keys(this.shadowRoles).filter(k => this.shadowRoles[k].isMagicBeast);
+      this._baseBeastRoleKeys = this._allBeastRoleKeys.filter(k => !this.shadowRoles[k].minRank);
+    }
+
+    let availableBeastRoles = this._allBeastRoleKeys;
 
     if (beastFamilies && beastFamilies.length > 0) {
       availableBeastRoles = availableBeastRoles.filter((key) => {
@@ -280,9 +284,7 @@ module.exports = {
     });
 
     if (availableBeastRoles.length === 0) {
-      availableBeastRoles = Object.keys(this.shadowRoles).filter(
-        (key) => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
-      );
+      availableBeastRoles = this._baseBeastRoleKeys;
     }
 
     return availableBeastRoles;
@@ -823,20 +825,22 @@ module.exports = {
           const role = this.shadowRoles[roleKey] || this.shadowRoles.knight || { name: roleKey };
           const calculatedStrength = corpse.strength || (corpse.baseStats ? this.calculateShadowPower(corpse.baseStats, 1) : 0);
 
+          // PERF: Single Date.now() per shadow instead of 3 calls
+          const _now = Date.now();
           shadow = {
-            id: `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            id: `shadow_${_now}_${Math.random().toString(36).substring(2, 11)}`,
             rank: mobRank,
             role: roleKey,
             roleName: role.name,
             strength: calculatedStrength,
-            extractedAt: Date.now(),
+            extractedAt: _now,
             level: 1,
             xp: 0,
             baseStats: corpse.baseStats,
             growthStats: this.createZeroStatBlock(),
             naturalGrowthStats: this.createZeroStatBlock(),
             totalCombatTime: 0,
-            lastNaturalGrowth: Date.now(),
+            lastNaturalGrowth: _now,
             ownerLevelAtExtraction: userLevel,
             growthVarianceSeed: Math.random(),
           };

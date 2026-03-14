@@ -806,13 +806,10 @@ module.exports = {
 
   isElementVisible(el) {
     if (!el) return false;
-    const style = getComputedStyle(el);
-    return (
-      style.display !== 'none' &&
-      style.visibility !== 'hidden' &&
-      el.offsetWidth > 0 &&
-      el.offsetHeight > 0
-    );
+    // PERF: Single getBoundingClientRect replaces getComputedStyle + offsetWidth + offsetHeight
+    // (was 3 forced layout reads, now 1)
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   },
 
   isSettingsLayerOpen() {

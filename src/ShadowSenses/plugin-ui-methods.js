@@ -58,11 +58,11 @@ const ShadowSensesUiMethods = {
 
   _getMembersWrap() {
     try {
-      // PERF: Cache the found wrap element for 2s to avoid offsetParent layout recalc every 500ms observer tick
+      // PERF: Cache the found wrap element for 2s
       const now = Date.now();
       if (this._cachedMembersWrap && this._cachedMembersWrapTs && (now - this._cachedMembersWrapTs < 2000)) {
-        // Validate cached element is still connected and visible
-        if (this._cachedMembersWrap.isConnected && this._cachedMembersWrap.offsetParent !== null) {
+        // PERF: isConnected is O(1) with no layout cost; offsetParent removed (forced layout flush)
+        if (this._cachedMembersWrap.isConnected) {
           return this._cachedMembersWrap;
         }
         // Stale — clear and re-query

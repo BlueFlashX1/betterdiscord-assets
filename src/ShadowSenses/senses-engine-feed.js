@@ -433,6 +433,12 @@ function registerBurst(guildId, entry) {
  * view that automatically excludes the guild you're already looking at.
  */
 function getActiveFeed() {
+  // PERF: Memoize — only rebuild when feed version or current guild changes
+  if (this._activeFeedCache
+      && this._activeFeedCacheVersion === this._feedVersion
+      && this._activeFeedCacheGuild === this._currentGuildId) {
+    return this._activeFeedCache;
+  }
   const merged = [];
   for (const [guildId, feed] of Object.entries(this._guildFeeds)) {
     if (guildId === this._currentGuildId) continue; // Skip current guild
@@ -442,6 +448,9 @@ function getActiveFeed() {
   }
   // Sort by timestamp ascending (oldest first, newest at bottom for scroll)
   merged.sort((a, b) => a.timestamp - b.timestamp);
+  this._activeFeedCache = merged;
+  this._activeFeedCacheVersion = this._feedVersion;
+  this._activeFeedCacheGuild = this._currentGuildId;
   return merged;
 }
 

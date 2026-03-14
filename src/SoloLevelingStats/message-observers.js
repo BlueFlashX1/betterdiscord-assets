@@ -330,6 +330,8 @@ module.exports = {
     this.messageObserver.observe(messageContainer, {
       childList: true,
       subtree: true,
+      attributes: false,
+      characterData: false,
     });
 
     this.debugLog('SETUP_MESSAGE_DETECTION', 'MutationObserver set up for message detection');

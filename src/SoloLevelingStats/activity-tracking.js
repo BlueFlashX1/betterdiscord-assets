@@ -38,7 +38,7 @@ module.exports = {
       keydown: resetActivityTimeout,
     };
   
-    document.addEventListener('mousemove', resetActivityTimeout);
+    document.addEventListener('mousemove', resetActivityTimeout, { passive: true });
     document.addEventListener('keydown', resetActivityTimeout);
     resetActivityTimeout();
   },
