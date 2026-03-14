@@ -195,8 +195,15 @@ module.exports = {
 
     if (!effects.length) return '';
 
-    const badges = effects.map((e) => {
-      // Determine CSS class: custom ailment class, or buff/debuff fallback
+    // Group effects into visual sections for clean alignment
+    const groupOrder = ['buff', 'debuff', 'ailment', 'ailment-mob', 'ailment-self'];
+    const groups = {};
+    for (const e of effects) {
+      const groupKey = e.type;
+      (groups[groupKey] || (groups[groupKey] = [])).push(e);
+    }
+
+    const renderBadge = (e) => {
       let cls;
       if (e.cls) {
         cls = e.cls;
@@ -209,11 +216,10 @@ module.exports = {
       let displayStr;
       let titleTime;
       if (e.type === 'ailment-mob') {
-        // Mob summary: show count instead of timer (e.g. "☠ 12")
         displayStr = e.label.replace(/^(\d+)\s+Mobs\s+.*/, '$1');
         titleTime = e.label;
       } else if (e.time === null) {
-        displayStr = '\u221E'; // ∞ for permanent effects
+        displayStr = '\u221E';
         titleTime = 'permanent';
       } else if (e.time >= 60) {
         displayStr = `${Math.floor(e.time / 60)}m${e.time % 60}s`;
@@ -223,9 +229,19 @@ module.exports = {
         titleTime = displayStr;
       }
       return `<span class="dungeon-effect-badge ${cls}" title="${escapeHtml(e.label)} (${titleTime})">${e.icon} ${displayStr}</span>`;
-    }).join('');
+    };
 
-    return `<div class="dungeon-active-effects-row">${badges}</div>`;
+    // Build sections with separators between groups
+    const sections = [];
+    for (const key of groupOrder) {
+      const group = groups[key];
+      if (!group || group.length === 0) continue;
+      sections.push(group.map(renderBadge).join(''));
+    }
+
+    // Join sections with a thin vertical separator
+    const separator = '<span class="effect-row-separator"></span>';
+    return `<div class="dungeon-active-effects-row">${sections.join(separator)}</div>`;
   },
 
   _updateActiveEffectsRow(hpBar, dungeon) {

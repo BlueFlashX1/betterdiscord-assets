@@ -688,23 +688,36 @@ ${sel.settingsContainer} {
 
 .dungeon-active-effects-row {
   display: flex !important;
-  gap: 6px !important;
+  gap: 4px !important;
   flex-wrap: wrap !important;
   align-items: center !important;
   margin-top: 4px !important;
+  row-gap: 3px !important;
+}
+
+.effect-row-separator {
+  display: inline-block !important;
+  width: 1px !important;
+  height: 14px !important;
+  background: rgba(255, 255, 255, 0.15) !important;
+  margin: 0 2px !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
 }
 
 .dungeon-effect-badge {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 4px !important;
-  padding: 2px 8px !important;
+  gap: 3px !important;
+  padding: 1px 6px !important;
   border-radius: 10px !important;
   font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
   font-size: 10px !important;
   font-weight: 700 !important;
   letter-spacing: 0.04em !important;
   white-space: nowrap !important;
+  line-height: 16px !important;
+  min-height: 18px !important;
   animation: effectPulse 2s ease-in-out infinite !important;
 }
 
@@ -769,6 +782,8 @@ ${sel.settingsContainer} {
   text-shadow: 0 0 5px rgba(45, 212, 191, 0.35) !important;
   box-shadow: 0 0 6px rgba(20, 184, 166, 0.15) !important;
   font-size: 9px !important;
+  line-height: 16px !important;
+  min-height: 18px !important;
   opacity: 0.85 !important;
   animation: none !important;
 }
