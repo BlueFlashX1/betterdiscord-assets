@@ -23,9 +23,23 @@ module.exports = {
     this._ariseButtonRefs?.delete(channelKey);
   },
 
-  showAriseButton(channelKey) {
+  async showAriseButton(channelKey) {
     const bossData = this.defeatedBosses.get(channelKey);
     if (!bossData) return;
+
+    // ── Shadow army cap gate: don't show ARISE if already at/over cap ──
+    try {
+      const shadowArmy = this.shadowArmy;
+      if (shadowArmy && typeof shadowArmy.checkShadowArmyCap === 'function') {
+        const capStatus = await shadowArmy.checkShadowArmyCap();
+        if (capStatus.atCap) {
+          this.debugLog('ARISE', `Suppressing ARISE button — shadow army at cap (${capStatus.currentCount}/${capStatus.cap})`);
+          return;
+        }
+      }
+    } catch (e) {
+      this.debugLog('ARISE', 'Cap check failed, showing button anyway', e?.message);
+    }
 
     const channelHeader = this.findChannelHeader();
     if (!channelHeader?.isConnected) return;

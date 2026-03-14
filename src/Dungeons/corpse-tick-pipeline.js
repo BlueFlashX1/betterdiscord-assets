@@ -42,6 +42,25 @@ module.exports = {
       return { extracted: 0, attempted: 0 };
     }
 
+    // ── Shadow army cap gate: skip ALL mob extractions if already at/over cap ──
+    // This avoids hundreds of wasted IDB reads (each attemptDungeonExtraction checks cap individually).
+    // Mob extractions remain skipped until cap is below limit (e.g., player ranks up or releases shadows).
+    if (typeof shadowArmy.checkShadowArmyCap === 'function') {
+      try {
+        const capStatus = await shadowArmy.checkShadowArmyCap();
+        if (capStatus.atCap) {
+          this.debugLog(
+            'ARISE',
+            `Skipping corpse pile extraction — shadow army at cap (${capStatus.currentCount}/${capStatus.cap}). ${pile.length} corpses discarded.`
+          );
+          if (dungeon) dungeon.corpsePile = [];
+          return { extracted: 0, attempted: 0 };
+        }
+      } catch (e) {
+        this.debugLog('ARISE', 'Cap pre-check failed, proceeding with extraction', e?.message);
+      }
+    }
+
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
     const userLevel = this.soloLevelingStats?.settings?.level || 1;
     const userStats = this.soloLevelingStats?.getTotalEffectiveStats?.() || {};

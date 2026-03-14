@@ -316,17 +316,10 @@ module.exports = {
         targetCount: totalMobCount, // Target mob count for this dungeon
         spawnRate: 2 + rankIndex,
         activeMobs: [], // Array of mob objects with HP and stats
-        // Per-dungeon mob capacity: Matches target count up to performance ceiling
-        // Shadows kill mobs continuously; cap prevents UI freezes from array iteration.
-        mobCapacity: Math.floor(
-          Math.max(
-            200, // Minimum capacity (prevents too low for any dungeon)
-            Math.min(
-              2000, // Maximum capacity (prevents excessive mobs causing lag/freezes)
-              totalMobCount // Full target count (capped by max above)
-            )
-          )
-        ),
+        // Per-dungeon mob capacity: Matches full target count (no hard ceiling).
+        // Shadows kill mobs continuously; the adaptive combat budget system
+        // (perDungeonMobBudget) already throttles per-tick iteration cost.
+        mobCapacity: Math.max(200, totalMobCount),
       },
       boss: {
         id: `boss_${channelKey}`,

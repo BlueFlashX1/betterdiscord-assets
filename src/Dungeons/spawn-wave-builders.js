@@ -346,7 +346,7 @@ module.exports = {
       // Rank/capacity-aware wave sizing:
       // - Higher dungeon ranks + higher mob caps can spawn larger waves.
       // - Near-cap active mobs shrink waves to reduce queue/flush spikes.
-      // - Hard-capped at 100 mobs per spawn cycle for stability.
+      // - Hard-capped at 500 mobs per spawn cycle.
       const { baseSpawnCount, variancePercent } = this.getMobWaveRuntimeConfig();
       const rankCapacityBase = mobCap * (0.04 + dungeonRankIndex * 0.005);
       const blendedBase = Number.isFinite(baseSpawnCount) && baseSpawnCount > 0
@@ -356,14 +356,14 @@ module.exports = {
         ? this.clampNumber((mobCap - _aliveMobs) / mobCap, 0, 1)
         : 0;
       const deficitBoost = 0.6 + deficitRatio * 0.8; // 0.6x near cap, up to 1.4x when empty
-      const dynamicBaseSpawn = this.clampNumber(Math.floor(blendedBase * deficitBoost), 1, 100);
+      const dynamicBaseSpawn = this.clampNumber(Math.floor(blendedBase * deficitBoost), 1, 500);
 
-      // Apply variance around dynamic target (e.g., 80 ±20% = 64-96)
+      // Apply variance around dynamic target (e.g., 400 ±20% = 320-480)
       const variance = dynamicBaseSpawn * variancePercent;
       const plannedSpawn = this.clampNumber(
         Math.floor(dynamicBaseSpawn - variance + Math.random() * variance * 2),
         1,
-        100
+        500
       );
 
       // Respect remaining capacity
