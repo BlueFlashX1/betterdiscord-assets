@@ -40,18 +40,28 @@ module.exports = {
       : 'medium';
     if (enrageIntensity === 'none') return; // Constructs don't enrage
 
+    // Intensity-scaled thresholds: high-rage bosses enrage earlier and harder
+    // High: triggers at 60%/35% HP (earlier, more dangerous)
+    // Medium: triggers at 50%/25% HP (standard)
+    // Low: triggers at 40%/15% HP (later, less aggressive)
+    const thresholds = enrageIntensity === 'high'
+      ? { phase1: 0.60, phase2: 0.35 }
+      : enrageIntensity === 'low'
+        ? { phase1: 0.40, phase2: 0.15 }
+        : { phase1: 0.50, phase2: 0.25 }; // medium (default)
+
     // Track which phases have already been applied (avoid re-applying)
     if (!dungeon.boss._enragePhases) dungeon.boss._enragePhases = { phase1: false, phase2: false };
 
     let stacksToApply = 0;
 
-    // Phase 1: 50% HP threshold
-    if (hpFraction <= 0.50 && !dungeon.boss._enragePhases.phase1) {
+    // Phase 1 threshold
+    if (hpFraction <= thresholds.phase1 && !dungeon.boss._enragePhases.phase1) {
       dungeon.boss._enragePhases.phase1 = true;
       stacksToApply += 1;
     }
-    // Phase 2: 25% HP threshold (accumulates with phase 1 if both trigger in one hit)
-    if (hpFraction <= 0.25 && !dungeon.boss._enragePhases.phase2) {
+    // Phase 2 threshold (accumulates with phase 1 if both trigger in one hit)
+    if (hpFraction <= thresholds.phase2 && !dungeon.boss._enragePhases.phase2) {
       dungeon.boss._enragePhases.phase2 = true;
       stacksToApply += 1;
     }

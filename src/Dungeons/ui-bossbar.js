@@ -22,7 +22,7 @@ module.exports = {
         class="dungeon-combat-skill-btn ${skillState.stateClass || ''}"
         data-channel-key="${channelKey}"
         data-skill-id="${skillState.skillId}"
-        title="${titleText}"${disabledAttr}
+        data-dungeon-tip="${titleText}"${disabledAttr}
       >${skillState.buttonText || skillState.skillId.toUpperCase()}</button>
     `;
   },
@@ -228,7 +228,7 @@ module.exports = {
         displayStr = `${e.time}s`;
         titleTime = displayStr;
       }
-      return `<span class="dungeon-effect-badge ${cls}" title="${escapeHtml(e.label)} (${titleTime})">${e.icon} ${displayStr}</span>`;
+      return `<span class="dungeon-effect-badge ${cls}" data-dungeon-tip="${escapeHtml(e.label)} (${titleTime})">${e.icon} ${displayStr}</span>`;
     };
 
     // Build sections with separators between groups
@@ -313,7 +313,7 @@ module.exports = {
       if (!button) return;
 
       button.textContent = skillState.buttonText || skillState.skillId.toUpperCase();
-      button.title = skillState.titleText || '';
+      button.setAttribute('data-dungeon-tip', skillState.titleText || '');
       button.className = `dungeon-combat-skill-btn ${skillState.stateClass || ''}`;
       if (skillState.disabled) {
         button.setAttribute('disabled', 'disabled');

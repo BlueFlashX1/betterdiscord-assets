@@ -279,7 +279,20 @@ module.exports = {
       const levelRate = (level / 10) * 0.002; // 0.2% per 10 levels
       const totalRate = (baseRate + statRate + levelRate) * hpRegenMultiplier;
 
-      const hpRegen = Math.max(1, Math.floor(this.settings.userMaxHP * totalRate));
+      let hpRegen = Math.max(1, Math.floor(this.settings.userMaxHP * totalRate));
+
+      // Necrotic debuff: reduce healing received while afflicted
+      if (typeof this.getEntityHealReductionMultiplier === 'function' && this.activeDungeons?.size > 0) {
+        for (const [ck, dg] of this.activeDungeons) {
+          if (!dg?.userParticipating) continue;
+          const healMult = this.getEntityHealReductionMultiplier(ck, 'user', 'user');
+          if (healMult < 1) {
+            hpRegen = Math.max(1, Math.floor(hpRegen * healMult));
+            break; // Apply strongest necrotic from first active dungeon
+          }
+        }
+      }
+
       const oldHP = this.settings.userHP;
       this.settings.userHP = Math.min(this.settings.userMaxHP, this.settings.userHP + hpRegen);
 

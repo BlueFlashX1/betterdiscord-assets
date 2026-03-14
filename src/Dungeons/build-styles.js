@@ -797,6 +797,62 @@ ${sel.settingsContainer} {
   box-shadow: 0 0 8px rgba(220, 38, 38, 0.25), inset 0 0 4px rgba(220, 38, 38, 0.1) !important;
 }
 
+/* ── Custom Dungeon Tooltips ── black bg + purple border, replaces native title */
+[data-dungeon-tip] {
+  position: relative !important;
+}
+
+[data-dungeon-tip]:hover::after {
+  content: attr(data-dungeon-tip) !important;
+  position: absolute !important;
+  bottom: calc(100% + 8px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  padding: 6px 12px !important;
+  background: rgba(8, 4, 16, 0.97) !important;
+  border: 1.5px solid rgba(138, 43, 226, 0.75) !important;
+  border-radius: 6px !important;
+  color: #e2d4f0 !important;
+  font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em !important;
+  white-space: nowrap !important;
+  z-index: 10000 !important;
+  pointer-events: none !important;
+  box-shadow:
+    0 0 12px rgba(138, 43, 226, 0.35),
+    0 4px 16px rgba(0, 0, 0, 0.7),
+    inset 0 0 8px rgba(138, 43, 226, 0.08) !important;
+  text-shadow: 0 0 4px rgba(138, 43, 226, 0.4) !important;
+  animation: dungeonTipFadeIn 0.12s ease-out !important;
+}
+
+/* Tooltip arrow */
+[data-dungeon-tip]:hover::before {
+  content: '' !important;
+  position: absolute !important;
+  bottom: calc(100% + 2px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  border: 5px solid transparent !important;
+  border-top-color: rgba(138, 43, 226, 0.75) !important;
+  z-index: 10001 !important;
+  pointer-events: none !important;
+  animation: dungeonTipFadeIn 0.12s ease-out !important;
+}
+
+/* Hide tooltip when data-dungeon-tip is empty */
+[data-dungeon-tip=""]:hover::after,
+[data-dungeon-tip=""]:hover::before {
+  display: none !important;
+}
+
+@keyframes dungeonTipFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(3px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 @keyframes effectPulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.75; }

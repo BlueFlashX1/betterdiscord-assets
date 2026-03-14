@@ -138,6 +138,9 @@ module.exports = {
           perception: Math.max(10, Math.floor((baseStrength + baseAgility + baseIntelligence) * 0.25)),
         },
         strength: baseStrength,
+        agility: baseAgility,
+        intelligence: baseIntelligence,
+        vitality: baseVitality,
         traits: {
           strengthMod: 1,
           agilityMod: 1,
@@ -487,8 +490,11 @@ module.exports = {
               perception: Math.floor(50 + mobRankIndex * 20 * this._varianceWide()),
             },
 
-            // Calculated strength value (used for extraction chance)
-            strength: mobStrength, // Kept for backward compatibility with combat calculations
+            // Root-level stats for combat calculations (mirrors baseStats for direct access)
+            strength: mobStrength,
+            agility: mobAgility,
+            intelligence: mobIntelligence,
+            vitality: mobVitality,
 
             // Individual variance modifiers (preserved during extraction)
             traits: {
