@@ -292,29 +292,33 @@ module.exports = {
     const expectedShadowPortion = (thisWeight / newTotalWeight) * totalShadowCount;
     const expectedShadowCount = Math.max(1, Math.floor(expectedShadowPortion));
 
-    // Calculate boss stats based on rank (used for combat calculations)
+    // BOSS MAGIC BEAST TYPE (biome-appropriate) — selected BEFORE stats so species weights apply
+    const bossBeastType = this.selectMagicBeastType(
+      dungeonBiome.beastFamilies,
+      rank,
+      rankList
+    );
+
+    // Boss stats based on rank, then weighted by species (a Demon Lord is smarter than a Giant Chieftain)
     const bossBaseStats = this.calculateBossBaseStats(rankIndex);
-    const bossStrength = bossBaseStats.strength;
-    const bossAgility = bossBaseStats.agility;
-    const bossIntelligence = bossBaseStats.intelligence;
-    const bossVitality = bossBaseStats.vitality;
+    const bossSpeciesW = C.BEAST_STAT_WEIGHTS?.[bossBeastType.type] || { strength: 1.0, agility: 1.0, intelligence: 1.0, vitality: 1.0 };
+    const bossStrength = Math.floor(bossBaseStats.strength * bossSpeciesW.strength);
+    const bossAgility = Math.floor(bossBaseStats.agility * bossSpeciesW.agility);
+    const bossIntelligence = Math.floor(bossBaseStats.intelligence * bossSpeciesW.intelligence);
+    const bossVitality = Math.floor(bossBaseStats.vitality * bossSpeciesW.vitality);
     const bossPerception = bossBaseStats.perception;
 
     // Boss HP: static lore HP (base + vitality + rank bonus) times rank multiplier,
     // then scaled by army multiplier to survive sustained shadow army DPS.
+    // Uses UNWEIGHTED base vitality for HP — species weights already differentiate combat
+    // behavior (str/agi/int). Applying vitality weight to HP on top of armyMultiplier (8×)
+    // makes tanky species (golem 1.9×, dragon 1.6×) nearly unkillable.
     const rankBonus = this._bossHPBonusTable?.[rankIndex] || 0;
     const staticBossHpMultiplier = this.getStaticBossHpMultiplier(rankIndex);
     const armyMultiplier = C.BOSS_HP_ARMY_MULTIPLIER || 8;
     const finalBossHP = Math.max(
       1,
-      Math.floor((100 + bossVitality * 10 + rankBonus) * staticBossHpMultiplier * armyMultiplier)
-    );
-
-    // BOSS MAGIC BEAST TYPE (biome-appropriate)
-    const bossBeastType = this.selectMagicBeastType(
-      dungeonBiome.beastFamilies,
-      rank,
-      rankList
+      Math.floor((100 + bossBaseStats.vitality * 10 + rankBonus) * staticBossHpMultiplier * armyMultiplier)
     );
     const initialBossGate = this.getBossGateRuntimeConfig();
     const dungeonStartTime = Date.now();

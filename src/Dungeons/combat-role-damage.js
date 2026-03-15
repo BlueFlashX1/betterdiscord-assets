@@ -516,7 +516,11 @@ module.exports = {
     // Defense reduction from defender's stats (reduced effectiveness)
     const defenderStrength = defenderStats.strength || 0;
     const defenderVitality = defenderStats.vitality || 0;
-    const defense = defenderStrength * 0.25 + defenderVitality * 0.15; // Reduced from 0.5 and 0.3
+    const rawDefense = defenderStrength * 0.25 + defenderVitality * 0.15;
+    // Square-root dampening: prevents species-weighted bosses (e.g. golem VIT 1.9×,
+    // dragon STR 1.7×) from hitting the 70% defense cap. sqrt(350)≈18.7 vs raw 350,
+    // keeping defense reduction in the 40-55% range instead of 70% cap.
+    const defense = Math.sqrt(rawDefense) * 6;
 
     // Defense reduces damage by a percentage (not flat reduction)
     const defenseReduction = Math.min(0.7, defense / (defense + 100)); // Max 70% reduction

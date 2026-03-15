@@ -93,20 +93,21 @@ module.exports = {
                 perception: expPerception,
               } = expectedBossStats;
 
-              // Bosses should be ~30-70% stronger than mobs of same rank
-              const mobBase = this.calculateMobBaseStats(rankIndex);
-              const range = (base) => ({
-                min: Math.floor(base * 1.25), // slightly below 1.3x to allow variance
-                max: Math.ceil(base * 1.75), // slightly above 1.7x to allow variance
+              // Boss stats = mobBase × (2.2–3.0 boss multiplier) × species weight
+              // Validate against the full range including species amplification
+              const bossSpeciesW = C.BEAST_STAT_WEIGHTS?.[dungeon.boss.beastType] || { strength: 1.0, agility: 1.0, intelligence: 1.0, vitality: 1.0 };
+              const range = (bossStatValue, speciesW) => ({
+                min: Math.floor(bossStatValue * Math.min(speciesW, 1.0) * 0.8),
+                max: Math.ceil(bossStatValue * Math.max(speciesW, 1.0) * 1.2),
               });
 
-              const strRange = range(mobBase.strength);
-              const agiRange = range(mobBase.agility);
-              const intRange = range(mobBase.intelligence);
-              const vitRange = range(mobBase.vitality);
+              const strRange = range(expStr, bossSpeciesW.strength);
+              const agiRange = range(expAgi, bossSpeciesW.agility);
+              const intRange = range(expInt, bossSpeciesW.intelligence);
+              const vitRange = range(expVit, bossSpeciesW.vitality);
               const perceptionBase =
-                ((mobBase.strength + mobBase.agility + mobBase.intelligence) / 3) * 0.5;
-              const perceptionRange = range(perceptionBase);
+                ((expStr + expAgi + expInt) / 3) * 0.5;
+              const perceptionRange = { min: Math.floor(perceptionBase * 0.5), max: Math.ceil(perceptionBase * 2.0) };
 
               // Strength
               if (
@@ -155,6 +156,23 @@ module.exports = {
                 if (dungeon.boss.baseStats)
                   dungeon.boss.baseStats.perception = dungeon.boss.perception;
               }
+
+              // RECALCULATE BOSS HP: Use unweighted base vitality for HP formula.
+              // Bosses created before the fix used species-weighted vitality (e.g. golem 1.9×),
+              // inflating HP by up to 90%. Recalculate and scale current HP proportionally.
+              const rankBonus = this._bossHPBonusTable?.[rankIndex] || 0;
+              const staticBossHpMult = this.getStaticBossHpMultiplier(rankIndex);
+              const armyMult = C.BOSS_HP_ARMY_MULTIPLIER || 8;
+              const correctMaxHP = Math.max(
+                1,
+                Math.floor((100 + expVit * 10 + rankBonus) * staticBossHpMult * armyMult)
+              );
+              if (dungeon.boss.maxHp && dungeon.boss.maxHp > correctMaxHP * 1.15) {
+                // Boss HP was inflated — scale down proportionally
+                const hpRatio = dungeon.boss.hp / dungeon.boss.maxHp;
+                dungeon.boss.maxHp = correctMaxHP;
+                dungeon.boss.hp = Math.max(1, Math.floor(correctMaxHP * hpRatio));
+              }
             }
           }
 
@@ -165,23 +183,25 @@ module.exports = {
               if (mob.rank) {
                 const mobRankIndex = this.findRankIndex(mob.rank);
                 if (mobRankIndex >= 0) {
-                  // Expected mob stats based on rank (base values, before variance)
-                  // Using centralized calculation
+                  // Expected mob stats = rank base × species weight × variance (85-115%)
                   const expectedMobStats = this.calculateMobBaseStats(mobRankIndex);
-                  const expectedBaseStrength = expectedMobStats.strength;
-                  const expectedBaseAgility = expectedMobStats.agility;
-                  const expectedBaseIntelligence = expectedMobStats.intelligence;
-                  const expectedBaseVitality = expectedMobStats.vitality;
+                  const mobSpeciesW = C.BEAST_STAT_WEIGHTS?.[mob.beastType] || { strength: 1.0, agility: 1.0, intelligence: 1.0, vitality: 1.0 };
+                  // Also account for elite/champion tier multipliers (up to 1.7×)
+                  const tierMult = mob.mobTier === 'champion' ? 1.7 : mob.mobTier === 'elite' ? 1.35 : 1.0;
+                  const expectedBaseStrength = expectedMobStats.strength * mobSpeciesW.strength * tierMult;
+                  const expectedBaseAgility = expectedMobStats.agility * mobSpeciesW.agility * tierMult;
+                  const expectedBaseIntelligence = expectedMobStats.intelligence * mobSpeciesW.intelligence * tierMult;
+                  const expectedBaseVitality = expectedMobStats.vitality * mobSpeciesW.vitality * tierMult;
 
-                  // Validate stats are within reasonable range (85-115% of base for variance)
-                  const minStrength = expectedBaseStrength * 0.85;
-                  const maxStrength = expectedBaseStrength * 1.15;
-                  const minAgility = expectedBaseAgility * 0.85;
-                  const maxAgility = expectedBaseAgility * 1.15;
-                  const minIntelligence = expectedBaseIntelligence * 0.85;
-                  const maxIntelligence = expectedBaseIntelligence * 1.15;
-                  const minVitality = expectedBaseVitality * 0.85;
-                  const maxVitality = expectedBaseVitality * 1.15;
+                  // Validate stats are within reasonable range (75-125% to allow individual variance)
+                  const minStrength = expectedBaseStrength * 0.75;
+                  const maxStrength = expectedBaseStrength * 1.25;
+                  const minAgility = expectedBaseAgility * 0.75;
+                  const maxAgility = expectedBaseAgility * 1.25;
+                  const minIntelligence = expectedBaseIntelligence * 0.75;
+                  const maxIntelligence = expectedBaseIntelligence * 1.25;
+                  const minVitality = expectedBaseVitality * 0.75;
+                  const maxVitality = expectedBaseVitality * 1.25;
 
                   // Correct stats if they're way off (outside variance range)
                   if (!mob.strength || mob.strength < minStrength || mob.strength > maxStrength) {

@@ -73,6 +73,28 @@ module.exports = {
     construct:        { primary: 'armorBreak',secondary: 'slow',       chance: 0.08 },
     ancient:          { primary: 'slow',      secondary: 'poison',     chance: 0.08 },
   },
+  // Magic beast stat weights — species-specific combat specialization (mirrors ShadowArmy weights)
+  // Applied to mob/boss base stats so an orc hits harder but moves slower than a spider at the same rank
+  BEAST_STAT_WEIGHTS: {
+    ant:       { strength: 1.2, agility: 1.3, intelligence: 0.3, vitality: 1.0, perception: 0.7 },
+    bear:      { strength: 1.6, agility: 0.4, intelligence: 0.3, vitality: 1.4, perception: 0.5 },
+    wolf:      { strength: 1.0, agility: 1.5, intelligence: 0.6, vitality: 0.7, perception: 1.0 },
+    spider:    { strength: 0.6, agility: 1.4, intelligence: 1.0, vitality: 0.5, perception: 1.0 },
+    golem:     { strength: 1.3, agility: 0.2, intelligence: 0.1, vitality: 1.9, perception: 0.3 },
+    wyvern:    { strength: 1.4, agility: 1.6, intelligence: 0.5, vitality: 1.0, perception: 0.9 },
+    serpent:   { strength: 0.8, agility: 1.4, intelligence: 0.8, vitality: 0.7, perception: 1.0 },
+    dragon:    { strength: 1.7, agility: 1.4, intelligence: 1.5, vitality: 1.6, perception: 1.2 },
+    orc:       { strength: 1.5, agility: 0.8, intelligence: 0.7, vitality: 1.2, perception: 0.5 },
+    naga:      { strength: 0.8, agility: 1.3, intelligence: 1.4, vitality: 0.9, perception: 1.0 },
+    titan:     { strength: 1.8, agility: 0.3, intelligence: 0.4, vitality: 1.7, perception: 0.6 },
+    giant:     { strength: 1.6, agility: 0.4, intelligence: 0.5, vitality: 1.5, perception: 0.5 },
+    elf:       { strength: 0.5, agility: 1.5, intelligence: 1.6, vitality: 0.6, perception: 1.3 },
+    demon:     { strength: 1.5, agility: 1.2, intelligence: 1.4, vitality: 1.1, perception: 1.0 },
+    ghoul:     { strength: 1.0, agility: 0.8, intelligence: 0.3, vitality: 1.6, perception: 0.4 },
+    ogre:      { strength: 1.7, agility: 0.3, intelligence: 0.2, vitality: 1.4, perception: 0.4 },
+    centipede: { strength: 1.0, agility: 1.4, intelligence: 0.5, vitality: 1.1, perception: 0.7 },
+    yeti:      { strength: 1.4, agility: 0.8, intelligence: 0.6, vitality: 1.5, perception: 0.7 },
+  },
   // Boss enrage intensity by family
   BOSS_ENRAGE_INTENSITY: {
     beast:            'high',

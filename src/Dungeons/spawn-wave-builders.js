@@ -400,8 +400,18 @@ module.exports = {
           const mobTier = this._rollMobTier();
           const tierMultipliers = this._getMobTierMultipliers(mobTier);
 
+          // MAGIC BEAST TYPE SELECTION (biome-based) — selected BEFORE stats so species weights apply
+          const magicBeastType = this.selectMagicBeastType(
+            dungeon.beastFamilies,
+            mobRank,
+            rankList
+          );
+
+          // Species stat weights — orcs hit harder, spiders are agile, golems are tanks, etc.
+          const speciesWeights = C.BEAST_STAT_WEIGHTS?.[magicBeastType.type];
+          const sw = speciesWeights || { strength: 1.0, agility: 1.0, intelligence: 1.0, vitality: 1.0 };
+
           // INDIVIDUAL MOB VARIANCE: Each mob is unique (85-115% stat variance)
-          // This creates diversity: some mobs are weak, some are strong, some are fast, some are tanks
           const strengthVariance = this._varianceWide();
           const agilityVariance = this._varianceWide();
           const intelligenceVariance = this._varianceWide();
@@ -409,31 +419,28 @@ module.exports = {
 
           // BASE STATS scaled by rank (using centralized calculation)
           const mobBaseStats = this.calculateMobBaseStats(mobRankIndex);
-          const baseStrength = mobBaseStats.strength;
-          const baseAgility = mobBaseStats.agility;
-          const baseIntelligence = mobBaseStats.intelligence;
-          const baseVitality = mobBaseStats.vitality;
 
-          // INDIVIDUAL STATS with variance (each mob is unique)
-          const mobStrength = Math.floor(baseStrength * strengthVariance * tierMultipliers.statMultiplier);
-          const mobAgility = Math.floor(baseAgility * agilityVariance * tierMultipliers.statMultiplier);
+          // INDIVIDUAL STATS with species weight × variance × tier
+          const mobStrength = Math.floor(mobBaseStats.strength * sw.strength * strengthVariance * tierMultipliers.statMultiplier);
+          const mobAgility = Math.floor(mobBaseStats.agility * sw.agility * agilityVariance * tierMultipliers.statMultiplier);
           const mobIntelligence = Math.floor(
-            baseIntelligence * intelligenceVariance * tierMultipliers.statMultiplier
+            mobBaseStats.intelligence * sw.intelligence * intelligenceVariance * tierMultipliers.statMultiplier
           );
-          const mobVitality = Math.floor(baseVitality * vitalityVariance * tierMultipliers.statMultiplier);
+          const mobVitality = Math.floor(mobBaseStats.vitality * sw.vitality * vitalityVariance * tierMultipliers.statMultiplier);
 
           // Mob HP scales on rank (multiplicative) + vitality (additive) with variance.
-          // This makes rank differences obvious while keeping low ranks killable.
+          // Uses UNWEIGHTED base vitality for HP — species weights differentiate combat
+          // behavior (str/agi/int), not raw tankiness. Tanky species (golem 1.9×) would
+          // be nearly unkillable if vitality weight also inflated HP.
           const mobRankHpFactor = this.getMobRankHpFactorByIndex(mobRankIndex);
           const baseHP =
-            (200 + mobVitality * 15 + mobRankIndex * 100) *
+            (200 + mobBaseStats.vitality * 15 + mobRankIndex * 100) *
             mobRankHpFactor *
             tierMultipliers.hpMultiplier *
             pressureMobFactor;
-          const hpVariance = 0.7 + Math.random() * 0.3; // 70-100% HP variance (tighter to reduce extremes)
+          const hpVariance = 0.7 + Math.random() * 0.3;
           const mobHP = Math.floor(baseHP * hpVariance);
 
-          // Ensure minimum HP of 1 (mobs must be able to take damage and die)
           const finalMobHP = Math.max(1, mobHP);
 
           if (!Number.isFinite(finalMobHP) || finalMobHP <= 0) {
@@ -443,15 +450,7 @@ module.exports = {
 
           // Attack cooldown variance (some mobs attack faster than others)
           const cooldownVariance =
-            (2000 + Math.random() * 2000) * tierMultipliers.cooldownMultiplier; // 2-4s with tier pacing
-
-          // MAGIC BEAST TYPE SELECTION (biome-based)
-          // Select magic beast type from dungeon's allowed beast families
-          const magicBeastType = this.selectMagicBeastType(
-            dungeon.beastFamilies,
-            mobRank,
-            rankList
-          );
+            (2000 + Math.random() * 2000) * tierMultipliers.cooldownMultiplier;
 
           // SHADOW ARMY COMPATIBLE STRUCTURE
           // Mobs store full stats compatible with shadow extraction system
@@ -487,7 +486,7 @@ module.exports = {
               agility: mobAgility,
               intelligence: mobIntelligence,
               vitality: mobVitality,
-              perception: Math.floor(50 + mobRankIndex * 20 * this._varianceWide()),
+              perception: Math.floor((50 + mobRankIndex * 20) * (sw.perception || 1.0) * this._varianceWide()),
             },
 
             // Root-level stats for combat calculations (mirrors baseStats for direct access)
