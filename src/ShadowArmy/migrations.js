@@ -135,6 +135,7 @@ module.exports = {
       { version: 3, key: 'shadowArmy_recalculated_v3', run: () => this.recalculateAllShadows() },
       { version: 4, key: 'shadowArmy_baseStats_v4', run: () => this.fixShadowBaseStatsToRankBaselines() },
       { version: 5, key: 'shadowArmy_backfill_v5', run: () => this.backfillMissingFields() },
+      { version: 6, key: 'shadowArmy_selfHeal_v6', run: () => this.selfHealShadowStats() },
     ];
 
     for (const migration of MIGRATIONS) {

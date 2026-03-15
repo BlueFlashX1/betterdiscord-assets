@@ -316,6 +316,16 @@ const ShadowArmy = class ShadowArmy {
 
     // Start natural growth processing
     this.startNaturalGrowthInterval();
+
+    // Phase 2 self-heal: deferred background integrity check (non-blocking)
+    // Runs after 5s delay so plugin startup, snapshot cache, and deployment are
+    // fully operational before heavy IDB writes begin.
+    setTimeout(() => {
+      if (this._isStopped) return;
+      this.selfHealOnStart().catch((error) => {
+        this.debugError('SELF-HEAL', 'Phase 2 self-heal failed', error);
+      });
+    }, 5000);
   }
 
   /**
@@ -668,6 +678,7 @@ Object.assign(
   require('./army-stats'),
   require('./progression'),
   require('./migrations'),
+  require('./self-heal'),
   require('./shadow-management'),
   require('./compression'),
   require('./animation'),

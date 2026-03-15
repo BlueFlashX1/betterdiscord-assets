@@ -51,6 +51,8 @@ module.exports = {
       i: shadow.id,
       r: shadow.rank,
       ro: shadow.role,
+      bt: shadow.beastType || null,
+      bf: shadow.beastFamily || null,
       pk: this.getShadowPersonalityKey(shadow),
       l: shadow.level || 1,
       x: shadow.xp || 0,
@@ -80,6 +82,7 @@ module.exports = {
       lng: shadow.lastNaturalGrowth || shadow.extractedAt,
       s: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100,
       ol: shadow.ownerLevelAtExtraction || 1,
+      hv: shadow._healV || 0,
 
       // IDB index fields — full-name properties so compressed shadows
       // remain visible to IndexedDB secondary indexes
@@ -119,6 +122,8 @@ module.exports = {
       i: shadow.id,
       r: shadow.rank || 'E',
       ro: shadow.role || 'unknown',
+      bt: shadow.beastType || null,
+      bf: shadow.beastFamily || null,
       pk: this.getShadowPersonalityKey(shadow),
       p: Math.round((shadow.strength || 0) / 10),
       l: shadow.level || 1,
@@ -129,6 +134,7 @@ module.exports = {
       nt: Math.round(totalNatGrowth),
       vs: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100,
       ol: shadow.ownerLevelAtExtraction || 1,
+      hv: shadow._healV || 0,
 
       // IDB index fields
       rank: shadow.rank || 'E',
@@ -182,6 +188,8 @@ module.exports = {
       id: compressed.i,
       rank: compressed.r,
       role,
+      beastType: compressed.bt || null,
+      beastFamily: compressed.bf || null,
       roleName: this.shadowRoles?.[role]?.name || role,
       personalityKey: this.normalizePersonalityValue(compressed.pk),
       personality: this.normalizePersonalityValue(compressed.pk),
@@ -196,6 +204,7 @@ module.exports = {
       growthVarianceSeed: compressed.vs || Math.random(),
       ownerLevelAtExtraction: compressed.ol || 1,
       lastNaturalGrowth: compressed.e * 86400000,
+      _healV: compressed.hv || 0,
       _ultraCompressed: true,
     };
   },
@@ -229,6 +238,8 @@ module.exports = {
       id: compressed.i,
       rank: compressed.r,
       role: compressed.ro,
+      beastType: compressed.bt || null,
+      beastFamily: compressed.bf || null,
       roleName: this.shadowRoles[compressed.ro]?.name || compressed.ro,
       personalityKey:
         this.normalizePersonalityValue(compressed.pk) ||
@@ -247,6 +258,7 @@ module.exports = {
       ownerLevelAtExtraction: compressed.ol || 1,
       lastNaturalGrowth: compressed.lng || compressed.e,
       strength: 0,
+      _healV: compressed.hv || 0,
       _compressed: true,
     };
   },

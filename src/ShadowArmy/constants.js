@@ -293,25 +293,25 @@ const SHADOW_ROLE_STAT_WEIGHTS = {
   knight:     { strength: 1.1, agility: 0.9, intelligence: 0.6, vitality: 1.1, perception: 0.5 },
   berserker:  { strength: 1.8, agility: 0.7, intelligence: 0.15, vitality: 0.5, perception: 0.4 },
   support:    { strength: 0.25, agility: 0.6, intelligence: 1.2, vitality: 0.7, perception: 1.4 },
-  // Magic Beast stat weights
-  ant:        { strength: 1.1, agility: 1.2, intelligence: 0.4, vitality: 0.9, perception: 0.5 },
-  bear:       { strength: 1.6, agility: 0.4, intelligence: 0.3, vitality: 1.4, perception: 0.4 },
-  wolf:       { strength: 1.0, agility: 1.5, intelligence: 0.7, vitality: 0.8, perception: 0.6 },
-  spider:     { strength: 0.6, agility: 1.4, intelligence: 1.1, vitality: 0.5, perception: 0.8 },
-  golem:      { strength: 1.3, agility: 0.2, intelligence: 0.1, vitality: 1.9, perception: 0.3 },
-  wyvern:     { strength: 1.4, agility: 1.6, intelligence: 0.6, vitality: 1.0, perception: 0.7 },
-  serpent:    { strength: 0.8, agility: 1.3, intelligence: 1.1, vitality: 0.7, perception: 0.9 },
-  dragon:     { strength: 1.7, agility: 1.4, intelligence: 1.5, vitality: 1.6, perception: 1.2 },
-  orc:        { strength: 1.5, agility: 0.7, intelligence: 0.3, vitality: 1.2, perception: 0.5 },
-  naga:       { strength: 0.8, agility: 1.3, intelligence: 1.4, vitality: 0.9, perception: 1.0 },
-  titan:      { strength: 1.8, agility: 0.3, intelligence: 0.4, vitality: 1.7, perception: 0.6 },
-  giant:      { strength: 1.6, agility: 0.4, intelligence: 0.5, vitality: 1.5, perception: 0.5 },
-  elf:        { strength: 0.5, agility: 1.5, intelligence: 1.6, vitality: 0.6, perception: 1.3 },
-  demon:      { strength: 1.5, agility: 1.2, intelligence: 1.4, vitality: 1.1, perception: 0.8 },
-  ghoul:      { strength: 0.9, agility: 1.1, intelligence: 0.8, vitality: 1.3, perception: 0.6 },
-  ogre:       { strength: 1.7, agility: 0.3, intelligence: 0.2, vitality: 1.4, perception: 0.4 },
-  centipede:  { strength: 1.0, agility: 1.4, intelligence: 0.5, vitality: 1.1, perception: 0.7 },
-  yeti:       { strength: 1.4, agility: 0.8, intelligence: 0.6, vitality: 1.5, perception: 0.7 },
+  // Magic Beast stat weights — tuned to Solo Leveling monster biology
+  ant:        { strength: 1.2, agility: 1.3, intelligence: 0.3, vitality: 1.0, perception: 0.7 }, // Jeju ants: strong mandibles, fast swarmers, tough exoskeletons, keen chemical senses
+  bear:       { strength: 1.6, agility: 0.4, intelligence: 0.3, vitality: 1.4, perception: 0.5 }, // Red Gate ice bears (Tank's origin): slow devastators, near-indestructible
+  wolf:       { strength: 1.0, agility: 1.5, intelligence: 0.6, vitality: 0.7, perception: 1.0 }, // Pack hunters: fast, coordinated, apex trackers with keen senses
+  spider:     { strength: 0.6, agility: 1.4, intelligence: 1.0, vitality: 0.5, perception: 1.0 }, // Ambush predators: web-spinners, agile, fragile, excellent vibration sensing
+  golem:      { strength: 1.3, agility: 0.2, intelligence: 0.1, vitality: 1.9, perception: 0.3 }, // Stone constructs: near-indestructible, mindless, immovable
+  wyvern:     { strength: 1.4, agility: 1.6, intelligence: 0.5, vitality: 1.0, perception: 0.9 }, // Lesser dragons: fastest fliers, bestial intelligence, sharp aerial eyesight
+  serpent:    { strength: 0.8, agility: 1.4, intelligence: 0.8, vitality: 0.7, perception: 1.0 }, // Venomous strikers: fast lunges, instinctual, heat/vibration sensing
+  dragon:     { strength: 1.7, agility: 1.4, intelligence: 1.5, vitality: 1.6, perception: 1.2 }, // Apex predators (Kamish-tier): supreme in all stats, can strategize and speak
+  orc:        { strength: 1.5, agility: 0.8, intelligence: 0.7, vitality: 1.2, perception: 0.5 }, // Tribal warriors (Tusk/Kargalgan): brute force + organized warfare, shamans, strategy
+  naga:       { strength: 0.8, agility: 1.3, intelligence: 1.4, vitality: 0.9, perception: 1.0 }, // Half-serpent magic users: water/poison magic, intelligent, good senses
+  titan:      { strength: 1.8, agility: 0.3, intelligence: 0.4, vitality: 1.7, perception: 0.6 }, // Japan Gate colossi: absolute physical power, glacially slow, bestial
+  giant:      { strength: 1.6, agility: 0.4, intelligence: 0.5, vitality: 1.5, perception: 0.5 }, // Japan Gate: very strong, slow, some crude weapon use
+  elf:        { strength: 0.5, agility: 1.5, intelligence: 1.6, vitality: 0.6, perception: 1.3 }, // Ice elves (Baruka): agile magic users, coordinated military, keen senses
+  demon:      { strength: 1.5, agility: 1.2, intelligence: 1.4, vitality: 1.1, perception: 1.0 }, // Demon Castle (Baran): strong, fast, intelligent magic users, magical senses
+  ghoul:      { strength: 1.0, agility: 0.8, intelligence: 0.3, vitality: 1.6, perception: 0.4 }, // Mindless undead: relentless, hard to kill, no strategy, dead senses
+  ogre:       { strength: 1.7, agility: 0.3, intelligence: 0.2, vitality: 1.4, perception: 0.4 }, // Massive brutes: strongest physical, extremely slow, very dumb
+  centipede:  { strength: 1.0, agility: 1.4, intelligence: 0.5, vitality: 1.1, perception: 0.7 }, // Armored segments: fast, venomous, decent durability
+  yeti:       { strength: 1.4, agility: 0.8, intelligence: 0.6, vitality: 1.5, perception: 0.7 }, // Arctic predators: strong, durable thick fur, bestial
 };
 
 // SHADOW ARMY CAPACITY — Lore-Accurate Storage Limits Per Player Rank
