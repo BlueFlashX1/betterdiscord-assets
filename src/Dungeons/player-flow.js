@@ -246,6 +246,12 @@ module.exports = {
     // COLD-CACHE RECOVERY: If starter allocation got 0 shadows because all caches were cold
     // (first deploy after plugin start, or long idle period), warm the cache via async IDB read
     // and retry the allocation once before giving up.
+    //
+    // PRIORITY: Abort ShadowArmy self-heal before IDB reads — self-heal writes thousands of
+    // records that starve the IDB read queue, making each warmup await take minutes.
+    if (starterAllocationCount === 0 && this.shadowArmy?.abortSelfHeal) {
+      this.shadowArmy.abortSelfHeal();
+    }
     if (starterAllocationCount === 0) {
       this.debugLog('DEPLOY', 'Starter allocation returned 0 — attempting recovery warmup', { channelKey });
       try {
@@ -445,6 +451,11 @@ module.exports = {
 
     dungeon._deployPendingFullAllocation = true;
     this._scheduleDeployRebalance(channelKey, deployStartedAt);
+
+    // Resume self-heal after deployment + early combat settle (30s delay)
+    if (this.shadowArmy?.resumeSelfHeal) {
+      this.shadowArmy.resumeSelfHeal(30000);
+    }
   },
 
   async recallShadows(channelKey) {

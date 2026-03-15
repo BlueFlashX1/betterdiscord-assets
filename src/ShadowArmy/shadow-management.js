@@ -46,6 +46,20 @@ module.exports = {
     return null;
   },
 
+  /**
+   * Returns cached snapshot with relaxed 60s TTL for deployment use.
+   * Deployment reads are large IDB operations — a slightly stale snapshot is
+   * far better than blocking on IDB while self-heal is writing.
+   * @returns {Array|null}
+   */
+  getShadowSnapshotForDeploy() {
+    if (this._snapshotCache && this._snapshotCache.length > 0 &&
+        Date.now() - this._snapshotTimestamp < 60000) {
+      return this._snapshotCache;
+    }
+    return null;
+  },
+
   /** @private */
   _updateSnapshot(shadows) {
     this._snapshotCache = shadows;

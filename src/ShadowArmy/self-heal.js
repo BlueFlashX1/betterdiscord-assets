@@ -69,15 +69,20 @@ module.exports = {
     const saveBatch = [];
 
     for (let i = 0; i < allShadows.length; i += batchSize) {
-      if (this._isStopped) {
-        this.debugLog('SELF-HEAL', 'Aborted (plugin stopped)');
+      if (this._isStopped || this._selfHealAborted) {
+        this.debugLog('SELF-HEAL', `Aborted (${this._isStopped ? 'plugin stopped' : 'deployment requested IDB'})`);
+        // Flush any pending saves before aborting
+        if (saveBatch.length > 0) {
+          await this._flushHealBatch(saveBatch);
+          saveBatch.length = 0;
+        }
         return result;
       }
 
       const batch = allShadows.slice(i, i + batchSize);
 
       for (const shadow of batch) {
-        if (this._isStopped) return result;
+        if (this._isStopped || this._selfHealAborted) return result;
 
         try {
           // Phase 2 fast-path: skip already-healed shadows
@@ -205,6 +210,11 @@ module.exports = {
         // Yield to event loop between batches — prevents IDB write storms from
         // starving concurrent reads (e.g., Dungeons deployment shadow lookups)
         await new Promise((r) => setTimeout(r, 50));
+        // Re-check abort after yield — deployment may have signaled during flush
+        if (this._selfHealAborted) {
+          this.debugLog('SELF-HEAL', 'Aborted after flush (deployment requested IDB)');
+          return result;
+        }
       }
 
       // Progress log for large armies
@@ -228,6 +238,31 @@ module.exports = {
     }
 
     return result;
+  },
+
+  /**
+   * Abort any running self-heal scan. Called by Dungeons before IDB-heavy
+   * deployment reads so self-heal writes don't starve the read queue.
+   * Self-heal can be rescheduled later via resumeSelfHeal().
+   */
+  abortSelfHeal() {
+    this._selfHealAborted = true;
+    this.debugLog?.('SELF-HEAL', 'Abort signal set (deployment priority)');
+  },
+
+  /**
+   * Reschedule self-heal after deployment finishes.
+   * Defers 30s so deployment + early combat don't compete with IDB writes.
+   */
+  resumeSelfHeal(delayMs = 30000) {
+    this._selfHealAborted = false;
+    if (this._selfHealResumeTimer) clearTimeout(this._selfHealResumeTimer);
+    this._selfHealResumeTimer = setTimeout(() => {
+      if (this._isStopped || this._selfHealAborted) return;
+      this.selfHealOnStart().catch((error) => {
+        this.debugError?.('SELF-HEAL', 'Resumed self-heal failed', error);
+      });
+    }, delayMs);
   },
 
   async _flushHealBatch(batch) {

@@ -165,7 +165,9 @@ module.exports = {
       };
 
       // 1) Fast path: seed from ShadowArmy's shared in-memory snapshot when available.
-      const snapshot = this.shadowArmy.getShadowSnapshot?.();
+      //    Use deploy-friendly 60s TTL snapshot — standard 2s TTL is almost always expired
+      //    by the time deployment runs, forcing unnecessary IDB reads.
+      const snapshot = this.shadowArmy.getShadowSnapshotForDeploy?.() || this.shadowArmy.getShadowSnapshot?.();
       if (Array.isArray(snapshot) && snapshot.length > 0) {
         pushCandidates(snapshot);
         if (this.settings.debug && candidates.length < snapshot.length) {
@@ -397,7 +399,7 @@ module.exports = {
     }
 
     if (!candidatePool) {
-      const snapshot = this.shadowArmy?.getShadowSnapshot?.();
+      const snapshot = this.shadowArmy?.getShadowSnapshotForDeploy?.() || this.shadowArmy?.getShadowSnapshot?.();
       if (Array.isArray(snapshot) && snapshot.length > 0) {
         candidatePool = snapshot;
         candidateSource = 'shadowArmySnapshot';
