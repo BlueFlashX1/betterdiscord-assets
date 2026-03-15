@@ -134,6 +134,15 @@ module.exports = {
 
   // 5) SHADOW VS BOSS DAMAGE REDUCTION
   SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of calculated damage to bosses
+
+  // 6) SHADOW AOE CLEAVE — proc chance + extra targets per mob attack
+  AOE_CLEAVE: {
+    baseChance: 0.15,           // 15% proc for melee roles (knight, tank, assassin)
+    casterChance: 0.35,         // 35% proc for caster/mage/ranger (natural AOE users)
+    baseTargets: 2,             // extra mobs hit on proc (melee)
+    casterTargets: 4,           // extra mobs hit on proc (caster/ranger)
+    damageFraction: 0.4,        // each cleave hit = 40% of primary single-target damage
+  },
   RANK_MULTIPLIERS: {
     E: 1,
     D: 2,

@@ -547,11 +547,17 @@ module.exports = {
       dungeon.boss.expectedShadowCount = assigned.length;
     }
 
+    // Only update allocationCache if we're raising the known count.
+    // On first deploy, assigned.length can be tiny (7 shadows from a cold snapshot)
+    // which poisons fairShare for subsequent deploys until preSplitShadowArmy reconciles.
+    // The rebalance fires within 50ms and sets the real count — don't downgrade it here.
     const existingCount = Number.isFinite(this.allocationCache?.count)
       ? this.allocationCache.count
       : 0;
-    this.allocationCache = { count: Math.max(existingCount, assigned.length) };
-    this.allocationCacheTime = Date.now();
+    if (assigned.length > existingCount) {
+      this.allocationCache = { count: assigned.length };
+      this.allocationCacheTime = Date.now();
+    }
 
     return assigned.length;
   },

@@ -505,9 +505,37 @@ module.exports = {
 
               if (rankGroup._rrIdx == null) rankGroup._rrIdx = 0;
 
+              // --- AOE CLEAVE: casters/mages/rangers hit multiple mobs per attack ---
+              const aoeConf = C.AOE_CLEAVE;
+              if (aoeConf && groupLen > 2) {
+                const shadowRole = this.normalizeShadowRoleKey?.(
+                  shadow?.role || shadow?.roleName || shadow?.ro || ''
+                ) || '';
+                const isCasterType = shadowRole === 'mage' || shadowRole === 'caster' || shadowRole === 'ranger';
+                const aoeChance = isCasterType ? aoeConf.casterChance : aoeConf.baseChance;
+
+                if (Math.random() < aoeChance) {
+                  const aoeTargets = isCasterType ? aoeConf.casterTargets : aoeConf.baseTargets;
+                  const cleaveDmg = Math.max(1, Math.floor(perHitMob * (aoeConf.damageFraction || 0.4) * shadowVariance * scaleFactor));
+
+                  for (let aoeIdx = 0; aoeIdx < aoeTargets && aoeIdx < groupLen; aoeIdx++) {
+                    const cleaveOffset = (rankGroup._rrIdx + aoeIdx + 1) % groupLen;
+                    const cleaveMob = groupMobs[cleaveOffset];
+                    if (!cleaveMob || cleaveMob.hp <= 0) continue;
+                    const cleaveKey = this.getEnemyKey(cleaveMob, 'mob');
+                    if (!cleaveKey) continue;
+                    const cleaveAccum = mobDamageMap.get(cleaveKey) || 0;
+                    const cleaveEffHP = cleaveMob.hp - cleaveAccum;
+                    if (cleaveEffHP <= 0) continue;
+                    const toApply = Math.min(cleaveDmg, cleaveEffHP + 1);
+                    mobDamageMap.set(cleaveKey, cleaveAccum + toApply);
+                    this._recordShadowMobDamageContribution(dungeon, cleaveKey, shadowId, toApply);
+                    totalMobDamage += toApply;
+                  }
+                }
+              }
+
               // Spread damage across enough mobs to be realistic — scale with both scaleFactor and group size.
-              // Old: scaleFactor+5 = 30 at SSS. With 5000 visible mobs, damage concentrated on 30 = most survive.
-              // New: up to 10% of group or scaleFactor×2, whichever is larger.
               const maxIter = Math.min(groupLen, Math.max(Math.ceil(scaleFactor) * 2, Math.floor(groupLen * 0.1), 30));
               let iter = 0;
               let fullLoopWithoutHit = false;
