@@ -135,13 +135,56 @@ module.exports = {
   // 5) SHADOW VS BOSS DAMAGE REDUCTION
   SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of calculated damage to bosses
 
-  // 6) SHADOW AOE CLEAVE — proc chance + extra targets per mob attack
-  AOE_CLEAVE: {
-    baseChance: 0.15,           // 15% proc for melee roles (knight, tank, assassin)
-    casterChance: 0.35,         // 35% proc for caster/mage/ranger (natural AOE users)
-    baseTargets: 2,             // extra mobs hit on proc (melee)
-    casterTargets: 4,           // extra mobs hit on proc (caster/ranger)
-    damageFraction: 0.4,        // each cleave hit = 40% of primary single-target damage
+  // 6) SHADOW AOE — family/role-specific abilities
+  //    Each entry: { name, chance, targets, dmgFrac, hitBoss }
+  //    chance   = proc chance per attack cycle
+  //    targets  = extra mobs hit on proc
+  //    dmgFrac  = fraction of primary single-target damage per AOE hit
+  //    hitBoss  = whether the AOE also damages the boss (reduced by SHADOW_VS_BOSS_DAMAGE_MULT)
+  SHADOW_AOE: {
+    // ── Beast families ──
+    // Insects: swarm tactics — very high targets, lower per-hit
+    ant:       { name: 'Swarm Rush',     chance: 0.40, targets: 6, dmgFrac: 0.30, hitBoss: false },
+    spider:    { name: 'Web Burst',      chance: 0.35, targets: 5, dmgFrac: 0.30, hitBoss: false },
+    centipede: { name: 'Venom Spray',    chance: 0.35, targets: 5, dmgFrac: 0.35, hitBoss: false },
+    // Beasts: pack tactics — moderate spread, solid damage
+    bear:      { name: 'Maul',           chance: 0.25, targets: 3, dmgFrac: 0.50, hitBoss: false },
+    wolf:      { name: 'Pack Frenzy',    chance: 0.30, targets: 4, dmgFrac: 0.40, hitBoss: false },
+    // Reptiles: venomous — fewer targets, high per-hit
+    serpent:   { name: 'Venom Fang',     chance: 0.30, targets: 3, dmgFrac: 0.50, hitBoss: false },
+    naga:      { name: 'Tidal Wave',     chance: 0.30, targets: 4, dmgFrac: 0.45, hitBoss: false },
+    // Dragons: devastating breath — hits boss too
+    wyvern:    { name: 'Wind Shear',     chance: 0.25, targets: 4, dmgFrac: 0.50, hitBoss: true },
+    dragon:    { name: 'Dragon Breath',  chance: 0.30, targets: 5, dmgFrac: 0.60, hitBoss: true },
+    // Giants: ground slam — wide AOE
+    titan:     { name: 'Titan Slam',     chance: 0.25, targets: 5, dmgFrac: 0.45, hitBoss: true },
+    giant:     { name: 'Ground Pound',   chance: 0.25, targets: 4, dmgFrac: 0.40, hitBoss: false },
+    // Construct: shockwave — tanky, lower proc, wide spread
+    golem:     { name: 'Shockwave',      chance: 0.20, targets: 4, dmgFrac: 0.35, hitBoss: false },
+    // Ancient: arcane — many targets
+    elf:       { name: 'Arcane Barrage', chance: 0.35, targets: 5, dmgFrac: 0.45, hitBoss: false },
+    // Demon: hellfire — devastating
+    demon:     { name: 'Hellfire',       chance: 0.30, targets: 4, dmgFrac: 0.55, hitBoss: true },
+    // Undead: plague — chain spread on kill
+    ghoul:     { name: 'Plague Burst',   chance: 0.35, targets: 5, dmgFrac: 0.35, hitBoss: false },
+    // Humanoid-beast: brute force
+    orc:       { name: 'War Cry Slam',   chance: 0.25, targets: 3, dmgFrac: 0.50, hitBoss: false },
+    ogre:      { name: 'Club Sweep',     chance: 0.25, targets: 3, dmgFrac: 0.50, hitBoss: false },
+    // Ice: frost nova
+    yeti:      { name: 'Frost Nova',     chance: 0.25, targets: 4, dmgFrac: 0.40, hitBoss: false },
+
+    // ── Humanoid roles ──
+    mage:      { name: 'Fireball',       chance: 0.35, targets: 5, dmgFrac: 0.50, hitBoss: true },
+    ranger:    { name: 'Arrow Rain',     chance: 0.30, targets: 4, dmgFrac: 0.40, hitBoss: false },
+    assassin:  { name: 'Fan of Blades',  chance: 0.25, targets: 2, dmgFrac: 0.65, hitBoss: false },
+    berserker: { name: 'Whirlwind',      chance: 0.30, targets: 3, dmgFrac: 0.55, hitBoss: false },
+    knight:    { name: 'Cleave',         chance: 0.20, targets: 2, dmgFrac: 0.40, hitBoss: false },
+    tank:      { name: 'Shield Bash',    chance: 0.15, targets: 2, dmgFrac: 0.30, hitBoss: false },
+    healer:    { name: 'Holy Nova',      chance: 0.15, targets: 3, dmgFrac: 0.25, hitBoss: false },
+    support:   { name: 'Spirit Burst',   chance: 0.15, targets: 3, dmgFrac: 0.25, hitBoss: false },
+
+    // Fallback for unknown roles
+    _default:  { name: 'Cleave',         chance: 0.15, targets: 2, dmgFrac: 0.35, hitBoss: false },
   },
   RANK_MULTIPLIERS: {
     E: 1,

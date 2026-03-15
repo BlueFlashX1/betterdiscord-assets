@@ -505,19 +505,22 @@ module.exports = {
 
               if (rankGroup._rrIdx == null) rankGroup._rrIdx = 0;
 
-              // --- AOE CLEAVE: casters/mages/rangers hit multiple mobs per attack ---
-              const aoeConf = C.AOE_CLEAVE;
-              if (aoeConf && groupLen > 2) {
+              // --- FAMILY/ROLE-SPECIFIC AOE ---
+              // Each shadow type has a unique ability: dragon breath, swarm rush, fireball, etc.
+              // Lookup by role key → C.SHADOW_AOE[role] for proc chance, targets, damage, boss-hit.
+              const aoeTable = C.SHADOW_AOE;
+              if (aoeTable && groupLen > 1) {
                 const shadowRole = this.normalizeShadowRoleKey?.(
                   shadow?.role || shadow?.roleName || shadow?.ro || ''
                 ) || '';
-                const isCasterType = shadowRole === 'mage' || shadowRole === 'caster' || shadowRole === 'ranger';
-                const aoeChance = isCasterType ? aoeConf.casterChance : aoeConf.baseChance;
+                const aoeAbility = aoeTable[shadowRole] || aoeTable._default;
 
-                if (Math.random() < aoeChance) {
-                  const aoeTargets = isCasterType ? aoeConf.casterTargets : aoeConf.baseTargets;
-                  const cleaveDmg = Math.max(1, Math.floor(perHitMob * (aoeConf.damageFraction || 0.4) * shadowVariance * scaleFactor));
+                if (aoeAbility && Math.random() < aoeAbility.chance) {
+                  const aoeTargets = aoeAbility.targets || 2;
+                  const aoeDmgFrac = aoeAbility.dmgFrac || 0.35;
+                  const cleaveDmg = Math.max(1, Math.floor(perHitMob * aoeDmgFrac * shadowVariance * scaleFactor));
 
+                  // Hit nearby mobs
                   for (let aoeIdx = 0; aoeIdx < aoeTargets && aoeIdx < groupLen; aoeIdx++) {
                     const cleaveOffset = (rankGroup._rrIdx + aoeIdx + 1) % groupLen;
                     const cleaveMob = groupMobs[cleaveOffset];
@@ -531,6 +534,13 @@ module.exports = {
                     mobDamageMap.set(cleaveKey, cleaveAccum + toApply);
                     this._recordShadowMobDamageContribution(dungeon, cleaveKey, shadowId, toApply);
                     totalMobDamage += toApply;
+                  }
+
+                  // Boss-hitting AOEs (dragon breath, hellfire, titan slam, etc.)
+                  if (aoeAbility.hitBoss && bossAliveNow && dungeon.boss.hp > 0) {
+                    const bossDmgReduction = C.SHADOW_VS_BOSS_DAMAGE_MULT || 0.35;
+                    const aoeBossDmg = Math.max(1, Math.floor(cleaveDmg * bossDmgReduction));
+                    totalBossDamage += aoeBossDmg;
                   }
                 }
               }
