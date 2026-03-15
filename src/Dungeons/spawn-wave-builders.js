@@ -1,3 +1,5 @@
+const C = require('./constants');
+
 module.exports = {
   getDefaultBeastFamilies() {
     return [
