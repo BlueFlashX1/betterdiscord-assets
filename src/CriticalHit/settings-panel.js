@@ -5,11 +5,7 @@
  */
 
 module.exports = {
-  /**
-   * Unmounts React root and cleans up event listeners from settings panel
-   */
   detachCriticalHitSettingsPanelHandlers() {
-    // Unmount React root if present
     if (this._settingsRoot) {
       try {
         this._settingsRoot.unmount();
@@ -18,7 +14,6 @@ module.exports = {
       }
       this._settingsRoot = null;
     }
-    // Keep existing cleanup for backwards compatibility
     const root = this._settingsPanelRoot;
     const handlers = this._settingsPanelHandlers;
     if (root && handlers) {
@@ -30,10 +25,6 @@ module.exports = {
     this._settingsPanelHandlers = null;
   },
 
-  /**
-   * Resolves React 18 createRoot from BdApi or Webpack
-   * @returns {Function|null} createRoot function or null
-   */
   _getCreateRoot() {
     if (this._reactUtils?.getCreateRoot) return this._reactUtils.getCreateRoot();
     // Minimal inline fallback
@@ -41,10 +32,6 @@ module.exports = {
     return null;
   },
 
-  /**
-   * Returns the cached React settings panel component (creates on first call)
-   * @returns {Function} React functional component
-   */
   _getCritSettingsPanel() {
     if (this.__CritSettingsPanelCached) return this.__CritSettingsPanelCached;
 
@@ -52,30 +39,22 @@ module.exports = {
     const { useState, useEffect, useCallback, useRef } = React;
     const ce = React.createElement;
 
-    // ---- Main panel component ----
-
     function CritSettingsPanel({ pluginInstance }) {
       const pi = pluginInstance;
 
-      // ---- State ----
       const [debugMode, setDebugMode] = useState(pi.settings.debugMode);
 
-      // ---- Live stats ----
       const [totalCrits, setTotalCrits] = useState(pi.stats?.totalCrits ?? 0);
       const [critRate, setCritRate] = useState(pi.stats?.critRate ?? 0);
       const [historyCount, setHistoryCount] = useState(pi.messageHistory?.length ?? 0);
 
-      // Track effective crit for display
       const [effectiveCrit, setEffectiveCrit] = useState(pi.getEffectiveCritChance());
 
-      // ---- Bonus display state ----
       const [agilityBonus, setAgilityBonus] = useState(0);
       const [skillBonus, setSkillBonus] = useState(0);
-      // ---- Refs to avoid stale closures in interval ----
       const piRef = useRef(pi);
       piRef.current = pi;
 
-      // ---- Live stats polling ----
       useEffect(() => {
         const tick = () => {
           const p = piRef.current;
@@ -85,7 +64,6 @@ module.exports = {
           setHistoryCount(p.messageHistory?.length ?? 0);
           setEffectiveCrit(p.getEffectiveCritChance());
 
-          // Bonus display
           try {
             setAgilityBonus((BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100);
             setSkillBonus((BdApi.Data.load('SkillTree', 'bonuses')?.critBonus ?? 0) * 100);
@@ -96,20 +74,16 @@ module.exports = {
 
         };
         tick();
-        const id = setInterval(tick, 5000); // 5s (was 2s) — settings panel data not time-critical
+        const id = setInterval(tick, 5000); // 5s — settings panel data not time-critical
         return () => clearInterval(id);
       }, []);
-
-      // ---- Handlers ----
 
       const handleDebugMode = useCallback((v) => {
         setDebugMode(v);
         pi.updateDebugMode(v);
       }, [pi]);
 
-      // ---- Render ----
       return ce("div", { style: { background: "#1e1e2e" } },
-        // ---- Header ----
         ce("div", { className: "crit-settings-header" },
           ce("div", { className: "crit-settings-title" },
             ce("h3", null, "Critical Hit Settings")
@@ -136,10 +110,8 @@ module.exports = {
           )
         ),
 
-        // ---- Content ----
         ce("div", { className: "crit-settings-content" },
 
-          // ---- Debug & Troubleshooting ----
           ce("div", {
             className: "crit-form-group",
             style: { marginTop: "32px", paddingTop: "24px", borderTop: "1px solid var(--background-modifier-accent)" }
@@ -184,7 +156,6 @@ module.exports = {
             )
           ),
 
-          // ---- Font Credit ----
           ce("div", {
             className: "crit-font-credit",
             style: {
@@ -216,13 +187,8 @@ module.exports = {
     return CritSettingsPanel;
   },
 
-  /**
-   * Creates and returns the settings panel UI element
-   * Uses React 18 createRoot for rendering
-   * @returns {HTMLElement} Settings panel DOM element
-   */
   getSettingsPanel() {
-    // Prevent orphaned React roots when settings are reopened repeatedly.
+    // PERF: Prevent orphaned React roots when settings are reopened repeatedly.
     this.detachCriticalHitSettingsPanelHandlers();
 
     this.updateStats();

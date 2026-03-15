@@ -435,7 +435,6 @@ module.exports = {
             channelCritCount: channelCrits.length,
           });
 
-        // Find history entry using helper function
         const historyEntry = this.findHistoryEntryForRestoration(
           normalizedMsgId,
           pureMessageId,
@@ -456,37 +455,22 @@ module.exports = {
             this.performCritRestoration(historyEntry, normalizedMsgId, messageElement);
           }
         } else if (!historyEntry && isValidDiscordId) {
-          // For messages that already have crit class or are pending crit,
-          // allow the MutationObserver path to catch the animation trigger.
-          // Only skip if message is definitely not a crit candidate.
           const pendingHint =
             this.pendingCrits.has(normalizedMsgId) ||
             this.pendingCrits.has(pureMessageId) ||
             (!!contentHash && this.pendingCrits.has(contentHash));
           const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
 
-          if (!pendingHint && !hasCritClass) {
-            // Not pending and no crit class — skip observer setup
-            return;
-          }
+          if (!pendingHint && !hasCritClass) return;
 
-          // Use MutationObserver instead of polling setTimeout
-          // Watch for when message gets crit class (indicating crit was detected) or when element is replaced
           const checkForCrit = () => {
-            // Re-query element in case Discord replaced it
             const retryElement = this.requeryMessageElement(normalizedMsgId);
 
             if (!retryElement || !retryElement.isConnected) return false;
 
-            // Check pending queue first (fastest path)
-            // Try multiple matching strategies:
-            // 1. Direct message ID match (real ID)
-            // 2. Pure message ID match (without normalization)
-            // 3. Content hash match (for queued messages that got real IDs)
             let pendingCrit =
               this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
 
-            // If not found by ID, try content-based matching (for queued messages)
             if (!pendingCrit && retryElement) {
               const content = this.findMessageContentElement(retryElement);
               const author = this.getAuthorId(retryElement);
@@ -498,7 +482,6 @@ module.exports = {
             }
 
             if (pendingCrit?.channelId === this.currentChannelId) {
-              // Found in pending queue!
               const pendingEntry = {
                 messageId: normalizedMsgId,
                 channelId: this.currentChannelId,
@@ -512,7 +495,6 @@ module.exports = {
             }
 
             if (retryElement?.classList?.contains('bd-crit-hit')) {
-              // Invalidate cache and check history
               this._cachedCritHistory = null;
               this._cachedCritHistoryTimestamp = null;
               const retryChannelCrits = this.getCritHistory(this.currentChannelId);
@@ -532,12 +514,8 @@ module.exports = {
             return false;
           };
 
-          // Initial check
-          if (checkForCrit()) {
-            return; // Already found, no need to observe
-          }
+          if (checkForCrit()) return;
 
-          // OPTIMIZED: Set up MutationObserver with throttling
           // PERF: Never observe document.body with subtree — too expensive
           const parentContainer = messageElement?.parentElement;
           if (!parentContainer || parentContainer === document.body) return;
@@ -590,28 +568,23 @@ module.exports = {
             attributeFilter: ['class'],
           });
 
-          // Cleanup observer after timeout
           this._setTrackedTimeout(
             () => this._disconnectTransientObserver(restorationObserver),
             C.RESTORATION_OBSERVER_TIMEOUT_MS
           );
         }
       } else {
-        // Only log non-matches if verbose (reduces spam)
         this.debug.verbose &&
           this.debugLog('CHECK_FOR_RESTORATION', 'No matching crit found in history', {
             channelId: this.currentChannelId,
           });
       }
     } else {
-      // Only log this warning in verbose mode - it's normal for some elements to not have message IDs yet
       this.debug?.verbose &&
         this.debugLog(
           'CHECK_FOR_RESTORATION',
           'WARNING: Could not get message ID for restoration check',
-          {
-            channelId: this.currentChannelId,
-          }
+          { channelId: this.currentChannelId }
         );
     }
   },

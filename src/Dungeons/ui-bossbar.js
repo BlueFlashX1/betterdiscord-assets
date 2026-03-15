@@ -636,7 +636,7 @@ module.exports = {
           rc[r] = (rc[r] || 0) + 1;
         }
         const rankOrder = ['Shadow Monarch', 'Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
-        const parts = rankOrder.filter(r => rc[r] > 0).map(r => `${rc[r]}${r}`);
+        const parts = rankOrder.filter(r => rc[r] > 0).map(r => `${rc[r]} ${r}`);
         const rankStr = parts.length > 0 ? parts.join(' ') : '';
         shadowInfoHTML = `
           <div class="boss-bar-shadow-info">

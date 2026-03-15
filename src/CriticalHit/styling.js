@@ -210,11 +210,6 @@ ${childSel} {
 
   // CRIT STYLING — Content Element Discovery & Style Application
 
-  /**
-   * Checks if element is already a content element
-   * @param {HTMLElement} element - Element to check
-   * @returns {boolean} True if is content element
-   */
   _isContentElement(element) {
     if (!element?.classList) return false;
     const classes = Array.from(element.classList || []);
@@ -224,11 +219,6 @@ ${childSel} {
     return hasContentClass || element.id?.includes('message-content');
   },
 
-  /**
-   * Finds text elements within content that are not in header
-   * @param {HTMLElement} content - Content element
-   * @returns {HTMLElement|null} Best text element or null
-   */
   _findTextElementInContent(content) {
     const allTextElements = content.querySelectorAll(C.TEXT_ELEMENT_SELECTORS.join(', '));
     return Array.from(allTextElements).reduce((best, textEl) => {
@@ -253,11 +243,6 @@ ${childSel} {
     }, null);
   },
 
-  /**
-   * Checks if parent has username/timestamp elements
-   * @param {HTMLElement} content - Content element
-   * @returns {boolean} True if parent has header elements
-   */
   _parentHasHeaderElements(content) {
     const parent = content.parentElement;
     if (!parent) return false;
@@ -278,20 +263,13 @@ ${childSel} {
     });
   },
 
-  /**
-   * Finds the message content element for styling, avoiding header areas
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @returns {HTMLElement|null} The content element or null if not found
-   */
   findMessageContentForStyling(messageElement) {
     if (!messageElement) return null;
 
-    // If messageElement is already a content element, use it directly
     if (this._isContentElement(messageElement) && !this.isInHeaderArea(messageElement)) {
       return messageElement;
     }
 
-    // Try content selectors in order
     for (const selector of C.CONTENT_SELECTORS) {
       const elements = messageElement.querySelectorAll(selector);
       const found = Array.from(elements).find((el) => !this.isInHeaderArea(el));
@@ -316,11 +294,6 @@ ${childSel} {
     return this.findMessageContentElement(messageElement);
   },
 
-  /**
-   * Gets the preferred content node for crit style checks and application.
-   * @param {HTMLElement} messageElement - Message wrapper element
-   * @returns {HTMLElement|null} Preferred content node
-   */
   getCritContentElement(messageElement) {
     return this.findMessageContentForStyling(messageElement) || this.findMessageContentElement(messageElement);
   },
@@ -333,7 +306,7 @@ ${childSel} {
    */
   applyCritStyle(messageElement, { animate = false } = {}) {
     try {
-      // FIX: If we received a content element instead of message wrapper, find the parent
+      // BUGFIX: If we received a content element instead of message wrapper, find the parent
       let actualMessageElement = messageElement;
       if (this._isContentElement(messageElement)) {
         actualMessageElement =
@@ -343,11 +316,9 @@ ${childSel} {
           messageElement;
       }
 
-      // Mark as crit for animation positioning and checkForCrit fast-skip
       actualMessageElement.classList.add('bd-crit-hit');
       actualMessageElement.setAttribute('data-bd-crit-locked', '1');
 
-      // Inject per-message CSS targeting [data-message-id] for re-render persistence
       const msgId = this.getMessageIdentifier(actualMessageElement);
       if (msgId && !msgId.startsWith('hash_')) {
         this.injectCritMessageCSS(msgId, {
@@ -359,7 +330,6 @@ ${childSel} {
         });
       }
 
-      // Add animation ONLY for genuinely new messages (never on restore/scroll)
       if (animate && this.settings?.critAnimation) {
         const content = this.findMessageContentForStyling(actualMessageElement);
         if (content) {
@@ -375,10 +345,6 @@ ${childSel} {
 
   // FONT LOADING HELPERS
 
-  /**
-   * Gets plugins folder from BdApi
-   * @returns {string|null} Plugins folder path or null
-   */
   _getPluginsFolderFromBdApi() {
     if (typeof BdApi !== 'undefined' && BdApi.Plugins?.folder) {
       const pluginsFolder = BdApi.Plugins.folder;
@@ -387,10 +353,6 @@ ${childSel} {
     return null;
   },
 
-  /**
-   * Gets plugins folder from script src
-   * @returns {string|null} Plugins folder path or null
-   */
   _getPluginsFolderFromScript() {
     try {
       const scripts = Array.from(document.getElementsByTagName('script'));
@@ -412,41 +374,19 @@ ${childSel} {
     return null;
   },
 
-  /**
-   * Normalizes font name for use in IDs
-   * @param {string} fontName - Font name
-   * @returns {string} Normalized font name
-   */
   _normalizeFontNameForId(fontName) {
     return fontName.replace(/\s+/g, '-').toLowerCase();
   },
 
-  /**
-   * Extracts font name from font string
-   * @param {string} fontString - Font string (may include quotes, fallbacks)
-   * @returns {string} Extracted font name
-   */
   _extractFontName(fontString) {
     if (!fontString) return null;
     return fontString.replace(/'/g, '').replace(/"/g, '').split(',')[0].trim();
   },
 
-  /**
-   * Checks if font name matches pattern
-   * @param {string} fontName - Font name
-   * @param {string} pattern - Pattern to match
-   * @returns {boolean} True if matches
-   */
   _matchesFontPattern(fontName, pattern) {
     return fontName.toLowerCase().includes(pattern.toLowerCase());
   },
 
-  /**
-   * Helper: Loads font from local files with multiple format support
-   * @param {string} fontName - Name of the font
-   * @param {string} fontFamily - CSS font-family name
-   * @returns {boolean} True if font was loaded successfully
-   */
   loadLocalFont(fontName, fontFamily = null) {
     if (!fontFamily) {
       fontFamily = `'${fontName}', sans-serif`;
@@ -456,11 +396,8 @@ ${childSel} {
       const existingStyle = document.getElementById(
         `cha-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`
       );
-      if (existingStyle) {
-        return true;
-      }
+      if (existingStyle) return true;
 
-      // Handle special font name cases
       let fontFileName = fontName.replace(/\s+/g, '');
       if (fontName.toLowerCase().includes('friend or foe')) {
         fontFileName = 'FriendorFoeBB';
@@ -468,7 +405,6 @@ ${childSel} {
         fontFileName = 'SpeedySpaceGoatOddity';
       }
 
-      // Use embedded base64 data URIs for font loading
       let fontSrc = '';
 
       const fontDataMap = {
@@ -502,7 +438,6 @@ ${childSel} {
         return false;
       }
 
-      // Create @font-face with multiple format support
       const fontStyle = document.createElement('style');
       fontStyle.id = `cha-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`;
       fontStyle.textContent = `
@@ -516,7 +451,6 @@ ${childSel} {
       `;
       document.head.appendChild(fontStyle);
 
-      // Verify font loaded (non-blocking, delayed check)
       if (document.fonts && document.fonts.check) {
         document.fonts.ready
           .then(() => {
@@ -552,29 +486,14 @@ ${childSel} {
     }
   },
 
-  /**
-   * Gets Google Fonts link ID
-   * @param {string} fontName - Font name
-   * @returns {string} Link element ID
-   */
   _getGoogleFontLinkId(fontName) {
     return `cha-google-font-${this._normalizeFontNameForId(fontName)}`;
   },
 
-  /**
-   * Converts font name to Google Fonts URL format
-   * @param {string} fontName - Font name
-   * @returns {string} URL-formatted font name
-   */
   _convertToGoogleFontsUrl(fontName) {
     return fontName.replace(/\s+/g, '+');
   },
 
-  /**
-   * Helper: Loads font from Google Fonts (fallback method)
-   * @param {string} fontName - Name of the font
-   * @returns {boolean} True if font link was created
-   */
   loadGoogleFont(fontName) {
     if (!fontName) return false;
 
@@ -609,11 +528,6 @@ ${childSel} {
     }
   },
 
-  /**
-   * Helper: Loads message font (critFont) - Friend or Foe BB for critical hit message text
-   * @param {string} fontName - Name of the font to load
-   * @returns {boolean} True if font was loaded
-   */
   loadCritFont(fontName = null) {
     const fontToLoad =
       fontName ||
@@ -670,16 +584,9 @@ ${childSel} {
       return this.loadGoogleFont(fontToLoad);
     }
 
-    // For other fonts, try Google first, fallback to local
     return this.loadFont(fontToLoad, true);
   },
 
-  /**
-   * Helper: Loads font with smart source selection
-   * @param {string} fontName - Name of the font to load
-   * @param {boolean} forceGoogle - Force Google Fonts
-   * @returns {boolean} True if font was loaded
-   */
   loadFont(fontName, forceGoogle = false) {
     if (!fontName) return false;
 
@@ -703,11 +610,6 @@ ${childSel} {
     return this.loadGoogleFont(fontName);
   },
 
-  /**
-   * Helper: Loads animation font for floating text animation
-   * @param {string} fontName - Name of the font to load
-   * @returns {boolean} True if font was loaded
-   */
   loadCritAnimationFont(fontName = null) {
     const fontToLoad = fontName || this.settings.animationFont || 'Speedy Space Goat Oddity';
 
@@ -785,9 +687,6 @@ ${childSel} {
     }
   },
 
-  /**
-   * Creates Nova Flat font link element
-   */
   _createNovaFlatFontLink() {
     if (document.getElementById(C.CSS_STYLE_IDS.novaFlat)) return;
 

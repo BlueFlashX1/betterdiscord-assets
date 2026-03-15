@@ -329,7 +329,7 @@ const DUNGEON_COMBAT_SKILL_DEFS = {
   mutilation: {
     id: "mutilation",
     name: "Mutilation",
-    buttonLabel: "MUTILATE",
+    buttonLabel: "MUTILATION",
     desc: "Rapid-fire chain of guaranteed critical dagger slashes. 2.6x damage, every hit crits. Executes targets below 35% HP for 1.35x bonus damage. Inflicts max bleed stacks — deep wounds that deal DOT damage scaling with your stats vs target rank. 70 mana, 90s cooldown.",
     lore: "The evolved form of Fatal Strike. Jinwoo's daggers move faster than sight — each cut a guaranteed critical, each slash aimed at a weak point. Even the Monarch of Destruction could not withstand this relentless onslaught.",
     manaCost: 70,
@@ -406,7 +406,7 @@ const DUNGEON_COMBAT_SKILL_DEFS = {
   rulers_authority_force: {
     id: "rulers_authority_force",
     name: "Ruler's Authority",
-    buttonLabel: "RULER'S FORCE",
+    buttonLabel: "RULER'S AUTHORITY",
     desc: "Telekinetic crush — stuns boss for 5s (doubles per level), immobilizes 25% of mobs (+5% per level), and inflicts armorBreak (shatters defenses, increasing incoming damage by 6% per stack). Also reduces boss damage resistance by 15% (+5% per level). Costs no mana — pure will. 2min cooldown.",
     lore: "The power of the Rulers, inherited through Ashborn. A will-based telekinetic force so overwhelming that even Monarch-level fighters cannot counter it unless they wield the same power. Jinwoo controls objects, daggers, and the very air around him — enemies are paralyzed under the weight of his intent.",
     manaCost: 0,
@@ -427,7 +427,7 @@ const DUNGEON_COMBAT_SKILL_DEFS = {
   domain_expansion: {
     id: "domain_expansion",
     name: "Monarch's Domain",
-    buttonLabel: "DOMAIN",
+    buttonLabel: "MONARCH DOMAIN",
     desc: "Expand the Shadow Monarch's territory. All deployed shadows receive +50% all stats (+5% per level) for 30s (+5s per level). While active, shadows are immune to all enemy status effects — no poison, bleed, burn, frostbite, or necrotic can touch them within the domain. 100 mana, 3min cooldown.",
     lore: "The Monarch's shadow spreads across the predetermined space, creating a territory where the Shadow Monarch's power is absolute. Every shadow soldier fights at full strength without restriction — their stats amplified by the Monarch's will. Even the terrain bends to Jinwoo's command within the domain.",
     manaCost: 100,
