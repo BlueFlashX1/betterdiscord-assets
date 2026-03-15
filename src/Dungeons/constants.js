@@ -135,53 +135,89 @@ module.exports = {
   // 5) SHADOW VS BOSS DAMAGE REDUCTION
   SHADOW_VS_BOSS_DAMAGE_MULT: 0.35, // Shadows deal 35% of calculated damage to bosses
 
-  // 6) SHADOW AOE — family/role-specific abilities
+  // 6) SHADOW AOE — lore-accurate abilities from Solo Leveling
   //    Each entry: { name, chance, targets, dmgFrac, hitBoss }
-  //    chance   = proc chance per attack cycle
-  //    targets  = extra mobs hit on proc
-  //    dmgFrac  = fraction of primary single-target damage per AOE hit
-  //    hitBoss  = whether the AOE also damages the boss (reduced by SHADOW_VS_BOSS_DAMAGE_MULT)
+  //    Tuned to canon: Tusk/demon = #1 AOE mage (Hellfire, Hymn of Fire Dragon),
+  //    Dragon = city-scale breath, Ants = coordinated swarm, Assassin = zero AOE.
   SHADOW_AOE: {
     // ── Beast families ──
-    // Insects: swarm tactics — very high targets, lower per-hit
-    ant:       { name: 'Swarm Rush',     chance: 0.40, targets: 6, dmgFrac: 0.30, hitBoss: false },
-    spider:    { name: 'Web Burst',      chance: 0.35, targets: 5, dmgFrac: 0.30, hitBoss: false },
-    centipede: { name: 'Venom Spray',    chance: 0.35, targets: 5, dmgFrac: 0.35, hitBoss: false },
-    // Beasts: pack tactics — moderate spread, solid damage
-    bear:      { name: 'Maul',           chance: 0.25, targets: 3, dmgFrac: 0.50, hitBoss: false },
-    wolf:      { name: 'Pack Frenzy',    chance: 0.30, targets: 4, dmgFrac: 0.40, hitBoss: false },
-    // Reptiles: venomous — fewer targets, high per-hit
-    serpent:   { name: 'Venom Fang',     chance: 0.30, targets: 3, dmgFrac: 0.50, hitBoss: false },
-    naga:      { name: 'Tidal Wave',     chance: 0.30, targets: 4, dmgFrac: 0.45, hitBoss: false },
-    // Dragons: devastating breath — hits boss too
-    wyvern:    { name: 'Wind Shear',     chance: 0.25, targets: 4, dmgFrac: 0.50, hitBoss: true },
-    dragon:    { name: 'Dragon Breath',  chance: 0.30, targets: 5, dmgFrac: 0.60, hitBoss: true },
-    // Giants: ground slam — wide AOE
-    titan:     { name: 'Titan Slam',     chance: 0.25, targets: 5, dmgFrac: 0.45, hitBoss: true },
-    giant:     { name: 'Ground Pound',   chance: 0.25, targets: 4, dmgFrac: 0.40, hitBoss: false },
-    // Construct: shockwave — tanky, lower proc, wide spread
-    golem:     { name: 'Shockwave',      chance: 0.20, targets: 4, dmgFrac: 0.35, hitBoss: false },
-    // Ancient: arcane — many targets
-    elf:       { name: 'Arcane Barrage', chance: 0.35, targets: 5, dmgFrac: 0.45, hitBoss: false },
-    // Demon: hellfire — devastating
-    demon:     { name: 'Hellfire',       chance: 0.30, targets: 4, dmgFrac: 0.55, hitBoss: true },
-    // Undead: plague — chain spread on kill
-    ghoul:     { name: 'Plague Burst',   chance: 0.35, targets: 5, dmgFrac: 0.35, hitBoss: false },
-    // Humanoid-beast: brute force
-    orc:       { name: 'War Cry Slam',   chance: 0.25, targets: 3, dmgFrac: 0.50, hitBoss: false },
-    ogre:      { name: 'Club Sweep',     chance: 0.25, targets: 3, dmgFrac: 0.50, hitBoss: false },
-    // Ice: frost nova
-    yeti:      { name: 'Frost Nova',     chance: 0.25, targets: 4, dmgFrac: 0.40, hitBoss: false },
+
+    // INSECTS — Beru-style coordinated swarm tactics. Ants target weakest first,
+    // fly in formation, overwhelm with sheer numbers. Each individual is A-rank+.
+    ant:       { name: 'Swarm Assault',    chance: 0.45, targets: 10, dmgFrac: 0.25, hitBoss: false },
+    spider:    { name: 'Web Entangle',     chance: 0.35, targets: 8,  dmgFrac: 0.25, hitBoss: false },
+    centipede: { name: 'Venom Barrage',    chance: 0.35, targets: 8,  dmgFrac: 0.30, hitBoss: false },
+
+    // BEASTS — Tank (bear) uses Shout of Provocation (AOE taunt), plows through
+    // enemies like a military tank. Wolves are precision single-target flankers.
+    bear:      { name: 'Provocation Ram',  chance: 0.25, targets: 4,  dmgFrac: 0.45, hitBoss: false },
+    wolf:      { name: 'Pack Coordinate',  chance: 0.20, targets: 2,  dmgFrac: 0.35, hitBoss: false },
+
+    // REPTILES — Naga (Jima) wields dual tridents + size manipulation.
+    // Serpents are venomous single-target strikers.
+    serpent:   { name: 'Venom Strike',     chance: 0.20, targets: 2,  dmgFrac: 0.50, hitBoss: false },
+    naga:      { name: 'Trident Sweep',    chance: 0.30, targets: 6,  dmgFrac: 0.45, hitBoss: true },
+
+    // DRAGONS — Kamish-tier: Dragon Breath obliterated the US west coast.
+    // City-scale devastation. Highest damage AOE in the game. Hits boss.
+    // Wyvern (Kaisel) is primarily transport — minimal AOE.
+    wyvern:    { name: 'Dive Strike',      chance: 0.15, targets: 3,  dmgFrac: 0.35, hitBoss: false },
+    dragon:    { name: "Dragon's Breath",  chance: 0.35, targets: 12, dmgFrac: 0.65, hitBoss: true },
+
+    // GIANTS — 28 shadow giants from Tokyo S-Rank Gate. Massive ground slams,
+    // area denial through sheer size. Each can handle S-rank hunters.
+    titan:     { name: 'Seismic Slam',     chance: 0.30, targets: 8,  dmgFrac: 0.45, hitBoss: true },
+    giant:     { name: 'Ground Pound',     chance: 0.30, targets: 6,  dmgFrac: 0.40, hitBoss: true },
+
+    // CONSTRUCT — Golems are pure tanks. Shockwave from mass, not skill.
+    golem:     { name: 'Shockwave',        chance: 0.20, targets: 4,  dmgFrac: 0.30, hitBoss: false },
+
+    // ANCIENT — Elves channel arcane magic. Ranged artillery barrage.
+    elf:       { name: 'Arcane Barrage',   chance: 0.35, targets: 7,  dmgFrac: 0.40, hitBoss: false },
+
+    // DEMON — Tusk: THE shadow army's AOE specialist. Hymn of Fire Dragon
+    // blasted through Mount Hallasan. Hellfire decimates entire armies.
+    // Orb of Avarice doubles magic damage. Highest AOE proc + targets.
+    demon:     { name: 'Hellfire',         chance: 0.40, targets: 12, dmgFrac: 0.60, hitBoss: true },
+
+    // UNDEAD — Ghouls spread plague through contact. Chain-spread on kill.
+    ghoul:     { name: 'Plague Burst',     chance: 0.35, targets: 6,  dmgFrac: 0.30, hitBoss: false },
+
+    // HUMANOID-BEAST — Orcs/ogres are brute-force melee. War cry + slam.
+    orc:       { name: 'War Cry Slam',     chance: 0.25, targets: 4,  dmgFrac: 0.45, hitBoss: false },
+    ogre:      { name: 'Club Sweep',       chance: 0.25, targets: 4,  dmgFrac: 0.45, hitBoss: false },
+
+    // ICE — Yeti generates frost nova, freezing and shattering nearby mobs.
+    yeti:      { name: 'Frost Nova',       chance: 0.25, targets: 5,  dmgFrac: 0.40, hitBoss: false },
 
     // ── Humanoid roles ──
-    mage:      { name: 'Fireball',       chance: 0.35, targets: 5, dmgFrac: 0.50, hitBoss: true },
-    ranger:    { name: 'Arrow Rain',     chance: 0.30, targets: 4, dmgFrac: 0.40, hitBoss: false },
-    assassin:  { name: 'Fan of Blades',  chance: 0.25, targets: 2, dmgFrac: 0.65, hitBoss: false },
-    berserker: { name: 'Whirlwind',      chance: 0.30, targets: 3, dmgFrac: 0.55, hitBoss: false },
-    knight:    { name: 'Cleave',         chance: 0.20, targets: 2, dmgFrac: 0.40, hitBoss: false },
-    tank:      { name: 'Shield Bash',    chance: 0.15, targets: 2, dmgFrac: 0.30, hitBoss: false },
-    healer:    { name: 'Holy Nova',      chance: 0.15, targets: 3, dmgFrac: 0.25, hitBoss: false },
-    support:   { name: 'Spirit Burst',   chance: 0.15, targets: 3, dmgFrac: 0.25, hitBoss: false },
+
+    // MAGE — Shadow army mage corps. Ranged artillery behind knight line.
+    // Tusk leads them. Blazing Fire / Fireball AOE.
+    mage:      { name: 'Blazing Fire',     chance: 0.40, targets: 8,  dmgFrac: 0.50, hitBoss: true },
+
+    // RANGER — Ranged volley, suppressive fire. Arrow Rain on groups.
+    ranger:    { name: 'Arrow Rain',       chance: 0.30, targets: 6,  dmgFrac: 0.35, hitBoss: false },
+
+    // BERSERKER — Whirlwind melee. Reckless close-range devastation.
+    berserker: { name: 'Whirlwind',        chance: 0.30, targets: 5,  dmgFrac: 0.55, hitBoss: false },
+
+    // KNIGHT — Igris-style master swordsman. Precision cleave, not mass AOE.
+    // Ruler's Authority gives telekinetic sweep (2-3 targets max).
+    knight:    { name: 'Sword Sweep',      chance: 0.20, targets: 3,  dmgFrac: 0.40, hitBoss: false },
+
+    // ASSASSIN — Greed-style. Speed + single-target elimination. NO AOE.
+    // Canon: assassins are pure single-target killers.
+    assassin:  { name: 'Shadow Strike',    chance: 0.10, targets: 1,  dmgFrac: 0.80, hitBoss: false },
+
+    // TANK — Provocation/taunt role. Absorbs hits, minimal damage output.
+    tank:      { name: 'Shield Slam',      chance: 0.15, targets: 2,  dmgFrac: 0.25, hitBoss: false },
+
+    // HEALER — Beru-style healing magic. Holy Nova is weak offensive AOE.
+    healer:    { name: 'Holy Nova',        chance: 0.15, targets: 3,  dmgFrac: 0.20, hitBoss: false },
+
+    // SUPPORT — Utility/buff role. Spirit Burst is minor offensive AOE.
+    support:   { name: 'Spirit Burst',     chance: 0.15, targets: 3,  dmgFrac: 0.20, hitBoss: false },
 
     // Fallback for unknown roles
     _default:  { name: 'Cleave',         chance: 0.15, targets: 2, dmgFrac: 0.35, hitBoss: false },
