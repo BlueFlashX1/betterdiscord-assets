@@ -385,7 +385,6 @@ module.exports = {
     this.ensureDeployedSpawnPipeline(channelKey, 'deploy_initial');
     const liveMobsAfterDeployStart = this._countLiveMobs(dungeon);
     if (liveMobsAfterDeployStart <= 0) {
-      // Hard guard: if no mobs are visible after initial deploy spawn/flush, force one more pipeline heal.
       this.ensureDeployedSpawnPipeline(channelKey, 'deploy_initial_hard_guard');
     }
     this._setTrackedTimeout(() => {
@@ -398,31 +397,6 @@ module.exports = {
       }
     }, 1000);
 
-    await this.startShadowAttacks(channelKey, { allowBlockingReallocation: false });
-    // Race guard: recall may have fired during shadow attack init
-    if (!dungeon.shadowsDeployed) {
-      dungeon._deploying = false;
-      this.debugLog('DEPLOY', 'Aborted mid-deploy — recalled during shadow attack init', { channelKey });
-      return;
-    }
-    this.startBossAttacks(channelKey);
-    this.startMobAttacks(channelKey);
-
-    // Deploy responsiveness: run one immediate shadow attack pass only when starter allocation exists.
-    if (assignedShadows.length > 0) {
-      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
-    }
-
-    // Race guard: recall may have fired during immediate attack pass
-    if (!dungeon.shadowsDeployed) {
-      dungeon._deploying = false;
-      this.debugLog('DEPLOY', 'Aborted mid-deploy — recalled during attack pass', { channelKey });
-      return;
-    }
-
-    dungeon._deployPendingFullAllocation = true;
-    this._scheduleDeployRebalance(channelKey, deployStartedAt);
-
     // Build rank breakdown for deploy summary
     const deployedShadows = this.shadowAllocations.get(channelKey) || assignedShadows;
     const rankCounts = {};
@@ -431,32 +405,49 @@ module.exports = {
       rankCounts[r] = (rankCounts[r] || 0) + 1;
     }
     const totalDeployed = deployedShadows.length;
-    // Format: "12 shadows (3 S, 5 A, 4 B)" — show ranks highest-first
     const rankOrder = ['Shadow Monarch', 'Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
     const rankParts = rankOrder
       .filter(r => rankCounts[r] > 0)
       .map(r => `${rankCounts[r]} ${r}`);
     const breakdownStr = rankParts.length > 0 ? ` (${rankParts.join(', ')})` : '';
     this.showToast(`${totalDeployed} shadows deployed to ${dungeon.name}!${breakdownStr}`, 'success');
-    dungeon._deploying = false; // MUTEX RELEASE: deploy pipeline complete
+
+    // MUTEX RELEASE: Deploy is functionally complete — shadows allocated, mobs spawning.
+    // Release BEFORE async combat init (startShadowAttacks, processShadowAttacks) so the
+    // user can join immediately instead of waiting for IDB-heavy attack processing.
+    dungeon._deploying = false;
     this.saveSettings();
 
     // CRITICAL: Persist dungeon state to IDB immediately — shadowsDeployed must survive hot-reload.
-    // Without this, a reload before the first combat save cycle would lose the deployed flag.
     if (this.storageManager) {
       this.storageManager.saveDungeon(dungeon).catch((err) =>
         this.errorLog('Failed to save dungeon after deploy', err)
       );
     }
 
-    // Force-invalidate boss bar cache so the next render triggers a STRUCTURAL rebuild
-    // (not fast-path) and renders the shadow info section with the correct allocation count.
-    // Without this, a stale cache entry with dep:false → dep:true might be skipped if an
-    // intermediate render already cached dep:true with 0 shadows during async allocation.
+    // Force-invalidate boss bar cache so HP bar re-renders with shadow count.
     this._bossBarCache?.delete?.(channelKey);
-    // Update HP bar immediately (bypass throttle) — shadow count must reflect deploy instantly.
     this.updateBossHPBar(channelKey);
     this._setTrackedTimeout(() => this.updateBossHPBar(channelKey), 34);
+
+    // --- Async combat bootstrap (runs after mutex release so join is unblocked) ---
+    // Start attack systems — these are fire-and-forget interval timers.
+    await this.startShadowAttacks(channelKey, { allowBlockingReallocation: false });
+    if (!dungeon.shadowsDeployed) {
+      this.debugLog('DEPLOY', 'Aborted — recalled during shadow attack init', { channelKey });
+      return;
+    }
+    this.startBossAttacks(channelKey);
+    this.startMobAttacks(channelKey);
+
+    // Run one immediate shadow attack pass so combat starts visibly.
+    if (assignedShadows.length > 0) {
+      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+    }
+    if (!dungeon.shadowsDeployed) return;
+
+    dungeon._deployPendingFullAllocation = true;
+    this._scheduleDeployRebalance(channelKey, deployStartedAt);
   },
 
   async recallShadows(channelKey) {
