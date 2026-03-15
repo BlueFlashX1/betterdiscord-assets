@@ -56,13 +56,10 @@ module.exports = {
       return;
     }
 
-    // MUTEX: Block join while deploy is in-flight to prevent state interleaving.
-    // deployShadows() yields at 3 await points; joining mid-deploy can persist
-    // partial state (shadowsDeployed=true, no mobs) and corrupt the combat pipeline.
-    if (dungeon._deploying) {
-      this.showToast('Deploy in progress — wait for shadows to finish deploying.', 'info');
-      return;
-    }
+    // NOTE: _deploying mutex is NOT checked here. Joining is lightweight (sets
+    // userParticipating flag only) — no allocation, no combat init. Blocking join
+    // during deploy causes multi-minute lockout when cold-cache IDB recovery runs.
+    // Double-deploy is already guarded by shadowsDeployed check in deployShadows().
 
     // SYNC HP/MANA FROM STATS PLUGIN
     const { hpSynced, manaSynced } = this.syncHPAndManaFromStats();
