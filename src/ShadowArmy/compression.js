@@ -502,12 +502,23 @@ module.exports = {
     }
     if (shadows.length === 0) return { promoted: 0 };
 
-    // Sort by level descending — promote strongest shadows first (Monarch's priority)
+    // Sort by rank (highest first), then level descending as tiebreaker.
+    // Monarch's priority: strongest shadows get promoted first.
+    const rankOrder = this.shadowRanks || C.SHADOW_RANKS || [];
     const withLevel = shadows.map((s) => {
       const data = this.getShadowData(s);
-      return { raw: s, data, level: data?.level || 1, grade: data?.grade || s?.gr || 'Common' };
+      const rank = data?.rank || s?.r || s?.rank || 'E';
+      return {
+        raw: s, data,
+        level: data?.level || s?.l || 1,
+        rankIndex: rankOrder.indexOf(rank),
+        grade: data?.grade || s?.gr || 'Common',
+      };
     });
-    withLevel.sort((a, b) => b.level - a.level);
+    withLevel.sort((a, b) => {
+      if (b.rankIndex !== a.rankIndex) return b.rankIndex - a.rankIndex;
+      return b.level - a.level;
+    });
 
     let promoted = 0;
     let essenceSpent = 0;
