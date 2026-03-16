@@ -83,6 +83,7 @@ module.exports = {
       s: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100,
       ol: shadow.ownerLevelAtExtraction || 1,
       hv: shadow._healV || 0,
+      gr: shadow.grade || 'Common', // Shadow grade (manhwa lore tier)
 
       // IDB index fields — full-name properties so compressed shadows
       // remain visible to IndexedDB secondary indexes
@@ -135,6 +136,7 @@ module.exports = {
       vs: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100,
       ol: shadow.ownerLevelAtExtraction || 1,
       hv: shadow._healV || 0,
+      gr: shadow.grade || 'Common',
 
       // IDB index fields
       rank: shadow.rank || 'E',
@@ -205,6 +207,7 @@ module.exports = {
       ownerLevelAtExtraction: compressed.ol || 1,
       lastNaturalGrowth: compressed.e * 86400000,
       _healV: compressed.hv || 0,
+      grade: compressed.gr || 'Common',
       _ultraCompressed: true,
     };
   },
@@ -259,6 +262,7 @@ module.exports = {
       lastNaturalGrowth: compressed.lng || compressed.e,
       strength: 0,
       _healV: compressed.hv || 0,
+      grade: compressed.gr || 'Common',
       _compressed: true,
     };
   },
@@ -471,115 +475,93 @@ module.exports = {
    * @param {number} quantity - Number of shadows to convert
    * @returns {Promise<Object>} Conversion result
    */
-  async convertShadowsToEssence(rank, quantity) {
-    try {
-      const config = this.settings.shadowEssence || this.defaultSettings.shadowEssence;
+  // SHADOW GRADE AUTO-PROMOTION
+  // Promotes shadows through manhwa lore grades (Common→Elite→Knight→...→Grand Marshal)
+  // using accumulated shadow essence. Runs automatically on a timer.
 
-      let allShadows = [];
-      if (this.storageManager) {
-        try {
-          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
-        } catch (error) {
-          this.debugError('ESSENCE', 'Error getting shadows', error);
-          return { success: false, error: 'Failed to load shadows' };
-        }
+  async autoPromoteGrades() {
+    const essenceConfig = this.settings?.shadowEssence || this.defaultSettings.shadowEssence;
+    if (essenceConfig?.enabled === false) return { promoted: 0 };
+    const currentEssence = essenceConfig?.essence || 0;
+    if (currentEssence <= 0) return { promoted: 0 };
+
+    const gradeOrder = C.SHADOW_GRADES;
+    const promotionCosts = essenceConfig?.gradePromotionCost
+      || this.defaultSettings.shadowEssence.gradePromotionCost;
+    const batchSize = essenceConfig?.autoPromoteBatchSize || 50;
+
+    // Load a sample of shadows to promote (prioritize highest-level first)
+    let shadows = [];
+    if (this.storageManager?.getShadows) {
+      try {
+        shadows = await this.storageManager.getShadows({}, 0, batchSize * 4);
+      } catch (error) {
+        this.debugError('GRADE', 'Failed to load shadows for grade promotion', error);
+        return { promoted: 0 };
+      }
+    }
+    if (shadows.length === 0) return { promoted: 0 };
+
+    // Sort by level descending — promote strongest shadows first (Monarch's priority)
+    const withLevel = shadows.map((s) => {
+      const data = this.getShadowData(s);
+      return { raw: s, data, level: data?.level || 1, grade: data?.grade || s?.gr || 'Common' };
+    });
+    withLevel.sort((a, b) => b.level - a.level);
+
+    let promoted = 0;
+    let essenceSpent = 0;
+    let remainingEssence = currentEssence;
+    const saveBatch = [];
+
+    for (let i = 0; i < withLevel.length && promoted < batchSize; i++) {
+      const entry = withLevel[i];
+      const currentGrade = entry.grade;
+      const gradeIndex = gradeOrder.indexOf(currentGrade);
+      if (gradeIndex < 0 || gradeIndex >= gradeOrder.length - 1) continue;
+
+      const nextGrade = gradeOrder[gradeIndex + 1];
+      const cost = promotionCosts?.[nextGrade] || 0;
+      if (cost <= 0 || remainingEssence < cost) continue;
+
+      // Promote!
+      remainingEssence -= cost;
+      essenceSpent += cost;
+      promoted++;
+
+      // Update shadow grade in both decompressed and raw form
+      if (entry.data) entry.data.grade = nextGrade;
+      const rawShadow = entry.raw;
+      if (rawShadow._c) {
+        // Compressed: update gr field directly
+        rawShadow.gr = nextGrade;
       } else {
-        allShadows = this.settings.shadows || [];
+        rawShadow.grade = nextGrade;
       }
+      saveBatch.push(rawShadow);
+    }
 
-      const shadowsOfRank = allShadows.filter((s) => (s.rank || 'E') === rank);
+    if (promoted > 0) {
+      // Persist essence deduction
+      essenceConfig.essence = Math.max(0, remainingEssence);
 
-      if (shadowsOfRank.length === 0) {
-        return { success: false, error: `No ${rank}-rank shadows found` };
-      }
-
-      if (shadowsOfRank.length < quantity) {
-        return {
-          success: false,
-          error: `Only ${shadowsOfRank.length} ${rank}-rank shadow${
-            shadowsOfRank.length !== 1 ? 's' : ''
-          } available (requested ${quantity})`,
-        };
-      }
-
-      const remaining = allShadows.length - quantity;
-      if (remaining < (config.minShadowsToKeep || 20)) {
-        return {
-          success: false,
-          error: `Cannot convert: Would drop below minimum of ${
-            config.minShadowsToKeep || 20
-          } shadows`,
-        };
-      }
-
-      // Calculate power for shadows of this rank to select weakest ones
-      const shadowsWithPower = this.processShadowsWithPower(shadowsOfRank, true).map(
-        ({ shadow, decompressed, power }) => ({
-          shadow: decompressed,
-          power,
-        })
-      );
-
-      shadowsWithPower.sort((a, b) => a.power - b.power);
-
-      const toConvert = shadowsWithPower.slice(0, quantity);
-
-      const shadowIdsToDelete = toConvert
-        .map(({ shadow }) => this.getCacheKey(shadow))
-        .filter(Boolean);
-
-      if (shadowIdsToDelete.length > 0 && this.storageManager?.deleteShadowsBatch) {
-        const deleted = await this._deleteShadowsByIds(shadowIdsToDelete, 'ESSENCE');
-        if (!deleted) {
-          return { success: false, error: 'Failed to delete shadows' };
-        }
-      } else if (shadowIdsToDelete.length > 0) {
-        for (const id of shadowIdsToDelete) {
+      // Batch-save promoted shadows
+      if (this.storageManager?.saveShadow) {
+        for (const shadow of saveBatch) {
           try {
-            if (this.storageManager?.deleteShadow) {
-              await this.storageManager.deleteShadow(id);
-              this._invalidateSnapshot();
-            } else {
-              this.settings.shadows = (this.settings.shadows || []).filter(
-                (s) => (s.id || s.i) !== id
-              );
-            }
+            await this.storageManager.saveShadow(shadow);
           } catch (error) {
-            this.debugError('ESSENCE', `Error deleting shadow ${id}`, error);
+            this.debugError('GRADE', 'Failed to save promoted shadow', error);
           }
         }
-        this.saveSettings();
       }
-
-      const essencePerShadow = config.essencePerShadow[rank] || 1;
-      const totalEssence = essencePerShadow * quantity;
-
-      if (!this.settings.shadowEssence) {
-        this.settings.shadowEssence = { ...config };
-      }
-      const oldEssence = this.settings.shadowEssence.essence || 0;
-      this.settings.shadowEssence.essence = oldEssence + totalEssence;
-      this.settings.shadowEssence.lastConversionTime = Date.now();
+      this._invalidateSnapshot?.();
       this.saveSettings();
 
-      this.cachedBuffs = null;
-      this.cachedBuffsTime = null;
-
-      this._toast(
-        `Converted ${quantity} ${rank}-rank shadow${quantity !== 1 ? 's' : ''} to ${totalEssence.toLocaleString()} essence!`,
-        'info', 5000
-      );
-
-      return {
-        success: true,
-        converted: quantity,
-        totalEssence,
-        newTotal: this.settings.shadowEssence.essence,
-      };
-    } catch (error) {
-      this.debugError('ESSENCE', 'Error in manual conversion', error);
-      return { success: false, error: error.message };
+      this.debugLog?.('GRADE', `Auto-promoted ${promoted} shadows (${essenceSpent.toLocaleString()} essence spent, ${remainingEssence.toLocaleString()} remaining)`);
     }
+
+    return { promoted, essenceSpent, remainingEssence };
   },
 
   // DATA ACCESS & SAVE PREP

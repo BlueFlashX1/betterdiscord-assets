@@ -37,6 +37,11 @@ const SHADOW_PERSONALITY_ROLE_MAP = {
 
 const { STAT_KEYS } = require("../shared/safe-numbers");
 
+// Shadow Grades (manhwa lore) — separate from rank (E→S→Monarch game power tier).
+// Grades represent the shadow's evolution tier within the Shadow Monarch's army.
+// Lore: Normal→Elite→Knight→Elite Knight→General→Marshal→Grand Marshal
+const SHADOW_GRADES = ['Common', 'Elite', 'Knight', 'Elite Knight', 'General', 'Marshal', 'Grand Marshal'];
+
 function normalizeShadowPersonalityValue(value) {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
@@ -116,34 +121,33 @@ const DEFAULT_SETTINGS = {
       SSS: 6400, 'SSS+': 12800, NH: 25600, Monarch: 51200,
       'Monarch+': 102400, 'Shadow Monarch': 204800,
     },
-    // --- Spending: Rank Promotion Costs ---
-    // Cost to promote ONE shadow from rank X to the next rank.
-    // Lore: Shadows need the Monarch's mana (essence) + battle experience.
-    // Scales exponentially — promoting to Monarch+ is a prestige grind.
-    promotionCost: {
-      D: 50,           // E → D: cheap, foot soldiers level up fast
-      C: 150,          // D → C
-      B: 400,          // C → B
-      A: 1000,         // B → A: meaningful gate
-      S: 3000,         // A → S: serious investment
-      SS: 8000,        // S → SS
-      SSS: 20000,      // SS → SSS
-      'SSS+': 50000,   // SSS → SSS+: prestige territory
-      NH: 120000,      // SSS+ → NH (National Hunter)
-      Monarch: 300000,  // NH → Monarch: endgame grind
-      'Monarch+': 750000, // Monarch → Monarch+: whale territory
-      // Shadow Monarch: not promotable (Jinwoo's exclusive rank)
+    // --- Spending: Grade Promotion Costs ---
+    // Shadows have a GRADE (manhwa lore) separate from rank (game power tier).
+    // Grade: Common → Elite → Knight → Elite Knight → General → Marshal → Grand Marshal
+    // Lore: "Shadows cannot advance to higher grades without direct
+    // authorization from the Shadow Monarch." Essence = Monarch's mana.
+    gradePromotionCost: {
+      Elite: 100,            // Common → Elite: quick early progression
+      Knight: 500,           // Elite → Knight: can now be "named" (lore)
+      'Elite Knight': 2000,  // Knight → Elite Knight: S-rank equivalent
+      General: 8000,         // Elite Knight → General: can now speak (lore)
+      Marshal: 50000,        // General → Marshal: highest evolution (Igris, Beru)
+      'Grand Marshal': 500000, // Marshal → Grand Marshal: Bellion-tier, legendary
     },
-    // --- Shadow Sacrifice (legacy, kept for converting weak shadows to essence) ---
-    essencePerShadow: {
-      E: 5, D: 15, C: 35, B: 75, A: 150, S: 300, SS: 600,
-      SSS: 1200, 'SSS+': 2400, NH: 4800, Monarch: 9600,
-      'Monarch+': 19200, 'Shadow Monarch': 38400,
+    // Grade stat multipliers — higher grade = proportionally stronger shadow.
+    // Applied as a multiplier to all effective stats during combat.
+    gradeStatMultiplier: {
+      Common: 1.0,
+      Elite: 1.15,
+      Knight: 1.35,
+      'Elite Knight': 1.6,
+      General: 2.0,
+      Marshal: 2.5,
+      'Grand Marshal': 3.5,
     },
-    lastConversionTime: null,
-    conversionIntervalHours: 1,
-    weakShadowThreshold: 0.1,
-    minShadowsToKeep: 100,
+    // Auto-promote: process up to N shadows per cycle (prevents IDB storm)
+    autoPromoteBatchSize: 50,
+    autoPromoteIntervalMs: 30000, // Check every 30s
   },
   shadowCompression: {
     enabled: true,
@@ -414,6 +418,8 @@ module.exports = {
   // Personality helpers
   SHADOW_PERSONALITY_ROLE_MAP,
   STAT_KEYS,
+  // Grade system (manhwa lore)
+  SHADOW_GRADES,
   normalizeShadowPersonalityValue,
   deriveShadowPersonalityFromRole,
   // Animation

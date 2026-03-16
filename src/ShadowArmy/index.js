@@ -456,6 +456,16 @@ const ShadowArmy = class ShadowArmy {
       this.processShadowCompression();
     }, 60 * 60 * 1000);
 
+    // Auto-promote shadow grades using accumulated essence.
+    // Runs every 30s, promotes up to 50 shadows per cycle (highest-level first).
+    const gradePromoteInterval = this.settings?.shadowEssence?.autoPromoteIntervalMs || 30000;
+    this._gradePromoteInterval = setInterval(() => {
+      if (this._isStopped) return;
+      this.autoPromoteGrades().catch((error) => {
+        this.debugError('GRADE', 'Auto-promote cycle failed', error);
+      });
+    }, gradePromoteInterval);
+
     // Listen for Dungeons essence awards
     if (typeof BdApi?.Events?.on === 'function') {
       if (typeof BdApi?.Events?.off === 'function' && this._dungeonEssenceListener) {
@@ -597,6 +607,10 @@ const ShadowArmy = class ShadowArmy {
     if (this.naturalGrowthInterval) {
       clearInterval(this.naturalGrowthInterval);
       this.naturalGrowthInterval = null;
+    }
+    if (this._gradePromoteInterval) {
+      clearInterval(this._gradePromoteInterval);
+      this._gradePromoteInterval = null;
     }
 
     // Unsubscribe from shared NavigationBus

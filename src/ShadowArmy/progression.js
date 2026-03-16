@@ -193,6 +193,18 @@ module.exports = {
       });
     }
 
+    // Apply grade multiplier — higher manhwa grade = proportionally stronger.
+    // Common=1.0×, Elite=1.15×, Knight=1.35×, General=2.0×, Marshal=2.5×, Grand Marshal=3.5×
+    const grade = shadow.grade || 'Common';
+    const gradeMultipliers = this.settings?.shadowEssence?.gradeStatMultiplier
+      || this.defaultSettings?.shadowEssence?.gradeStatMultiplier;
+    const gradeMult = gradeMultipliers?.[grade] || 1.0;
+    if (gradeMult !== 1.0) {
+      statKeys.forEach((stat) => {
+        effective[stat] = Math.floor(effective[stat] * gradeMult);
+      });
+    }
+
     return effective;
   },
 
@@ -260,26 +272,9 @@ module.exports = {
       return { success: false, reason: 'stats_gate' };
     }
 
-    // GATE 3: Shadow Essence cost — the Monarch's mana fuels rank promotion.
-    // Lore: "Shadows cannot advance to higher grades without direct authorization
-    // from the Shadow Monarch." Essence represents that mana investment.
-    const essenceSettings = this.settings?.shadowEssence || this.defaultSettings.shadowEssence;
-    if (essenceSettings?.enabled !== false) {
-      const promotionCosts = essenceSettings?.promotionCost
-        || this.defaultSettings.shadowEssence.promotionCost;
-      const essenceCost = promotionCosts?.[nextRank] || 0;
-      const currentEssence = essenceSettings?.essence || 0;
-      if (essenceCost > 0 && currentEssence < essenceCost) {
-        return {
-          success: false, reason: 'essence_gate',
-          currentEssence, requiredEssence: essenceCost, targetRank: nextRank,
-        };
-      }
-      // Deduct essence on successful promotion
-      if (essenceCost > 0) {
-        essenceSettings.essence = Math.max(0, currentEssence - essenceCost);
-      }
-    }
+    // NOTE: Essence is NOT used for rank promotion (E→D→C etc.).
+    // Essence is spent on GRADE promotion (Common→Elite→Knight etc.) — see autoPromoteGrades().
+    // Rank promotion uses only level + stats gates.
 
     const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
     const oldXp = Math.max(0, Number(shadow.xp) || 0);
@@ -302,7 +297,6 @@ module.exports = {
       success: true, oldRank: currentRank, newRank: nextRank,
       oldLevel, newLevel: shadow.level || oldLevel,
       oldXp, newXp: shadow.xp || 0,
-      essenceSpent: (essenceSettings?.promotionCost || this.defaultSettings.shadowEssence.promotionCost)?.[nextRank] || 0,
     };
   },
 
