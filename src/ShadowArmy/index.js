@@ -463,10 +463,42 @@ const ShadowArmy = class ShadowArmy {
         this._dungeonEssenceListener = null;
       }
       this._dungeonEssenceListener = (data) => {
-        const amount = data?.amount || 0;
-        if (amount > 0 && this.settings?.shadowEssence) {
-          this.settings.shadowEssence.essence = (this.settings.shadowEssence.essence || 0) + amount;
-          this.saveSettings();
+        if (!this.settings?.shadowEssence) return;
+        const essenceConfig = this.settings.shadowEssence;
+        if (essenceConfig.enabled === false) return;
+
+        const source = data?.source || 'unknown';
+        const rawAmount = Math.max(0, Math.floor(Number(data?.amount) || 0));
+        if (rawAmount <= 0) return;
+
+        let essenceGain = 0;
+        if (source === 'mob_kill') {
+          // Scale by mob rank: each kill awards essencePerMobKill[rank]
+          const mobRank = data?.mobRank || 'E';
+          const perKill = essenceConfig.essencePerMobKill?.[mobRank]
+            || this.defaultSettings.shadowEssence.essencePerMobKill?.[mobRank]
+            || 1;
+          essenceGain = rawAmount * perKill;
+        } else if (source === 'boss_kill') {
+          // Boss kill: lump sum by boss rank
+          const bossRank = data?.bossRank || data?.mobRank || 'E';
+          essenceGain = essenceConfig.essencePerBossKill?.[bossRank]
+            || this.defaultSettings.shadowEssence.essencePerBossKill?.[bossRank]
+            || 50;
+        } else {
+          // Legacy / unknown source: flat amount
+          essenceGain = rawAmount;
+        }
+
+        if (essenceGain > 0) {
+          essenceConfig.essence = (essenceConfig.essence || 0) + essenceGain;
+          // Throttle saves — essence accumulates rapidly during combat.
+          // Save at most once per 5s; final save happens on stop().
+          const now = Date.now();
+          if (!this._lastEssenceSaveTime || now - this._lastEssenceSaveTime > 5000) {
+            this._lastEssenceSaveTime = now;
+            this.saveSettings();
+          }
         }
       };
       BdApi.Events.on('Dungeons:awardEssence', this._dungeonEssenceListener);

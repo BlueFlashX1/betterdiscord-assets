@@ -101,17 +101,49 @@ const DEFAULT_SETTINGS = {
     countToday: 0,
   },
   shadowEssence: {
-    enabled: false,
+    enabled: true,
     essence: 0,
+    // --- Earning ---
+    // Mob kills: base essence per kill, scaled by mob rank
+    essencePerMobKill: {
+      E: 1, D: 2, C: 4, B: 8, A: 16, S: 32, SS: 64,
+      SSS: 128, 'SSS+': 256, NH: 512, Monarch: 1024,
+      'Monarch+': 2048, 'Shadow Monarch': 4096,
+    },
+    // Boss kills: lump sum reward on dungeon completion
+    essencePerBossKill: {
+      E: 50, D: 100, C: 200, B: 400, A: 800, S: 1600, SS: 3200,
+      SSS: 6400, 'SSS+': 12800, NH: 25600, Monarch: 51200,
+      'Monarch+': 102400, 'Shadow Monarch': 204800,
+    },
+    // --- Spending: Rank Promotion Costs ---
+    // Cost to promote ONE shadow from rank X to the next rank.
+    // Lore: Shadows need the Monarch's mana (essence) + battle experience.
+    // Scales exponentially — promoting to Monarch+ is a prestige grind.
+    promotionCost: {
+      D: 50,           // E → D: cheap, foot soldiers level up fast
+      C: 150,          // D → C
+      B: 400,          // C → B
+      A: 1000,         // B → A: meaningful gate
+      S: 3000,         // A → S: serious investment
+      SS: 8000,        // S → SS
+      SSS: 20000,      // SS → SSS
+      'SSS+': 50000,   // SSS → SSS+: prestige territory
+      NH: 120000,      // SSS+ → NH (National Hunter)
+      Monarch: 300000,  // NH → Monarch: endgame grind
+      'Monarch+': 750000, // Monarch → Monarch+: whale territory
+      // Shadow Monarch: not promotable (Jinwoo's exclusive rank)
+    },
+    // --- Shadow Sacrifice (legacy, kept for converting weak shadows to essence) ---
+    essencePerShadow: {
+      E: 5, D: 15, C: 35, B: 75, A: 150, S: 300, SS: 600,
+      SSS: 1200, 'SSS+': 2400, NH: 4800, Monarch: 9600,
+      'Monarch+': 19200, 'Shadow Monarch': 38400,
+    },
     lastConversionTime: null,
     conversionIntervalHours: 1,
     weakShadowThreshold: 0.1,
     minShadowsToKeep: 100,
-    essencePerShadow: {
-      E: 1, D: 3, C: 7, B: 15, A: 30, S: 60, SS: 120,
-      SSS: 240, 'SSS+': 480, NH: 960, Monarch: 1920,
-      'Monarch+': 3840, 'Shadow Monarch': 7680,
-    },
   },
   shadowCompression: {
     enabled: true,

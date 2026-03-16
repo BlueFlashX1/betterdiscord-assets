@@ -83,6 +83,27 @@ module.exports = {
       const totalMobXP = xpPerKill * killCount;
       this._queuePendingDungeonMobXP(channelKey, dungeon, totalMobXP, killCount);
     }
+
+    // Award shadow essence on every mob kill — batched per dungeon to avoid
+    // event storm during high-kill ticks. Accumulated in dungeon state and
+    // flushed periodically + on completion.
+    if (!dungeon._pendingEssence) dungeon._pendingEssence = 0;
+    dungeon._pendingEssence += killCount;
+    // Flush essence every 10 kills to keep ShadowArmy roughly up to date
+    // without emitting on every single kill (which could be 50+ per tick).
+    if (dungeon._pendingEssence >= 10) {
+      const essenceAmount = dungeon._pendingEssence;
+      dungeon._pendingEssence = 0;
+      try {
+        if (typeof BdApi?.Events?.emit === 'function') {
+          BdApi.Events.emit('Dungeons:awardEssence', {
+            amount: essenceAmount,
+            mobRank: mobRank || dungeon.rank || 'E',
+            source: 'mob_kill',
+          });
+        }
+      } catch (_) {}
+    }
   },
 
   _grantUserDungeonXP(amount, source = 'dungeon', context = {}) {

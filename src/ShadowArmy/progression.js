@@ -230,6 +230,7 @@ module.exports = {
     if (!nextRank) return { success: false };
     if (nextRank === 'Shadow Monarch') return { success: false };
 
+    // GATE 1: Level requirement
     const promotionConfig = this.settings?.rankPromotionConfig || this.defaultSettings.rankPromotionConfig;
     if (promotionConfig?.enabled !== false) {
       const currentLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
@@ -243,6 +244,7 @@ module.exports = {
       }
     }
 
+    // GATE 2: Stat requirement
     const effectiveStats = this.getShadowEffectiveStats(shadow);
     const nextRankMultiplier = this.rankStatMultipliers[nextRank] || 1.0;
     const baselineForNextRank = this.getRankBaselineStats(nextRank, nextRankMultiplier);
@@ -254,32 +256,54 @@ module.exports = {
     const roleThresholdFactor = this.getRoleRankUpThresholdFactor(shadow.role);
     const requiredTotal = totalBaseline * 0.8 * roleThresholdFactor;
 
-    if (totalEffective >= requiredTotal) {
-      const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
-      const oldXp = Math.max(0, Number(shadow.xp) || 0);
-      shadow.rank = nextRank;
-
-      this._applyRankPromotionProgressCarry(shadow, currentRank, nextRank);
-
-      const newEffectiveStats = this.getShadowEffectiveStats(shadow);
-      shadow.strength = this.calculateShadowStrength(newEffectiveStats, 1);
-
-      this.invalidateShadowPowerCache(shadow);
-      this.settings.cachedTotalPowerShadowCount = 0;
-      this.clearShadowPowerCache();
-
-      this.getTotalShadowPower(true).catch((error) => {
-        this.debugError('POWER_CALC', 'Failed to refresh total shadow power after rank up', error);
-      });
-
-      return {
-        success: true, oldRank: currentRank, newRank: nextRank,
-        oldLevel, newLevel: shadow.level || oldLevel,
-        oldXp, newXp: shadow.xp || 0,
-      };
+    if (totalEffective < requiredTotal) {
+      return { success: false, reason: 'stats_gate' };
     }
 
-    return { success: false };
+    // GATE 3: Shadow Essence cost — the Monarch's mana fuels rank promotion.
+    // Lore: "Shadows cannot advance to higher grades without direct authorization
+    // from the Shadow Monarch." Essence represents that mana investment.
+    const essenceSettings = this.settings?.shadowEssence || this.defaultSettings.shadowEssence;
+    if (essenceSettings?.enabled !== false) {
+      const promotionCosts = essenceSettings?.promotionCost
+        || this.defaultSettings.shadowEssence.promotionCost;
+      const essenceCost = promotionCosts?.[nextRank] || 0;
+      const currentEssence = essenceSettings?.essence || 0;
+      if (essenceCost > 0 && currentEssence < essenceCost) {
+        return {
+          success: false, reason: 'essence_gate',
+          currentEssence, requiredEssence: essenceCost, targetRank: nextRank,
+        };
+      }
+      // Deduct essence on successful promotion
+      if (essenceCost > 0) {
+        essenceSettings.essence = Math.max(0, currentEssence - essenceCost);
+      }
+    }
+
+    const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
+    const oldXp = Math.max(0, Number(shadow.xp) || 0);
+    shadow.rank = nextRank;
+
+    this._applyRankPromotionProgressCarry(shadow, currentRank, nextRank);
+
+    const newEffectiveStats = this.getShadowEffectiveStats(shadow);
+    shadow.strength = this.calculateShadowStrength(newEffectiveStats, 1);
+
+    this.invalidateShadowPowerCache(shadow);
+    this.settings.cachedTotalPowerShadowCount = 0;
+    this.clearShadowPowerCache();
+
+    this.getTotalShadowPower(true).catch((error) => {
+      this.debugError('POWER_CALC', 'Failed to refresh total shadow power after rank up', error);
+    });
+
+    return {
+      success: true, oldRank: currentRank, newRank: nextRank,
+      oldLevel, newLevel: shadow.level || oldLevel,
+      oldXp, newXp: shadow.xp || 0,
+      essenceSpent: (essenceSettings?.promotionCost || this.defaultSettings.shadowEssence.promotionCost)?.[nextRank] || 0,
+    };
   },
 
   // NATURAL GROWTH SYSTEM

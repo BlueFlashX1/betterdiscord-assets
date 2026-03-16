@@ -379,6 +379,20 @@ module.exports = {
           summaryStats.userXP += completionXP;
         }
       }
+      // Flush pending mob-kill essence on non-boss completion
+      const completeDungeon = this.activeDungeons?.get(channelKey);
+      if (completeDungeon?._pendingEssence > 0) {
+        try {
+          if (typeof BdApi?.Events?.emit === 'function') {
+            BdApi.Events.emit('Dungeons:awardEssence', {
+              amount: completeDungeon._pendingEssence,
+              mobRank: snap.rank || 'E',
+              source: 'mob_kill',
+            });
+          }
+          completeDungeon._pendingEssence = 0;
+        } catch (_) {}
+      }
     }
     if (reason === 'boss') {
       const actualBossDamage = summaryStats.totalBossDamage || 0;
@@ -402,6 +416,33 @@ module.exports = {
         ) {
           summaryStats.userXP += bossXP;
         }
+      }
+
+      // Award shadow essence for boss kill — lump sum scaled by boss rank.
+      // This is the primary prestige essence source (mob kills provide steady drip).
+      try {
+        if (typeof BdApi?.Events?.emit === 'function') {
+          BdApi.Events.emit('Dungeons:awardEssence', {
+            amount: 1,
+            bossRank: snap.boss?.rank || snap.rank || 'E',
+            source: 'boss_kill',
+          });
+        }
+      } catch (_) {}
+
+      // Flush any remaining mob-kill essence that hasn't been flushed yet
+      const dungeon = this.activeDungeons?.get(channelKey);
+      if (dungeon?._pendingEssence > 0) {
+        try {
+          if (typeof BdApi?.Events?.emit === 'function') {
+            BdApi.Events.emit('Dungeons:awardEssence', {
+              amount: dungeon._pendingEssence,
+              mobRank: snap.rank || 'E',
+              source: 'mob_kill',
+            });
+          }
+          dungeon._pendingEssence = 0;
+        } catch (_) {}
       }
 
       // Boss ARISE button (only if user participated) — show early for responsiveness
