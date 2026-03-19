@@ -566,7 +566,7 @@ module.exports = {
 
   ensureDeployedSpawnPipeline(channelKey, reason = 'runtime_guard') {
     const dungeon = this._getActiveDungeon(channelKey);
-    if (!dungeon || !dungeon.shadowsDeployed || dungeon.boss?.hp <= 0) return false;
+    if (!dungeon || !dungeon.shadowsDeployed || (dungeon.boss?.hp <= 0 && !dungeon.boss?._isSentinel)) return false;
 
     if (!dungeon.mobs || typeof dungeon.mobs !== 'object') dungeon.mobs = {};
     if (!Array.isArray(dungeon.mobs.activeMobs)) dungeon.mobs.activeMobs = [];

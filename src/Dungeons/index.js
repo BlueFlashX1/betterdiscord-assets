@@ -38,6 +38,8 @@ Object.assign(
   require('./combat-boss-mob'),
   require('./resurrection-completion'),
   require('./arise-extraction'),
+  require('./story-mode-core'),
+  require('./story-mode-ui'),
   require('./ui-indicators'),
   require('./ui-bossbar'),
   require('./runtime-visibility'),

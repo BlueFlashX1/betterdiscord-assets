@@ -217,52 +217,34 @@ const CriticalHit = class CriticalHit {
   // pipeline.js, restoration.js — merged via Object.assign at bottom of file.
 
   // FLUX DISPATCHER — Instant crit detection via MESSAGE_CREATE (v3.6.0)
+  // Uses shared 6-tier acquisition with exponential backoff (src/shared/dispatcher.js)
 
   _initDispatcher() {
+    const { acquireDispatcher, pollForDispatcher } = require('../shared/dispatcher');
     try {
-      const { Webpack } = BdApi;
-      this._Dispatcher =
-        Webpack.Stores?.UserStore?._dispatcher ||           // Extract from Flux store (MOST RELIABLE)
-        Webpack.getModule(m => m.dispatch && m.subscribe) || // NO optional chaining in filter!
-        Webpack.getByKeys('actionLogger');                   // Legacy fallback
-
-      if (!this._Dispatcher) {
-        this.debugLog('DISPATCHER', 'FluxDispatcher not available yet — starting poll');
-        this._startDispatcherWait();
+      this._Dispatcher = acquireDispatcher();
+      if (this._Dispatcher) {
+        this._subscribeDispatcher();
         return;
       }
 
-      this._subscribeDispatcher();
+      this.debugLog('DISPATCHER', 'FluxDispatcher not available yet — starting poll');
+      this._dispatcherPollHandle = pollForDispatcher({
+        onAcquired: (d) => {
+          this._Dispatcher = d;
+          this.debugLog('DISPATCHER', 'Acquired via polling');
+          this._subscribeDispatcher();
+        },
+        onTimeout: () => {
+          this.debugLog('DISPATCHER', 'Failed to acquire after 30s — falling back to observer-only');
+        },
+        onPoll: (attempt) => {
+          if (this._isStopped) this._dispatcherPollHandle?.cancel();
+        },
+      });
     } catch (error) {
       this.debugError('DISPATCHER', error, { phase: 'init' });
     }
-  }
-
-  _startDispatcherWait() {
-    let attempts = 0;
-    const maxAttempts = 30;
-
-    const poll = () => {
-      if (this._isStopped || this._Dispatcher) return;
-      attempts++;
-
-      const { Webpack } = BdApi;
-      this._Dispatcher =
-        Webpack.Stores?.UserStore?._dispatcher ||
-        Webpack.getModule(m => m.dispatch && m.subscribe) ||
-        Webpack.getByKeys('actionLogger');
-
-      if (this._Dispatcher) {
-        this.debugLog('DISPATCHER', `Acquired after ${attempts} polls`);
-        this._subscribeDispatcher();
-      } else if (attempts < maxAttempts) {
-        this._setTrackedTimeout(poll, 500);
-      } else {
-        this.debugLog('DISPATCHER', 'Failed to acquire after 30 polls — falling back to observer-only');
-      }
-    };
-
-    this._setTrackedTimeout(poll, 500);
   }
 
   _subscribeDispatcher() {

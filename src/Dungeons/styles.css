@@ -188,12 +188,12 @@
 }
 
 .dungeons-header-popup-surface {
-  background: rgba(22, 22, 30, 0.97);
-  border: 1px solid rgba(120, 120, 145, 0.35);
-  border-radius: 10px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(160deg, rgba(22, 22, 32, 0.99) 0%, rgba(18, 18, 26, 0.98) 100%);
+  border: 1px solid rgba(120, 120, 145, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 53, 0.06);
   overflow: hidden;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
 }
 
 .dungeons-header-popup-head {
@@ -201,8 +201,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(120, 120, 145, 0.25);
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(120, 120, 145, 0.2);
 }
 
 .dungeons-header-popup-title {
@@ -230,8 +230,9 @@
 }
 
 .dungeons-header-popup-content {
-  max-height: min(65vh, 540px);
+  max-height: min(75vh, 640px);
   overflow-y: auto;
+  padding: 0 0 4px;
 }
 
 .dungeons-header-popup-empty {
@@ -746,4 +747,355 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 /* User HP Bar */
 .dungeon-user-hp-bar {
   font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ===== Story Mode ===== */
+
+@keyframes dcProgressShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes dcCombatPulse {
+  0%, 100% { border-color: rgba(220, 53, 69, 0.4); }
+  50% { border-color: rgba(220, 53, 69, 0.8); }
+}
+
+/* Tabs */
+.dungeons-popup-tabs {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.dungeons-tab-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  color: var(--text-muted, #a3a6aa);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  letter-spacing: 0.01em;
+}
+
+.dungeons-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #f2f3f5;
+}
+
+.dungeons-tab-btn.is-active {
+  background: linear-gradient(135deg, rgba(255, 107, 53, 0.25) 0%, rgba(220, 53, 69, 0.25) 100%);
+  border-color: rgba(255, 107, 53, 0.5);
+  color: #ff9f43;
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.2), inset 0 0 8px rgba(255, 107, 53, 0.08);
+}
+
+/* Section headers */
+.dc-section-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 12px 0 6px;
+  padding: 0 2px;
+}
+
+/* Story list card */
+.story-mode-list-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  background: rgba(255, 107, 53, 0.05);
+  border: 1px solid rgba(255, 107, 53, 0.18);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.story-mode-list-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 107, 53, 0.1);
+  border-color: rgba(255, 107, 53, 0.4);
+  box-shadow: 0 4px 16px rgba(255, 107, 53, 0.15);
+}
+
+/* Story detail card */
+.story-mode-card {
+  background: rgba(18, 18, 26, 0.98);
+  padding: 16px;
+}
+
+/* Floor progress bar */
+.story-mode-floor-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.story-mode-floor-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #dc3545, #ff6b35, #ff9f43, #ff6b35, #dc3545);
+  background-size: 200% auto;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+  animation: dcProgressShimmer 3s linear infinite;
+}
+
+/* Stats grid */
+.dc-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dc-stat-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+
+.dc-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 3px;
+}
+
+.dc-stat-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Floor info box */
+.dc-floor-info-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 3px solid #ff6b35;
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.dc-floor-info-box.is-boss {
+  border-left-color: #dc3545;
+  background: rgba(220, 53, 69, 0.06);
+  border-color: rgba(220, 53, 69, 0.2);
+  border-left-color: #dc3545;
+}
+
+/* Boss roster grid */
+.dc-boss-roster {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dc-boss-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 10px;
+  transition: background 0.15s ease;
+}
+
+.dc-boss-card.is-defeated {
+  opacity: 0.55;
+  background: rgba(52, 211, 153, 0.04);
+  border-color: rgba(52, 211, 153, 0.15);
+}
+
+.dc-boss-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f2f3f5;
+  margin-bottom: 1px;
+}
+
+.dc-boss-card.is-defeated .dc-boss-name {
+  color: #34d399;
+}
+
+.dc-boss-title {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.38);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+
+.dc-boss-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.dc-boss-rank-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.dc-boss-floor-num {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.dc-boss-defeated-badge {
+  font-size: 11px;
+  color: #34d399;
+}
+
+/* Active combat section */
+.dc-combat-section {
+  background: rgba(220, 53, 69, 0.08);
+  border: 1px solid rgba(220, 53, 69, 0.4);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 12px;
+  animation: dcCombatPulse 2s ease-in-out infinite;
+}
+
+.dc-combat-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff6b35;
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.dc-combat-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  font-size: 11px;
+}
+
+.dc-combat-stat {
+  text-align: center;
+}
+
+.dc-combat-stat-label {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.dc-combat-stat-value {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Enter / exit buttons */
+.dc-enter-btn {
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  margin-top: 12px;
+  background: linear-gradient(135deg, #dc3545 0%, #ff6b35 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 14px rgba(220, 53, 69, 0.35);
+}
+
+.dc-enter-btn:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(220, 53, 69, 0.5);
+}
+
+.dc-enter-btn:active {
+  transform: translateY(0);
+}
+
+.dc-exit-btn {
+  appearance: none;
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  background: rgba(220, 53, 69, 0.2);
+  border: 1px solid rgba(220, 53, 69, 0.5);
+  border-radius: 8px;
+  color: #ff6b6b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.dc-exit-btn:hover {
+  background: rgba(220, 53, 69, 0.35);
+  border-color: #dc3545;
+}
+
+/* Back button */
+.dc-back-btn {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 16px;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.dc-back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Story tab content wrapper */
+.story-tab-content {
+  padding: 12px 14px 16px;
+}
+
+/* Completion banner */
+.dc-cleared-banner {
+  text-align: center;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px 0 0;
+}
+
+/* Legacy compat */
+.story-mode-action:hover {
+  filter: brightness(1.15);
 }

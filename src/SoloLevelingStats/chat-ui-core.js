@@ -270,8 +270,8 @@ module.exports = {
           uiPanel.id = 'sls-chat-ui';
           uiPanel.className = 'sls-chat-strip-panel';
   
-          // Insert before the message input area
-          messageInputArea.parentElement.insertBefore(uiPanel, messageInputArea);
+          // Insert inside the message input area as first child (HP/MP strip inside the composer box)
+          messageInputArea.insertBefore(uiPanel, messageInputArea.firstChild);
   
           // Render React component tree into panel (v3.0.0)
           try {

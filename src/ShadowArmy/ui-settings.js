@@ -164,6 +164,46 @@ module.exports = {
           ...this.settings.extractionConfig,
         };
       }
+      // Backfill shadowEssence — deep-merge so new earning/spending fields
+      // (essencePerMobKill, essencePerBossKill, gradePromotionCost, gradeStatMultiplier)
+      // are always present even when loading old saves from before the rework.
+      // Also force enabled:true since the old default was enabled:false (sacrifice system).
+      if (!this.settings.shadowEssence || typeof this.settings.shadowEssence !== 'object') {
+        this.settings.shadowEssence = { ...this.defaultSettings.shadowEssence };
+      } else {
+        const savedEssence = this.settings.shadowEssence.essence || 0;
+        this.settings.shadowEssence = {
+          ...this.defaultSettings.shadowEssence,
+          ...this.settings.shadowEssence,
+          // Deep-merge nested objects so new rank keys aren't lost
+          essencePerMobKill: {
+            ...this.defaultSettings.shadowEssence.essencePerMobKill,
+            ...(this.settings.shadowEssence.essencePerMobKill || {}),
+          },
+          essencePerBossKill: {
+            ...this.defaultSettings.shadowEssence.essencePerBossKill,
+            ...(this.settings.shadowEssence.essencePerBossKill || {}),
+          },
+          gradePromotionCost: {
+            ...this.defaultSettings.shadowEssence.gradePromotionCost,
+            ...(this.settings.shadowEssence.gradePromotionCost || {}),
+          },
+          gradeStatMultiplier: {
+            ...this.defaultSettings.shadowEssence.gradeStatMultiplier,
+            ...(this.settings.shadowEssence.gradeStatMultiplier || {}),
+          },
+          // Preserve accumulated essence but ensure enabled
+          essence: savedEssence,
+          enabled: true,
+        };
+        // Purge legacy fields from old sacrifice-based system
+        delete this.settings.shadowEssence.essencePerShadow;
+        delete this.settings.shadowEssence.lastConversionTime;
+        delete this.settings.shadowEssence.conversionIntervalHours;
+        delete this.settings.shadowEssence.weakShadowThreshold;
+        delete this.settings.shadowEssence.minShadowsToKeep;
+        delete this.settings.shadowEssence.promotionCost;
+      }
       if (!this.settings.rankPromotionConfig || typeof this.settings.rankPromotionConfig !== 'object') {
         this.settings.rankPromotionConfig = {
           ...this.defaultSettings.rankPromotionConfig,

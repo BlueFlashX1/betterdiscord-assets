@@ -85,7 +85,8 @@ module.exports = {
         !dungeon.completed &&
         !dungeon.failed &&
         !dungeon._completing &&
-        (Number(dungeon?.boss?.hp) || 0) > 0
+        // Demon Castle non-boss floors use sentinel bosses (hp:0) — don't filter those out
+        (dungeon._isDemonCastle || (Number(dungeon?.boss?.hp) || 0) > 0)
       ))
       .sort((a, b) => {
         const aRank = rankIndex(a[1]?.rank);
@@ -154,7 +155,9 @@ module.exports = {
     const contextAllowed = this._isDungeonWidgetContextAllowed();
     const toolbar = this._getChannelHeaderToolbarForDungeonWidget();
 
-    if (!hasActiveDungeons || !contextAllowed || !toolbar) {
+    // Story mode: always show widget once story mode is initialized (so user can enter the castle)
+    const hasStoryMode = this._storyModeActive || this._demonCastle != null;
+    if ((!hasActiveDungeons && !hasStoryMode) || !contextAllowed || !toolbar) {
       if (this._dungeonHeaderWidgetButton?.isConnected) {
         this._dungeonHeaderWidgetButton.remove();
       }
@@ -277,8 +280,8 @@ module.exports = {
     const viewportWidth = window.innerWidth || 0;
     const viewportHeight = window.innerHeight || 0;
 
-    const desiredWidth = Math.max(360, Math.min(520, viewportWidth - 24));
-    const maxHeight = Math.max(220, viewportHeight - 90);
+    const desiredWidth = Math.max(420, Math.min(560, viewportWidth - 24));
+    const maxHeight = Math.max(300, viewportHeight - 80);
     const margin = 12;
 
     popup.style.width = `${desiredWidth}px`;
@@ -300,10 +303,17 @@ module.exports = {
     const popup = this._dungeonHeaderPopup;
     if (!popup || !popup.isConnected) return;
 
+    // Preserve scroll position across re-renders
+    const contentEl = popup.querySelector('.dungeons-header-popup-content');
+    const savedScrollTop = contentEl ? contentEl.scrollTop : 0;
+
     const rows = this._getActiveDungeonsForWidget();
     this._updateDungeonHeaderWidgetBadge(rows.length);
 
-    if (rows.length === 0) {
+    const activeTab = this._storyModePopupTab || 'dungeons';
+    const hasStoryTab = typeof this._getStoryModeTabHtml === 'function';
+
+    if (rows.length === 0 && activeTab === 'dungeons' && !hasStoryTab) {
       popup.innerHTML = `
         <div class="dungeons-header-popup-surface">
           <div class="dungeons-header-popup-head">
@@ -379,17 +389,47 @@ module.exports = {
       `;
     }).join('');
 
+    // Build tab bar (Dungeons | Story)
+    const storyTabActive = activeTab === 'story' || activeTab === 'story-detail-dc';
+    const tabsHtml = hasStoryTab ? `
+      <div class="dungeons-popup-tabs">
+        <button class="dungeons-tab-btn dungeon-widget-action ${activeTab === 'dungeons' ? 'is-active' : ''}"
+                type="button" data-dungeon-action="tab-dungeons" data-channel-key="_tab">
+          &#x2694; Dungeons${rows.length > 0 ? ` (${rows.length})` : ''}
+        </button>
+        <button class="dungeons-tab-btn dungeon-widget-action ${storyTabActive ? 'is-active' : ''}"
+                type="button" data-dungeon-action="tab-story" data-channel-key="_tab">
+          &#x1F4D6; Story
+        </button>
+      </div>
+    ` : `<div class="dungeons-header-popup-title">Active Dungeons (${rows.length})</div>`;
+
+    let contentHtml;
+    if (activeTab === 'story-detail-dc' && typeof this._getDemonCastleDetailHtml === 'function') {
+      contentHtml = this._getDemonCastleDetailHtml();
+    } else if (activeTab === 'story' && hasStoryTab) {
+      contentHtml = this._getStoryModeTabHtml();
+    } else {
+      contentHtml = rows.length > 0 ? rowsHtml : '<div class="dungeons-header-popup-empty">No active dungeons right now.</div>';
+    }
+
     popup.innerHTML = `
       <div class="dungeons-header-popup-surface">
         <div class="dungeons-header-popup-head">
-          <div class="dungeons-header-popup-title">Active Dungeons (${rows.length})</div>
+          ${tabsHtml}
           <button class="dungeon-widget-close-btn" type="button" aria-label="Close">×</button>
         </div>
         <div class="dungeons-header-popup-content">
-          ${rowsHtml}
+          ${contentHtml}
         </div>
       </div>
     `;
+
+    // Restore scroll position after innerHTML replacement
+    if (savedScrollTop > 0) {
+      const newContentEl = popup.querySelector('.dungeons-header-popup-content');
+      if (newContentEl) newContentEl.scrollTop = savedScrollTop;
+    }
 
     this.positionDungeonHeaderPopup();
   },

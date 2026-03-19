@@ -26,8 +26,12 @@ module.exports = {
       }
 
       if (dungeon.boss.hp <= 0 && dungeon.mobs?.activeMobs?.length === 0) {
-        this.stopShadowAttacks(channelKey);
-        return;
+        // Demon Castle non-boss floors use sentinel bosses (hp:0) — don't stop combat
+        // while mobs are still spawning (remaining > 0).
+        if (!dungeon._isDemonCastle || (dungeon.mobs?.remaining || 0) <= 0) {
+          this.stopShadowAttacks(channelKey);
+          return;
+        }
       }
 
       if (!this.shadowArmy) {

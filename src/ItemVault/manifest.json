@@ -1,0 +1,6 @@
+{
+  "name": "ItemVault",
+  "description": "Centralized item storage and inventory system for the Solo Leveling plugin ecosystem. Manages currencies, materials, consumables, and future equipment.",
+  "version": "1.0.0",
+  "author": "Solo Leveling Theme Dev, BlueFlashX1"
+}

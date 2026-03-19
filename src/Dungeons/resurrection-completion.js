@@ -154,6 +154,11 @@ module.exports = {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
 
+    // Story mode: Demon Castle floors use custom completion path
+    if (dungeon._isDemonCastle && reason !== 'timeout') {
+      return this._completeDemonCastleFloor(channelKey, dungeon, reason);
+    }
+
     if (dungeon._completing) return; // Prevent concurrent completion
     dungeon._completing = true;
     dungeon._completingStartedAt = Date.now(); // BUGFIX LOGIC-9: Timestamp for stranded dungeon recovery

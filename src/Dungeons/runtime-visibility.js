@@ -352,7 +352,7 @@ module.exports = {
 
   async simulateBossAttacks(channelKey, cycles) {
     const dungeon = this._getActiveDungeon(channelKey);
-    if (!dungeon || dungeon.boss.hp <= 0) return;
+    if (!dungeon || (dungeon.boss.hp <= 0 && !dungeon.boss._isSentinel)) return;
     const bossRole = this.ensureMonsterRole(dungeon.boss);
     const bossUnlocked = this.isBossGateUnlocked(dungeon);
     if (!bossUnlocked) return;
@@ -642,7 +642,7 @@ module.exports = {
 
   async simulateDungeonCombat(channelKey, elapsedTime, pausedState) {
     const dungeon = this._getActiveDungeon(channelKey);
-    if (!dungeon || !dungeon.shadowsDeployed || dungeon.boss.hp <= 0) return;
+    if (!dungeon || !dungeon.shadowsDeployed || (dungeon.boss.hp <= 0 && !dungeon.boss._isSentinel)) return;
 
     // CRITICAL: Sync HP/Mana before simulation
     this.syncHPAndManaFromStats();

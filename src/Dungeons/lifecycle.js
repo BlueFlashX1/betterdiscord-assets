@@ -44,6 +44,11 @@ module.exports = {
     if (this._sessionToken !== sessionToken) return;
     this.validateActiveDungeonStatus();
 
+    // Initialize Story Modes (Demon Castle)
+    if (typeof this.initStoryMode === 'function') {
+      try { await this.initStoryMode(); } catch (e) { this.errorLog?.('STORY', 'initStoryMode failed', e); }
+    }
+
     this.setupChannelWatcher();
     this.startDungeonHeaderWidget?.();
 
@@ -168,6 +173,12 @@ module.exports = {
     if (this._mobCapWarningShown) {
       this._mobCapWarningShown = {};
     }
+
+    // Story mode cleanup
+    this._storyModeActive = false;
+    this._demonCastle = null;
+    this._dcPermits = 0;
+    this._dcPermitsPendingFlush = 0;
 
     this.invalidateShadowCountCache();
     this.invalidateShadowsCache();

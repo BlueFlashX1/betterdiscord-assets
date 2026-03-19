@@ -5,6 +5,8 @@ module.exports = {
     // No separate in-memory Map — dungeon.corpsePile survives hot-reloads.
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
+    // Demon Castle: corrupted souls — no extraction possible
+    if (dungeon._isDemonCastle) return;
     if (!dungeon.corpsePile) dungeon.corpsePile = [];
     const baseStats = deadMob.baseStats || {};
     dungeon.corpsePile.push({

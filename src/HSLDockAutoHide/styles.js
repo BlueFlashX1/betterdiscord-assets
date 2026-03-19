@@ -169,12 +169,17 @@ function getDockAutoHideCss() {
         translate: 0 calc(var(--sl-dock-height) - var(--sl-dock-peek)) !important;
       }
 
-      body.sl-dock-autohide ${dc.sel.base}[data-fullscreen="false"] > ${dc.sel.content} {
+      /* Layout shift — push content up when dock is visible.
+       * Discord removed data-fullscreen attr (~Mar 2026).
+       * Target base>content with :not(:fullscreen) guard + wildcard fallback. */
+      body.sl-dock-autohide ${dc.sel.base}:not(:fullscreen) > ${dc.sel.content},
+      body.sl-dock-autohide [class*="base_"]:not(:fullscreen) > [class*="content_"] {
         transition: margin-bottom 240ms cubic-bezier(0.2, 0.75, 0.25, 1) !important;
         margin-bottom: var(--sl-dock-height) !important;
       }
 
-      body.sl-dock-autohide.sl-dock-hidden ${dc.sel.base}[data-fullscreen="false"] > ${dc.sel.content} {
+      body.sl-dock-autohide.sl-dock-hidden ${dc.sel.base}:not(:fullscreen) > ${dc.sel.content},
+      body.sl-dock-autohide.sl-dock-hidden [class*="base_"]:not(:fullscreen) > [class*="content_"] {
         margin-bottom: var(--sl-dock-peek) !important;
       }
 

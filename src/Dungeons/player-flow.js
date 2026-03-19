@@ -206,9 +206,10 @@ module.exports = {
           deployedAt: null,
           unlockedAt: null,
         };
-      } else {
+      } else if (dungeon.bossGate.enabled !== false) {
         // Refresh runtime gate values on deploy so stale persisted dungeon payloads
         // can't bypass intended gate timing.
+        // Skip if explicitly disabled (e.g. Demon Castle sets enabled:false).
         dungeon.bossGate.enabled = bossGateConfig.enabled;
         dungeon.bossGate.minDurationMs = bossGateConfig.minDurationMs;
         dungeon.bossGate.requiredMobKills = bossGateConfig.requiredMobKills;
@@ -393,7 +394,7 @@ module.exports = {
     this._setTrackedTimeout(() => {
       try {
         const guardDungeon = this._getActiveDungeon(channelKey);
-        if (!guardDungeon || !guardDungeon.shadowsDeployed || guardDungeon.boss?.hp <= 0) return;
+        if (!guardDungeon || !guardDungeon.shadowsDeployed || (guardDungeon.boss?.hp <= 0 && !guardDungeon.boss?._isSentinel)) return;
         this.ensureDeployedSpawnPipeline(channelKey, 'deploy_watchdog');
       } catch (error) {
         this.errorLog('MOB_SPAWN_GUARD', 'Deploy watchdog failed', error);

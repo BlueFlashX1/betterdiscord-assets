@@ -90,6 +90,10 @@ class SensesEngine {
     this._deferredStatusToastTimers = new Set(); // startup-deferred status toast timers
     this._deferredUtilityToastTimers = new Set(); // deferred non-status toasts (startup grace)
 
+    // Unread badge counter — tracks messages arrived since last panel open
+    this._unreadCount = 0;
+    this._lastPanelOpenedAt = Date.now(); // Messages before this are "seen"
+
     // Load persisted data — per-guild keys first, legacy monolithic fallback
     const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
     if (Array.isArray(feedGuildIds) && feedGuildIds.length > 0) {
@@ -377,7 +381,7 @@ module.exports = class ShadowSenses {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
     this._stopped = true;
-    this._dispatcherRetryTimer = null;
+    this._dispatcherPollHandle = null;
     this._widgetReinjectTimeout = null;
     this._unpatchContextMenu = null;
     this._layoutBusUnsub = null;
@@ -492,9 +496,8 @@ module.exports = class ShadowSenses {
     // React components
     this._components = buildComponents(this);
 
-    // Widget
-    this.injectWidget();
-    this.setupWidgetObserver();
+    // Channel header icon with unread badge (replaces old members panel widget)
+    this.startSensesHeaderIcon();
 
     // ESC handler + context menu
     this.registerEscHandler();
@@ -513,10 +516,10 @@ module.exports = class ShadowSenses {
     if (!this._sensesResourcesActive) return;
     this._sensesResourcesActive = false;
 
-    // Dispatcher retry
-    if (this._dispatcherRetryTimer) {
-      clearTimeout(this._dispatcherRetryTimer);
-      this._dispatcherRetryTimer = null;
+    // Dispatcher poll handle
+    if (this._dispatcherPollHandle) {
+      this._dispatcherPollHandle.cancel();
+      this._dispatcherPollHandle = null;
     }
     if (this._startupReportTimer) {
       clearTimeout(this._startupReportTimer);
@@ -537,6 +540,9 @@ module.exports = class ShadowSenses {
 
     // Panel
     this.closePanel();
+
+    // Header icon
+    this.stopSensesHeaderIcon();
 
     // Widget + observer
     if (this._layoutBusUnsub) {
@@ -585,9 +591,9 @@ module.exports = class ShadowSenses {
       if (this._sensesResourcesActive) {
         this._sensesResourcesActive = false;
 
-        if (this._dispatcherRetryTimer) {
-          clearTimeout(this._dispatcherRetryTimer);
-          this._dispatcherRetryTimer = null;
+        if (this._dispatcherPollHandle) {
+          this._dispatcherPollHandle.cancel();
+          this._dispatcherPollHandle = null;
         }
         if (this._startupReportTimer) {
           clearTimeout(this._startupReportTimer);
@@ -605,6 +611,7 @@ module.exports = class ShadowSenses {
         }
 
         this.closePanel();
+        this.stopSensesHeaderIcon();
 
         if (this._layoutBusUnsub) {
           this._layoutBusUnsub();
@@ -1305,13 +1312,9 @@ module.exports = class ShadowSenses {
 
   initWebpack() {
     const { Webpack } = BdApi;
-    // Dispatcher: extract from Flux store (most reliable), then filter fallback, then legacy key
-    // IMPORTANT: NO optional chaining in Webpack.getModule filter — breaks BD matching
-    this._Dispatcher =
-      Webpack.Stores?.UserStore?._dispatcher ||
-      Webpack.getModule(m => m.dispatch && m.subscribe) ||
-      Webpack.getByKeys("actionLogger") ||
-      null;
+    const { acquireDispatcher } = require('../shared/dispatcher');
+    // Shared 6-tier dispatcher acquisition with singleton cache
+    this._Dispatcher = acquireDispatcher();
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._GuildStore = Webpack.getStore("GuildStore");
@@ -1350,36 +1353,22 @@ module.exports = class ShadowSenses {
   }
 
   _startDispatcherWait() {
-    let attempt = 0;
-    const maxAttempts = 30; // 30 × 500ms = 15s
-
-    const tryAcquire = () => {
-      if (this._stopped) return;
-      attempt++;
-
-      // Dispatcher: extract from Flux store (most reliable) — NO optional chaining in filter
-      this._Dispatcher =
-        BdApi.Webpack.Stores?.UserStore?._dispatcher ||
-        BdApi.Webpack.getModule(m => m.dispatch && m.subscribe) ||
-        BdApi.Webpack.getByKeys("actionLogger") ||
-        null;
-
-      if (this._Dispatcher) {
-        this.debugLog("Webpack", `Dispatcher acquired on poll #${attempt} (${attempt * 500}ms)`);
+    const { pollForDispatcher } = require('../shared/dispatcher');
+    this._dispatcherPollHandle = pollForDispatcher({
+      onAcquired: (d) => {
+        this._Dispatcher = d;
+        this.debugLog("Webpack", "Dispatcher acquired via polling");
         this.initWebpack();
         if (this.sensesEngine) this.sensesEngine.subscribe();
-        return;
-      }
-
-      if (attempt >= maxAttempts) {
-        console.error(`[${PLUGIN_NAME}] Dispatcher unavailable after ${maxAttempts} polls (~15s) — message detection will NOT work`);
+      },
+      onTimeout: () => {
+        console.error(`[${PLUGIN_NAME}] Dispatcher unavailable after 30s — message detection will NOT work`);
         this._toast(`${PLUGIN_NAME}: Dispatcher not found — message detection disabled`, "error");
-        return;
-      }
-      this._dispatcherRetryTimer = setTimeout(tryAcquire, 500);
-    };
-
-    this._dispatcherRetryTimer = setTimeout(tryAcquire, 500);
+      },
+      onPoll: () => {
+        if (this._stopped) this._dispatcherPollHandle?.cancel();
+      },
+    });
   }
 
   teleportToPath(path, context = {}) {

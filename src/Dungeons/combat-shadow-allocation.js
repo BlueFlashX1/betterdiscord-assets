@@ -303,7 +303,7 @@ module.exports = {
 
     // Get active dungeons — ONLY those where shadows are deployed (manual deploy)
     const activeDungeonsList = Array.from(this.activeDungeons.values()).filter(
-      (d) => !d.completed && !d.failed && d.boss.hp > 0 && d.shadowsDeployed
+      (d) => !d.completed && !d.failed && (d.boss.hp > 0 || d.boss._isSentinel) && d.shadowsDeployed
     );
 
     if (activeDungeonsList.length === 0) {
@@ -711,7 +711,7 @@ module.exports = {
       dungeon.failed ||
       dungeon._completing ||
       !dungeon.shadowsDeployed ||
-      dungeon.boss?.hp <= 0
+      (dungeon.boss?.hp <= 0 && !dungeon.boss?._isSentinel)
     ) {
       this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
       return;
@@ -849,7 +849,8 @@ module.exports = {
       dungeon.failed ||
       dungeon._completing ||
       !dungeon.shadowsDeployed ||
-      dungeon.boss?.hp <= 0
+      // Demon Castle sentinel bosses start at hp:0 — don't block boss attacks
+      (dungeon.boss?.hp <= 0 && !dungeon.boss?._isSentinel)
     ) {
       this.bossAttackTimers.has(channelKey) && this.stopBossAttacks(channelKey);
       return;
@@ -899,7 +900,7 @@ module.exports = {
       dungeon.failed ||
       dungeon._completing ||
       !dungeon.shadowsDeployed ||
-      dungeon.boss?.hp <= 0
+      (dungeon.boss?.hp <= 0 && !dungeon.boss?._isSentinel)
     ) {
       this.mobAttackTimers.has(channelKey) && this.stopMobAttacks(channelKey);
       return;

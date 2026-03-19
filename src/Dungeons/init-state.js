@@ -278,6 +278,13 @@ module.exports = {
     this._mobCapWarningShown = {};
     this.extractionEvents = new Map();
     this.extractionInProgress = new Set();
+
+    // Story Modes (Demon Castle)
+    this._storyModeActive = false;
+    this._demonCastle = null;
+    this._dcPermits = 0;
+    this._dcPermitsPendingFlush = 0;
+    this.storyModeStorage = null;
   },
 
   _initUI() {
@@ -293,6 +300,7 @@ module.exports = {
     this._dungeonHeaderPopupScrollHandler = null;
     this._dungeonHeaderPopupPositionRaf = null;
     this._dungeonUiActionLocks = new Set();
+    this._storyModePopupTab = 'dungeons';
 
     // Throttled DOM updates
     this._hpBarUpdateQueue = new Set();

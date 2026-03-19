@@ -246,6 +246,12 @@ const ShadowSensesUiMethods = {
 
       this._panelReactRoot = root;
       this._panelOpen = true;
+
+      // Clear unread badge — user is now viewing live feed
+      if (this.sensesEngine?.clearUnread) {
+        this.sensesEngine.clearUnread();
+      }
+
       this.debugLog("Panel", "Opened");
     } catch (err) {
       this.debugError("Panel", "Failed to open panel", err);
@@ -254,6 +260,10 @@ const ShadowSensesUiMethods = {
 
   closePanel() {
     try {
+      // Close popup if open
+      this._closeSensesPopup();
+
+      // Close legacy full-screen panel if open
       if (this._panelReactRoot) {
         try {
           this._panelReactRoot.unmount();
@@ -382,6 +392,271 @@ const ShadowSensesUiMethods = {
     } catch (err) {
       this.debugError("ContextMenu", "Failed to patch context menu", err);
     }
+  },
+
+  // ─── Channel Header Icon ─────────────────────────────
+  // Eye-shaped SVG icon in the channel header toolbar with unread badge.
+
+  _SENSES_HEADER_ICON_ID: 'shadow-senses-header-icon',
+
+  _HEADER_TOOLBAR_SELECTORS: [
+    '[aria-label="Channel header"] [class*="toolbar_"]',
+    '[class*="titleWrapper_"] [class*="toolbar_"]',
+    'header [class*="toolbar_"]',
+  ],
+
+  _getHeaderToolbar() {
+    for (const sel of this._HEADER_TOOLBAR_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetParent !== null) return el;
+    }
+    return null;
+  },
+
+  _getSensesHeaderSVG() {
+    // Monarch's eye — shadow senses icon
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/>
+      <circle cx="12" cy="12" r="3.5"/>
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/>
+    </svg>`;
+  },
+
+  startSensesHeaderIcon() {
+    if (this._sensesHeaderIconLoop) return;
+
+    const tick = () => {
+      if (this._stopped) return;
+      if (document.hidden) return;
+      this._ensureSensesHeaderIcon();
+    };
+
+    this._ensureSensesHeaderIcon();
+    this._sensesHeaderIconLoop = setInterval(tick, 1000);
+  },
+
+  stopSensesHeaderIcon() {
+    if (this._sensesHeaderIconLoop) {
+      clearInterval(this._sensesHeaderIconLoop);
+      this._sensesHeaderIconLoop = null;
+    }
+    const existing = document.getElementById(this._SENSES_HEADER_ICON_ID);
+    if (existing) existing.remove();
+  },
+
+  _ensureSensesHeaderIcon() {
+    const existing = document.getElementById(this._SENSES_HEADER_ICON_ID);
+    if (existing?.isConnected) {
+      // Just update badge
+      this._updateSensesHeaderBadge(existing);
+      return;
+    }
+
+    const toolbar = this._getHeaderToolbar();
+    if (!toolbar) return;
+
+    // Don't duplicate
+    if (toolbar.querySelector(`#${this._SENSES_HEADER_ICON_ID}`)) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.id = this._SENSES_HEADER_ICON_ID;
+    wrapper.style.cssText = `
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      color: #b5bac1;
+      margin: 0 4px;
+      transition: color 0.15s ease;
+    `;
+    wrapper.title = 'Shadow Senses';
+    wrapper.innerHTML = this._getSensesHeaderSVG();
+
+    // Badge element
+    const badge = document.createElement('div');
+    badge.className = 'ss-header-badge';
+    badge.style.cssText = `
+      position: absolute;
+      top: -4px;
+      right: -6px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: #ed4245;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      line-height: 16px;
+      box-sizing: border-box;
+      pointer-events: none;
+      font-family: var(--font-primary), 'gg sans', sans-serif;
+    `;
+    badge.textContent = '0';
+    wrapper.appendChild(badge);
+
+    // Hover effects
+    wrapper.addEventListener('mouseenter', () => {
+      wrapper.style.color = '#dcddde';
+    });
+    wrapper.addEventListener('mouseleave', () => {
+      wrapper.style.color = '#b5bac1';
+    });
+
+    // Click → toggle popup anchored to icon
+    wrapper.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Clear unread
+      if (this.sensesEngine?.clearUnread) {
+        this.sensesEngine.clearUnread();
+      }
+      this._updateSensesHeaderBadge(wrapper);
+      this._toggleSensesPopup(wrapper);
+    });
+
+    // Insert before first child (leftmost position in toolbar)
+    if (toolbar.firstChild) {
+      toolbar.insertBefore(wrapper, toolbar.firstChild);
+    } else {
+      toolbar.appendChild(wrapper);
+    }
+
+    this._updateSensesHeaderBadge(wrapper);
+  },
+
+  _updateSensesHeaderBadge(wrapper) {
+    const badge = wrapper?.querySelector('.ss-header-badge');
+    if (!badge) return;
+
+    const unread = this.sensesEngine?.getUnreadCount?.() || 0;
+    if (unread > 0) {
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  },
+
+  // ─── Senses Popup (anchored to header icon) ──────────
+
+  _SENSES_POPUP_ID: 'shadow-senses-header-popup',
+
+  _toggleSensesPopup(anchorEl) {
+    const existing = document.getElementById(this._SENSES_POPUP_ID);
+    if (existing) {
+      this._closeSensesPopup();
+      return;
+    }
+    this._openSensesPopup(anchorEl);
+  },
+
+  _openSensesPopup(anchorEl) {
+    if (!this._components?.SensesPanel) {
+      this.debugError?.("Popup", "Components not initialized");
+      return;
+    }
+
+    this._closeSensesPopup(); // clean stale
+
+    const createRoot = this._getCreateRoot();
+    if (!createRoot) return;
+
+    const popup = document.createElement('div');
+    popup.id = this._SENSES_POPUP_ID;
+    popup.style.cssText = `
+      position: fixed;
+      z-index: 10001;
+      width: 480px;
+      max-height: calc(100vh - 80px);
+      overflow-y: auto;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16162a 100%);
+      border: 1px solid rgba(138, 43, 226, 0.35);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(138, 43, 226, 0.15);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(138,43,226,0.3) transparent;
+    `;
+
+    document.body.appendChild(popup);
+
+    // Position below anchor
+    this._positionSensesPopup(popup, anchorEl);
+
+    // Mount React panel inside popup
+    const root = createRoot(popup);
+    root.render(BdApi.React.createElement(this._components.SensesPanel, {
+      onClose: () => this._closeSensesPopup(),
+      embedded: true, // signal to panel component it's in popup mode
+    }));
+    this._popupReactRoot = root;
+    this._panelOpen = true;
+
+    // Close on outside click
+    this._popupOutsideClickHandler = (e) => {
+      if (!popup.contains(e.target) && !anchorEl?.contains(e.target)) {
+        this._closeSensesPopup();
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', this._popupOutsideClickHandler, true);
+    }, 50);
+
+    // Close on ESC
+    this._popupEscHandler = (e) => {
+      if (e.key === 'Escape') {
+        this._closeSensesPopup();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener('keydown', this._popupEscHandler, true);
+
+    this.debugLog("Popup", "Opened");
+  },
+
+  _positionSensesPopup(popup, anchorEl) {
+    if (!anchorEl || !popup) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+
+    // Position below the icon, right-aligned
+    let top = rect.bottom + 8;
+    let left = rect.right - 480;
+
+    // Clamp to viewport
+    if (left < 8) left = 8;
+    if (left + 480 > vpW - 8) left = vpW - 488;
+    if (top + 400 > vpH) top = rect.top - 400 - 8; // flip above if no room
+
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+  },
+
+  _closeSensesPopup() {
+    if (this._popupReactRoot) {
+      try { this._popupReactRoot.unmount(); } catch (_) {}
+      this._popupReactRoot = null;
+    }
+    const popup = document.getElementById(this._SENSES_POPUP_ID);
+    if (popup) popup.remove();
+
+    if (this._popupOutsideClickHandler) {
+      document.removeEventListener('click', this._popupOutsideClickHandler, true);
+      this._popupOutsideClickHandler = null;
+    }
+    if (this._popupEscHandler) {
+      document.removeEventListener('keydown', this._popupEscHandler, true);
+      this._popupEscHandler = null;
+    }
+
+    this._panelOpen = false;
+    this.debugLog("Popup", "Closed");
   },
 
   getSettingsPanel() {

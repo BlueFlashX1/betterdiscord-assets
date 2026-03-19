@@ -631,62 +631,77 @@ function onPresenceUpdate(payload) {
 function pollMonitoredPresenceStatuses(source = "interval") {
   try {
     const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
-    if (!(this._presenceStatusMissCount instanceof Map)) {
-      this._presenceStatusMissCount = new Map();
-    }
     if (!(monitoredIds instanceof Set) || monitoredIds.size === 0) {
       this._statusByUserId.clear();
-      this._presenceStatusMissCount.clear();
       return;
     }
 
-    // Keep runtime maps bounded to currently monitored users only.
+    // Clean up stale entries for unmonitored users.
     for (const userId of Array.from(this._statusByUserId.keys())) {
       if (!monitoredIds.has(userId)) this._statusByUserId.delete(userId);
-    }
-    for (const userId of Array.from(this._presenceStatusMissCount.keys())) {
-      if (!monitoredIds.has(userId)) this._presenceStatusMissCount.delete(userId);
     }
 
     const presenceStore = this._resolvePresenceStore();
     if (!presenceStore || typeof presenceStore.getStatus !== "function") return;
 
-    const updates = [];
+    // Use full state snapshot for most reliable reads (like FriendNotifications).
+    // getState().clientStatuses has per-user { desktop/mobile/web } status maps.
+    let clientStatuses = null;
+    try {
+      clientStatuses = presenceStore.getState?.()?.clientStatuses;
+    } catch (_) {}
+
+    const startupState = getStartupState(this);
+    let hasStateChanges = false;
+
     for (const monitoredId of monitoredIds) {
       const userId = String(monitoredId || "").trim();
       if (!userId) continue;
 
+      // Resolve status from clientStatuses snapshot first, fall back to getStatus()
       let nextStatus = null;
       try {
-        const rawStatus = presenceStore.getStatus(userId);
-        if (typeof rawStatus === "string" && rawStatus.trim().length > 0) {
-          nextStatus = this._normalizeStatus(rawStatus);
-          this._presenceStatusMissCount.delete(userId);
+        if (clientStatuses && clientStatuses[userId]) {
+          // clientStatuses[userId] = { desktop: "online", mobile: "idle", web: "offline" }
+          // Pick the "highest" status across clients
+          const clientMap = clientStatuses[userId];
+          const statusPriority = { online: 4, dnd: 3, idle: 2, offline: 1 };
+          let bestStatus = "offline";
+          let bestPrio = 0;
+          for (const clientStatus of Object.values(clientMap)) {
+            const prio = statusPriority[clientStatus] || 0;
+            if (prio > bestPrio) { bestPrio = prio; bestStatus = clientStatus; }
+          }
+          nextStatus = this._normalizeStatus(bestStatus);
         } else {
-          const missCount = (Number(this._presenceStatusMissCount.get(userId)) || 0) + 1;
-          this._presenceStatusMissCount.set(userId, missCount);
-
-          // With 5s poll interval, a single miss is sufficient to detect offline.
-          if (missCount >= 1) nextStatus = "offline";
+          const rawStatus = presenceStore.getStatus(userId);
+          if (typeof rawStatus === "string" && rawStatus.trim().length > 0) {
+            nextStatus = this._normalizeStatus(rawStatus);
+          } else {
+            nextStatus = "offline";
+          }
         }
-      } catch (_) {}
+      } catch (_) {
+        nextStatus = "offline";
+      }
 
-      if (!this._statusByUserId.has(userId)) {
-        this._statusByUserId.set(userId, nextStatus || "offline");
+      const previousStatus = this._statusByUserId.get(userId);
+
+      // First time seeing this user — seed without triggering a notification.
+      // FIX: We still seed, but the seed is correct from the start (not always "offline").
+      if (previousStatus === undefined) {
+        this._statusByUserId.set(userId, nextStatus);
         continue;
       }
 
-      updates.push({ userId, status: nextStatus });
+      // No change — skip
+      if (previousStatus === nextStatus) continue;
+
+      // Status changed! Process as an update.
+      const changed = handlePresenceUpdateEntry(this, { userId, status: nextStatus }, monitoredIds, startupState);
+      if (changed) hasStateChanges = true;
     }
 
-    if (updates.length === 0) return;
-
-    const startupState = getStartupState(this);
-    let hasStateChanges = false;
-    for (const update of updates) {
-      hasStateChanges =
-        handlePresenceUpdateEntry(this, update, monitoredIds, startupState) || hasStateChanges;
-    }
     if (hasStateChanges) {
       this._plugin._widgetDirty = true;
       this._plugin.debugLog("SensesEngine", "Presence poll detected state changes", {

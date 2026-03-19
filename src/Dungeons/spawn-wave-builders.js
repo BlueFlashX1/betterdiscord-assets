@@ -248,8 +248,11 @@ module.exports = {
     const beforeCount = dungeon.mobs.activeMobs.length;
     // Batch append to activeMobs array (more efficient than individual pushes)
     dungeon.mobs.activeMobs.push(...mobsToFlush);
-    dungeon.mobs.remaining += mobsToFlush.length;
-    dungeon.mobs.total += mobsToFlush.length;
+    // Demon Castle: total is pre-set (1M) and remaining counts down from kills, not up from spawns
+    if (!dungeon._isDemonCastle) {
+      dungeon.mobs.remaining += mobsToFlush.length;
+      dungeon.mobs.total += mobsToFlush.length;
+    }
     this.settings.debug && console.log(
       `[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${mobsToFlush.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total}, queuedLeft=${queuedOverflow.length})`
     );
@@ -292,7 +295,12 @@ module.exports = {
 
     // NO targetCount stop — mobs spawn continuously until boss dies.
     // mobCapacity is a CONCURRENT alive limit: as shadows kill mobs, new ones spawn to refill.
-    if (dungeon.boss.hp > 0) {
+    // Sentinel bosses (hp:0) on Demon Castle non-boss floors must NOT block spawning.
+    // Demon Castle: stop spawning when all remaining demons are already active (no infinite spawns).
+    if (dungeon._isDemonCastle && (dungeon.mobs.remaining || 0) <= 0) {
+      this.debugLog('MOB_SPAWN_TRACE', `spawnMobs(${channelKey}) — all ${dungeon.mobs.total} demons killed, stopping`);
+      this.stopMobSpawning(channelKey);
+    } else if (dungeon.boss.hp > 0 || dungeon.boss._isSentinel) {
       const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
 
       // Count alive mobs (cached when fresh, O(n) scan otherwise)
@@ -352,7 +360,9 @@ module.exports = {
       const capacityRemaining = Math.max(0, activeMobCap - _aliveMobs);
       const actualSpawnCount = Math.max(1, Math.min(capacityRemaining, plannedSpawn));
 
-      const pressureMobFactor = this.getShadowPressureMobFactor(dungeon);
+      // Floor-based scaling (Demon Castle: mobs get stronger within each tier, 1.0x→1.5x)
+      const floorScale = Number(dungeon.difficultyScale?.mobFactor) || 1;
+      const pressureMobFactor = this.getShadowPressureMobFactor(dungeon) * floorScale;
       const pressureBucket = Math.round(pressureMobFactor * 100);
       const rankList = this.getDungeonRankList();
 

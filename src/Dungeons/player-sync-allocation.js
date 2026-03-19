@@ -331,8 +331,17 @@ module.exports = {
     const knownShadowCount = Number.isFinite(this.allocationCache?.count)
       ? Math.max(0, Math.floor(this.allocationCache.count))
       : 0;
-    const fairShare = knownShadowCount > 0 ? Math.floor(knownShadowCount / deployedDungeonCount) : starterCap;
-    const targetCount = this.clampNumber(fairShare || starterCap, 24, starterCap);
+
+    let targetCount;
+    // Demon Castle: deploy a fraction of the army, reserve the rest for regular dungeons
+    if (dungeon._isDemonCastle && knownShadowCount > 0) {
+      const DC = require('./story-constants');
+      const fraction = DC.getDeployFraction(dungeon._dcFloor || 1);
+      targetCount = this.clampNumber(Math.floor(knownShadowCount * fraction), 24, starterCap);
+    } else {
+      const fairShare = knownShadowCount > 0 ? Math.floor(knownShadowCount / deployedDungeonCount) : starterCap;
+      targetCount = this.clampNumber(fairShare || starterCap, 24, starterCap);
+    }
 
     const usedIds = new Set();
     for (const [otherKey, assigned] of this.shadowAllocations.entries()) {
@@ -445,20 +454,56 @@ module.exports = {
       return normalized;
     };
 
-    // Pass 1: rank-adjacent shadows for fast combat fit.
-    const preferredRankDistance = 2;
-    for (let i = 0; i < candidatePool.length && picked.length < targetCount; i++) {
+    // ── Tiered rank composition ──────────────────────────────────────
+    // Build deployment like a real army: bulk of same-rank soldiers,
+    // some ±1 rank support, and a small elite vanguard of stronger shadows.
+    //
+    // Tier A (50%): same rank as dungeon            (rank distance 0)
+    // Tier B (35%): ±1 rank (adjacent support)      (rank distance 1)
+    // Tier C (15%): ±2+ ranks (elite vanguard)      (rank distance 2+)
+    //
+    // Each tier fills its quota then leftovers cascade to the next tier.
+    // Final fallback picks any remaining shadow regardless of rank.
+
+    const tierATarget = Math.ceil(targetCount * 0.50);
+    const tierBTarget = Math.ceil(targetCount * 0.35);
+    const tierCTarget = targetCount - tierATarget - tierBTarget; // remainder ≈ 15%
+
+    // Pre-bucket candidates by rank distance (single pass over pool)
+    const bucketA = []; // distance 0
+    const bucketB = []; // distance 1
+    const bucketC = []; // distance 2+
+    for (let i = 0; i < candidatePool.length; i++) {
       const normalized = normalizeCandidateShadow(candidatePool[i]);
       if (!normalized) continue;
-      const rankDistance = Math.abs(
-        this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex
-      );
-      if (rankDistance > preferredRankDistance) continue;
-      const accepted = tryPickShadow(normalized);
-      accepted && picked.push(accepted);
+      const sid = this.getShadowIdValue(normalized);
+      if (!sid || usedIds.has(String(sid)) || blockedIds.has(String(sid))) continue;
+      const dist = Math.abs(this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex);
+      if (dist === 0) bucketA.push(normalized);
+      else if (dist === 1) bucketB.push(normalized);
+      else bucketC.push(normalized);
     }
 
-    // Pass 2: fallback to any remaining available shadows.
+    // Pick from each tier up to its quota
+    const pickFromBucket = (bucket, quota) => {
+      let count = 0;
+      for (let i = 0; i < bucket.length && count < quota; i++) {
+        const accepted = tryPickShadow(bucket[i]);
+        if (accepted) { picked.push(accepted); count++; }
+      }
+      return count;
+    };
+
+    // Fill tiers — shortfalls cascade to the next tier
+    const pickedA = pickFromBucket(bucketA, tierATarget);
+    const shortfallA = tierATarget - pickedA;
+
+    const pickedB = pickFromBucket(bucketB, tierBTarget + shortfallA);
+    const shortfallB = (tierBTarget + shortfallA) - pickedB;
+
+    pickFromBucket(bucketC, tierCTarget + shortfallB);
+
+    // Final fallback: if still under target, pick any unpicked shadow
     if (picked.length < targetCount) {
       for (let i = 0; i < candidatePool.length && picked.length < targetCount; i++) {
         const accepted = tryPickShadow(candidatePool[i]);
@@ -571,7 +616,7 @@ module.exports = {
         .then(async () => {
           if (!this.started) return;
           const dungeon = this._getActiveDungeon(channelKey);
-          if (!dungeon || !dungeon.shadowsDeployed || dungeon.boss?.hp <= 0) return;
+          if (!dungeon || !dungeon.shadowsDeployed || (dungeon.boss?.hp <= 0 && !dungeon.boss?._isSentinel)) return;
 
           const beforeCount = (this.shadowAllocations.get(channelKey) || []).length;
           const rebalanceStartAt = Date.now();

@@ -253,6 +253,15 @@ const ShadowArmy = class ShadowArmy {
     await this.loadSettings();
     if (this._sessionToken !== sessionToken) return; // orphaned coroutine
 
+    // Sync current essence to ItemVault
+    try {
+      const essence = this.settings?.shadowEssence?.essence || 0;
+      if (essence > 0) {
+        const Events = require('../shared/event-bus');
+        Events.emit('ItemVault:set', { itemId: 'shadow_essence', amount: Math.floor(essence), source: 'ShadowArmy' });
+      }
+    } catch (_) {}
+
     this.injectCSS();
     this.integrateWithSoloLeveling();
 

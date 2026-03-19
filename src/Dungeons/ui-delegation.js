@@ -47,6 +47,27 @@ module.exports = {
           return this.selectDungeon(channelKey);
         case 'leave':
           return this.leaveDungeon(channelKey);
+        // Story Mode tabs and actions
+        case 'tab-dungeons':
+          this._storyModePopupTab = 'dungeons';
+          refreshDungeonWidgetPopup();
+          return true;
+        case 'tab-story':
+          this._storyModePopupTab = 'story';
+          refreshDungeonWidgetPopup();
+          return true;
+        case 'story-detail-dc':
+          this._storyModePopupTab = 'story-detail-dc';
+          refreshDungeonWidgetPopup();
+          return true;
+        case 'story-back':
+          this._storyModePopupTab = 'story';
+          refreshDungeonWidgetPopup();
+          return true;
+        case 'story-enter':
+          return this.enterDemonCastle?.();
+        case 'story-exit':
+          return this.exitDemonCastle?.();
         default:
           return false;
       }

@@ -4,6 +4,7 @@
  * Mixin: Object.assign(ShadowArmy.prototype, require('./modal'))
  */
 const C = require('./constants');
+const { SHADOW_GRADES } = C;
 
 module.exports = {
   // UI HELPERS
@@ -52,6 +53,8 @@ module.exports = {
           }, {}),
           totalLevel: 0,
           isMagicBeast: this.shadowRoles?.[role]?.isMagicBeast || false,
+          gradeCounts: {},
+          highestRank: 'E',
         };
       }
 
@@ -62,6 +65,14 @@ module.exports = {
         return totalStats;
       }, stats[role].totalStats);
       stats[role].totalLevel += shadow?.level || 1;
+      // Track grade distribution per role
+      const grade = shadow?.grade || 'Common';
+      stats[role].gradeCounts[grade] = (stats[role].gradeCounts[grade] || 0) + 1;
+      // Track highest rank in this role
+      const shadowRank = shadow?.rank || 'E';
+      const rankIdx = C.SHADOW_RANKS.indexOf(shadowRank);
+      const curIdx = C.SHADOW_RANKS.indexOf(stats[role].highestRank);
+      if (rankIdx > curIdx) stats[role].highestRank = shadowRank;
       return stats;
     }, {});
 
@@ -124,6 +135,11 @@ module.exports = {
         ce('div', { style: { color: '#999', fontSize: '11px' } }, label)
       );
 
+    const GRADE_COLORS_SA = {
+      Common: '#888', Elite: '#22c55e', Knight: '#3b82f6',
+      'Elite Knight': '#8a2be2', General: '#f59e0b', Marshal: '#ef4444', 'Grand Marshal': '#ff6b2b',
+    };
+
     // ---- Sub-component: Rank Distribution Cell ----
     const RankCell = ({ rank, count, total }) => {
       const color = RANK_COLORS_SA[rank] || '#999';
@@ -135,19 +151,64 @@ module.exports = {
       );
     };
 
+    // ---- Sub-component: Grade Distribution Cell ----
+    const GradeCell = ({ grade, count, total }) => {
+      const color = GRADE_COLORS_SA[grade] || '#999';
+      const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0';
+      return ce('div', { style: { textAlign: 'center', padding: '6px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '4px', border: `1px solid ${color}40` } },
+        ce('div', { style: { color, fontSize: '11px', fontWeight: 'bold' } }, grade),
+        ce('div', { style: { color: '#fff', fontSize: '16px', fontWeight: 'bold', margin: '2px 0' } }, count),
+        ce('div', { style: { color: '#888', fontSize: '9px' } }, `${pct}%`)
+      );
+    };
+
     // ---- Sub-component: Role Distribution Card ----
-    const RoleCard = ({ role, data }) =>
-      ce('div', { style: { background: 'rgba(138, 43, 226, 0.1)', borderRadius: '6px', padding: '8px' } },
+    const RoleCard = ({ role, data }) => {
+      // Build compact grade summary: e.g. "3 Knight, 1 Elite"
+      const gradeEntries = Object.entries(data.gradeCounts || {})
+        .filter(([, c]) => c > 0)
+        .sort((a, b) => {
+          const ai = SHADOW_GRADES.indexOf(a[0]);
+          const bi = SHADOW_GRADES.indexOf(b[0]);
+          return bi - ai; // highest grade first
+        });
+      const highestRankColor = RANK_COLORS_SA[data.highestRank] || '#999';
+
+      return ce('div', { style: { background: 'rgba(138, 43, 226, 0.1)', borderRadius: '6px', padding: '8px' } },
         ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
-          ce('span', { style: { color: data.isMagicBeast ? '#f59e0b' : '#8a2be2', fontSize: '12px', fontWeight: 'bold' } }, role),
+          ce('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+            ce('span', { style: { color: data.isMagicBeast ? '#f59e0b' : '#8a2be2', fontSize: '12px', fontWeight: 'bold' } }, role),
+            data.highestRank && data.highestRank !== 'E'
+              ? ce('span', { style: { color: highestRankColor, fontSize: '9px', fontWeight: '600', padding: '1px 3px', border: `1px solid ${highestRankColor}40`, borderRadius: '2px' } }, data.highestRank)
+              : null
+          ),
           ce('span', { style: { color: '#34d399', fontSize: '11px', fontWeight: 'bold' } }, data.count)
         ),
-        ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', fontSize: '9px', color: '#999' } },
+        ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', fontSize: '9px', color: '#999', marginBottom: '4px' } },
           ce('div', null, 'Lvl: ', ce('span', { style: { color: '#34d399' } }, data.avgLevel)),
           ce('div', null, 'Pwr: ', ce('span', { style: { color: '#8a2be2' } }, data.avgPower)),
-          ce('div', null, 'STR: ', ce('span', { style: { color: '#ef4444' } }, data.avgStats?.strength ?? 0))
-        )
+          ce('div', null, 'STR: ', ce('span', { style: { color: '#ef4444' } }, data.avgStats?.strength ?? 0)),
+          ce('div', null, 'INT: ', ce('span', { style: { color: '#3b82f6' } }, data.avgStats?.intelligence ?? 0))
+        ),
+        gradeEntries.length > 0 && !(gradeEntries.length === 1 && gradeEntries[0][0] === 'Common')
+          ? ce('div', { style: { display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' } },
+              gradeEntries.map(([grade, count]) =>
+                ce('span', {
+                  key: grade,
+                  style: {
+                    color: GRADE_COLORS_SA[grade] || '#888',
+                    fontSize: '8px',
+                    fontWeight: '600',
+                    padding: '1px 3px',
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: '2px',
+                  },
+                }, count + ' ' + grade)
+              )
+            )
+          : null
       );
+    };
 
     // ---- Sub-component: General Card ----
     const GeneralCard = ({ shadow, index }) => {
@@ -204,6 +265,7 @@ module.exports = {
           ce('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden' } },
             ce('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' } },
               ce('span', { style: { color: '#8a2be2', fontWeight: 'bold', fontSize: '14px', flexShrink: 0 } }, `[${safeShadow.rank || 'E'}]`),
+              ce('span', { style: { color: GRADE_COLORS_SA[safeShadow.grade || 'Common'] || '#888', fontSize: '12px', fontWeight: '600', flexShrink: 0 } }, safeShadow.grade || 'Common'),
               ce('span', { style: { color: roleColor, fontSize: '14px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, role),
               ce('span', { style: { color: '#34d399', marginLeft: 'auto', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 } }, Math.floor(totalPower || 0).toLocaleString())
             ),
@@ -309,25 +371,60 @@ module.exports = {
         );
       }
 
-      const compressionStats = shadows.reduce(
-        (stats, shadow) => {
-          if (shadow._compressed || shadow._ultraCompressed) { stats.compressed++; } else { stats.elite++; }
-          return stats;
-        },
-        { compressed: 0, elite: 0 }
-      );
-      const { compressed: compressedCount, elite: eliteCount } = compressionStats;
       const { generals, totalArmyPower, sortedRoles } = pluginRef.computeShadowArmyUiData(shadows);
       const totalCombatTime = pluginRef.formatCombatHours(
         shadows.reduce((sum, shadow) => sum + (shadow.totalCombatTime || 0), 0)
       );
-      const essenceTotal = (pluginRef.settings.shadowEssence?.essence || 0).toLocaleString();
+      const currentEssence = pluginRef.settings.shadowEssence?.essence || 0;
+      const essenceTotal = currentEssence.toLocaleString();
+      const totalExtractions = (pluginRef.settings.totalShadowsExtracted || 0).toLocaleString();
+
+      // Average army level
+      const totalLevels = shadows.reduce((sum, s) => sum + (s.level || 1), 0);
+      const avgLevel = shadows.length > 0 ? Math.floor(totalLevels / shadows.length) : 0;
+
+      // Army capacity (from SoloLevelingStats integration)
+      let capacityStr = '—';
+      try {
+        const soloData = pluginRef.getSoloLevelingData?.();
+        if (soloData) {
+          const cap = pluginRef.getShadowArmyCap?.(soloData.rank || 'E', soloData.stats?.intelligence || 0);
+          if (cap === Infinity) {
+            capacityStr = shadows.length.toLocaleString() + ' / ∞';
+          } else if (typeof cap === 'number' && cap > 0) {
+            capacityStr = shadows.length.toLocaleString() + ' / ' + cap.toLocaleString();
+          }
+        }
+      } catch (_) {}
 
       const rankCounts = shadows.reduce((counts, shadow) => {
         const r = shadow.rank || 'E';
         counts[r] = (counts[r] || 0) + 1;
         return counts;
       }, {});
+
+      const gradeCounts = shadows.reduce((counts, shadow) => {
+        const g = shadow.grade || 'Common';
+        counts[g] = (counts[g] || 0) + 1;
+        return counts;
+      }, {});
+
+      // Grade promotion info: how many promotions affordable with current essence
+      let promotionsAffordable = 0;
+      let nextPromotionGrade = null;
+      const gradeOrder = SHADOW_GRADES;
+      const promotionCosts = pluginRef.settings.shadowEssence?.gradePromotionCost
+        || pluginRef.defaultSettings?.shadowEssence?.gradePromotionCost || {};
+      // Find cheapest next-grade promotion cost for any shadow
+      for (let gi = 0; gi < gradeOrder.length - 1; gi++) {
+        const grade = gradeOrder[gi];
+        const nextGrade = gradeOrder[gi + 1];
+        const cost = promotionCosts[nextGrade];
+        if (cost && (gradeCounts[grade] || 0) > 0 && currentEssence >= cost) {
+          if (!nextPromotionGrade) nextPromotionGrade = nextGrade;
+          promotionsAffordable += Math.min(gradeCounts[grade], Math.floor(currentEssence / cost));
+        }
+      }
 
       return ce('div', {
         className: 'shadow-army-modal',
@@ -361,19 +458,30 @@ module.exports = {
               border: '1px solid #8a2be2', borderRadius: '8px', padding: '12px', marginBottom: '16px',
             },
           },
-            ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', marginBottom: '12px' } },
-              ce(StatCard, { value: shadows.length, label: 'Total Shadows', color: '#8a2be2' }),
-              ce(StatCard, { value: eliteCount, label: 'Elite Force', color: '#34d399' }),
-              ce(StatCard, { value: compressedCount, label: 'Legion', color: '#64748b' }),
-              ce(StatCard, { value: totalCombatTime, label: 'Total Combat', color: '#ef4444' }),
+            ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' } },
+              ce(StatCard, { value: capacityStr, label: 'Army Capacity', color: '#8a2be2' }),
               ce(StatCard, { value: totalArmyPower.toLocaleString(), label: 'Total Power', color: '#fbbf24' }),
-              ce(StatCard, { value: essenceTotal, label: 'Essence', color: '#9370db' })
+              ce(StatCard, { value: essenceTotal, label: 'Essence', color: '#9370db' }),
+              ce(StatCard, { value: totalExtractions, label: 'Extracted', color: '#34d399' })
+            ),
+            ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' } },
+              ce(StatCard, { value: avgLevel, label: 'Avg Level', color: '#22c55e' }),
+              ce(StatCard, { value: totalCombatTime, label: 'Total Combat', color: '#ef4444' }),
+              ce(StatCard, { value: promotionsAffordable > 0 ? promotionsAffordable : '—', label: 'Promotions Ready', color: '#f59e0b' }),
+              ce(StatCard, { value: Object.keys(gradeCounts).filter(g => g !== 'Common' && (gradeCounts[g] || 0) > 0).length + ' / ' + (gradeOrder.length - 1), label: 'Grades Unlocked', color: '#ff6b2b' })
             ),
 
             ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' } },
               ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Rank Distribution'),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
                 RANKS_SA.map((rank) => ce(RankCell, { key: rank, rank, count: rankCounts[rank] || 0, total: shadows.length }))
+              )
+            ),
+
+            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' } },
+              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Grade Distribution'),
+              ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
+                SHADOW_GRADES.map((grade) => ce(GradeCell, { key: grade, grade, count: gradeCounts[grade] || 0, total: shadows.length }))
               )
             ),
 

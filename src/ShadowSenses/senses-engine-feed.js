@@ -222,6 +222,12 @@ function addToGuildFeed(guildId, entry) {
   const feed = this._guildFeeds[guildId];
   feed.push(entry);
   this._totalFeedEntries++;
+
+  // Increment unread badge if panel is closed
+  if (entry.eventType === 'message' && !this._plugin?._panelOpen) {
+    this._unreadCount++;
+  }
+
   enforceGuildFeedCap(this, guildId);
   enforceGlobalFeedCap(this);
   markFeedDirty(this, guildId);
@@ -615,6 +621,15 @@ function getStartupEntries(windowMs = 24 * 60 * 60 * 1000, limit = 12) {
   return collected.slice(0, safeLimit);
 }
 
+function getUnreadCount() {
+  return this._unreadCount || 0;
+}
+
+function clearUnread() {
+  this._unreadCount = 0;
+  this._lastPanelOpenedAt = Date.now();
+}
+
 module.exports = {
   _addToGuildFeed: addToGuildFeed,
   _computePriority: computePriority,
@@ -633,4 +648,6 @@ module.exports = {
   getStartupSummary,
   getStartupEntries,
   getTotalDetections,
+  getUnreadCount,
+  clearUnread,
 };

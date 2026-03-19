@@ -54,7 +54,7 @@ module.exports = class Stealth {
     this._processMonitorPatched = false;
 
     this._Dispatcher = null;
-    this._dispatcherPollTimer = null;
+    this._dispatcherPollHandle = null;
     this._fluxHandlers = new Map();
 
     this._stores = {
@@ -161,9 +161,9 @@ module.exports = class Stealth {
     this._pendingTimers.clear();
     this._teardownStealthSkillGate();
     this._unsubscribeFluxEvents();
-    if (this._dispatcherPollTimer) {
-      clearInterval(this._dispatcherPollTimer);
-      this._dispatcherPollTimer = null;
+    if (this._dispatcherPollHandle) {
+      this._dispatcherPollHandle.cancel();
+      this._dispatcherPollHandle = null;
     }
     this._Dispatcher = null;
     this._statusSetters = [];
@@ -406,40 +406,24 @@ module.exports = class Stealth {
   }
 
   _initDispatcher() {
-    const { Webpack } = BdApi;
-    this._Dispatcher =
-      _PluginUtils?.getDispatcher?.() ||
-      Webpack.Stores?.UserStore?._dispatcher ||
-      Webpack.getModule(m => m.dispatch && m.subscribe) ||
-      null;
+    const { acquireDispatcher, pollForDispatcher } = require('../shared/dispatcher');
+    this._Dispatcher = acquireDispatcher();
 
     if (this._Dispatcher) {
       this._subscribeFluxEvents();
       return;
     }
 
-    // Poll for late-loading Dispatcher
-    let attempt = 0;
-    this._dispatcherPollTimer = setInterval(() => {
-      attempt++;
-      this._Dispatcher =
-        _PluginUtils?.getDispatcher?.() ||
-        Webpack.Stores?.UserStore?._dispatcher ||
-        Webpack.getModule(m => m.dispatch && m.subscribe) ||
-        null;
-
-      if (this._Dispatcher) {
-        clearInterval(this._dispatcherPollTimer);
-        this._dispatcherPollTimer = null;
+    // Poll with exponential backoff (shared 6-tier acquisition)
+    this._dispatcherPollHandle = pollForDispatcher({
+      onAcquired: (d) => {
+        this._Dispatcher = d;
         this._subscribeFluxEvents();
-        return;
-      }
-      if (attempt >= 30) {
-        clearInterval(this._dispatcherPollTimer);
-        this._dispatcherPollTimer = null;
-        this._logWarning("FLUX", "Dispatcher not found after 15s polling", null, "flux-poll-timeout");
-      }
-    }, 500);
+      },
+      onTimeout: () => {
+        this._logWarning("FLUX", "Dispatcher not found after 30s polling", null, "flux-poll-timeout");
+      },
+    });
   }
 
   _subscribeFluxEvents() {

@@ -101,8 +101,38 @@ module.exports = {
             mobRank: mobRank || dungeon.rank || 'E',
             source: 'mob_kill',
           });
+          // Mirror to ItemVault
+          BdApi.Events.emit('ItemVault:add', {
+            itemId: 'shadow_essence',
+            amount: essenceAmount,
+            source: 'Dungeons',
+            meta: { mobRank: mobRank || dungeon.rank || 'E', trigger: 'mob_kill' },
+          });
         }
       } catch (_) {}
+    }
+
+    // Demon Castle: collect demon souls + roll entry permit drops + check floor clear
+    if (dungeon._isDemonCastle) {
+      if (this._demonCastle) {
+        this._demonCastle.totalDemonSouls = (this._demonCastle.totalDemonSouls || 0) + killCount;
+        this._demonCastle.totalDemonsKilled = (this._demonCastle.totalDemonsKilled || 0) + killCount;
+      }
+      // Deposit demon souls into ItemVault
+      try {
+        BdApi.Events.emit('ItemVault:add', {
+          itemId: 'demon_soul',
+          amount: killCount,
+          source: 'Dungeons',
+          meta: { floor: dungeon._dcFloor },
+        });
+      } catch (_) {}
+      if (typeof this._rollDemonCastlePermitDrop === 'function') {
+        this._rollDemonCastlePermitDrop(dungeon._dcFloor, killCount);
+      }
+      if (typeof this._checkDemonCastleFloorClear === 'function') {
+        this._checkDemonCastleFloorClear(channelKey, dungeon);
+      }
     }
   },
 
