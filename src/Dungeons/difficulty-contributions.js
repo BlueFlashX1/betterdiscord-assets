@@ -1,3 +1,5 @@
+const SLEvents = require('../shared/event-bus');
+
 module.exports = {
   _resolveDungeonXPBatchKey(channelKey, dungeonLike = null) {
     const explicit = typeof dungeonLike?._xpBatchKey === 'string' ? dungeonLike._xpBatchKey.trim() : '';
@@ -95,14 +97,14 @@ module.exports = {
       const essenceAmount = dungeon._pendingEssence;
       dungeon._pendingEssence = 0;
       try {
-        if (typeof BdApi?.Events?.emit === 'function') {
-          BdApi.Events.emit('Dungeons:awardEssence', {
+        if (SLEvents) {
+          SLEvents.emit('Dungeons:awardEssence', {
             amount: essenceAmount,
             mobRank: mobRank || dungeon.rank || 'E',
             source: 'mob_kill',
           });
           // Mirror to ItemVault
-          BdApi.Events.emit('ItemVault:add', {
+          SLEvents.emit('ItemVault:add', {
             itemId: 'shadow_essence',
             amount: essenceAmount,
             source: 'Dungeons',
@@ -120,7 +122,7 @@ module.exports = {
       }
       // Deposit demon souls into ItemVault
       try {
-        BdApi.Events.emit('ItemVault:add', {
+        SLEvents.emit('ItemVault:add', {
           itemId: 'demon_soul',
           amount: killCount,
           source: 'Dungeons',

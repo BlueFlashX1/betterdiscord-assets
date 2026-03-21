@@ -3,6 +3,7 @@
  *
  * Mixin: Object.assign(ShadowArmy.prototype, require('./extraction'))
  */
+const SLEvents = require('../shared/event-bus');
 
 module.exports = {
   // SHADOW ARMY CAPACITY — Lore-Accurate Cap Enforcement
@@ -509,12 +510,10 @@ module.exports = {
               timestamp: Date.now(),
             };
 
-            if (typeof BdApi?.Events?.emit === 'function') {
-              try {
-                BdApi.Events.emit('ShadowArmy:shadowExtracted', eventData);
-              } catch (error) {
-                this.debugError('EXTRACTION', 'Failed to emit BdApi event', error);
-              }
+            try {
+              SLEvents.emit('ShadowArmy:shadowExtracted', eventData);
+            } catch (error) {
+              this.debugError('EXTRACTION', 'Failed to emit event', error);
             }
 
             if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -945,9 +944,7 @@ module.exports = {
           timestamp: Date.now(),
           source: 'dungeon_bulk',
         };
-        if (typeof BdApi?.Events?.emit === 'function') {
-          BdApi.Events.emit('ShadowArmy:batchExtractionComplete', eventData);
-        }
+        SLEvents.emit('ShadowArmy:batchExtractionComplete', eventData);
         if (typeof window?.dispatchEvent === 'function') {
           document.dispatchEvent(new CustomEvent('shadowExtracted', { detail: eventData, bubbles: true }));
         }

@@ -1,6 +1,7 @@
 const C = require('./constants');
 const ShadowStorageManager = require('./storage');
 const { buildWidgetComponents } = require('./components');
+const SLEvents = require('../shared/event-bus');
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
@@ -475,10 +476,10 @@ const ShadowArmy = class ShadowArmy {
       });
     }, gradePromoteInterval);
 
-    // Listen for Dungeons essence awards
-    if (typeof BdApi?.Events?.on === 'function') {
-      if (typeof BdApi?.Events?.off === 'function' && this._dungeonEssenceListener) {
-        BdApi.Events.off('Dungeons:awardEssence', this._dungeonEssenceListener);
+    // Listen for Dungeons essence awards via shared event bus
+    {
+      if (this._dungeonEssenceListener) {
+        SLEvents.off('Dungeons:awardEssence', this._dungeonEssenceListener);
         this._dungeonEssenceListener = null;
       }
       this._dungeonEssenceListener = (data) => {
@@ -520,11 +521,11 @@ const ShadowArmy = class ShadowArmy {
           }
         }
       };
-      BdApi.Events.on('Dungeons:awardEssence', this._dungeonEssenceListener);
+      SLEvents.on('Dungeons:awardEssence', this._dungeonEssenceListener);
 
       // Listen for batch extraction complete
-      if (typeof BdApi?.Events?.off === 'function' && this._batchExtractionListener) {
-        BdApi.Events.off('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
+      if (this._batchExtractionListener) {
+        SLEvents.off('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
         this._batchExtractionListener = null;
       }
       this._batchExtractionListener = async (data) => {
@@ -532,7 +533,7 @@ const ShadowArmy = class ShadowArmy {
           this.scheduleWidgetRefresh({ reason: 'batch_extraction_event', delayMs: 250 });
         }
       };
-      BdApi.Events.on('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
+      SLEvents.on('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
     }
   }
 
@@ -704,15 +705,13 @@ const ShadowArmy = class ShadowArmy {
     this._soloDataCacheTime = 0;
 
     // Cleanup cross-plugin event listeners
-    if (typeof BdApi?.Events?.off === 'function') {
-      if (this._dungeonEssenceListener) {
-        BdApi.Events.off('Dungeons:awardEssence', this._dungeonEssenceListener);
-        this._dungeonEssenceListener = null;
-      }
-      if (this._batchExtractionListener) {
-        BdApi.Events.off('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
-        this._batchExtractionListener = null;
-      }
+    if (this._dungeonEssenceListener) {
+      SLEvents.off('Dungeons:awardEssence', this._dungeonEssenceListener);
+      this._dungeonEssenceListener = null;
+    }
+    if (this._batchExtractionListener) {
+      SLEvents.off('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
+      this._batchExtractionListener = null;
     }
 
     // Close IndexedDB connection

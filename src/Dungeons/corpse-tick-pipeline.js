@@ -1,3 +1,5 @@
+const SLEvents = require('../shared/event-bus');
+
 module.exports = {
   _addToCorpsePile(channelKey, deadMob, isBoss = false) {
     if (!deadMob) return;
@@ -124,8 +126,8 @@ module.exports = {
     this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
 
     // Notify ShadowArmy of batch completion (cache invalidation, UI updates)
-    if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
-      BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: attempted, channelKey });
+    if (extracted > 0 && SLEvents) {
+      SLEvents.emit('ShadowArmy:batchExtractionComplete', { extracted, total: attempted, channelKey });
     }
 
     return { extracted, attempted };

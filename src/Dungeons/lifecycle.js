@@ -1,3 +1,5 @@
+const SLEvents = require('../shared/event-bus');
+
 module.exports = {
   async start() {
     if (this.started) {
@@ -203,9 +205,7 @@ module.exports = {
     }
 
     if (this._shadowExtractedListener) {
-      if (typeof BdApi?.Events?.off === 'function') {
-        BdApi.Events.off('ShadowArmy:shadowExtracted', this._shadowExtractedListener);
-      }
+      SLEvents.off('ShadowArmy:shadowExtracted', this._shadowExtractedListener);
       if (typeof document.removeEventListener === 'function') {
         document.removeEventListener('shadowExtracted', this._shadowExtractedListener);
       }

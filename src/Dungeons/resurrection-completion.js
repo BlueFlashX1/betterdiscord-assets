@@ -1,3 +1,5 @@
+const SLEvents = require('../shared/event-bus');
+
 module.exports = {
   getResurrectionCost(shadowRank) {
     // Flat mana cost per shadow rank (from precomputed lookup table).
@@ -57,7 +59,7 @@ module.exports = {
         // Award shadow essence on failed resurrection (1 essence per failure)
         try {
           if (typeof BdApi?.Events?.emit === 'function') {
-            BdApi.Events.emit('Dungeons:awardEssence', { amount: 1 });
+            SLEvents.emit('Dungeons:awardEssence', { amount: 1 });
           }
         } catch (essenceError) {
           this.debugLog?.(`Failed to award shadow essence: ${essenceError.message}`);
@@ -389,7 +391,7 @@ module.exports = {
       if (completeDungeon?._pendingEssence > 0) {
         try {
           if (typeof BdApi?.Events?.emit === 'function') {
-            BdApi.Events.emit('Dungeons:awardEssence', {
+            SLEvents.emit('Dungeons:awardEssence', {
               amount: completeDungeon._pendingEssence,
               mobRank: snap.rank || 'E',
               source: 'mob_kill',
@@ -427,7 +429,7 @@ module.exports = {
       // This is the primary prestige essence source (mob kills provide steady drip).
       try {
         if (typeof BdApi?.Events?.emit === 'function') {
-          BdApi.Events.emit('Dungeons:awardEssence', {
+          SLEvents.emit('Dungeons:awardEssence', {
             amount: 1,
             bossRank: snap.boss?.rank || snap.rank || 'E',
             source: 'boss_kill',
@@ -440,7 +442,7 @@ module.exports = {
       if (dungeon?._pendingEssence > 0) {
         try {
           if (typeof BdApi?.Events?.emit === 'function') {
-            BdApi.Events.emit('Dungeons:awardEssence', {
+            SLEvents.emit('Dungeons:awardEssence', {
               amount: dungeon._pendingEssence,
               mobRank: snap.rank || 'E',
               source: 'mob_kill',

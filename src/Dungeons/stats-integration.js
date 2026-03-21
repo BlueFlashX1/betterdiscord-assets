@@ -1,3 +1,5 @@
+const SLEvents = require('../shared/event-bus');
+
 module.exports = {
   async initializeUserStats() {
     // Get stats ONCE at the start (avoid redundant calls)
@@ -373,9 +375,9 @@ module.exports = {
           this.recalculateUserMana();
         };
 
-        // Use BdApi.Events if available, otherwise fallback to DOM events
-        if (typeof BdApi?.Events?.on === 'function') {
-          BdApi.Events.on('ShadowArmy:shadowExtracted', this._shadowExtractedListener);
+        // Use shared event bus, fallback to DOM events
+        if (SLEvents) {
+          SLEvents.on('ShadowArmy:shadowExtracted', this._shadowExtractedListener);
           this.debugLog('Subscribed to ShadowArmy:shadowExtracted events');
         } else if (typeof document.addEventListener === 'function') {
           // Fallback to DOM events

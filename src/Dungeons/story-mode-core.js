@@ -1,5 +1,6 @@
 const DC = require('./story-constants');
 const { StoryModeStorage } = require('./story-mode-storage');
+const SLEvents = require('../shared/event-bus');
 
 module.exports = {
   // Called from lifecycle.js start()
@@ -294,7 +295,7 @@ module.exports = {
     if (mobsKilled > 0 && typeof BdApi?.Events?.emit === 'function') {
       const dungeonRank = DC.getDungeonRankForFloor(floor);
       try {
-        BdApi.Events.emit('Dungeons:awardEssence', {
+        SLEvents.emit('Dungeons:awardEssence', {
           amount: mobsKilled,
           mobRank: dungeonRank,
           source: 'mob_kill',
@@ -303,7 +304,7 @@ module.exports = {
     }
     if (isBossFloor && typeof BdApi?.Events?.emit === 'function') {
       try {
-        BdApi.Events.emit('Dungeons:awardEssence', {
+        SLEvents.emit('Dungeons:awardEssence', {
           amount: 1,
           bossRank: DC.DEMON_CASTLE_BOSSES[floor]?.rank || 'B',
           source: 'boss_kill',
@@ -373,13 +374,13 @@ module.exports = {
         }
         // Track permit in ItemVault (add then immediately spend — net zero, but audit trail)
         try {
-          BdApi.Events.emit('ItemVault:add', {
+          SLEvents.emit('ItemVault:add', {
             itemId: 'entry_permit',
             amount: 1,
             source: 'Dungeons',
             meta: { floor, kills: totalKilled + i + 1, guaranteed: isLastDemon },
           });
-          BdApi.Events.emit('ItemVault:spend', {
+          SLEvents.emit('ItemVault:spend', {
             itemId: 'entry_permit',
             amount: 1,
             source: 'Dungeons',
