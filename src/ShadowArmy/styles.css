@@ -1,3 +1,14 @@
+/* Font override — all text in this plugin uses Friend or Foe BB
+   EXCLUDES: .shadow-extraction-title (Speedy Space Goat Oddity)
+             .sa-arise-* (font set dynamically by animation.js) */
+.shadow-army-settings,
+.shadow-army-settings *,
+.shadow-extraction-content .shadow-extraction-info,
+.shadow-extraction-content .shadow-rank,
+.shadow-extraction-content .shadow-role {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /* ShadowArmy — Static CSS
  * Extraction animation, ARISE animation, settings panel, widget button.
  * Imported as text string by esbuild (loader: { ".css": "text" }).

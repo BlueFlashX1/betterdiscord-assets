@@ -1,3 +1,13 @@
+/* Font override — visible text inside the docked user panel uses Friend or Foe BB */
+section[aria-label="User status and settings"].sl-userpanel-docked [class^="nameTag_"],
+section[aria-label="User status and settings"].sl-userpanel-docked [class^="nameTag_"] *,
+section[aria-label="User status and settings"].sl-userpanel-docked [class^="panelSubtextContainer_"],
+section[aria-label="User status and settings"].sl-userpanel-docked [class^="panelSubtextContainer_"] *,
+section[aria-label="User status and settings"].sl-userpanel-docked [class^="panelTitleContainer_"],
+section[aria-label="User status and settings"].sl-userpanel-docked [class^="panelTitleContainer_"] * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /* ── Docked user panel — right-side overlay on dock ──
    pointer-events: none on the section so horizontal scroll passes
    through to the dock underneath. Children re-enable pointer-events.

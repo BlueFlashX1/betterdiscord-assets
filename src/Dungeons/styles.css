@@ -1,3 +1,12 @@
+/* Font override — all text in this plugin uses Friend or Foe BB
+   Excludes: arise animation selectors (sa-arise-*, arise-*) */
+[class^="dungeon"],
+[class^="dungeon"] *,
+[class^="dungeons"],
+[class^="dungeons"] * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 @keyframes dungeonPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.1); }

@@ -102,6 +102,14 @@ export function buildCSS(ctx) {
   return `
 /* ── Ruler's Authority v${RA_VERSION} — Dynamic CSS ──────────────────── */
 
+/* ── Font Override ───────────────────────────────────────────────────── */
+.ra-toolbar-icon,
+.ra-grip-indicator,
+.sl-toolbar-tip {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+
 /* ── Core Panel Push ────────────────────────────────────────────── */
 
 ${buildCollapsedPushRule(sidebarPush)}

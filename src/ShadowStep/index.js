@@ -48,7 +48,8 @@ const { isEditableTarget: _sharedIsEditableTarget, matchesHotkey: _sharedMatches
 const { createToast } = require("../shared/toast");
 const { getNavigationUtils } = require("../shared/navigation");
 const isEditableTarget = _PluginUtils?.isEditableTarget || _sharedIsEditableTarget;
-const matchesHotkey = _PluginUtils?.matchesHotkey || _sharedMatchesHotkey;
+// Always use shared matchesHotkey — it supports inclusive modifier matching (Hyper/CapsLock)
+const matchesHotkey = _sharedMatchesHotkey;
 const { createSingleValueCache: _ttl } = require("../shared/ttl-cache");
 const { buildComponents } = require("./components");
 const { buildShadowStepSettingsPanel } = require("./settings-panel");

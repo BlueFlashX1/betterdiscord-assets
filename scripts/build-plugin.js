@@ -133,11 +133,25 @@ async function watch(name) {
   const ctx = await esbuild.context({
     ...getBuildOptions(name),
     plugins: [{
-      name: "rebuild-logger",
+      name: "rebuild-logger-and-deploy",
       setup(build) {
         build.onEnd(result => {
           if (result.errors.length === 0) {
-            console.log(`[${new Date().toLocaleTimeString()}] Rebuilt -> plugins/${path.basename(paths.outFile)}`);
+            const outBase = path.basename(paths.outFile);
+            console.log(`[${new Date().toLocaleTimeString()}] Rebuilt -> plugins/${outBase}`);
+            // Auto-deploy to BetterDiscord plugins folder
+            const bdPluginsDir = path.join(
+              process.env.HOME || process.env.USERPROFILE || '',
+              'Library', 'Application Support', 'BetterDiscord', 'plugins'
+            );
+            try {
+              if (fs.existsSync(bdPluginsDir)) {
+                fs.copyFileSync(paths.outFile, path.join(bdPluginsDir, outBase));
+                console.log(`[${new Date().toLocaleTimeString()}] Deployed -> BD plugins/${outBase}`);
+              }
+            } catch (err) {
+              console.warn(`[${new Date().toLocaleTimeString()}] Deploy failed: ${err.message}`);
+            }
           }
         });
       }

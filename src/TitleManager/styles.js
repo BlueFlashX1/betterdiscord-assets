@@ -1,5 +1,13 @@
 function getTitleManagerCss() {
   return `
+      /* ── Font Override ───────────────────────────────────────────── */
+      .tm-title-modal,
+      .tm-title-modal *,
+      .tm-modal-content,
+      .tm-modal-content * {
+        font-family: 'Friend or Foe BB', sans-serif !important;
+      }
+
       /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
       .tm-title-button-wrapper {
         display: flex;

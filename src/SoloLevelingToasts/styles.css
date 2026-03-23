@@ -1,3 +1,9 @@
+/* Font override — all text in this plugin uses Friend or Foe BB */
+.sl-toast,
+.sl-toast * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /* ── SoloLevelingToasts — Toast Engine v2 ── */
 /* Dynamic durations are set via CSS custom properties on .sl-toast-container:
  *   --sl-anim-duration   (slide-in, default 150ms)

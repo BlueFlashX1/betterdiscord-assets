@@ -581,6 +581,7 @@ const ShadowSensesUiMethods = {
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(138, 43, 226, 0.15);
       scrollbar-width: thin;
       scrollbar-color: rgba(138,43,226,0.3) transparent;
+      font-family: 'Friend or Foe BB', sans-serif;
     `;
 
     document.body.appendChild(popup);

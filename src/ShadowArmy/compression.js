@@ -494,7 +494,7 @@ module.exports = {
     let shadows = [];
     if (this.storageManager?.getShadows) {
       try {
-        shadows = await this.storageManager.getShadows({}, 0, batchSize * 4);
+        shadows = await this.storageManager.getShadows({}, 0, batchSize * 20);
       } catch (error) {
         this.debugError('GRADE', 'Failed to load shadows for grade promotion', error);
         return { promoted: 0 };
@@ -502,8 +502,10 @@ module.exports = {
     }
     if (shadows.length === 0) return { promoted: 0 };
 
-    // Sort by rank (highest first), then level descending as tiebreaker.
-    // Monarch's priority: strongest shadows get promoted first.
+    // Sort by LOWEST grade first (ensure even progression through grade tiers),
+    // then by highest rank + level as tiebreaker within same grade.
+    // This prevents the same top-200 shadows from monopolizing all promotions
+    // while 280K+ shadows stay at Common.
     const rankOrder = this.shadowRanks || C.SHADOW_RANKS || [];
     const withLevel = shadows.map((s) => {
       const data = this.getShadowData(s);
@@ -513,9 +515,18 @@ module.exports = {
         level: data?.level || s?.l || 1,
         rankIndex: rankOrder.indexOf(rank),
         grade: data?.grade || s?.gr || 'Common',
+        gradeIndex: gradeOrder.indexOf(data?.grade || s?.gr || 'Common'),
       };
     });
-    withLevel.sort((a, b) => {
+    // Filter out max-grade shadows (nothing to promote)
+    const promotable = withLevel.filter(e => e.gradeIndex >= 0 && e.gradeIndex < gradeOrder.length - 1);
+    if (promotable.length === 0) return { promoted: 0 };
+
+    // Primary sort: lowest grade first (Common before Elite before Knight...)
+    // Secondary: highest rank first within same grade (strongest get promoted first at each tier)
+    // Tertiary: highest level as final tiebreaker
+    promotable.sort((a, b) => {
+      if (a.gradeIndex !== b.gradeIndex) return a.gradeIndex - b.gradeIndex;
       if (b.rankIndex !== a.rankIndex) return b.rankIndex - a.rankIndex;
       return b.level - a.level;
     });
@@ -525,8 +536,8 @@ module.exports = {
     let remainingEssence = currentEssence;
     const saveBatch = [];
 
-    for (let i = 0; i < withLevel.length && promoted < batchSize; i++) {
-      const entry = withLevel[i];
+    for (let i = 0; i < promotable.length && promoted < batchSize; i++) {
+      const entry = promotable[i];
       const currentGrade = entry.grade;
       const gradeIndex = gradeOrder.indexOf(currentGrade);
       if (gradeIndex < 0 || gradeIndex >= gradeOrder.length - 1) continue;

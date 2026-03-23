@@ -1,0 +1,18 @@
+/* EquipmentManager — Black/Purple Sharp Theme */
+
+.eq-header-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  margin: 0 2px;
+  cursor: pointer;
+  color: #b9bbbe;
+  border: none;
+  background: none;
+  transition: color 0.15s;
+}
+.eq-header-btn:hover { color: #b380e0; }
+.eq-header-btn svg { width: 20px; height: 20px; }

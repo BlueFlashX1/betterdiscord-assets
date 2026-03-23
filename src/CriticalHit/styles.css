@@ -1,3 +1,9 @@
+/* Font override — all text in this plugin uses Friend or Foe BB */
+.bd-crit-hit-settings,
+.bd-crit-hit-settings * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /**
  * CriticalHit — Static CSS.
  * Animation keyframes, base crit class, floating text styles, and settings panel.

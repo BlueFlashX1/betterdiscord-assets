@@ -15,7 +15,16 @@ function buildCSS() {
   // dc.sel resolves Webpack classes at runtime; comment/reply/layer still wildcard (no stable module)
   const sel = dc.sel;
 
-  return `@keyframes dungeonPulse {
+  return `/* ── Font Override ───────────────────────────────────────────── */
+.dungeon-boss-hp-container,
+.dungeon-boss-hp-container *,
+.dungeons-plugin-button,
+.dungeons-header-widget,
+.dungeons-header-widget * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+@keyframes dungeonPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.1); }
 }

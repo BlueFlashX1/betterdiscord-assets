@@ -1,5 +1,11 @@
 function getFallbackLevelProgressBarCss() {
   return `
+      /* ── Font Override ───────────────────────────────────────────── */
+      .lpb-progress-bar,
+      .lpb-progress-bar * {
+        font-family: 'Friend or Foe BB', sans-serif !important;
+      }
+
       .lpb-progress-container {
         position: fixed;
         left: 0;

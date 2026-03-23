@@ -2,6 +2,14 @@ function getShadowExchangeCss(portalTransitionCss) {
   return `
 ${portalTransitionCss}
 
+      /* ── Font Override ───────────────────────────────────────────── */
+      .se-panel-overlay,
+      .se-panel-overlay *,
+      .se-panel-container,
+      .se-panel-container * {
+        font-family: 'Friend or Foe BB', sans-serif !important;
+      }
+
       /* ── Swirl Icon (anchored in channel-header toolbar) ───────── */
       .se-swirl-icon {
         position: relative;

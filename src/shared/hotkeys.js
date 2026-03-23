@@ -55,13 +55,14 @@ function matchesHotkey(event, hotkey) {
   if (!event || !hotkey) return false;
   const spec = parseHotkey(hotkey);
   if (!spec.key) return false;
-  return (
-    event.key.toLowerCase() === spec.key &&
-    event.ctrlKey === spec.ctrl &&
-    event.shiftKey === spec.shift &&
-    event.altKey === spec.alt &&
-    event.metaKey === spec.meta
-  );
+  // Inclusive matching: required modifiers must be pressed,
+  // but extra modifiers (e.g. from Hyper/CapsLock) are allowed.
+  if (event.key.toLowerCase() !== spec.key) return false;
+  if (spec.ctrl && !event.ctrlKey) return false;
+  if (spec.shift && !event.shiftKey) return false;
+  if (spec.alt && !event.altKey) return false;
+  if (spec.meta && !event.metaKey) return false;
+  return true;
 }
 
 module.exports = { isEditableTarget, parseHotkey, matchesHotkey };

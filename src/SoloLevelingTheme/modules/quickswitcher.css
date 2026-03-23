@@ -1,0 +1,68 @@
+/* Module: Quick Switcher (§4) */
+
+/* ═══════════════════════════════════════════════════════════
+   §4  QUICK SWITCHER (Ctrl+K search dialog)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §4d — Quick Switcher: single border shell + backdrop dim
+   Strips border/shadow from outer wrappers so only quickswitcher_ has the visible border.
+   The :has() rule dims the background overlay behind the dialog */
+div[role="dialog"][aria-label="Quick Switcher"] {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="outerContainer_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="container_"] {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="quickswitcher_"] {
+  background: var(--sl-bg-popup) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.48) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.52) !important;
+}
+
+div[class^="layer_"]:has(div[role="dialog"][aria-label="Quick Switcher"]) {
+  background: rgba(2, 4, 10, 0.62) !important;
+}
+
+/* §4e — Hide the "PROTIP:" footer text at the bottom of Quick Switcher */
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="protip_"] {
+  display: none !important;
+}
+
+/* §4c — Quick Switcher result items: hover/selected state colors
+   Purple highlight background + white text for the active/hovered result.
+   Also styles the misc text, note text, and icons for high contrast */
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover,
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] {
+  background: rgba(138, 43, 226, 0.62) !important;
+  background-image: none !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="name_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="name_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="contentDefault_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="contentDefault_"] {
+  color: #ffffff !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="misc_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="misc_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="note_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="note_"] {
+  color: #ede9fe !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover svg,
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] svg,
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[role="img"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[role="img"] {
+  color: #f3e8ff !important;
+}

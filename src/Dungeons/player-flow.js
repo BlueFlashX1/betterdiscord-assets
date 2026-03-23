@@ -953,7 +953,7 @@ module.exports = {
       return true;
     }
 
-    // DOT AOE: Dagger Rush
+    // DOT AOE: Dagger Rush — immediate burst + sustained DOT
     if (combatEffect === 'dot_aoe' && def.dot) {
       const dt = def.dot;
 
@@ -967,7 +967,42 @@ module.exports = {
       const maxTargets = Math.min(500, (dt.maxMobTargets || 150) + (dt.maxMobTargetsPerLevel || 0) * (passiveLevel - 1));
       const tickInterval = dt.tickIntervalMs || 2000;
 
-      // Store DOT state on the dungeon
+      // IMMEDIATE BURST: Initial blade storm wave kills mobs on activation
+      const rawActiveMobs = dungeon.mobs?.activeMobs || [];
+      let burstMobs = [];
+      for (let i = 0; i < rawActiveMobs.length && burstMobs.length < maxTargets; i++) {
+        if (rawActiveMobs[i]?.hp > 0) burstMobs.push(rawActiveMobs[i]);
+      }
+      let burstKills = 0;
+      let burstDamage = 0;
+      const burstMult = Math.max(0.8, dmgMultiplier * 1.5); // Initial burst is 1.5x the DOT tick damage
+      for (const mob of burstMobs) {
+        const mobStats = { strength: mob.strength || 0, agility: mob.agility || 0, intelligence: mob.intelligence || 0, vitality: mob.vitality || 0 };
+        const breakdown = typeof this.calculateUserDamageBreakdown === 'function'
+          ? this.calculateUserDamageBreakdown(mobStats, mob.rank)
+          : { damage: this.calculateUserDamage(mobStats, mob.rank) };
+        let dmg = Math.max(1, Math.floor((Number(breakdown.damage) || 1) * burstMult));
+        // Agility scaling for dagger skills
+        if (def.agilityScaling) {
+          const agiStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
+          const agiMult = 1 + (agiStats.agility || 0) * (def.agilityScaling.perPoint || 0.015);
+          dmg = Math.max(1, Math.floor(dmg * agiMult * (0.85 + Math.random() * 0.3)));
+        }
+        const mobId = this.getEnemyKey(mob, 'mob');
+        const adjDmg = this.applyStatusAdjustedIncomingDamage(channelKey, 'mob', mobId, dmg, Date.now());
+        mob.hp = Math.max(0, mob.hp - adjDmg);
+        burstDamage += adjDmg;
+        if (mob.hp <= 0) {
+          this._onMobKilled(channelKey, dungeon, mob.rank);
+          this._addToCorpsePile(channelKey, mob, false);
+          burstKills++;
+        }
+      }
+      if (burstKills > 0 && dungeon.mobs?.activeMobs) {
+        dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter(m => m && m.hp > 0);
+      }
+
+      // Store DOT state on the dungeon for sustained ticks
       if (!dungeon.activeDots) dungeon.activeDots = {};
       dungeon.activeDots.dagger_rush = {
         expiresAt: Date.now() + baseDuration,
@@ -980,17 +1015,15 @@ module.exports = {
         rulersLevel,
         hasDaggerThrowBonus: true,
         canCrit: true,
-        statusEffect: def.statusEffect || null, // Bleed per tick from blade storm
+        statusEffect: def.statusEffect || null,
       };
 
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
       const durationSec = (baseDuration / 1000).toFixed(0);
-      const dmgPct = Math.round(dmgMultiplier * 100);
-      const rulersBonusPct = Math.round(rulersBonus * 100);
-      const rulersSuffix = rulersLevel > 0 ? ` (+${rulersBonusPct}% from Ruler's Authority Lv${rulersLevel})` : '';
+      const burstText = burstKills > 0 ? `${burstKills} slain on impact! ` : '';
       this.showToast(
-        `${def.name}: Blade storm active! ${dmgPct}% damage to ${maxTargets} mobs every ${tickInterval / 1000}s for ${durationSec}s.${rulersSuffix}`,
+        `${def.name}: ${burstText}Blade storm active for ${durationSec}s on ${maxTargets} targets.`,
         'success'
       );
       return true;
@@ -1076,11 +1109,16 @@ module.exports = {
     const isPiercing = def.targeting === 'piercing';
     const isSingleTarget = def.targeting === 'single';
 
-    // Piercing cap: scales with agility + level. Base 50, +2 per agility, +3 per level, max 500.
+    // Piercing cap: scales with agility + level. Base 50, +2 per agility, +3 per level.
+    // Soft cap at 500, but agility above 200 can push beyond (up to activeMobs size).
     const pStats = typeof this.getUserEffectiveStats === 'function' ? this.getUserEffectiveStats() : {};
     const playerLevel = this.soloLevelingStats?.settings?.level || 1;
+    const agility = Math.max(0, pStats.agility || 0);
+    const basePierce = 50 + Math.floor(agility * 2) + Math.floor(playerLevel * 3);
+    // Variance: ±20% per cast so pierce count feels dynamic
+    const piercingVariance = 0.8 + Math.random() * 0.4;
     const piercingCap = isPiercing
-      ? Math.min(500, Math.max(50, 50 + Math.floor((pStats.agility || 0) * 2) + Math.floor(playerLevel * 3)))
+      ? Math.max(50, Math.floor(basePierce * piercingVariance))
       : Infinity;
     const targetCap = isSingleTarget ? 1 : piercingCap;
 
@@ -1325,8 +1363,15 @@ module.exports = {
         // Status-adjusted damage
         const mobId = this.getEnemyKey(mob, 'mob');
         const adjDamage = this.applyStatusAdjustedIncomingDamage(channelKey, 'mob', mobId, damage, now);
-        mob.hp = Math.max(0, mob.hp - adjDamage);
-        totalDamage += adjDamage;
+        // DOT cleave: if damage exceeds mob's remaining HP, instant kill
+        // (blade storm shreds through weaker mobs)
+        if (adjDamage >= mob.hp) {
+          totalDamage += mob.hp;
+          mob.hp = 0;
+        } else {
+          mob.hp = Math.max(0, mob.hp - adjDamage);
+          totalDamage += adjDamage;
+        }
 
         // Apply DOT status effect per tick (bleed from Dagger Rush blade storm)
         if (mob.hp > 0 && dot.statusEffect?.name) {

@@ -191,6 +191,21 @@ function buildCSS() {
   return `
 ${buildPortalTransitionCSS()}
 
+/* ── Font Override ───────────────────────────────────────────────────────── */
+
+.shadow-senses-panel,
+.shadow-senses-panel *,
+.shadow-senses-widget,
+.shadow-senses-widget *,
+#shadow-senses-header-popup,
+#shadow-senses-header-popup *,
+.shadow-senses-feed-card,
+.shadow-senses-feed-card *,
+.shadow-senses-deploy-row,
+.shadow-senses-deploy-row * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /* ─── Shadow Senses Widget ──────────────────────────────────────────────── */
 
 .shadow-senses-widget {

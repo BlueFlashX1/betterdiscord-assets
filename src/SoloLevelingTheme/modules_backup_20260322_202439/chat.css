@@ -1,0 +1,93 @@
+/* Module: Chat & Messages (§11) */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §11  CHATBOX (Message area styling)
+   UNVERIFIED
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §11a — Chatbox scroller: hide scrollbar (keep scroll functional)
+   The message scroller is div[class^="messagesWrapper_"] div[class^="scroller_"]
+   which is the main chat message list. Hide scrollbar across all browsers. */
+div[class^="messagesWrapper_"] div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="messagesWrapper_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §11b — Embed cards: solid dark bg + purple left-border accent
+   Discord default: background: var(--background-surface-high) → rgba(0,0,0,0.3)
+   and border-left: 4px solid white. Override to theme-matched solid dark bg
+   with purple left accent. Targets all embed types (link previews, rich embeds). */
+article[class^="embedFull_"],
+article[class^="embed_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
+  border-left: 4px solid var(--sl-color-primary) !important;
+  border-radius: 2px !important;
+}
+/* Embed inner grid container: transparent so parent bg shows through */
+article[class^="embedFull_"] div[class^="gridContainer_"],
+article[class^="embed_"] div[class^="gridContainer_"] {
+  background: transparent !important;
+}
+
+/* §11c — Mentioned messages: purple tint bg + purple left bar
+   Discord default: bg var(--message-mentioned-background-default) (yellowish)
+   and ::before bar uses var(--icon-feedback-warning) (yellow/orange).
+   Override both to purple to match Solo Leveling theme. */
+div[class*="mentioned_"][class*="message_"],
+div[class^="message_"][class*="mentioned_"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.08) !important;
+}
+/* Mentioned ::before left accent bar: purple instead of yellow */
+div[class*="mentioned_"][class*="message_"]::before,
+div[class^="message_"][class*="mentioned_"]::before {
+  background: var(--sl-color-primary) !important;
+}
+/* Mentioned hover: slightly brighter purple tint */
+div[class*="mentioned_"][class*="message_"]:hover,
+div[class^="message_"][class*="mentioned_"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
+}
+
+/* §11c (continued) — Inline @mention and #channel pills: bigger padding
+   Default Discord: padding 0 4px.  Bump to 2px 6px for a chunkier pill. */
+span[class*="wrapper_f61d60"],
+span.channelMention,
+span[class*="roleMention"] {
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+}
+
+/* §11d — Reply context bar: purple spine connector
+   The repliedMessage_ div has a ::before pseudo that draws the reply
+   connector line (the L-shaped pipe). Override its color to purple. */
+div[class^="repliedMessage_"]::before {
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+}
+
+/* §11e — Timestamps: muted purple tone
+   Both inline timestamps (next to username in header) and hover timestamps
+   (compact left-margin times). Default is grey ~srgb(0.58, 0.58, 0.61).
+   Override to a muted purple that fits the Solo Leveling palette. */
+div[class^="messagesWrapper_"] span[class^="timestamp_"],
+div[class^="messagesWrapper_"] span[class*="timestampInline_"],
+div[class^="messagesWrapper_"] time {
+  color: rgba(180, 140, 255, 0.5) !important;
+}
+
+/* §11e (hover) — Brighten timestamps when hovering the message row */
+div[class^="messagesWrapper_"] li[class*="message_"]:hover span[class^="timestamp_"],
+div[class^="messagesWrapper_"] li[class*="message_"]:hover span[class*="timestampInline_"],
+div[class^="messagesWrapper_"] li[class*="message_"]:hover time {
+  color: rgba(200, 170, 255, 0.9) !important;
+}
+
+/* §11f — Message hover highlight: REMOVED
+   Disabled — conflicts with SystemWindow codeblock hover glow.
+   Was: soft purple radial-gradient wash on message hover. */

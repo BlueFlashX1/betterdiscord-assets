@@ -1,3 +1,9 @@
+/* Font override — all text in this plugin uses Friend or Foe BB */
+.sl-chat-nav-arrow,
+.sl-chat-nav-arrow * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /* Hide native jump-to-present bars globally */
 div[class^="jumpToPresentBar_"] {
   display: none !important;

@@ -1,0 +1,123 @@
+/* Module: Server List / Dock (§8) */
+
+/* ═══════════════════════════════════════════════════════════
+   §8  SERVER LIST (Dock — horizontal layout via HSLDockAutoHide plugin)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §8a — Server list: solid dark background instead of transparent/blurred
+   Targets the <nav> "Servers sidebar" and its inner scrollers/containers.
+   The horizontal layout comes from HorizontalServerList CSS (§1 imports),
+   auto-hide/show from HSLDockAutoHide plugin. This gives the solid dark surface. */
+nav[aria-label="Servers sidebar"],
+nav[aria-label="Servers sidebar"] ul[role="tree"],
+nav[aria-label="Servers sidebar"] [data-list-id="guildsnav"],
+nav[aria-label="Servers sidebar"] div[class^="itemsContainer_"],
+nav[aria-label="Servers sidebar"] div[class^="scroller_"],
+nav[aria-label="Servers sidebar"] div[class^="none_"] {
+  background: rgba(8, 10, 20, 0.94) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* §8e — Purple accent line on visual top edge of the horizontal dock.
+   HSL applies rotate(-90deg) (counter-clockwise) to .guilds_, so:
+     CSS top→visual left, right→visual top, bottom→visual right, left→visual bottom.
+   Therefore CSS border-right becomes the visual top after rotation. */
+nav[aria-label="Servers sidebar"],
+nav[class^="wrapper_"][class*="guilds_"],
+nav.sl-hsl-dock-target,
+body.sl-dock-visible nav[aria-label="Servers sidebar"],
+body.sl-dock-autohide nav[aria-label="Servers sidebar"] {
+  border-right: 4px solid var(--sl-color-primary) !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  box-shadow: none !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+/* §8e (continued) — When dock is hidden/peeking, the §8d dark fill strip (::after)
+   is the only visible element at the bottom viewport. Apply the purple top border
+   to that strip so the accent line shows even when the nav is off-screen. */
+body.sl-dock-autohide .base__5e434[data-fullscreen="false"]::after {
+  border-top: 2px solid var(--sl-color-primary) !important;
+  box-shadow: inset 0 2px 0 0 var(--sl-color-primary) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease !important;
+}
+
+/* Notification rail is handled by HSLDockAutoHide plugin via
+   .sl-hsl-dock-host / .sl-dock-alert runtime classes. */
+
+/* §8c — Server list layout: width/overflow containment
+   Ensures the items container fills width and doesn't overflow horizontally */
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
+  overflow: hidden scroll !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+}
+
+/* §8b — Hide the scrollbar visually while preserving wheel/gesture scroll
+   Uses scrollbar-width:none for Firefox and ::-webkit-scrollbar for Chrome/Electron */
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §8f — Home icon: replace Discord/ClearVision logo with Shadow Monarch icon.
+   Discord renders the home icon as svg[role="img"] inside childWrapper_.
+   ClearVision sets its own discord.svg background on this SVG — we override it.
+   The SVG path (Discord logo) is already display:none from ClearVision. */
+div[class^="tutorialContainer_"] div[class^="childWrapper_"] > svg[role="img"] {
+  background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
+  opacity: 1 !important;
+}
+div[class^="tutorialContainer_"] div[class^="childWrapper_"] {
+  opacity: 1 !important;
+}
+
+/* §8d — Bottom strip: dark fill for the dock peek gap
+   HSLDockAutoHide sets margin-bottom on .content__5e434 to make room for the dock.
+   When dock is hidden, this becomes var(--sl-dock-peek) = 8px — a transparent gap
+   at the viewport bottom where the wallpaper bleeds through. Since margin can't have
+   a background, we use a ::after pseudo-element on the parent .base__5e434 to fill
+   that gap with a solid dark bar. The pseudo sits at the bottom, below the content.
+   The alert rail (#sl-hsl-alert-rail) purple glow is INTENTIONALLY left alone. */
+body.sl-dock-autohide .base__5e434[data-fullscreen="false"]::after {
+  content: '' !important;
+  display: block !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: var(--sl-dock-peek, 8px) !important;
+  background: rgba(8, 10, 20, 0.94) !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s ease, height 0.3s ease !important;
+  opacity: 1 !important;
+}
+
+/* When dock is fully visible, fade out the dark fill strip instead of
+   display:none so the purple border transitions smoothly */
+body.sl-dock-autohide.sl-dock-visible .base__5e434[data-fullscreen="false"]::after {
+  opacity: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}

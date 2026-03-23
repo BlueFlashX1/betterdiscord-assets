@@ -1,0 +1,84 @@
+/* Module: Imports & Variables (§1) */
+
+/* HorizontalServerList — makes the server list a bottom dock */
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
+@import url('https://clearvision.github.io/ClearVision-v7/main.css');
+@import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
+@import url('https://db.onlinewebfonts.com/c/262e61977221d8478c4e05291da30122?family=Friend+or+Foe+BB');
+
+/* §14e — Role-Colored Mentions (import must be near top — see §14e note below)
+   Credit: dav (2024-05-30) */
+@import url('https://davart154.github.io/Themes/Snippets/Colored%20Mentions/ColoredMentionsSource.css');
+
+/* §14g — Improved Links + Masked Links addon (imports must be near top)
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinks.css');
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinksMaskedLinksAddon.css');
+
+/* ═══════════════════════════════════════════════════════════
+   §1  IMPORTS & VARIABLES
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* HorizontalServerList layout */
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+
+  /* Core brand colors (used throughout — purple Solo Leveling palette) */
+  --main-color: #8a2be2;
+  --hover-color: #a855f7;
+  --success-color: #00ff88;
+  --danger-color: #ff4444;
+  --sl-color-primary: #8a2be2;
+  --sl-color-accent-light: #b388ff;
+  --sl-color-primary-rgb: 138, 43, 226;
+
+  /* Typography — Friend or Foe BB (Blambot) */
+  --font-primary: 'Friend or Foe BB', sans-serif;
+  --font-display: 'Friend or Foe BB', sans-serif;
+  --font-headline: 'Friend or Foe BB', sans-serif;
+  --font-code: 'Consolas', 'Courier New', monospace;
+
+  /* Animated wallpaper controls */
+  --sl-bg-gif: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-overlay: rgba(0, 0, 0, 0);
+  --sl-bg-opacity: 1.0;
+  --background-position: center 0%;
+}
+
+/* §1 (continued) — Universal font override.
+   Discord hardcodes font-family:"gg sans" on many elements.
+   :where() zeroes out specificity so any class-based !important override wins. */
+*:where(:not(code):not(pre):not([class*="codeLine"]):not([class*="codeBlock"])) {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+/* §1 (continued) — ARISE animation uses Speedy Space Goat Oddity; exempt from global font.
+   Specificity (0,1,0) beats the :where()-wrapped * selector (0,0,0) above.
+   Covers main animation (sa-arise-*) and fallback (shadow-extraction-*). */
+/* Only the "ARiSe" title text gets Speedy Space Goat — rank/role stays Friend or Foe */
+.sa-arise-text,
+.sa-arise-text span {
+  font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
+}
+.sa-arise-meta {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+.shadow-extraction-title {
+  font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
+}
+.shadow-extraction-info,
+.shadow-rank,
+.shadow-role {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+/* §1 (continued) — Global font-size boost for Friend or Foe readability.
+   FoF has a smaller x-height than gg sans, so scale everything up. */
+html {
+  font-size: 130% !important;
+}

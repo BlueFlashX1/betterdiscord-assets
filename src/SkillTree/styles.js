@@ -1,6 +1,14 @@
 const STYLE_ID = "skilltree-css";
 
 const SKILL_TREE_CSS = `
+      /* ── Font Override ───────────────────────────────────────────── */
+      .skilltree-modal,
+      .skilltree-modal *,
+      .st-confirm-dialog,
+      .st-confirm-dialog * {
+        font-family: 'Friend or Foe BB', sans-serif !important;
+      }
+
       /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
       .st-skill-tree-button-wrapper {
         display: flex;

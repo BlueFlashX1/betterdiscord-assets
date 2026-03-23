@@ -191,6 +191,13 @@ function getShadowStepCss(pluginVersion) {
   display: none;
 }
 
+/* ── Font Override ───────────────────────────────────────────── */
+
+.ss-panel-container,
+.ss-panel-container * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 /* ── Panel Overlay ───────────────────────────────────────────── */
 
 .ss-panel-overlay {

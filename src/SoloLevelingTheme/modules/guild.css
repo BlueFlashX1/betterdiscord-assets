@@ -1,0 +1,628 @@
+/* Module: Guild & Channels (§9) */
+
+/* ═══════════════════════════════════════════════════════════
+   §9  SERVER GUILD DIALOGS (VC permissions, channel settings, etc.)
+   VERIFIED — 2026-02-14
+   ═══════════════════════════════════════════════════════════ */
+
+/* §9a — Voice channel permission / guild settings dialog
+   The "mana component" modal family used for VC permission popups,
+   channel settings, and other server-level dialogs.
+   Solid dark background on the container, header, hidden sections, and footer */
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"],
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] header[class^="section_"],
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] div[class^="sectionHidden_"],
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[class^="actionBar_"] {
+  background: var(--sl-bg-popup) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* §9a (continued) — Strip background-image from footer buttons
+   Keeps the action bar buttons readable without transparency bleed-through */
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[class^="actionBar_"] button {
+  background-image: none !important;
+}
+
+/* §9b — Message input box: solid for guild server channels ONLY
+   Scoped to page_ parent so it doesn't leak into VC text (channelChatWrapper_)
+   or forum thread sidebar (chatLayerWrapper_).
+   channelTextArea_ is the actual input container with border + box-shadow. */
+div[class^="page_"] div[class^="channelTextArea_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  box-shadow: none !important;
+}
+div[class^="page_"] div[class^="scrollableContainer_"][class*="themedBackground_"],
+div[class^="page_"] form[class^="form_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Kill the gradient ::before on the form that Discord uses for fade effect */
+div[class^="page_"] form[class^="form_"]::before {
+  background: none !important;
+  display: none !important;
+}
+
+/* §9b (continued) — Hide Nitro "Send a gift" + Apps button in message input */
+div[aria-label="Send a gift"],
+div[aria-label="Apps"] {
+  display: none !important;
+}
+
+/* §9b (continued) — GIF, Stickers, Emoji, Translate buttons: solid bg + purple border
+   Uses aria-label for GIF/stickers, emojiButton_ for emoji, translateButton_ for translate.
+   Dual parent selectors (buttons_ + channelTextArea_) for resilience. */
+div[class^="buttons_"] div[aria-label="Open GIF picker"],
+div[class^="buttons_"] div[aria-label="Open sticker picker"],
+div[class^="buttons_"] div[class*="emojiButton_"],
+div[class^="buttons_"] div[class^="buttonContainer_"] > button,
+div[class^="channelTextArea_"] div[aria-label="Open GIF picker"],
+div[class^="channelTextArea_"] div[aria-label="Open sticker picker"],
+div[class^="channelTextArea_"] div[class*="emojiButton_"],
+div[class^="channelTextArea_"] button[class*="emojiButton_"],
+div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button {
+  background: rgba(8, 10, 20, 0.96) !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 2px !important;
+  padding: 4px !important;
+  margin: 0 2px !important;
+}
+div[class^="buttons_"] div[aria-label="Open GIF picker"]:hover,
+div[class^="buttons_"] div[aria-label="Open sticker picker"]:hover,
+div[class^="buttons_"] div[class*="emojiButton_"]:hover,
+div[class^="buttons_"] div[class^="buttonContainer_"] > button:hover,
+div[class^="channelTextArea_"] div[aria-label="Open GIF picker"]:hover,
+div[class^="channelTextArea_"] div[aria-label="Open sticker picker"]:hover,
+div[class^="channelTextArea_"] div[class*="emojiButton_"]:hover,
+div[class^="channelTextArea_"] button[class*="emojiButton_"]:hover,
+div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+  border-color: var(--sl-color-accent-light) !important;
+}
+
+/* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): purple border
+   All three pickers (Emoji/GIF/Sticker) share div.contentWrapper__08434 as outer shell
+   containing nav.nav__08434 (tab bar) + the active tab panel.
+   Scoped via aria-label="Expression Picker Categories" on the inner navList —
+   this is unique to the expression picker, zero inflation risk. */
+div[class*="contentWrapper_"]:has(> nav [aria-label="Expression Picker Categories"]) {
+  border: 2px solid var(--sl-color-primary) !important;
+  border-radius: 2px !important;
+  overflow: hidden !important;
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+/* Inner surfaces of expression picker: no border, solid bg only */
+div[class^="emojiPicker_"],
+section[class^="stickerPicker_"],
+div[class*="gifPicker_"],
+div[class^="categoryList_"],
+div[class^="header_"][class*="stickerPicker_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+div[class^="emojiPicker_"] div[class^="wrapper_"],
+div[class^="emojiPicker_"] div[class^="searchBar_"],
+div[class^="emojiPicker_"] div[class^="inspector_"],
+div[class^="emojiPicker_"] nav,
+section[class^="stickerPicker_"] div[class^="wrapper_"],
+section[class^="stickerPicker_"] div[class^="searchBar_"],
+div[class*="gifPicker_"] div[class^="wrapper_"],
+div[class*="gifPicker_"] div[class^="searchBar_"],
+div[class*="gifPicker_"] nav,
+div[class^="positionContainer_"] div[class^="contentWrapper_"] div[class^="header_"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"],
+div[class*="contentWrapper_"] div[class*="header_"],
+div[class*="contentWrapper_"] nav[class*="nav_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+}
+
+/* §9b (continued) — Hide scrollbars in GIF/Stickers/Emoji picker popups
+   Scoped to scrollable containers inside pickers (not all descendants) */
+div[class^="emojiPicker_"] div[class*="scroller_"],
+div[class^="emojiPicker_"] div[class*="listItems_"],
+div[class^="emojiPicker_"] div[class*="inspector_"],
+section[class^="stickerPicker_"] div[class*="scroller_"],
+section[class^="stickerPicker_"] div[class*="listItems_"],
+div[class*="gifPicker_"] div[class*="scroller_"],
+div[class*="gifPicker_"] div[class*="results_"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"],
+div[class^="positionContainer_"] div[class*="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="emojiPicker_"] div[class*="scroller_"]::-webkit-scrollbar,
+div[class^="emojiPicker_"] div[class*="listItems_"]::-webkit-scrollbar,
+section[class^="stickerPicker_"] div[class*="scroller_"]::-webkit-scrollbar,
+div[class*="gifPicker_"] div[class*="scroller_"]::-webkit-scrollbar,
+div[class^="positionContainer_"] div[class*="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9b (continued) — Message actions popup styling removed;
+   popup is now hidden entirely by §14i */
+
+/* §9c — Server channel list sidebar: transparent with light dark overlay
+   Targets ONLY the server guild sidebar by requiring a Channels list descendant.
+   The DM sidebar uses aria-label="Private channels", not "Channels", so this
+   won't match it. 0.4 opacity keeps GIF wallpaper visible, matches chatbox */
+div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
+  background: rgba(0, 0, 0, 0.24) !important;
+  background-image: none !important;
+}
+
+/* §9d — Hide server boost progress widget + spacer divs from channel list
+   The boost widget is a div.container_.containerWithMargin_ direct child of the
+   channel <ul>. Also catch classless spacer divs (height: 12px padding elements)
+   that Discord inserts as direct children of the channel list */
+ul[aria-label="Channels"] > div[class*="containerWithMargin"] {
+  display: none !important;
+}
+ul[aria-label="Channels"] div[class*="progressContainer"] {
+  display: none !important;
+}
+ul[aria-label="Channels"] > div:not([class]) {
+  display: none !important;
+}
+
+/* §9c+ — Push channel list down to prevent overlap with server banner/icon.
+   The server banner image occupies ~48px at the top of the sidebar scroller;
+   channels need clearance below it so SVG banners don't clip into it. */
+ul[aria-label="Channels"] {
+  padding-top: 92px !important;
+}
+
+/* §9e — Hide "Browse Channels" button from server channel list
+   The Browse Channels entry lives inside a wrapper with aria-label.
+   Targeting the parent li so the entire row disappears cleanly */
+ul[aria-label="Channels"] li:has(div[aria-label="Browse Channels"]) {
+  display: none !important;
+}
+
+/* §9f — Neutralize Discord's built-in hover background on channel rows.
+   Discord's rule: .wrapper_:hover .link_ { background: var(--interactive-background-hover) }
+   Setting the variable to transparent prevents Discord's shorthand from resetting
+   background-image (which carries our SVG banners). The SVG v2 hover banner at
+   §9f+h provides the actual hover visual. */
+ul[aria-label="Channels"] {
+  --interactive-background-hover: transparent !important;
+  --interactive-background-active: transparent !important;
+  --interactive-background-selected: transparent !important;
+  --background-modifier-selected: transparent !important;
+  --background-modifier-active: transparent !important;
+}
+
+/* §9f+g — Channel row spacing: double gap between channel items */
+ul[aria-label="Channels"] li[class*="containerDefault_"] {
+  margin-bottom: 8px !important;
+}
+
+/* §9f+ — SVG banner backgrounds on channel rows (Solo Leveling gate frame)
+   Uses Shadowbannerv1.1.svg — dark banner with purple shadow tendrils.
+   viewBox 0 0 1940 390 with preserveAspectRatio="none"
+   so background-size:100% 100% stretches the banner to fill each channel row. */
+ul[aria-label="Channels"] [class*="link_"] {
+  background-color: transparent !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Shadowbannerv1.1.svg') !important;
+  background-size: 115% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  padding-left: 52px !important;
+  overflow: hidden !important;
+}
+
+/* §9f+n — Truncate long channel names with ellipsis */
+ul[aria-label="Channels"] [class*="name_"] {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: block !important;
+  max-width: calc(100% - 10px) !important;
+}
+ul[aria-label="Channels"] [class*="linkTop_"] {
+  overflow: hidden !important;
+  min-width: 0 !important;
+}
+
+/* §9f+h — Hover: v2 SVG banner replaces v1 as sole hover feedback.
+   drop-shadow traces actual SVG painted pixels (not bounding box),
+   so the purple glow hugs the irregular tendril edges. */
+ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover,
+ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover [class*="link_"] {
+  background-color: transparent !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/shadow_bannerv2.1hover.svg') !important;
+  background-size: 115% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
+}
+ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover {
+  background-image: none !important;
+}
+
+/* §9f+s — Selected/active channel: nuke ALL Discord highlight boxes,
+   then let the Selected_channel.svg do all the visual work. */
+ul[aria-label="Channels"] li[class*="selected_"],
+ul[aria-label="Channels"] li[class*="selected_"] *,
+ul[aria-label="Channels"] [class*="modeSelected_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] * {
+  background-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+/* Kill ::before pseudo-element Discord uses as selected highlight overlay */
+ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"]::before,
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"]::before {
+  display: none !important;
+}
+ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"] {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
+}
+
+/* §9f+i — Hide channel icons (hash #, speaker, etc.) — banner replaces them */
+ul[aria-label="Channels"] [class^="iconContainer_"] {
+  display: none !important;
+}
+
+/* §9g — Hide scrollbar on server channel list (keep scroll functional)
+   Targets the #channels scroller wrapper that contains the channel list */
+#channels,
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="scroller_"],
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="thin_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+#channels::-webkit-scrollbar,
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="thin_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9h — Search bar popup containers: solid dark bg + purple border
+   Targets the search popover dropdown (top-right message search), the search
+   results panel, and autocomplete/filter containers. Covers both the dropdown
+   that appears when clicking the search bar and the expanded results panel */
+div[class^="searchBar_"] div[class^="popout_"],
+div[class^="searchBar_"] div[class^="container_"],
+div[class^="search_"] div[class^="popout_"],
+div[class^="search_"] div[class^="container_"],
+div[role="search"] div[class^="popout_"],
+div[role="search"] div[class^="container_"],
+div[class^="searchResultsWrap_"],
+div[class^="searchHeader_"],
+div[class^="searchAnswer_"],
+div[class^="queryContainer_"],
+div[class^="resultsWrapper_"] {
+  background: var(--sl-bg-popup) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 2px !important;
+}
+
+/* §9h (continued) — Search result outer wrapper: 3px purple border on hover
+   Targets the searchResult_ div[role="button"] that wraps each result message.
+   Border on the OUTER container, not the inner gradient/wrapper */
+section[aria-label="Search Results"] div[class^="searchResult_"]:hover,
+div[class^="searchResultsWrap_"] div[class^="searchResult_"]:hover {
+  border: 3px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 2px !important;
+}
+
+/* §9h (continued) — Search dropdown option rows: purple hover highlight */
+div[class^="searchResultsWrap_"] div[class^="option_"]:hover,
+div[class^="searchResultsWrap_"] div[class*="focused"],
+div[role="search"] div[class^="option_"]:hover,
+div[role="search"] div[class*="focused"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.15) !important;
+}
+
+/* §9h (continued) — Remove border from inner gradient/wrapper so only outer has it */
+section[aria-label="Search Results"] div[class^="searchResult_"] div[class*="gradient_"],
+div[class^="searchResultsWrap_"] div[class^="searchResult_"] div[class*="gradient_"] {
+  border: none !important;
+}
+
+/* §9i — Forum channel: eliminate structural gap between panels
+   resizeHandle_ set to 0px width to remove the visible seam entirely */
+div[class^="resizeHandle_"] {
+  width: 0px !important;
+  min-width: 0px !important;
+  max-width: 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  cursor: col-resize !important;
+}
+
+/* §9i (continued) — Forum thread sidebar (active post view on the right)
+   Apply 0.7 wash directly on chatLayerWrapper_ itself.
+   Children stay transparent to prevent double-stacking */
+div[class^="chatLayerWrapper_"] {
+  background: rgba(0, 0, 0, 0.7) !important;
+  background-image: none !important;
+}
+div[class^="chatLayerWrapper_"] div[class^="container_"],
+div[class^="chatLayerWrapper_"] section[role="complementary"],
+div[class^="chatLayerWrapper_"] div[class^="chat_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+/* §9i (continued) — Forum post list (left panel with thread cards)
+   0.1 opacity — very light wash to let wallpaper show through */
+div[class^="chat_"][class*="threadSidebarOpen_"] {
+  background: rgba(0, 0, 0, 0.1) !important;
+  background-image: none !important;
+}
+div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"],
+div[data-list-id^="forum-channel-list"],
+div[data-list-id^="forum-channel-list"] > div[class^="container_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+/* §9i (continued) — Forum post cards: sharp corners + solid background */
+div[data-list-id^="forum-channel-list"] div[class^="mainCard_"] {
+  border-radius: 0 !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* §9i (continued) — Sharp corners on forum header bars
+   The "Thread header" (right panel) and "Channel header" (left panel)
+   must have no rounded corners at the top. Also force sharp corners
+   on their parent wrappers to prevent visual-refresh rounding */
+section[aria-label="Thread header"],
+section[aria-label="Channel header"],
+div[class^="chatLayerWrapper_"],
+div[class^="chat_"][class*="threadSidebarOpen_"],
+div[class^="chatLayerWrapper_"] > div[class^="container_"] {
+  border-radius: 0 !important;
+}
+
+/* §9i (continued) — Hide scrollbars on forum post list and thread sidebar */
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scroller_"],
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scrollerBase_"],
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="thin_"],
+div[class^="chatLayerWrapper_"] div[class^="scroller_"],
+div[class^="chatLayerWrapper_"] div[class^="scrollerBase_"],
+div[class^="chatLayerWrapper_"] div[class^="thin_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="thin_"]::-webkit-scrollbar,
+div[class^="chatLayerWrapper_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="chatLayerWrapper_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[class^="chatLayerWrapper_"] div[class^="thin_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9j — Voice channel view: solid dark background + sharp corners
+   callContainer_ wraps the video grid side. channelChatWrapper_ is the VC text
+   chat pane — it's a SIBLING of callContainer_, not a child.
+   Target channelChatWrapper_ and all descendants directly for full coverage. */
+/* Only callContainer_ itself gets solid bg — everything inside stays transparent
+   so video feeds, screen shares, and webcams are visible */
+div[class^="callContainer_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+}
+div[class^="callContainer_"] div[class^="root_"],
+div[class^="callContainer_"] div[class^="root_"] > div,
+div[class^="callContainer_"] div[class^="root_"] div[class^="container_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+}
+div[class^="channelChatWrapper_"],
+div[class^="channelChatWrapper_"] > div,
+div[class^="channelChatWrapper_"] div[class^="wrapper_"],
+div[class^="channelChatWrapper_"] div[class^="chat_"],
+div[class^="channelChatWrapper_"] div[class^="content_"],
+div[class^="channelChatWrapper_"] div[class^="container_"],
+div[class^="channelChatWrapper_"] main[class^="chatContent_"],
+div[class^="channelChatWrapper_"] div[class^="scroller_"],
+div[class^="channelChatWrapper_"] div[class^="scrollerContent_"],
+div[class^="channelChatWrapper_"] ol[class^="scrollerInner_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+}
+
+/* §9j (continued) — VC resize handle covered by §9i rule above */
+
+/* §9j (continued) — Video grid scroller: sharp corners + no scrollbar */
+div[class^="callContainer_"] div[class^="scroller_"],
+div[class^="callContainer_"] div[class^="videoGrid_"] {
+  border-radius: 0 !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="callContainer_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9j (continued) — Voice connection info box (shows "Video Connected", action buttons)
+   This is the wrapper_/container_ pair inside the user panel that appears when in a VC.
+   Scoped via the user-panel section so it does NOT affect the nametag container_ sibling
+   or any other container_/wrapper_ elements elsewhere in Discord.
+   The nametag box is styled by UserPanelDockMover plugin — this only targets the
+   voice/connection wrapper (first direct child div[class^="wrapper_"]) and its contents. */
+section[aria-label="User status and settings"] > div[class^="wrapper_"] {
+  background: rgba(8, 10, 20, 0.96) !important;
+  background-image: none !important;
+  border-radius: 2px !important;
+  border: none !important;
+  border-bottom: none !important;
+  position: relative !important;
+  top: 0px !important;
+  left: -40px !important;
+}
+section[aria-label="User status and settings"] > div[class^="wrapper_"] > div[class^="container_"] {
+  background: rgba(8, 10, 20, 0.96) !important;
+  background-image: none !important;
+  border-radius: 2px !important;
+  border: none !important;
+  border-bottom: none !important;
+}
+
+/* §9j (continued) — Voice channel name link: replace with "Rejoin VC"
+   Hide original text via visibility + zero height, then show replacement via ::after.
+   Targets the subtext_/channel_ div and its lineClamp1 child. */
+section[aria-label="User status and settings"] > div[class^="wrapper_"] div[class^="subtext_"] {
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+section[aria-label="User status and settings"] > div[class^="wrapper_"] div[class^="subtext_"]::after {
+  content: "Rejoin VC" !important;
+  visibility: visible !important;
+  font-size: 11px !important;
+  line-height: 14px !important;
+  color: var(--text-subtle) !important;
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* §9j (continued) — Purple outline border on each VC video cam tile
+   tileChild_ wraps each participant's video feed. Apply a subtle purple
+   border so each cam stands out against the black callContainer_ bg.
+   On hover: slightly thicker + brighter purple glow. */
+div[class^="callContainer_"] div[class^="tileChild_"] {
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 2px !important;
+  transition: border 0.15s ease, box-shadow 0.15s ease !important;
+}
+div[class^="callContainer_"] div[class^="tileChild_"]:hover {
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.8) !important;
+  box-shadow: 0 0 6px rgba(var(--sl-color-primary-rgb), 0.35) !important;
+}
+
+/* §9j (continued) — Hide noise suppression + disconnect buttons
+   voiceButtonsContainer_ holds the Krisp toggle and Disconnect call button.
+   Hidden to keep the VC info box minimal. */
+div[class*="voiceButtonsContainer_"] {
+  display: none !important;
+}
+
+/* §9j (continued) — Hide VC action buttons (Camera, Screen Share, Activity)
+   actionButtons_ inside the voice connection info box (user panel area).
+   Multiple selector paths for coverage: scoped + exact class match. */
+section[aria-label="User status and settings"] div[class^="actionButtons_"],
+section[class^="panels_"] div[class^="actionButtons_"],
+div[class^="wrapper_e131"] > div[class^="container_"] > div[class^="actionButtons_"],
+div[class*="actionButtons_e131"] {
+  display: none !important;
+}
+
+/* §9j (continued) — Hide scrollbar on VC preview dialog (pre-join video settings)
+   The body__8a031 scroller inside the dialog has a visible scrollbar. Hide it. */
+div[role="dialog"] div[class^="body_"][class*="scrollerBase_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[role="dialog"] div[class^="body_"][class*="scrollerBase_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9k — Notice banner: dark base + purple accent border
+   Scope to active chat surfaces only so settings/accessibility notices are untouched.
+   Dark background matching content area, subtle purple border. */
+div[class^="chat_"] div[class^="notice_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] {
+  background: rgba(8, 10, 20, 0.95) !important;
+  border: 1px solid rgba(138, 43, 226, 0.35) !important;
+  border-bottom: 2px solid rgba(138, 43, 226, 0.6) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4),
+    inset 0 0 12px rgba(138, 43, 226, 0.06) !important;
+}
+div[class^="chat_"] div[class^="notice_"],
+div[class^="chat_"] div[class^="notice_"] span,
+div[class^="chat_"] div[class^="notice_"] div,
+div[class^="channelChatWrapper_"] div[class^="notice_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] span,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div {
+  color: #d4b0ff !important;
+}
+div[class^="chat_"] div[class^="notice_"] button,
+div[class^="channelChatWrapper_"] div[class^="notice_"] button {
+  color: #d4b0ff !important;
+  border-color: #d4b0ff !important;
+}
+div[class^="chat_"] div[class^="notice_"] button:hover,
+div[class^="channelChatWrapper_"] div[class^="notice_"] button:hover {
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.4) !important;
+}
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"] svg,
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"] path,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"] svg,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"] path {
+  color: #d4b0ff !important;
+  fill: #d4b0ff !important;
+}
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"]:hover svg,
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"]:hover path,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"]:hover svg,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"]:hover path {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+/* Strip inner card border inside notice to avoid double-border */
+div[class^="chat_"] div[class^="notice_"] div[class^="preview_"],
+div[class^="chat_"] div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="chat_"] div[class^="notice_"] div[class*="card_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="preview_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class*="card_"] {
+  border: none !important;
+  border-color: initial !important;
+  border-width: initial !important;
+  box-shadow: none !important;
+}
+
+/* §9l — Tooltips: dark bg + purple border/glow for Solo Leveling aesthetic.
+   Applies to server hover tooltips, button tooltips, etc. */
+div[class^="tooltip_"] {
+  background: rgb(10, 10, 15) !important;
+  border: 1px solid rgba(138, 43, 226, 0.4) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 12px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.08) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
+}
+div[class^="tooltip_"] div[class^="tooltipPointer_"] {
+  border-top-color: rgba(138, 43, 226, 0.4) !important;
+}

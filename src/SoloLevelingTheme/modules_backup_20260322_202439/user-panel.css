@@ -1,0 +1,28 @@
+/* Module: User Panel (§7) */
+
+/* ═══════════════════════════════════════════════════════════
+   §7  NAMETAG / USER PANEL (bottom-left user status & settings)
+   VERIFIED — 2026-02-13
+   Note: The panel itself is visually repositioned to the dock
+   by the UserPanelDockMover plugin. These rules hide certain buttons.
+   ═══════════════════════════════════════════════════════════ */
+
+/* §7a — Hide mute/deafen buttons from the user panel
+   Removes the Mute/Unmute and Deafen/Undeafen toggle buttons
+   from the bottom user controls area */
+[class*="panels"] button[aria-label*="Mute" i],
+[class*="panels"] button[aria-label*="Unmute" i],
+[class*="panels"] button[aria-label*="Deafen" i],
+[class*="panels"] button[aria-label*="Undeafen" i] {
+  display: none !important;
+}
+
+/* §7b — Hide input/output device option buttons from the user panel
+   Removes the "Input Options" and "Output Options" gear buttons
+   that appear next to the mute/deafen controls */
+section[aria-label="User status and settings"] button[aria-label="Input Options"],
+section[aria-label="User status and settings"] button[aria-label="Output Options"],
+[class*="panels"] button[aria-label="Input Options"],
+[class*="panels"] button[aria-label="Output Options"] {
+  display: none !important;
+}

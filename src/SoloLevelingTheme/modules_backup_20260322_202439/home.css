@@ -1,0 +1,261 @@
+/* Module: Home Screen & Friends (§3) */
+
+/* ═══════════════════════════════════════════════════════════
+   §3  HOME SCREEN (Friends tab / DM list view)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §3a — Top title bar background: match dock/sidebar tone
+   The bar_ div spans the full width at the very top of the Friends/DM/channel view.
+   All its children (leading_, title_, trailing_) are hidden below, so this is just
+   the empty strip — solid dark to match the dock (rgba(8, 10, 20, 0.94)).
+   Multiple specificity layers to defeat ClearVision's base CSS transparent overrides:
+   1. Ancestry chain: container_ > base_ > bar_
+   2. Direct bar_ selector
+   3. theme-dark class qualifier */
+div[class^="container_"] div[class^="base_"] > div[class^="bar_"],
+div[class^="base_"] > div[class^="bar_"],
+div[class^="bar_"].theme-dark,
+div[class^="bar_"] {
+  background: rgba(8, 10, 20, 0.94) !important;
+  background-image: none !important;
+  border-bottom: none !important;
+}
+
+/* §3f — Content panel overlays: very light dark wash (0.3) for text readability
+   Applied uniformly to all three main content areas so the GIF wallpaper still
+   shows through but text has enough contrast to read comfortably.
+   - Friends list (center): peopleColumn_ — overrides ClearVision's default 0.4 to 0.3
+   - DM sidebar (left): sidebar_ wrapper — the entire left DM panel
+   - Active Now (right): the aside container with activity cards */
+main[aria-label="Friends"] div[class^="peopleColumn_"],
+div[class^="sidebar_"].theme-dark {
+  background: rgba(0, 0, 0, 0.3) !important;
+  background-image: none !important;
+}
+
+main[aria-label="Friends"] aside[class^="container_"],
+main[aria-label="Friends"] aside.refresh-active-now {
+  background: rgba(0, 0, 0, 0.3) !important;
+  background-image: none !important;
+}
+
+/* Server/group-DM member list (right panel) — full dark wash on panel */
+.members_c8ffbb,
+div[class^="membersWrap_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+}
+
+/* Boxed member rows — each user entry gets a subtle card look */
+div[class^="members_"] div[class^="member_"] {
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 2px !important;
+  margin: 10px 8px !important;
+  padding: 8px 8px !important;
+  border: 2px solid transparent !important;
+  transition: border-color 0.15s ease !important;
+}
+
+/* Disable white highlight on hover, add purple border instead */
+div[class^="members_"] div[class^="member_"]:hover {
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.55) !important;
+}
+
+/* §3a (continued) — Hide top title bar clutter in Home/Friends view
+   Removes: Inbox button, Help button, Support link, title text, Quick Switcher shortcut
+   These are in the horizontal bar at the very top of the Friends/DM area */
+div[aria-label='Inbox'],
+div[aria-label='Help'],
+div[class^='trailing_'] a[href^='https://support.discord.com'],
+div[class^='bar_'] div[aria-label='Inbox'],
+div[class^='bar_'] div[aria-label='Help'] {
+  display: none !important;
+}
+
+div[class^='bar_'] div[class^='title_'],
+div[class^='bar_'] div[aria-label='Open Quick Switcher'] {
+  display: none !important;
+}
+
+div[class^='leading_'] > :not(div[class^='backForwardButtons_']) {
+  display: none !important;
+}
+
+div[class^='leading_'] div[class^='backForwardButtons_'] {
+  display: none !important;
+}
+
+div[class^='leading_']::before,
+div[class^='leading_']::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* §3a (continued) — Hide Message button on friend rows (clicking name already opens DM) */
+div[class^="peopleListItem_"] div[aria-label="Message"][role="button"] {
+  display: none !important;
+}
+
+/* §3d (continued) — Hide video/voice call items from friend row context menu
+   Keeps "Remove Friend" visible */
+#friend-row-start-video-call,
+#friend-row-start-voice-call {
+  display: none !important;
+}
+
+/* §3g — "Explore Discoverable Servers" button: full-width + themed styling
+   The grid_ parent and button stretch to fill the peopleColumn_ center panel.
+   Solid dark background with purple border accent to match the theme. */
+main[aria-label="Friends"] div[class^="grid_"] {
+  width: 100% !important;
+  padding: 16px 20px !important;
+}
+
+main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"] {
+  width: 100% !important;
+  background: rgba(10, 10, 16, 0.85) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.35) !important;
+  border-radius: 2px !important;
+  padding: 12px 16px !important;
+  transition: border-color 0.2s ease, background-color 0.2s ease !important;
+}
+
+main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"]:hover {
+  background: rgba(10, 10, 16, 0.95) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.65) !important;
+}
+
+/* §3b — Friends > Active Now activity cards: hover border effect
+   When you hover over a friend's activity card, shows a purple outline.
+   Targets: itemCard_ buttons inside the Friends main content area */
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"] {
+  border: 2px solid transparent !important;
+  box-shadow: none !important;
+  transition: border-color 0.16s ease !important;
+}
+
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"]:hover {
+  border-color: rgba(var(--sl-color-primary-rgb), 0.82) !important;
+  box-shadow: none !important;
+}
+
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"]:not(:hover) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* §3c — User popout card (appears when you click someone's avatar/activity card)
+   Solid dark background with purple border instead of Discord's semi-transparent blur.
+   Also strips backgrounds from inner sections: banner, body, footer, activity, roles, notes */
+div[class^="userPopoutOuter_"],
+div[class*="userPopoutOuter_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[class^="userPopoutOuter_"] div[class^="banner_"],
+div[class^="userPopoutOuter_"] div[class^="body_"],
+div[class^="userPopoutOuter_"] div[class^="footer_"],
+div[class^="userPopoutOuter_"] section[class^="section_"],
+div[class^="userPopoutOuter_"] div[class^="activitySection_"],
+div[class^="userPopoutOuter_"] div[class^="activity_"],
+div[class^="userPopoutOuter_"] div[class^="rolesList_"],
+div[class^="userPopoutOuter_"] div[class^="note_"],
+div[class^="userPopoutOuter_"] div[class^="connectedAccounts_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Kill ALL inner borders on user popout children (prevents double-border) */
+div[class^="userPopoutOuter_"] > *,
+div[class^="userPopoutOuter_"] > * > *,
+div[class^="userPopoutOuter_"] div[class*="Inner"],
+div[class^="userPopoutOuter_"] div[class*="outer"],
+div[class^="userPopoutOuter_"] div[class*="inner"],
+div[class^="userPopoutOuter_"] div[class*="themed"],
+div[class^="userPopoutOuter_"] div[class*="popout"],
+div[class^="userPopoutOuter_"] div[class*="wrapper"] {
+  border: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+}
+/* Kill dark gradient overlay on profile inner container (popout + modal).
+   Discord applies linear-gradient(black 60%) as background-image on inner_
+   via .custom-user-profile-theme — looks like a fake border. */
+div[class^="outer_"] > div[class^="inner_"],
+.custom-user-profile-theme div[class^="inner_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border-radius: 2px !important;
+}
+div[class^="outer_"] {
+  border-radius: 2px !important;
+}
+
+/* §3d — Context menus (all role="menu" popups: activity cards, friend row, etc.)
+   Solid dark background + purple border. Also styles menu item hover states */
+div[role="menu"],
+#now-playing-menu {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* §3d (continued) — Reaction tooltip (hover popup on emoji reactions): solid + purple border */
+div[class^="reactionTooltip_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Global: all interactive items inside any popup/menu get consistent inset highlight */
+div[role="menu"] div[class^="item_"],
+div[role="menu"] div[role="menuitem"],
+div[role="menu"] div[role="option"],
+div[role="listbox"] div[role="option"],
+div[class^="popout_"] div[class^="item_"],
+#now-playing-menu div[role="menuitem"] {
+  background: transparent !important;
+  background-image: none !important;
+  border-radius: 2px !important;
+  margin: 0 4px !important;
+  box-sizing: border-box !important;
+}
+
+div[role="menu"] div[class^="item_"]:hover,
+div[role="menu"] div[class^="item_"][class*="focused"],
+div[role="menu"] div[role="menuitem"]:hover,
+div[role="menu"] div[role="option"]:hover,
+div[role="menu"] div[role="option"][class*="focused"],
+div[role="listbox"] div[role="option"]:hover,
+div[role="listbox"] div[role="option"][class*="focused"],
+div[class^="popout_"] div[class^="item_"]:hover,
+div[class^="popout_"] div[class^="item_"][class*="focused"],
+#now-playing-menu div[role="menuitem"]:hover,
+#now-playing-menu div[class^="item_"][class*="focused"] {
+  background: rgba(123, 43, 226, 0.45) !important;
+  background-image: none !important;
+  border-radius: 2px !important;
+}
+
+/* §3b (continued) — Active Now activity cards: solid black background
+   Prevents wallpaper from bleeding through the card surface */
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"],
+.refresh-active-now div[class^="itemCard_"] {
+  background: #000000 !important;
+  background-image: none !important;
+  opacity: 1 !important;
+}

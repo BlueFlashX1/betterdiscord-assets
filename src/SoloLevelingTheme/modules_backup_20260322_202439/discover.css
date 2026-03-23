@@ -1,0 +1,104 @@
+/* Module: Discover & Quests (§13) */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §13 — DISCOVER MENU
+   Quests, Server Discovery, and App Discovery header bars & backdrops.
+   Makes headers transparent so GIF wallpaper shows through, kills the
+   default ::after gradient fade, and styles tab items as purple pills.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §13a — Header bar: transparent bg, kill the ::after gradient fade.
+   children_ wraps the header bar content (tab buttons, search, etc.).
+   headerBarInner_ is the inner container. Both need transparent bg.
+   The ::after pseudo creates a gradient fade at the right edge — nuke it. */
+div[class^="children_"][class*="headerBarInner_"],
+div[class^="headerBarInner_"],
+div[class^="children_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Kill the right-edge gradient fade on the header bar */
+div[class^="children_"]::after,
+div[class^="headerBarInner_"]::after {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  opacity: 0 !important;
+}
+
+/* §13b — Backdrop: transparent, no gradient.
+   backdrop_ sits behind the Discover content with a gradient bg.
+   Force it fully transparent so the animated wallpaper shows through. */
+div[class^="backdrop_"] {
+  background: transparent !important;
+  background-image: none !important;
+  opacity: 1 !important;
+}
+
+/* §13c — Discover tab pills: purple pill style matching §10d.
+   The Discover pages use headerBarTabItem_ and tabBarItem_ patterns
+   inside the header. Style them as rounded purple pills. */
+div[class^="children_"] div[class^="headerBarTabItem_"],
+div[class^="children_"] div[class^="tabBarItem_"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  border-radius: 2px !important;
+  padding: 6px 14px !important;
+  margin: 0 4px 0 0 !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s !important;
+}
+/* Hover: subtle purple glow */
+div[class^="children_"] div[class^="headerBarTabItem_"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
+  border-color: rgba(180, 140, 255, 0.25) !important;
+}
+/* Selected: purple pill fill */
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="selected"],
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="active"],
+div[class^="children_"] div[class^="tabBarItem_"][class*="selected"],
+div[class^="children_"] div[class^="tabBarItem_"][class*="active"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="selected"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="active"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="selected"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"] {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.92),
+    rgba(var(--sl-color-primary-rgb), 0.72)
+  ) !important;
+  border-color: rgba(180, 140, 255, 0.35) !important;
+  box-shadow: 0 0 22px rgba(var(--sl-color-primary-rgb), 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+/* Selected + hover: brighter */
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="selected"]:hover,
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="active"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"][class*="selected"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"][class*="active"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="selected"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="active"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="selected"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"]:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.96),
+    rgba(var(--sl-color-primary-rgb), 0.78)
+  ) !important;
+}
+/* Kill the default underline indicator on Discover tabs */
+div[class^="children_"] div[class^="headerBarTabItem_"]::after,
+div[class^="children_"] div[class^="tabBarItem_"]::after,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]::after,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"]::after {
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  height: 0 !important;
+}

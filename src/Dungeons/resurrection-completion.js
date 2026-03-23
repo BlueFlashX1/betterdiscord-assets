@@ -428,13 +428,18 @@ module.exports = {
       // Award shadow essence for boss kill — lump sum scaled by boss rank.
       // This is the primary prestige essence source (mob kills provide steady drip).
       try {
-        if (typeof BdApi?.Events?.emit === 'function') {
-          SLEvents.emit('Dungeons:awardEssence', {
-            amount: 1,
-            bossRank: snap.boss?.rank || snap.rank || 'E',
-            source: 'boss_kill',
-          });
+        const bossPayload = {
+          amount: 1,
+          bossRank: snap.boss?.rank || snap.rank || 'E',
+          source: 'boss_kill',
+          bossName: snap.boss?.name || null,
+        };
+        // Add Demon Castle context for guaranteed equipment drops
+        if (dungeon?._isDemonCastle) {
+          bossPayload.isDemonCastle = true;
+          bossPayload.dcFloor = dungeon._dcFloor || null;
         }
+        SLEvents.emit('Dungeons:awardEssence', bossPayload);
       } catch (_) {}
 
       // Flush any remaining mob-kill essence that hasn't been flushed yet

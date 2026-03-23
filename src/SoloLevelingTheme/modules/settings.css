@@ -1,0 +1,498 @@
+/* Module: Settings (§10) */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §10 — SETTINGS — VERIFIED — 2026-02-14
+   Full-screen Settings modal: solid panels, dimmed backdrop, pill tabs.
+   The settings modal lives inside layer_ → outerContainer_ → modal_
+   and is scoped via container__8a031 / modalContentInner_ ancestry.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §10a — Settings backdrop: dimmed overlay behind the modal
+   The outerContainer_ fills the viewport and acts as a dark scrim.
+   Keep it semi-transparent so the GIF background still peeks through.
+   Scoped to layer_ parent so it does not bleed into quickswitcher or other contexts. */
+div[class^="layer_"] > div[class^="outerContainer_"] {
+  background: var(--sl-bg-overlay) !important;
+  background-image: none !important;
+}
+
+/* §10b — Settings sidebar (left menu list): solid dark bg
+   This is the navigation column with "My Account", "Nitro", etc.
+   Already at 0.3 opacity from existing rules — override to solid. */
+div[class^="container_"] > div[class^="sidebar_"] {
+  background: rgba(2, 3, 8, 0.98) !important;
+  background-image: none !important;
+}
+/* Settings sidebar scrollbar hidden */
+div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §10b+svg — Settings sidebar items: SVG-framed menu buttons
+   Applies channel-unread / channel-hover / channel-selected SVG backgrounds
+   to settings nav items. Mirrors the channel list SVG treatment from §9f.
+   DOM: itemContainer_ > item_ (role=listitem, gets active_ class!) > itemContent_ > svg.icon_ + text
+   NOTE: "active_" class lives on the listitem ITSELF, not on itemContainer_. */
+
+/* Shift sidebar items left for tighter framing */
+div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"] {
+  margin-left: -8px !important;
+}
+
+/* Reset: nuke Discord's default item highlight / pill backgrounds */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transition: filter 0.2s ease !important;
+  justify-content: center !important;
+  text-align: center !important;
+}
+/* Also reset the container itself (Discord may put bg here for selected state) */
+div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"] {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+/* Kill ::before pseudo-element Discord uses as selected highlight overlay */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]::before {
+  display: none !important;
+}
+
+/* §10b+i — Hide lucide SVG icons in settings sidebar items
+   Uses class*= not class^= because BD items have class="lucide icon_caf372" */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] svg[class*="icon_"] {
+  display: none !important;
+}
+
+/* Default/unselected state: channel-unread SVG (organic purple stroke frame)
+   Excludes items that have the active_ class */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]) {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
+}
+
+/* Hover state: channel-hover SVG (enhanced purple + dark fills) + glow */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]):hover {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
+}
+
+/* Selected/active state: Selected_channel SVG (organic dark strokes + purple edges) + glow
+   active_ class is on the ITEM (div[role=listitem]) itself, confirmed via CSS Picker. */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="active_"] {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
+}
+
+/* §10c — Settings content area (right panel): solid dark bg
+   contentHeader_ is the top bar with page title + close button.
+   contentBody_ is the scrollable content below. Both go solid. */
+div[class^="contentHeader_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+div[class^="contentBody_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+/* Settings content scroller + panel: solid bg */
+div[class^="contentBody_"] div[class^="scroller_"],
+div[class^="contentBody_"] div[class^="panel_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10c (continued) — Inner content containers: solid
+   modalContent_, modalContentInner_, and the structural containers
+   all need to be solid or transparent to not break the chain. */
+div[class^="modalContent_"],
+div[class^="modalContentInner_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10c (continued) — Settings cards (account standing, profile, etc.): match container bg
+   These cardPrimary_ elements default to rgba(0,0,0,0.3) — force them to match the
+   solid content background so they blend seamlessly. */
+div[class^="contentBody_"] div[class^="cardPrimary_"],
+div[class^="contentBody_"] div[class*="card_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+/* Purple outline only on the message preview card */
+div[class^="contentBody_"] div[class^="preview_"] {
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 2px !important;
+}
+/* Keep accessibility/user-settings notice previews neutral (no inner purple border). */
+div[class^="contentBody_"] div[class^="notice_"] div[class^="preview_"],
+div[class^="contentBody_"] div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="contentBody_"] div[class^="notice_"] div[class*="card_"] {
+  border: none !important;
+  border-color: initial !important;
+  border-width: initial !important;
+  box-shadow: none !important;
+}
+/* §10c (continued) — Account profile card bg + credential list + field list: match container */
+div[class^="contentBody_"] div[class^="background_"],
+div[class^="contentBody_"] div[class^="accountProfileCard_"],
+div[class^="contentBody_"] div[class^="credentialList_"],
+div[class^="contentBody_"] div[class^="fieldList_"],
+div[class^="contentBody_"] div[class^="field_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+  border-radius: var(--sl-radius) !important;
+}
+
+/* §10c (continued) — Settings content cards + inputs + buttons: sharp corners
+   Override Discord's rounded corners globally on cards, wrappers, sections, search inputs, buttons */
+div[class^="itemCard_"],
+div[class*="wrapper_"][class*="outer_"],
+section[class^="section_"],
+div[class^="searchBar_"] div[class^="container_"],
+div[class^="searchBar_"] div[class^="wrapper_"],
+button[class^="button_"],
+button[class*="primary_"],
+button[class*="md_"] {
+  border-radius: 2px !important;
+}
+
+/* §10c (continued) — Settings content scrollbar hidden */
+div[class^="contentBody_"] div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="contentBody_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §10d (pre) — Friends header tab buttons: bigger pill size
+   Default Discord: padding ~2px 8-10px. Bump for chunkier pills with custom font. */
+div[role="tablist"][aria-label="Friends"] div[role="tab"] {
+  padding: 6px 14px !important;
+  font-size: 17px !important;
+}
+
+/* §10d — Settings + Friends tab headers: pill style
+   Scoped to: Settings modal (contentBody_ / contentColumn_ / modalContentInner_)
+   and Friends tablist (aria-label="Friends").
+   Covers role="tab", item_, tab_ class patterns to catch ALL settings tab variants. */
+
+/* Base state: transparent pill, no visible border */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"],
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"],
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"],
+div[role="tablist"][aria-label="Friends"] div[role="tab"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  border-radius: 2px !important;
+  padding: 6px 14px !important;
+  margin: 0 4px -1px 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s !important;
+}
+
+/* Hover state (inactive): subtle purple glow + faint border */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"]:hover,
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"]:hover,
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"]:hover,
+div[role="tablist"][aria-label="Friends"] div[role="tab"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
+  border-color: rgba(180, 140, 255, 0.25) !important;
+}
+
+/* Selected state: black base + purple gradient border
+   Handles aria-selected="true" and class-based selected_/active_ states */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="selected"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="active_"],
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="selected"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="active_"],
+div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"] {
+  background: rgba(8, 8, 14, 0.95) !important;
+  border: 1px solid transparent !important;
+  border-image: linear-gradient(
+    135deg,
+    rgba(138, 43, 226, 0.7),
+    rgba(180, 140, 255, 0.5),
+    rgba(100, 20, 180, 0.6)
+  ) 1 !important;
+  box-shadow: 0 0 14px rgba(var(--sl-color-primary-rgb), 0.25),
+    inset 0 0 8px rgba(138, 43, 226, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* Selected + hover: brighter purple border glow */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="selected"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="active_"]:hover,
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="selected"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="active_"]:hover,
+div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"]:hover {
+  background: rgba(8, 8, 14, 0.98) !important;
+  border-image: linear-gradient(
+    135deg,
+    rgba(138, 43, 226, 0.9),
+    rgba(200, 160, 255, 0.65),
+    rgba(120, 40, 200, 0.8)
+  ) 1 !important;
+  box-shadow: 0 0 20px rgba(var(--sl-color-primary-rgb), 0.35),
+    inset 0 0 10px rgba(138, 43, 226, 0.12) !important;
+}
+
+/* Kill the default underline indicator on selected tabs */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"]::after,
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"]::after,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"]::after,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"]::after,
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"]::after,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"]::after,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"]::after,
+div[role="tablist"][aria-label="Friends"] div[role="tab"]::after {
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  height: 0 !important;
+}
+
+/* §10e — Settings popout/dropdown menus: solid bg + purple border
+   Covers all popout types: role="listbox", id^="popout_", and layer_ popouts.
+   Also targets the select field dropdown (selectFieldPopout_). */
+div[class^="popout_"][role="listbox"],
+div[id^="popout_"] > div[class^="popout_"],
+div[class^="selectFieldPopout_"],
+div[class^="selectDropdown_"],
+div[class^="selectDropdown_"] div[role="listbox"],
+div[class^="selectDropdown_"] div[class^="listBox_"],
+div[class^="popout_"] div[role="listbox"],
+div[id^="popout_"] div[role="listbox"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+}
+/* §10e (continued) — All inner elements of dropdown lists: solid bg
+   Covers scroller, list, individual options, and option_ elements. */
+div[id^="popout_"] div[class^="popout_"],
+div[id^="popout_"] div[class^="scroller_"],
+div[id^="popout_"] div[class^="list_"],
+div[id^="popout_"] div[role="option"],
+div[class^="popout_"][role="listbox"] div[class^="scroller_"],
+div[class^="popout_"][role="listbox"] div[role="option"],
+div[class^="selectFieldPopout_"] div[class^="scroller_"],
+div[class^="selectFieldPopout_"] div[role="option"],
+div[class^="selectFieldPopout_"] div[class^="option_"],
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[role="option"],
+div[class^="popout_"] div[role="listbox"] div[class^="option_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+/* §10e (continued) — Dropdown scrollbar hidden
+   Targets scroller_, scrollerBase_, auto_, and the popout/listbox containers themselves. */
+div[id^="popout_"] div[class^="scroller_"],
+div[id^="popout_"] div[class^="scrollerBase_"],
+div[id^="popout_"] div[class^="auto_"],
+div[class^="popout_"][role="listbox"],
+div[class^="popout_"][role="listbox"] div[class^="scroller_"],
+div[class^="selectFieldPopout_"],
+div[class^="selectFieldPopout_"] div[class^="scroller_"],
+div[class^="selectFieldPopout_"] div[class^="scrollerBase_"],
+div[class^="popout_"] div[role="listbox"],
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  overflow-y: auto !important;
+}
+div[id^="popout_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[id^="popout_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[id^="popout_"] div[class^="auto_"]::-webkit-scrollbar,
+div[class^="popout_"][role="listbox"]::-webkit-scrollbar,
+div[class^="popout_"][role="listbox"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="selectFieldPopout_"]::-webkit-scrollbar,
+div[class^="selectFieldPopout_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="selectFieldPopout_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §10f — Blocked/muted account cards: match container bg
+   card__5cea9 wraps the blocked accounts list + header.
+   settingsBackgroundFlashElement_ is the outer container wrapper. */
+div[class^="contentBody_"] div[class*="card_"][class*="5cea9"],
+div[class^="contentBody_"] div[class^="settingsBackgroundFlashElement_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10g — Settings server list: fix layout
+   The guildsList_ (ul, display:flex) inside myServersContainer_ lays out server
+   items as centered column stacks (icon on top, name below, toggle below that).
+   Override: make the ul a vertical list, and each li a horizontal row. */
+
+/* The ul itself: vertical column of rows, not a wrapping grid */
+ul[class^="guildsList_"] {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+}
+/* Each li: horizontal row — icon | name+members | toggle */
+ul[class^="guildsList_"] > li {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  text-align: left !important;
+  padding: 8px 12px !important;
+}
+/* Inner stack_ divs inside each li: also row */
+ul[class^="guildsList_"] > li > div[class^="stack_"],
+ul[class^="guildsList_"] > li div[class^="container_"] {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+/* Server icon: fixed size in the row */
+ul[class^="guildsList_"] > li img {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 2px !important;
+  flex-shrink: 0 !important;
+}
+/* Server name + member count wrapper: fill middle space, left align */
+ul[class^="guildsList_"] > li div[class^="guildDetails_"],
+ul[class^="guildsList_"] > li div[class^="guildName_"] {
+  text-align: left !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+/* Toggle switch: push to right edge */
+ul[class^="guildsList_"] > li div[class^="control_"] {
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+}
+
+/* §10g (continued) — Settings server list sticky header (Search + Sort by + Server Order):
+   This headerContainer_ is position:sticky z-index:1 but has transparent bg, so
+   scrolling server items bleed through underneath. Give it a solid bg to match. */
+div[class^="headerContainer_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10g (continued) — Settings option grids (In-app Icon, Color Themes, etc.):
+   These use stack_ with data-direction="horizontal" + data-wrap="true" and should
+   render as a wrapping grid. Force flex-wrap + row direction so they don't stack. */
+div[class^="contentBody_"] div[class^="stack_"][data-direction="horizontal"][data-wrap="true"] {
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+}
+
+/* §10h — Settings select field dropdowns (e.g. "All servers" filter):
+   solid dark bg + purple outer border, matching popout style from §10e. */
+div[class^="container_"] div[class*="selectField_"],
+div[class^="container_"] div[class*="wrapper_"][class*="selectField_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+}
+div[class^="container_"] div[class*="selectField_"]:hover,
+div[class^="container_"] div[class*="wrapper_"][class*="selectField_"]:hover {
+  border-color: var(--sl-color-accent-light) !important;
+}
+
+/* §10i — Family Center container (box_ surface): match container bg.
+   The box_f8c98c wrapper uses --background-surface-high (grey tint).
+   Match to theme bg but leave inner row_ cards untouched. */
+div[class^="contentBody_"] div[class^="box_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10j — Guild Boosting settings: match wrapper + FAQ bg to container.
+   wrapper__51537 is the server cards container, wrapper__5b98e/faq_ is FAQ.
+   Leave inner recommendedServerCard_ and guildContainer_ cards alone. */
+div[class^="contentBody_"] div[class^="guildBoostingSettings_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+div[class^="contentBody_"] div[class^="guildBoostingSettings_"] > div[class^="wrapper_"] {
+  background: transparent !important;
+}
+div[class^="contentBody_"] div[class^="faq_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10k — Keybinds settings: defaultKeybindGroup_ match container bg.
+   These groups use --background-surface-higher (grey tint). */
+div[class^="contentBody_"] div[class^="defaultKeybindGroup_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+
+/* §10l — Dropdown popout inner borders: remove ALL inner borders.
+   Keep the outer popout border (from §10e), kill every inner border.
+   Uses wildcard descendants to catch all wrapper/list/item patterns. */
+div[class^="popout_"] > div,
+div[class^="popout_"] div[role="listbox"] > div,
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[class^="list_"],
+div[class^="popout_"] div[role="listbox"] div[class^="option_"],
+div[class^="popout_"] div[role="listbox"] div[role="option"],
+div[class^="selectFieldPopout_"] div[role="option"],
+div[class^="selectFieldPopout_"] div[class^="option_"],
+div[class^="selectFieldPopout_"] div[class^="scroller_"] {
+  border: none !important;
+  border-color: transparent !important;
+}
+/* Re-apply the outer popout border since wildcard may strip it */
+div[class^="popout_"][role="listbox"],
+div[id^="popout_"] > div[class^="popout_"],
+div[class^="selectFieldPopout_"],
+div[class^="popout_"] div[role="listbox"],
+div[id^="popout_"] div[role="listbox"] {
+  border: 1px solid var(--sl-color-primary) !important;
+}

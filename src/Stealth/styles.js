@@ -1,4 +1,10 @@
 const STEALTH_SETTINGS_CSS = `
+/* ── Font Override ───────────────────────────────────────────── */
+.sl-stealth-settings,
+.sl-stealth-settings * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
 .sl-stealth-settings input[type="checkbox"] {
   cursor: pointer;
 }

@@ -1,5 +1,12 @@
 /* ItemVault — Inventory UI Styles */
 
+/* Font override — all text in this plugin uses Friend or Foe BB */
+[class^="iv-"],
+[class^="iv-"] * {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+
 /* ─── Toast notification override for vault events ─── */
 .iv-toast {
   font-family: var(--font-primary), 'gg sans', sans-serif;

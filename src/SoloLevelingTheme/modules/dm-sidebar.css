@@ -1,0 +1,115 @@
+/* Module: DM Sidebar (§5) */
+
+/* ═══════════════════════════════════════════════════════════
+   §5  SIDEBAR: PRIVATE CHANNELS (DM list left panel)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §5a — Hide Nitro, Shop, and Quests links from the DM sidebar navigation
+   These are the promotional links Discord puts above your DM conversations list.
+   Uses multiple selectors (href, aria-label, :has()) for resilience against class renames */
+nav[aria-label="Private channels"] a[href="/store"],
+nav[aria-label="Private channels"] a[href="/shop"],
+nav[aria-label="Private channels"] a[href="/quests"],
+nav[aria-label="Private channels"] [aria-label="Nitro"],
+nav[aria-label="Private channels"] [aria-label="Nitro Home"],
+nav[aria-label="Private channels"] [aria-label="Shop"],
+nav[aria-label="Private channels"] [aria-label="Quests"],
+nav[aria-label="Private channels"] li:has(a[href="/store"]),
+nav[aria-label="Private channels"] li:has(a[href="/shop"]),
+nav[aria-label="Private channels"] li:has(a[href="/quests"]),
+nav[aria-label="Private channels"] li:has([aria-label="Nitro"]),
+nav[aria-label="Private channels"] li:has([aria-label="Nitro Home"]),
+nav[aria-label="Private channels"] li:has([aria-label="Shop"]),
+nav[aria-label="Private channels"] li:has([aria-label="Quests"]) {
+  display: none !important;
+}
+
+/* §5c — Hide scrollbars on DM sidebar, Friends/people list, and Active Now panel */
+nav[aria-label="Private channels"] div[class^="scroller_"],
+div[class^="peopleColumn_"] div[class^="scroller_"],
+div[class^="peopleColumn_"] div[class^="peopleList_"],
+div[class^="peopleColumn_"],
+div[class^="peopleList_"],
+main[aria-label="Friends"] div[class^="scroller_"],
+main[aria-label="Friends"] div[class^="scrollerBase_"],
+main[aria-label="Friends"] div[class^="thin_"],
+main[aria-label="Friends"] div[class^="peopleList_"],
+main[aria-label="Friends"] aside div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+nav[aria-label="Private channels"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="peopleColumn_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="peopleColumn_"] div[class^="peopleList_"]::-webkit-scrollbar,
+div[class^="peopleColumn_"]::-webkit-scrollbar,
+div[class^="peopleList_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="scroller_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="thin_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="peopleList_"]::-webkit-scrollbar,
+main[aria-label="Friends"] aside div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §5d — DM sidebar: dark wash matching server guild sidebar
+   Targets ONLY the DM sidebar by requiring a "Private channels" nav descendant.
+   Same opacity as server sidebar (0.7) for visual harmony */
+div[class^="sidebar_"][class*="theme-dark"]:has(nav[aria-label="Private channels"]) {
+  background: rgba(0, 0, 0, 0.7) !important;
+  background-image: none !important;
+}
+
+/* §5e — DM sidebar search bar ("Find or start a conversation")
+   Makes the search field background opaque black instead of transparent/blurred.
+   Located at the top of the Private channels sidebar */
+nav[aria-label="Private channels"] div[class^="searchBar_"] {
+  background: rgba(0, 0, 0, 0.5) !important;
+  background-image: none !important;
+}
+
+/* §5b — DM sidebar: fill full height (reclaim gap left by UserPanelDockMover)
+   Root cause: ClearVision or Discord sets --custom-app-panels-height (e.g. 80px)
+   in a stylesheet with !important, which beats the inline style set by
+   UserPanelDockMover's JS. Force it to 0px via CSS !important so the sidebar
+   stretches all the way down to where the user panel used to be.
+   Also collapse the panels_ wrapper itself, and make the sidebar fill 100%. */
+
+/* Force the CSS variable to 0 — this is the root fix */
+body {
+  --custom-app-panels-height: 0px !important;
+}
+
+/* Sidebar stretches full height */
+div[class^="sidebar_"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  bottom: 0 !important;
+}
+
+div[class^="sidebar_"] div[class^="sidebarList_"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+/* Force panels wrapper to 0 height via CSS (backup for UserPanelDockMover's JS) */
+div[class^="sidebar_"] div[class^="panels_"],
+div[class^="panels_"] {
+  height: 0px !important;
+  min-height: 0px !important;
+  max-height: 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Also target the content_ wrapper that may reserve space for panels */
+div[class^="sidebar_"] div[class^="content_"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+}

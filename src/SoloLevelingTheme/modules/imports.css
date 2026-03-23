@@ -1,0 +1,189 @@
+/* Module: Imports & Variables (§1) */
+
+/* HorizontalServerList — makes the server list a bottom dock */
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
+@import url('https://clearvision.github.io/ClearVision-v7/main.css');
+@import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
+@import url('https://db.onlinewebfonts.com/c/262e61977221d8478c4e05291da30122?family=Friend+or+Foe+BB');
+
+/* §14e — Role-Colored Mentions (import must be near top — see §14e note below)
+   Credit: dav (2024-05-30) */
+@import url('https://davart154.github.io/Themes/Snippets/Colored%20Mentions/ColoredMentionsSource.css');
+
+/* §14g — Improved Links + Masked Links addon (imports must be near top)
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinks.css');
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinksMaskedLinksAddon.css');
+
+/* ═══════════════════════════════════════════════════════════
+   §1  IMPORTS & VARIABLES
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* HorizontalServerList layout */
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+
+  /* Core brand colors (used throughout — purple Solo Leveling palette) */
+  --main-color: #8a2be2;
+  --hover-color: #a855f7;
+  --success-color: #00ff88;
+  --danger-color: #ff4444;
+  --sl-color-primary: #8a2be2;
+  --sl-color-accent-light: #b388ff;
+  --sl-color-primary-rgb: 138, 43, 226;
+
+  /* Surface backgrounds (dark popup/surface palette) */
+  --sl-bg-popup: rgba(10, 10, 16, 0.98);
+  --sl-bg-surface: rgba(8, 10, 20, 0.98);
+  --sl-bg-dock: rgba(8, 10, 20, 0.94);
+
+  /* Override Discord's native background variables to match our theme */
+  --background-base-lower: rgba(8, 10, 20, 0.98);
+  --background-base-low: rgba(10, 10, 20, 0.95);
+  --background-base-default: rgba(12, 12, 24, 0.95);
+  --background-base-high: rgba(18, 18, 32, 0.95);
+  --background-base-higher: rgba(24, 24, 40, 0.95);
+  --sl-bg-overlay: rgba(0, 0, 0, 0.75);
+
+  /* Border radius */
+  --sl-radius: 2px;
+  --sl-radius-sharp: 0px;
+
+  /* Border accent */
+  --sl-border-primary: 2px solid rgba(138, 43, 226, 0.55);
+  --sl-border-primary-strong: 2px solid rgba(138, 43, 226, 0.75);
+  --sl-border-subtle: 1px solid rgba(138, 43, 226, 0.35);
+
+  /* Shadow */
+  --sl-shadow-popup: 0 8px 20px rgba(0, 0, 0, 0.5);
+  --sl-shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* Typography — Friend or Foe BB (Blambot) */
+  --font-primary: 'Friend or Foe BB', sans-serif;
+  --font-display: 'Friend or Foe BB', sans-serif;
+  --font-headline: 'Friend or Foe BB', sans-serif;
+  --font-code: 'Consolas', 'Courier New', monospace;
+
+  /* Animated wallpaper controls */
+  --sl-bg-gif: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-overlay: rgba(0, 0, 0, 0);
+  --sl-bg-opacity: 1.0;
+  --background-position: center 0%;
+}
+
+/* §1 (continued) — Universal font override.
+   Two-layer approach:
+   Layer 1: Inheritance — set on #app-mount so all children inherit by default.
+   Layer 2: Override — catch elements where Discord hardcodes font-family via
+   inline styles or high-specificity class rules. Uses attribute selectors
+   targeting Discord's hashed class patterns instead of a bare wildcard. */
+
+/* Layer 1: Inheritance root — free, no per-element matching */
+#app-mount {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+/* Layer 2: Override Discord's hardcoded font-family on specific element patterns.
+   Discord sets font-family on elements with classes like message_, header_, title_,
+   input_, label_, text_, name_, etc. This catches them without a bare * selector. */
+#app-mount [class*="message_"],
+#app-mount [class*="header_"],
+#app-mount [class*="title_"],
+#app-mount [class*="input_"],
+#app-mount [class*="label_"],
+#app-mount [class*="text_"],
+#app-mount [class*="name_"],
+#app-mount [class*="content_"],
+#app-mount [class*="description_"],
+#app-mount [class*="placeholder_"],
+#app-mount [class*="username_"],
+#app-mount [class*="nickname_"],
+#app-mount [class*="channelName_"],
+#app-mount [class*="topic_"],
+#app-mount [class*="markup_"],
+#app-mount [class*="timestamp_"],
+#app-mount [class*="heading_"],
+#app-mount [class*="subtext_"],
+#app-mount [class*="note_"],
+#app-mount [class*="status_"],
+#app-mount [class*="activity_"],
+#app-mount [class*="tag_"],
+#app-mount [class*="badge_"],
+#app-mount [class*="pill_"],
+#app-mount [class*="button_"],
+#app-mount [class*="tab_"],
+#app-mount [class*="item_"],
+#app-mount [class*="option_"],
+#app-mount [class*="select_"],
+#app-mount [class*="modal_"],
+#app-mount [class*="tooltip_"],
+#app-mount [class*="notice_"],
+#app-mount [class*="toast_"],
+#app-mount [class*="card_"],
+#app-mount [class*="embed_"],
+#app-mount [class*="attachment_"],
+#app-mount [class*="reaction_"],
+#app-mount [class*="mention_"],
+#app-mount [class*="role_"],
+#app-mount [class*="sidebar_"],
+#app-mount [class*="panel_"],
+#app-mount [class*="form_"],
+#app-mount [class*="search_"],
+#app-mount [class*="typing_"],
+#app-mount [class*="members_"],
+#app-mount [class*="channel_"],
+#app-mount [class*="guild_"],
+#app-mount [class*="popout_"],
+#app-mount [class*="menu_"],
+#app-mount [class*="divider_"],
+#app-mount [class*="wrapper_"],
+#app-mount [class*="container_"],
+#app-mount span,
+#app-mount h1, #app-mount h2, #app-mount h3, #app-mount h4, #app-mount h5,
+#app-mount p, #app-mount a, #app-mount li, #app-mount label,
+#app-mount input, #app-mount textarea, #app-mount select, #app-mount option,
+#app-mount button, #app-mount strong, #app-mount em, #app-mount div {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+/* Exempt code blocks from font override */
+#app-mount code,
+#app-mount pre,
+#app-mount [class*="codeLine"],
+#app-mount [class*="codeBlock"],
+#app-mount [class*="codeBlockText_"],
+#app-mount [class*="inlineCode_"],
+#app-mount [class*="code_"] {
+  font-family: 'Consolas', 'Courier New', monospace !important;
+}
+/* §1 (continued) — ARISE animation uses Speedy Space Goat Oddity; exempt from global font.
+   Specificity (0,1,0) beats the :where()-wrapped * selector (0,0,0) above.
+   Covers main animation (sa-arise-*) and fallback (shadow-extraction-*). */
+/* Only the "ARiSe" title text gets Speedy Space Goat — rank/role stays Friend or Foe */
+.sa-arise-text,
+.sa-arise-text span {
+  font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
+}
+.sa-arise-meta {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+.shadow-extraction-title {
+  font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
+}
+.shadow-extraction-info,
+.shadow-rank,
+.shadow-role {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+
+/* §1 (continued) — Global font-size boost for Friend or Foe readability.
+   FoF has a smaller x-height than gg sans, so scale everything up. */
+html {
+  font-size: 130% !important;
+}
