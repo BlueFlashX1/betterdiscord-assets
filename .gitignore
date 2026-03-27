@@ -157,3 +157,4 @@ logs/
 
 # Plugin files — cannot share plugin code publicly
 plugins/
+.backup-*
