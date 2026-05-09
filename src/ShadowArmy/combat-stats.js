@@ -213,7 +213,7 @@ module.exports = {
     }, {});
   },
 
-  generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier) {
+  generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier, growthVarianceSeed = null) {
     if (!roleKey || !shadowRank) {
       const statKeys = C.STAT_KEYS;
       return statKeys.reduce((stats, key) => {
@@ -233,10 +233,18 @@ module.exports = {
       }, {});
     }
 
-    return statKeys.reduce((baseStats, stat) => {
+    return statKeys.reduce((baseStats, stat, s) => {
       const roleWeight = weights[stat] || 1.0;
       const rankBaseline = rankBaselines[stat] || 10;
-      const variance = 0.9 + Math.random() * 0.2;
+      // A5 (audit): when called with the shadow's growthVarianceSeed, use
+      // the same seed-deterministic variance formula as self-heal. This
+      // ensures extraction and heal produce identical baseStats, so heal
+      // is a true no-op (instead of an irreversible ~10% stat shift on
+      // first invocation). Falls back to live random for legacy callers
+      // (e.g. migrations.js) that haven't been updated to thread the seed.
+      const variance = growthVarianceSeed != null
+        ? 0.9 + ((growthVarianceSeed * 7 + s * 13) % 100) / 500
+        : 0.9 + Math.random() * 0.2;
       const shadowStat = rankBaseline * roleWeight * variance;
       baseStats[stat] = Math.max(1, Math.round(shadowStat));
       return baseStats;
