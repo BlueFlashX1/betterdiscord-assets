@@ -98,7 +98,17 @@ module.exports = {
     const intelligence = totalStats.intelligence || 0;
 
     const oldMaxMana = this.settings.userMaxMana || 0;
-    this.settings.userMaxMana = await this.calculateMana(intelligence, 0);
+    // Wave A / audit C2: delegate to SoloLevelingStats so flatMana from
+    // SkillTree (e.g. Black Heart +100,000) is included. Previous call
+    // hardcoded flatMana=0 and silently dropped any SkillTree bonus.
+    // Fall back to local calculation if SLStats helper is unavailable.
+    let newMaxMana;
+    if (this.soloLevelingStats && typeof this.soloLevelingStats.calculateMana === "function") {
+      newMaxMana = this.soloLevelingStats.calculateMana(intelligence);
+    } else {
+      newMaxMana = await this.calculateMana(intelligence, 0);
+    }
+    this.settings.userMaxMana = newMaxMana;
 
     if (this.settings.userMaxMana > oldMaxMana) {
       const manaIncrease = this.settings.userMaxMana - oldMaxMana;
