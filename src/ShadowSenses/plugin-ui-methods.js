@@ -775,8 +775,19 @@ const ShadowSensesUiMethods = {
         })
       ),
 
+      // #4: window mode — fixed hours OR since last successful report
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Report Window (hours)"),
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Use 'since last report' window"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.startupReportSinceLastSession,
+          onChange: (e) => updateSetting("startupReportSinceLastSession", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Report Window (hours, max)"),
         ce("input", {
           type: "number",
           min: 1,

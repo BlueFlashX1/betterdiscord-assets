@@ -1230,6 +1230,31 @@ module.exports = class ShadowSenses {
           },
         },
         attentionSignalText
+      ),
+      // #22: copy the full report to clipboard so the user can keep a log
+      // (modal is otherwise ephemeral — closing loses everything).
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => this._copyStartupReportToClipboard({
+            title, safeNarration, detailLine, topTargetsLine, topChannelsLine, attentionSignalText,
+          }),
+          style: {
+            alignSelf: "flex-start",
+            marginTop: "4px",
+            padding: "5px 12px",
+            background: "rgba(138, 43, 226, 0.18)",
+            border: "1px solid rgba(138, 43, 226, 0.45)",
+            borderRadius: "6px",
+            color: "#d6bcff",
+            cursor: "pointer",
+            fontSize: "11px",
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+          },
+        },
+        "COPY REPORT"
       )
     );
 
@@ -1239,6 +1264,36 @@ module.exports = class ShadowSenses {
     BdApi.UI.showConfirmationModal(title, content, {
       confirmText: "Understood",
     });
+  }
+
+  // #22: serialize the modal's report content to plain text and write to
+  // the system clipboard. Toast on success/failure for feedback.
+  _copyStartupReportToClipboard({ title, safeNarration, detailLine, topTargetsLine, topChannelsLine, attentionSignalText }) {
+    const text = [
+      title,
+      "",
+      safeNarration,
+      "",
+      detailLine,
+      topTargetsLine,
+      topChannelsLine,
+      "",
+      "Signals Requiring Attention:",
+      attentionSignalText,
+    ]
+      .filter((line) => line !== undefined && line !== null && String(line).trim().length > 0)
+      .join("\n");
+
+    if (!navigator?.clipboard?.writeText) {
+      BdApi.UI?.showToast?.("Clipboard API unavailable", { type: "error" });
+      return;
+    }
+    navigator.clipboard.writeText(text)
+      .then(() => BdApi.UI?.showToast?.("Igris report copied to clipboard", { type: "success" }))
+      .catch((err) => {
+        this.debugError("StartupReport", "Clipboard copy failed", err);
+        BdApi.UI?.showToast?.("Copy failed — see console", { type: "error" });
+      });
   }
 
   async _showStartupShadowReport() {
@@ -1253,7 +1308,21 @@ module.exports = class ShadowSenses {
       return;
     }
 
-    const windowMs = this._getStartupShadowReportWindowMs();
+    // #4: optional "since-last-report" window mode. When enabled, the window
+    // is the time elapsed since the last successful report fire (capped at
+    // the configured max hours). Otherwise fall back to the fixed window.
+    const configuredWindowMs = this._getStartupShadowReportWindowMs();
+    let windowMs = configuredWindowMs;
+    if (this.settings?.startupReportSinceLastSession) {
+      try {
+        const lastReportAt = Number(BdApi.Data.load(PLUGIN_NAME, "lastStartupReportAt") || 0);
+        if (lastReportAt > 0 && lastReportAt < Date.now()) {
+          const sinceLastMs = Date.now() - lastReportAt;
+          // Min 1h floor (avoid sub-hour reports), capped at configured window.
+          windowMs = Math.max(60 * 60 * 1000, Math.min(configuredWindowMs, sinceLastMs));
+        }
+      } catch (_) { /* fallback to fixed window on read error */ }
+    }
     const summary = this.sensesEngine.getStartupSummary(windowMs, 3, 2);
     if (!summary) return;
 
@@ -1294,6 +1363,12 @@ module.exports = class ShadowSenses {
     // doesn't re-fire the same report. Cleared on full plugin restart since
     // the class is re-instantiated.
     this._startupReportFired = true;
+
+    // #4: persist successful-fire timestamp so the next startup can compute
+    // a since-last-session window if the user has that mode enabled.
+    try {
+      BdApi.Data.save(PLUGIN_NAME, "lastStartupReportAt", Date.now());
+    } catch (_) { /* persist failure is non-fatal */ }
 
     this.debugLog("Lifecycle", "Startup shadow report emitted", {
       windowHours,
