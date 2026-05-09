@@ -167,9 +167,14 @@ module.exports = {
     const perStatGrowth = Math.floor(totalGrowth / 5);
     const perStatNatGrowth = Math.floor(totalNatGrowth / 5);
 
-    // Base stats = total effective scaled back minus growth contributions
+    // Base stats = total effective scaled back minus growth contributions.
+    // A3 (audit): clamp to 0, not 1. When compression rounding inflates
+    // totalGrowth + totalNatGrowth past totalEffective, the formula
+    // produces a negative number — clamping to 1 silently bumped each
+    // stat by 1 (×5 stats = +5 per shadow), over-crediting power.
+    // Clamping to 0 reflects the reconstructed truth.
     const totalEffective = compressed.s * 100;
-    const perStatBase = Math.max(1, Math.floor((totalEffective - totalGrowth - totalNatGrowth) / 5));
+    const perStatBase = Math.max(0, Math.floor((totalEffective - totalGrowth - totalNatGrowth) / 5));
 
     const baseStats = statKeys.reduce((stats, stat) => {
       stats[stat] = perStatBase;
