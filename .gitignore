@@ -99,6 +99,8 @@ drafts/
 .env
 .env.local
 .env.*.local
+*.env
+shadow-away.env
 *.key
 *.pem
 *.cert
