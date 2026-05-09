@@ -60,19 +60,32 @@ module.exports = {
     const shadowPower = this._getShadowPowerValue(shadow);
     if (!(shadowPower > 0)) return null;
 
-    const currentPower = this.settings.cachedTotalPower || 0;
-    const newPower =
-      direction === 'decrement'
-        ? Math.max(0, currentPower - shadowPower)
-        : currentPower + shadowPower;
-    const currentCount = (await this.storageManager?.getTotalCount()) || 0;
+    // A1 (audit): serialize concurrent delta applications via a promise
+    // chain. Without this, two parallel extractions both read the same
+    // currentPower → race produces a missed contribution. With burst
+    // extractions (450ms intervals, 20/min cap), 2-3 increments can be
+    // in-flight simultaneously and quietly under-count army power.
+    this._applyTotalPowerDeltaChain = (this._applyTotalPowerDeltaChain || Promise.resolve())
+      .then(async () => {
+        const currentCount = (await this.storageManager?.getTotalCount()) || 0;
+        const currentPower = this.settings.cachedTotalPower || 0;
+        const newPower =
+          direction === 'decrement'
+            ? Math.max(0, currentPower - shadowPower)
+            : currentPower + shadowPower;
 
-    this.settings.cachedTotalPower = newPower;
-    this.settings.cachedTotalPowerShadowCount = currentCount;
-    this.settings.cachedTotalPowerTimestamp = Date.now();
-    this.saveSettings();
+        this.settings.cachedTotalPower = newPower;
+        this.settings.cachedTotalPowerShadowCount = currentCount;
+        this.settings.cachedTotalPowerTimestamp = Date.now();
+        this.saveSettings();
 
-    return { shadowPower, currentPower, newPower, currentCount };
+        return { shadowPower, currentPower, newPower, currentCount };
+      })
+      .catch((err) => {
+        this.debugError('POWER', '_applyTotalPowerDelta chain error', err);
+        return null;
+      });
+    return this._applyTotalPowerDeltaChain;
   },
 
   async getTotalShadowPower(forceRecalculate = false) {
@@ -364,17 +377,23 @@ module.exports = {
     const totalShadowsCount = aggregatedData.totalShadows;
     const fallbackPower = aggregatedData.totalPower;
 
+    // A2 (audit): trust the freshly-streamed fallbackPower. The streaming
+    // aggregation just iterated every shadow and computed the current
+    // total. Calling getTotalShadowPower(false) here previously discarded
+    // that fresh sum in favor of a possibly-stale cache (e.g. cached value
+    // from before a self-heal that increased army power). Use the stream
+    // result as the source of truth; only fall back to the cache as a
+    // safety net when the stream produced 0 despite having shadows.
     let finalPower = fallbackPower;
-    if (totalShadowsCount > 0) {
+    if (totalShadowsCount > 0 && !(fallbackPower > 0)) {
       try {
         const directPower = await this.getTotalShadowPower(false);
-        finalPower = directPower > 0 ? directPower : fallbackPower;
-        this.debugLog('GET_AGGREGATED_ARMY_STATS', 'Using direct power calculation', {
+        if (directPower > 0) finalPower = directPower;
+        this.debugLog('GET_AGGREGATED_ARMY_STATS', 'Stream produced 0 — used cached power', {
           directPower, totalShadows: totalShadowsCount, finalPower,
         });
       } catch (powerError) {
-        this.debugError('GET_AGGREGATED_ARMY_STATS', 'Failed to get direct power, using aggregated', powerError);
-        finalPower = fallbackPower;
+        this.debugError('GET_AGGREGATED_ARMY_STATS', 'Failed to get cached power fallback', powerError);
       }
     }
 
