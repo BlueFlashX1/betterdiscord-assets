@@ -556,7 +556,31 @@ module.exports = {
       this.pendingLevelUp = null;
     }
 
-    // Save before stopping
+    // Save before stopping. The async saveSettings(true) below kicks off the
+    // full save flow (IDB + BdApi.Data + file backup), but BD's stop() is
+    // synchronous and doesn't await it. If the user immediately re-enables,
+    // BD calls start() → loadSettings() while the IDB write is still in
+    // flight, and the load can race-read stale or default data — leaving
+    // the user at L1/0XP after disable+re-enable until a full Discord
+    // restart re-reads cleanly.
+    //
+    // Synchronously snapshot the current in-memory state to BdApi.Data
+    // first. BdApi.Data.save uses fs.writeFileSync internally, so it
+    // commits before stop() returns. _pickBestSettingsCandidate prefers
+    // the BdApi candidate, so on re-enable the load sees this snapshot
+    // even if IDB hasn't flushed yet.
+    try {
+      const snapshotForBdApi = this._createCleanSettingsForSave();
+      BdApi.Data.save('SoloLevelingStats', 'settings', snapshotForBdApi);
+      this.debugLog('STOP', 'Sync snapshot to BdApi.Data committed', {
+        level: snapshotForBdApi.level,
+        xp: snapshotForBdApi.xp,
+        totalXP: snapshotForBdApi.totalXP,
+      });
+    } catch (snapErr) {
+      this.debugError('STOP', 'Sync BdApi.Data snapshot failed', snapErr);
+    }
+
     this.saveSettings(true);
 
     // Detach settings panel delegated handlers if attached
