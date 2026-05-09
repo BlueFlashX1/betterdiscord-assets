@@ -1,0 +1,261 @@
+/* Module: Custom Snippets (§14) */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §14 — CUSTOM SNIPPETS
+   Community-contributed CSS snippets. Each snippet must credit
+   the original author.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §14a — BD Settings on Top
+   Moves BetterDiscord settings to the top of the sidebar navigation.
+   Credit: SyndiShanX (2025-11-25) */
+[class^=sidebar] [class^=nav] > ul:has(.bd-button) {
+  order: -1;
+}
+
+/* §14b — Re-Iconify Search
+   Collapses the toolbar search bar into a compact icon; expands on click/focus.
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2025-07-16) */
+div[class*="upperContainer_"] div[class*="toolbar_"] div[class*="search_"]:not([class*="searchBar_"]) {
+  order: -1;
+  div[class*="searchBar_"] {
+    transition: all ease 0.3s;
+    width: 25px;
+    box-sizing: unset;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    div[class*="icon_"] {
+      height: 32px;
+      width: 32px;
+      scale: 1.2;
+      cursor: pointer;
+    }
+  }
+  div[class*="focused_"] div[class*="searchBar_"],
+  div[class*="open_"] div[class*="searchBar_"] {
+    width: 225px;
+    box-sizing: border-box;
+    cursor: text;
+    background: var(--background-gradient-low, var(--input-background));
+    border: 1px solid var(--input-border);
+    padding: 2px 0;
+    div[class*="icon_"] {
+      height: 24px;
+      width: 24px;
+      scale: 1;
+      cursor: pointer;
+    }
+  }
+}
+
+/* §14c — Hide Channel Invite Button
+   Hides the invite-members button on channels until hovered.
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2025-03-01) */
+div[class*="containerDefault_"] {
+  div[class*="children_"] {
+    opacity: 0;
+    margin-right: -32px;
+  }
+  &:hover {
+    div[class*="children_"] {
+      opacity: 1;
+      margin-right: 0px;
+    }
+  }
+}
+
+/* §14c+h — Hide "Invite to Channel" and "Open Chat" hover icons
+   These buttons clutter the channel list on hover — fully hidden. */
+ul[aria-label="Channels"] div[aria-label="Invite to Channel"],
+ul[aria-label="Channels"] div[aria-label="Open Chat"] {
+  display: none !important;
+}
+
+/* §14d — Disabled Channel Textarea Redesign
+   Cleaner look for read-only channels (no send permission).
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2025-02-16) */
+div[class*="form_"]:has(div[class*="channelTextAreaDisabled_"]) {
+  border-top: 2px solid var(--app-border-frame);
+  height: 50px;
+  background-color: var(--background-primary);
+  cursor: not-allowed;
+  div[class*="channelTextAreaDisabled_"][class*="channelTextAreaDisabled_"] {
+    background-color: transparent;
+    border: none;
+    text-align: center;
+    div[class*="rightAccessories_"], div[class*="buttons_"] {
+      display: none;
+    }
+  }
+}
+
+/* §14e — Role-Colored Mentions
+   Colors @mentions based on the mentioned user's role color.
+   @import placed near top of file (line 167) per CSS spec requirement.
+   Credit: dav (2024-05-30) */
+
+/* §14f — Hide Threads Until Hover
+   Collapses thread lists under channels; slides down on hover.
+   Converted to attribute selectors for hash resilience.
+   Credit: vortex_chaos (via Aurora, 2024-04-13) */
+div[class*="containerDefault_"] + div[class^="container_"] {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+div[class*="containerDefault_"]:hover + div[class^="container_"],
+div[class*="containerDefault_"] + div[class^="container_"]:hover {
+  max-height: 1000px;
+  transition: max-height 1s ease;
+}
+
+/* §14g — Improved Links + Masked Links Addon
+   Styles plain links as mention-like pills with hover effects.
+   Masked Links addon shows the actual URL after masked link text.
+   @imports placed near top of file (line 182-183) per CSS spec requirement.
+   Overrides below: remove emoji, purple pill color, truncate long URLs.
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+
+/* §14g override — purple pill color + no emoji + truncation */
+[class^="message_"] [class^="contents_"] [class^="anchor_"],
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"] {
+  color: var(--sl-color-accent-light, #b388ff) !important;
+  background-color: rgba(123, 44, 191, 0.15) !important;
+  border-bottom-color: var(--sl-color-primary, #7b2cbf) !important;
+  max-width: 350px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+[class^="message_"] [class^="contents_"] [class^="anchor_"]::before,
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]::before {
+  content: "" !important;
+  margin-right: 0 !important;
+}
+[class^="message_"] [class^="contents_"] [class^="anchor_"]:hover,
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]:hover {
+  background-color: var(--sl-color-primary, #7b2cbf) !important;
+  color: #fff !important;
+}
+
+/* §14h — Simplified Edited Icon
+   Replaces "(edited)" text with a compact pencil icon (✎).
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2023-10-27) */
+span[class*="edited_"] {
+  color: rgba(0, 0, 0, 0);
+}
+span[class*="edited_"]::before {
+  content: "(✎)";
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* §14i — Hide Reaction Popup on Hover
+   Hides the reaction/reply/pin toolbar that appears when hovering messages.
+   Right-click still provides all these actions via context menu. */
+div[class^="buttonsInner_"][class*="popover_"] {
+  display: none !important;
+}
+
+/* §14j — BD Toast Style
+   Force all BetterDiscord toast notifications to use white text + sharp corners. */
+.bd-toast {
+  color: #ffffff !important;
+  border-radius: 0 !important;
+}
+
+/* §14k — Scrollbar suppression — targeted to Discord's scrollable containers.
+   Avoids the old `#app-mount *` wildcard which forced style recalc on every DOM element.
+   Covers: channel list, member list, chat messages, settings panels, modals,
+   server list, DM sidebar, search results, thread panels, forum posts. */
+html,
+body,
+#app-mount,
+/* Chat & messages */
+div[class*="scroller_"],
+div[class*="scrollerBase_"],
+div[class*="scrollerInner_"],
+div[class*="messagesWrapper_"],
+div[class*="messageGroupWrapper_"],
+ol[class*="scrollerInner_"],
+/* Sidebars */
+nav[class*="guilds_"],
+div[class*="sidebar_"],
+div[class*="panels_"],
+div[class*="privateChannels_"],
+div[class*="membersWrap_"],
+div[class*="members_"],
+/* Settings & modals */
+div[class*="contentRegion_"],
+div[class*="contentColumn_"],
+div[class*="sidebarRegion_"],
+div[class*="modalContent_"],
+div[class*="root_"],
+div[class*="layer_"],
+/* Popouts & menus */
+div[class*="popout_"],
+div[class*="menu_"],
+div[class*="autocomplete_"],
+/* Thread & forum */
+div[class*="container_"][class*="thread_"],
+div[class*="chatContent_"],
+/* Search */
+div[class*="searchResultsWrap_"],
+div[class*="searchResult_"],
+/* User areas */
+div[class*="userPopoutInner_"],
+div[class*="userProfileInner_"],
+div[class*="listItems_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+div[class*="scroller_"]::-webkit-scrollbar,
+div[class*="scrollerBase_"]::-webkit-scrollbar,
+div[class*="scrollerInner_"]::-webkit-scrollbar,
+div[class*="messagesWrapper_"]::-webkit-scrollbar,
+ol[class*="scrollerInner_"]::-webkit-scrollbar,
+nav[class*="guilds_"]::-webkit-scrollbar,
+div[class*="sidebar_"]::-webkit-scrollbar,
+div[class*="privateChannels_"]::-webkit-scrollbar,
+div[class*="membersWrap_"]::-webkit-scrollbar,
+div[class*="members_"]::-webkit-scrollbar,
+div[class*="contentRegion_"]::-webkit-scrollbar,
+div[class*="contentColumn_"]::-webkit-scrollbar,
+div[class*="sidebarRegion_"]::-webkit-scrollbar,
+div[class*="modalContent_"]::-webkit-scrollbar,
+div[class*="popout_"]::-webkit-scrollbar,
+div[class*="menu_"]::-webkit-scrollbar,
+div[class*="autocomplete_"]::-webkit-scrollbar,
+div[class*="chatContent_"]::-webkit-scrollbar,
+div[class*="searchResultsWrap_"]::-webkit-scrollbar,
+div[class*="userPopoutInner_"]::-webkit-scrollbar,
+div[class*="userProfileInner_"]::-webkit-scrollbar,
+div[class*="listItems_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+}
+
+div[class*="scroller_"]::-webkit-scrollbar-thumb,
+div[class*="scroller_"]::-webkit-scrollbar-track,
+div[class*="scroller_"]::-webkit-scrollbar-corner,
+div[class*="scrollerBase_"]::-webkit-scrollbar-thumb,
+div[class*="scrollerBase_"]::-webkit-scrollbar-track,
+div[class*="scrollerBase_"]::-webkit-scrollbar-corner {
+  background: transparent !important;
+  border: none !important;
+}

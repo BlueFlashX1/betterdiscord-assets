@@ -1,60 +1,52 @@
-# This repo hosts public-facing assets ONLY:
-#   - themes/   BetterDiscord theme CSS + supporting images/SVGs/GIFs
-#   - assets/   Misc image assets referenced from theme/CSS imports
-#   - README + .gitattributes
+# DEV BRANCH gitignore — tracks the full source tree.
 #
-# Everything else (plugin source, build tooling, internal docs, Claude
-# config, repo memory, lint reports, etc.) is dev-only and intentionally
-# excluded so the public mirror stays small and leak-free.
-#
-# Strategy: allowlist. Block everything at the root by default, then
-# explicitly re-allow the handful of intentionally-public paths.
+# (The `main` branch uses an allowlist .gitignore that intentionally publishes
+# only themes/ + assets/. This `dev` branch is a private local-only snapshot
+# of the full code: src/, scripts/, package.json, docs/, etc. NEVER push this
+# branch to a public remote.)
 
-# ─────────────────────────────────────────────────────────────────
-# 1) Block every top-level entry by default
-# ─────────────────────────────────────────────────────────────────
-/*
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
-# ─────────────────────────────────────────────────────────────────
-# 2) Re-allow only the intentionally-public paths
-# ─────────────────────────────────────────────────────────────────
-!/.gitignore
-!/.gitattributes
-!/README.md
-!/LICENSE
-!/themes/
-!/assets/
+# Compiled plugin outputs (regenerable from src/ via npm run build)
+plugins/
 
-# ─────────────────────────────────────────────────────────────────
-# 3) Inside themes/ — exclude personal / backup / migration noise
-# ─────────────────────────────────────────────────────────────────
-themes/backups/
-themes/**/backups/
-themes/*.bak
+# Repo memory — sensitive session/dev state, not for backup
+memory/
+
+# Lint / analysis reports (generated, large, ephemeral)
+reports/
+archlint-*.json
+.archlint-cache/
+
+# Cleanup buckets
+_local/
+.serena/
+logs/
+
+# Backup artifacts
+backups/
+**/backups/
+.backup-*/
+*.backup
+*.bak
+*.old
+*.orig
+
+# Dead-code analysis dumps (regenerable, large, ephemeral)
+dead-symbols*.tsv
+criticalhit-dead-*.txt
+
+# Claude Code local config (per-machine)
+.claude/
+
+# Personal themes (don't snapshot)
 themes/MyTheme.theme.css
-themes/organized/
-themes/MIGRATION-GUIDE.md
-themes/migrate-to-modular.sh
 
-# ─────────────────────────────────────────────────────────────────
-# 4) Sensitive data — defense in depth (already covered by /* but
-#    keep explicit so a future change to allowlist can't leak)
-# ─────────────────────────────────────────────────────────────────
-.env
-.env.local
-.env.*.local
-*.env
-shadow-away.env
-*.key
-*.pem
-*.cert
-secrets/
-credentials/
-config.local.*
-
-# ─────────────────────────────────────────────────────────────────
-# 5) OS / IDE files (defense in depth)
-# ─────────────────────────────────────────────────────────────────
+# OS files
 .DS_Store
 .DS_Store?
 ._*
@@ -63,7 +55,31 @@ config.local.*
 ehthumbs.db
 Thumbs.db
 desktop.ini
+
+# IDE files
 .vscode/
 .idea/
 *.sublime-*
 *.code-workspace
+
+# Sensitive
+.env
+.env.local
+.env.*.local
+*.env
+*.key
+*.pem
+*.cert
+secrets/
+credentials/
+config.local.*
+
+# Temporary
+*.tmp
+*.temp
+*.log
+*.cache
+*.swp
+*.swo
+*~
+.#*

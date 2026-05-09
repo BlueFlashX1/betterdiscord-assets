@@ -1,0 +1,7 @@
+{
+  "name": "ShadowPortalCore",
+  "description": "Shared portal transition/runtime core consumed by ShadowStep, ShadowExchange, and ShadowSenses.",
+  "version": "2.0.0",
+  "author": "matthewthompson",
+  "outputFile": "ShadowPortalCore.js"
+}

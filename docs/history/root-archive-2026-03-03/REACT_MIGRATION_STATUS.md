@@ -1,0 +1,88 @@
+# React Migration Status
+
+> Last updated: Feb 17, 2026 (CriticalHit v3.4.0 — CSS-only migration)
+
+## Overview
+
+BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.React + BdApi.Patcher). The rule of thumb: **UI that persists in Discord's component tree benefits from React; ephemeral overlays (toasts, animations, tools) are fine as DOM.**
+
+## Migration Status
+
+| Plugin | Status | React | DOM | Priority |
+|--------|--------|-------|-----|----------|
+| ~~ChatNavArrows~~ | ✅ Done | Patcher | minimal | — |
+| ~~HSLDockAutoHide~~ | ✅ Done (v4.0) | Patcher | minimal | — |
+| ~~HSLWheelBridge~~ | ✅ Done (v2.0) | Patcher | minimal | — |
+| ~~LevelProgressBar~~ | ✅ Done (v1.4) | Patcher + React injection | bar UI | — |
+| ~~ShadowExchange~~ | ✅ Done (v2.0) | createPortal | minimal | — |
+| ~~SkillTree~~ | ✅ Done (v3.0) | createRoot + factory | minimal | — |
+| ~~ShadowArmy~~ | ✅ Done (v3.6) | createRoot + factory | extraction toasts | — |
+| ~~TitleManager~~ | ✅ Done (v2.0) | createRoot + factory | button only | — |
+| **Dungeons** | ❌ DOM | 9 refs | 155 refs | 🔴 HIGH |
+| ~~CriticalHit~~ | ✅ Done (v3.4) | CSS-only (per-message) | animation overlay | — |
+| ~~SoloLevelingStats~~ | ✅ Done (v3.0) | createRoot + factory | ephemeral overlays | — |
+| SoloLevelingToasts | ⬜ SKIP | 0 | 37 refs | — |
+| CSSPicker | ⬜ SKIP | 0 | 23 refs | — |
+| UserPanelDockMover | ⬜ SKIP | 0 | 6 refs | — |
+
+### Summary: 13/14 complete · 1 remaining to migrate
+
+- **10 migrated** (SkillTree, ShadowArmy, TitleManager, SoloLevelingStats, ChatNavArrows, HSLDockAutoHide, HSLWheelBridge, LevelProgressBar, ShadowExchange, CriticalHit)
+- **3 intentionally skipped** — DOM is the correct approach for these plugins (see below)
+- **1 remaining** — Dungeons
+
+## Remaining Work
+
+### 🔴 MIGRATE (high benefit)
+
+**Dungeons** — Boss HP bars render inside Discord's message list. Currently uses 155+ DOM ops and MutationObservers to fight React re-renders. Full React migration would eliminate race conditions and re-render conflicts. Biggest plugin, most to gain.
+
+### 🟡 PARTIAL (migrate specific parts)
+
+~~**CriticalHit** — ✅ Done (v3.4.0) — CSS-only migration: removed 38 MutationObservers, eliminated inline style application, made per-message CSS (`[data-message-id]` targeting) the sole styling mechanism. ~1050 lines removed. DOM retained for floating "CRITICAL HIT!" animations (ephemeral overlay). Not a React Patcher migration — per-message CSS is superior for this use case.~~
+
+~~**SoloLevelingStats** — ✅ Done (v3.0.0) — Chat UI panel migrated to React component tree. Stats, quests, activity, HP/MP bars all declarative. DOM retained only for event system, XP calculations, and ephemeral level-up notifications.~~
+
+### ⬜ SKIP (DOM is the correct choice — no migration needed)
+
+These 3 plugins are **intentionally staying DOM-based** because React would add overhead with zero benefit:
+
+**SoloLevelingToasts** — Toast notifications are ephemeral floating overlays (~2-5 seconds lifespan). They appear over Discord's UI, never inside React's component tree. React's diffing/lifecycle would add latency to what needs to be instant fire-and-forget DOM insertion. Zero MutationObservers, no re-render conflicts.
+
+**CSSPicker** — A CSS inspection overlay tool that operates *outside* Discord's React tree by design. It creates floating highlight boxes and info panels over arbitrary DOM elements. Needs direct DOM access to measure/position elements. React would fight against the very thing it's trying to inspect.
+
+**UserPanelDockMover** — Pure CSS repositioning via class toggling (`classList.add/remove`). Has zero UI rendering — it just moves Discord's existing user panel dock by toggling CSS classes. There's literally nothing to render with React.
+
+## Migration Order
+
+1. ~~**SkillTree** — ✅ Done (v3.0.0, Feb 17 2026)~~
+2. ~~**ShadowArmy** — ✅ Done (v3.6.0, Feb 17 2026)~~
+3. ~~**TitleManager** — ✅ Done (v2.0.0, Feb 17 2026)~~
+4. ~~**SoloLevelingStats** — ✅ Done (v3.0.0, Feb 17 2026)~~
+5. **Dungeons** — highest DOM count, most to gain, needs serious rework anyway
+6. ~~**CriticalHit** — ✅ Done (v3.4.0, Feb 17 2026)~~
+
+## Completed Migrations (Feb 17, 2026)
+
+| Plugin | Version | Pattern | Notes |
+|--------|---------|---------|-------|
+| ChatNavArrows | — | Patcher | Already React |
+| HSLDockAutoHide | v4.0 | Patcher | Already React |
+| HSLWheelBridge | v2.0 | Patcher | Already React |
+| LevelProgressBar | v1.4 | Patcher + React injection | Already React |
+| ShadowExchange | v2.0 | createPortal | Already React |
+| SkillTree | v3.0 | createRoot + factory | Modal migrated |
+| ShadowArmy | v3.6 | createRoot + factory | Member list widget migrated |
+| TitleManager | v2.0 | createRoot + factory | Modal migrated |
+| SoloLevelingStats | v3.0 | createRoot + factory | Chat UI panel migrated |
+| CriticalHit | v3.4 | CSS-only (per-message) | 38 observers removed, ~1050 lines deleted |
+
+## Settings Panels (Feb 17, 2026)
+
+All plugin settings panels have been stripped to essentials:
+- **CriticalHit**: Statistics + Debug Mode (React component)
+- **ShadowArmy**: Statistics + Storage Diagnostic + Debug Mode (DOM/innerHTML)
+- **SkillTree**: Debug Mode only (DOM/innerHTML)
+- **Dungeons**: Debug Mode only (React component)
+- **LevelProgressBar**: Debug Mode only (DOM/innerHTML)
+- All panels use solid `#1e1e2e` backgrounds

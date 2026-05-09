@@ -1,0 +1,50 @@
+/* Module: Animated Wallpaper (§2) — LOCKED */
+
+/* ═══════════════════════════════════════════════════════════
+   §2  ANIMATED WALLPAPER (LOCKED — do not edit without user request)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* SECTION LOCK: Do not change anything in this section unless explicitly requested by user. */
+
+/* §2 — App shell layers → make transparent so the GIF wallpaper shows through
+   Targets: .appMount, .app, .bg, .layer, .layers, .container, .base, .content
+   These are Discord's outermost wrapper divs that normally have solid backgrounds */
+.appMount__51fd7,
+.app__160d8,
+.bg__960e4,
+.layer__960e4,
+.layers__960e4,
+.container__5e434,
+.base__5e434,
+.content__5e434 {
+  background: transparent !important;
+}
+
+/* §2 — body::before = the actual GIF wallpaper layer
+   Fixed positioning so it doesn't scroll. z-index:-2 puts it behind everything.
+   Uses CSS vars from :root for the image URL, position, and opacity */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image: var(--sl-bg-gif);
+  background-position: var(--background-position);
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--sl-bg-opacity);
+}
+
+/* §2 — body::after = optional dark overlay for text readability on top of the GIF
+   z-index:-1 sits between the wallpaper and Discord UI. Currently transparent (rgba 0,0,0,0)
+   Increase --sl-bg-overlay opacity in :root to darken the wallpaper */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--sl-bg-overlay);
+}

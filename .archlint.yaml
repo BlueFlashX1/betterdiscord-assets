@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/archlinter/archlint/main/resources/archlint.schema.json
+
+# BetterDiscord plugins are runtime entry points (loaded dynamically), not import-graph roots.
+# This keeps dead-code reporting useful while avoiding lifecycle false positives.
+entry_points:
+  - plugins/*.plugin.js
+  - plugins/*Main.js
+  - plugins/BetterDiscordPluginUtils.js
+  - plugins/BetterDiscordReactUtils.js
+  - plugins/SoloLevelingUtils.js
+  - plugins/UnifiedSaveManager.js
+  - plugins/PluginMainLoader.js
+  - plugins/TransitionCleanupUtils.js
+
+rules:
+  dead_symbols:
+    severity: medium
+    exclude:
+      - plugins/*.plugin.js
+      - plugins/*Main.js
+      - plugins/UnifiedSaveManager.js

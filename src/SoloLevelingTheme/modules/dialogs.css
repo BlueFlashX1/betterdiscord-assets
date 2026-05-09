@@ -1,0 +1,235 @@
+/* Module: Dialog Boxes (§6) */
+
+/* ═══════════════════════════════════════════════════════════
+   §6  DIALOG BOXES (Modal popups — BetterDiscord addon errors, etc.)
+   UNVERIFIED
+   ═══════════════════════════════════════════════════════════ */
+
+/* §6a — BetterDiscord addon/plugin/theme error dialog: outer shell
+   Solid dark background with purple border when BD shows errors on startup.
+   Matches by aria-label containing "Addon", "Plugin Error", "Theme Error",
+   and BD-specific class names like bd-addon-error / bd-error-modal */
+div[role="dialog"][aria-label*="Addon" i],
+div[role="dialog"][aria-label*="Add-on" i],
+div[role="dialog"][aria-label*="Plugin" i][aria-label*="Error" i],
+div[role="dialog"][aria-label*="Theme" i][aria-label*="Error" i],
+div[class*="bd-addon-error" i],
+div[class*="bd-error-modal" i] {
+  background: var(--sl-bg-popup) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.42) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[role="dialog"][aria-label*="Addon" i] div,
+div[role="dialog"][aria-label*="Add-on" i] div,
+div[role="dialog"][aria-label*="Plugin" i][aria-label*="Error" i] div,
+div[role="dialog"][aria-label*="Theme" i][aria-label*="Error" i] div,
+div[class*="bd-addon-error" i] div,
+div[class*="bd-error-modal" i] div {
+  background-color: var(--sl-bg-popup) !important;
+  background-image: none !important;
+}
+
+/* §6b — Error dialog backdrop: dims the area behind the modal
+   Uses :has() to target the layer_ wrapper only when it contains an error dialog */
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Addon" i]),
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Add-on" i]),
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Plugin" i][aria-label*="Error" i]),
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Theme" i][aria-label*="Error" i]),
+div[class^="layer_"]:has(div[class*="bd-addon-error" i]),
+div[class^="layer_"]:has(div[class*="bd-error-modal" i]) {
+  background: rgba(2, 4, 10, 0.35) !important;
+}
+
+/* §6c — Error dialog internals: remove excess borders/outlines
+   BD's modal root, content area, error list, error details, header, and icon
+   all get stripped of their default borders so only the outer shell has one */
+.bd-modal-root:has(.bd-addon-errors),
+.bd-modal-root:has(details.bd-addon-error) {
+  border: none !important;
+  outline: none !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
+.bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-content,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) details.bd-addon-error,
+.bd-modal-root:has(details.bd-addon-error) summary.bd-addon-error-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-icon {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* §6c (continued) — Error dialog inner surface colors:
+   consolidated in §6c nuclear block below (around §7) */
+
+/* §6d — Error dialog "Okay" button: consolidated in nuclear block below (line ~122) */
+
+/* §6e — Error dialog header/footer chrome: strip borders from header and footer rows
+   So the modal looks seamless without inner divider lines */
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-header,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-header,
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-footer,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-footer {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* §6e (continued) — Center-align the "Okay" button in the footer row */
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-footer,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-footer {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-footer .bd-button,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-footer .bd-button,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-footer .bd-button,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-footer .bd-button {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* §6f — Error dialog tip/details row: match background to card
+   The "tip" text and secondary headers inside error details get solid dark bg */
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details .bd-header-secondary,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details .bd-header-secondary *,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner .bd-addon-error-details * {
+  background: var(--sl-bg-popup) !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* §6d — Error dialog "Okay" button: solid purple, kill ClearVision gradient injections
+   Single consolidated block — replaces 3 earlier duplicate passes */
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand,
+.bd-modal-root:has(.bd-addon-errors) button.bd-button.bd-button-color-brand,
+.bd-modal-root:has(details.bd-addon-error) button.bd-button.bd-button-color-brand {
+  background: #7b2be2 !important;
+  background-image: none !important;
+  border: 1px solid rgba(168, 85, 247, 0.6) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+/* Hover: brighten to primary purple */
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand:hover,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand:hover {
+  background: var(--sl-color-primary) !important;
+  background-image: none !important;
+  border-color: rgba(168, 85, 247, 0.85) !important;
+  box-shadow: none !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content {
+  background: #7b2be2 !important;
+  background-image: none !important;
+  border: none !important;
+  text-shadow: none !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand::before,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand::before,
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand::after,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand::after,
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content::before,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content::before,
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content::after,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content::after {
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  content: none !important;
+}
+
+/* §6c (nuclear) — Error dialog: force ALL inner surfaces to solid dark
+   Consolidated block — replaces 3 earlier duplicate/overridden passes.
+   Covers modal content, error list, details, headers, icons, secondary headers */
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
+.bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-content,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) details.bd-addon-error,
+.bd-modal-root:has(details.bd-addon-error) summary.bd-addon-error-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-icon,
+.bd-modal-root:has(details.bd-addon-error) .bd-header-secondary,
+.bd-modal-root:has(details.bd-addon-error) .bd-header-secondary * {
+  background: var(--sl-bg-popup) !important;
+  background-image: none !important;
+}
+
+/* §6f (override) — Error dialog tip row: using .bd-error-modal class selector
+   Alternate selector path for the same tip/details elements as §6f above.
+   Needed when BD uses .bd-error-modal class instead of :has() matching */
+.bd-modal-root.bd-error-modal .bd-addon-error-details,
+.bd-modal-root.bd-error-modal .bd-addon-error-details *,
+.bd-modal-root.bd-error-modal .bd-addon-error-header-inner .bd-addon-error-details,
+.bd-modal-root.bd-error-modal .bd-addon-error-header-inner .bd-addon-error-details *,
+.bd-modal-root.bd-error-modal .bd-addon-error-details-icon,
+.bd-modal-root.bd-error-modal .bd-header-secondary,
+.bd-modal-root.bd-error-modal .bd-header-secondary * {
+  background: var(--sl-bg-popup) !important;
+  background-image: none !important;
+}
+
+/* §6g — Generic modal popups (Create Server, etc.): solid dark bg + purple border.
+   Discord's generic modal uses root_ → focusLock_ (role="dialog") → anonymous div →
+   content wrapper with header_, content_, footer_ children (all share same hash).
+   The rootWithShadow_ class identifies popup dialogs with shadow styling.
+   Apply solid bg to outer root, header, content scroller, and footer. */
+div[class^="root_"][class*="rootWithShadow_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 2px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+}
+/* §6g (continued) — Header area: solid bg, inherit top border-radius */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="header_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+/* §6g (continued) — Content/body scroller area: solid bg */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+}
+/* §6g (continued) — Footer area: solid bg + purple top separator */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="footer_"] {
+  background: var(--sl-bg-surface) !important;
+  background-image: none !important;
+  border-top: 1px solid rgba(var(--sl-color-primary-rgb), 0.2) !important;
+}
+/* §6g (continued) — Hide scrollbar in the template/content scroller */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}

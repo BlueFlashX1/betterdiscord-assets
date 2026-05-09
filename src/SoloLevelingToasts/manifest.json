@@ -1,0 +1,6 @@
+{
+  "name": "SoloLevelingToasts",
+  "description": "Unified toast engine for all BetterDiscord plugins — standard + card-style toasts with rate limiting, dedup, and shared queue",
+  "version": "2.0.0",
+  "author": "BlueFlashX1"
+}

@@ -1,0 +1,642 @@
+/**
+ * CriticalHit — Crit detection & application pipeline.
+ * processNode entry point, crit roll calculation, queued message handling,
+ * crit/non-crit processing, and the main checkForCrit logic.
+ * Mixed onto CriticalHit.prototype via Object.assign.
+ */
+
+const C = require('./constants');
+const dc = require('../shared/discord-classes');
+
+// Hoisted once — avoids closure recreation on every processNode call
+const _scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
+
+module.exports = {
+
+  // FluxDispatcher MESSAGE_CREATE Handler (v3.6.0)
+
+  _onMessageCreate(payload) {
+    try {
+      if (this._isStopped) return;
+
+      const msg = payload?.message;
+      if (!msg?.id || !msg?.author?.id || !msg?.channel_id) return;
+
+      const ownId = this.currentUserId || this.settings?.ownUserId;
+      if (!ownId || msg.author.id !== ownId) return;
+
+      const currentChannel = this._getCurrentChannelId?.() || this.currentChannelId;
+      if (msg.channel_id !== currentChannel) return;
+
+      if (this.processedMessages.has(msg.id)) return;
+
+      // Deterministic crit roll using real snowflake ID
+      const seed = `${msg.id}:${msg.channel_id}:${msg.author.id}`;
+      const hash = this.simpleHash(seed);
+      const roll = (hash % C.CRIT_ROLL_DIVISOR) / C.CRIT_ROLL_SCALE;
+      const effectiveCritChance = this.getEffectiveCritChance();
+      const isCrit = roll <= effectiveCritChance;
+
+      const messageContent = msg.content || '';
+      const author = msg.author.username || '';
+      const authorId = msg.author.id;
+      const channelId = msg.channel_id;
+      const guildId = this.currentGuildId || 'dm';
+
+      if (isCrit) {
+        // CRITICAL: Do NOT mark as processed, save to history, or increment stats here.
+        // The observer's pendingAnimations path will handle all of that AFTER triggering
+        // the animation. If we do it here, the observer can't match the pending animation
+        // (wrapper elements lack data-message-id), falls to processNode() which skips
+        // (already in processedMessages), or checkForCrit() finds it in history and
+        // restores WITHOUT animation.
+
+        const critSettings = this._createCritSettings();
+
+        // Inject per-message CSS IMMEDIATELY — before DOM element exists.
+        // CSS targets [data-message-id="..."] which Discord sets on the element.
+        // When the element renders, it instantly picks up the styling.
+        this.injectCritCSS();
+        this.injectCritMessageCSS(msg.id, critSettings);
+
+        // Queue animation for MutationObserver — includes all data for deferred stats/history.
+        this._pendingAnimations.set(msg.id, {
+          critSettings,
+          timestamp: Date.now(),
+          channelId,
+          guildId,
+          authorId,
+          messageContent: messageContent.substring(0, 200),
+          author,
+        });
+
+        // Trim old pending animations (safety cap)
+        if (this._pendingAnimations.size > 50) {
+          const now = Date.now();
+          for (const [id, entry] of this._pendingAnimations) {
+            if (now - entry.timestamp > 10000) this._pendingAnimations.delete(id);
+          }
+        }
+
+        this.diagLog('DISPATCHER_CRIT', 'Crit via FluxDispatcher', {
+          messageId: msg.id,
+          roll,
+          effectiveCritChance,
+        });
+      } else {
+        this.processedMessages.add(msg.id);
+        this.stats.totalMessages++;
+
+        this.addToHistory({
+          messageId: msg.id,
+          authorId,
+          channelId,
+          guildId,
+          timestamp: Date.now(),
+          isCrit: false,
+          messageContent: messageContent.substring(0, 200),
+          author,
+        });
+      }
+    } catch (error) {
+      this.debugError('DISPATCHER_MESSAGE_CREATE', error, {
+        hasPayload: !!payload,
+        hasMessage: !!payload?.message,
+      });
+    }
+  },
+
+  // DOM Node Processing
+
+  processNode(node) {
+    if (this._isStopped) return;
+    _scheduleCallback(() => {
+    try {
+      if (this._isStopped) return;
+      let messageElement = null;
+
+      // OPTIMIZED: Direct matching for message classes
+      if (node.classList) {
+        const isMsg = node.classList.contains('message-2C84CH') || // Common Discord message class
+                      node.classList.contains('message-36f9Yy') ||
+                      Array.from(node.classList).some(c => c.includes('message') && !c.includes('Content') && !c.includes('Group'));
+
+        if (isMsg && node.offsetParent !== null) {
+          messageElement = node;
+        }
+      }
+
+      if (!messageElement && node.querySelectorAll) {
+        // PERF: Only search depth 1-2 to avoid heavy recursion
+        messageElement = node.querySelector(`:scope > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`) ||
+                         node.querySelector(`:scope > * > ${dc.sel.message}:not([class*="Content"]):not([class*="Group"])`);
+      }
+
+        let messageId = messageElement ? this.getMessageIdentifier(messageElement) : null;
+
+        // Reject likely channel IDs unless message metadata strongly supports this candidate
+        if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
+          messageId = null; // Reject it, will use content hash fallback
+        }
+
+        this.debug?.verbose &&
+          this.debugLog('PROCESS_NODE', 'processNode detected message', {
+            messageId: messageId,
+            alreadyProcessed: messageId ? this.processedMessages.has(messageId) : false,
+            isLoadingChannel: this.isLoadingChannel,
+          });
+
+        // CRITICAL FIX: Process if no ID yet (new messages may lack it), skip if already processed
+        const shouldProcess =
+          messageElement &&
+          (!messageId || // No ID yet - process it (will get ID later)
+            !this.processedMessages.has(messageId)); // Has ID and not processed
+
+        if (shouldProcess) {
+          if (this.isLoadingChannel) {
+            this.debug?.verbose && this.debugLog('PROCESS_NODE', 'Skipping - channel loading');
+            return;
+          }
+
+          // AGE GATE: Skip crit roll for old messages (jump-to-message, scroll-back).
+          // Snowflake IDs encode timestamp: (id >> 22) + 1420070400000.
+          // Messages >5 min old are handled by restoration, not new crit rolls.
+          if (messageId && this.isValidDiscordId(messageId)) {
+            const DISCORD_EPOCH = 1420070400000;
+            const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000;
+            const messageTimestamp = Number(BigInt(messageId) >> 22n) + DISCORD_EPOCH;
+            if (Date.now() - messageTimestamp > MESSAGE_AGE_GATE_MS) {
+              this.processedMessages.add(messageId);
+              return;
+            }
+          }
+
+          this.checkForCrit(messageElement);
+        }
+    } catch (error) {
+      this.debugError('PROCESS_NODE', error, {
+        nodeType: node?.nodeType,
+        hasClassList: !!node?.classList,
+      });
+    }
+    }, { timeout: 1000 });
+  },
+
+  // Crit Settings & Roll Helpers
+
+  _createCritSettings() {
+    return {
+      gradient: this.settings.critGradient !== false,
+      color: this.settings.critColor,
+      font: this.settings.critFont,
+      glow: this.settings.critGlow,
+      animation: this.settings.animationEnabled !== false,
+    };
+  },
+
+  _calculateRollFromSeed(seed) {
+    const hash = this.simpleHash(seed);
+    return (hash % C.CRIT_ROLL_DIVISOR) / C.CRIT_ROLL_SCALE;
+  },
+
+  // handleQueuedMessage removed in v3.6.0 — FluxDispatcher provides real IDs instantly
+
+  // Crit Roll Calculation
+
+  _createCritRollSeed(messageId, author) {
+    return `${messageId}:${this.currentChannelId}:${author}`;
+  },
+
+  calculateCritRoll(messageId, messageElement) {
+    if (!messageId) {
+      // Deterministic fallback — hash element text so re-renders get same result
+      const text = messageElement?.textContent || '';
+      const hash = this.simpleHash(text);
+      return (Math.abs(hash) % 10000) / 100;
+    }
+    const author = this.getAuthorId(messageElement) || '';
+    const seed = this._createCritRollSeed(messageId, author);
+    return this._calculateRollFromSeed(seed);
+  },
+
+  // Crit Processing
+
+  processNewCrit(
+    messageElement,
+    messageId,
+    authorId,
+    messageContent,
+    author,
+    roll,
+    isValidDiscordId
+  ) {
+    // GUARD: If message exists in persisted crit history, it's old — restore style only, no animation.
+    // This catches messages that bypassed _historyMap (ID format mismatch or missing entry)
+    // but ARE in the persisted getCritHistory() array.
+    if (messageId && isValidDiscordId) {
+      const channelCrits = this.getCritHistory(this.currentChannelId);
+      const existingEntry = channelCrits?.find(entry => entry.messageId === messageId);
+      if (existingEntry) {
+        this.applyCritStyleWithSettings(messageElement, existingEntry.critSettings);
+        this.critMessages.add(messageElement);
+        this.processedMessages.add(messageId);
+        this._processingCrits.delete(messageId);
+        return;
+      }
+    }
+
+    if (messageId && this._processingCrits.has(messageId)) {
+      return;
+    }
+
+    this.stats.totalCrits++;
+    this.updateStats();
+
+    messageId && this._processingCrits.add(messageId);
+
+    const effectiveCritChance = this.getEffectiveCritChance();
+    this.diagLog('CRIT_DETECTED', 'Critical hit detected', {
+      messageId,
+      roll,
+      effectiveCritChance,
+      totalCrits: this.stats.totalCrits,
+    });
+
+    try {
+      this.applyCritStyle(messageElement, { animate: true });
+      this.critMessages.add(messageElement);
+
+      {
+        const animTarget = messageElement;
+        const animId = messageId;
+        const animUserId = this.getUserId(messageElement) || authorId || this.getAuthorId(messageElement);
+        const isOwnCritSource = !!(animUserId && this.isOwnMessage(messageElement, animUserId));
+
+        if (isOwnCritSource) {
+          const animCombo = this._syncBurstComboForMessage({
+            messageId: animId,
+            messageElement,
+            userId: animUserId,
+          });
+          this._markComboUpdated(animId);
+
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              try {
+                let currentElement = (isValidDiscordId && animId)
+                  ? (this.requeryMessageElement(animId, animTarget) || animTarget)
+                  : animTarget;
+
+                // bd-crit-hit may be on currentElement itself or a child wrapper (applyCritStyle walks up to parent)
+                const hasCritOnSelf = currentElement?.classList?.contains('bd-crit-hit');
+                const critChild = !hasCritOnSelf && currentElement?.isConnected ? currentElement.querySelector?.('.bd-crit-hit') : null;
+                const animElement = hasCritOnSelf ? currentElement : critChild;
+
+                // If element is connected and styled (on self or child), animate immediately
+                if (animElement?.isConnected) {
+                  this.showAnimation(animElement, animId, animCombo);
+                } else if (!currentElement?.isConnected || !animElement) {
+                  // Element was disconnected (Discord replaced it during hash→real ID transition)
+                  // or styling was lost. Retry after a short delay to find the replacement element.
+                  this._setTrackedTimeout(() => {
+                    try {
+                      // Try to find replacement by message ID first
+                      let retryElement = animId ? this.requeryMessageElement(animId) : null;
+
+                      // If not found by original ID, search by content hash
+                      if (!retryElement?.isConnected) {
+                        const contentAuthor = authorId || 'unknown';
+                        const contentText = this.findMessageContentElement(animTarget)?.textContent?.trim()
+                          || animTarget?.textContent?.trim();
+                        if (contentText) {
+                          const contentHash = this.calculateContentHash(contentAuthor, contentText);
+                          // Search recent messages in DOM for matching content
+                          const container = this._cachedMessageContainer || document;
+                          const candidates = container ? dc.queryAll(container, 'message') : [];
+                          for (const el of candidates) {
+                            if (!el?.isConnected || !el.offsetParent) continue;
+                            const elContent = this.findMessageContentElement(el);
+                            const elText = elContent?.textContent?.trim();
+                            const elAuthor = this.getAuthorId(el);
+                            if (elText && elAuthor) {
+                              const elHash = this.calculateContentHash(elAuthor, elText);
+                              if (elHash === contentHash) {
+                                retryElement = el;
+                                break;
+                              }
+                            }
+                          }
+                        }
+                      }
+
+                      if (retryElement?.isConnected) {
+                        // Re-apply crit styling to the replacement element
+                        // applyCritStyle may apply bd-crit-hit to a child wrapper element,
+                        // not necessarily retryElement itself (e.g. LI vs inner DIV)
+                        this.applyCritStyle(retryElement);
+                        this.critMessages.add(retryElement);
+
+                        // Find the element that actually got bd-crit-hit (could be retryElement or a descendant)
+                        const critTarget = retryElement.classList.contains('bd-crit-hit')
+                          ? retryElement
+                          : retryElement.querySelector('.bd-crit-hit');
+
+                        if (critTarget?.isConnected) {
+                          this.showAnimation(critTarget, animId, animCombo);
+                        }
+                      }
+                    } catch (retryError) {
+                      this.debugError('PROCESS_NEW_CRIT', retryError, { phase: 'direct_animation_retry' });
+                    }
+                  }, 150);
+                }
+              } catch (error) {
+                this.debugError('PROCESS_NEW_CRIT', error, { phase: 'direct_animation' });
+              }
+            });
+          });
+        }
+      }
+
+      messageId &&
+        this.currentChannelId &&
+        this.addToHistory({
+          messageId: messageId,
+          authorId: authorId,
+          channelId: this.currentChannelId,
+          timestamp: Date.now(),
+          isCrit: true,
+          messageContent: messageContent.substring(0, 200),
+          author: author,
+        });
+
+      messageId && this._processingCrits.delete(messageId);
+    } catch (error) {
+      this.debugError('CHECK_FOR_CRIT', error, {
+        phase: 'apply_crit',
+        messageId: messageId,
+      });
+      messageId && this._processingCrits.delete(messageId);
+    }
+  },
+
+  processNonCrit(messageId, authorId, messageContent, author) {
+    if (messageId) {
+      this.removeCritMessageCSS(messageId);
+    }
+
+    this.debug?.verbose &&
+      this.debugLog('CHECK_FOR_CRIT', 'Non-crit message detected', {
+        messageId,
+        authorId,
+      });
+
+    if (messageId && this.currentChannelId) {
+      try {
+        this.addToHistory({
+          messageId: messageId,
+          authorId: authorId,
+          channelId: this.currentChannelId,
+          timestamp: Date.now(),
+          isCrit: false,
+          messageContent: messageContent.substring(0, 200),
+          author: author,
+        });
+      } catch (error) {
+        this.debugError('CHECK_FOR_CRIT', error, { phase: 'save_non_crit_history' });
+      }
+    }
+  },
+
+  // Main Crit Detection Logic
+
+  checkForCrit(messageElement) {
+    try {
+      if (!messageElement || !messageElement.offsetParent) {
+        return;
+      }
+
+      let messageId = this.getMessageIdentifier(messageElement, {
+        phase: 'check_for_crit',
+        verbose: true,
+      });
+
+      // Reject likely channel IDs unless message metadata strongly supports this candidate
+      if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
+        messageId = null;
+      }
+
+      if (!messageId) {
+        const retryMessageId = this.getMessageIdentifier(messageElement, {
+          phase: 'check_for_crit_retry',
+          verbose: true,
+        });
+
+        if (
+          retryMessageId &&
+          !this.shouldRejectChannelMatchedMessageId(messageElement, retryMessageId)
+        ) {
+          messageId = retryMessageId;
+        } else {
+          const content = messageElement.textContent?.trim() || '';
+          const author = this.getAuthorId(messageElement);
+          if (content) {
+            messageId = author
+              ? this.calculateContentHash(author, content)
+              : this.calculateContentHash(null, content);
+          } else {
+            return;
+          }
+        }
+      }
+
+      if (!messageId) return;
+
+      const isValidDiscordId = this.isValidDiscordId(messageId);
+
+      // O(1) MAP LOOKUP — check history before marking processed
+      let historyEntry = null;
+      if (messageId) {
+        historyEntry = this._historyMap.get(messageId);
+        if (historyEntry) {
+          const guildId = this.currentGuildId || 'dm';
+          const contextMatch = historyEntry.channelId === this.currentChannelId &&
+                               (historyEntry.guildId || 'dm') === guildId;
+          if (!contextMatch) historyEntry = null;
+        }
+        // Hash ID → real ID reconciliation removed in v3.6.0 — FluxDispatcher provides real IDs instantly.
+        // pendingCrits is still populated by addToHistory() for restoration use.
+      }
+      if (historyEntry) {
+        const isCrit = historyEntry.isCrit || false;
+        this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
+          messageId,
+          isCrit,
+          wasProcessed: true,
+        });
+
+        if (isCrit) {
+          // BUGFIX: Check ONLY for bd-crit-hit class (inline style check was too aggressive,
+          // caused MutationObserver loop). Also check if per-message CSS is missing.
+          const msgIdForRestore = this.getMessageIdentifier(messageElement);
+          const cssNeedsRestore = msgIdForRestore && !this.critCSSRules.has(msgIdForRestore);
+          const needsRestore = !messageElement.classList.contains('bd-crit-hit') || cssNeedsRestore;
+
+          if (needsRestore) {
+            const styleHandlers = {
+              withSettings: () =>
+                this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings),
+              default: () => this.applyCritStyle(messageElement),
+            };
+
+            const handler = historyEntry.critSettings
+              ? styleHandlers.withSettings
+              : styleHandlers.default;
+            handler();
+            this.critMessages.add(messageElement);
+          }
+
+          // NO animation for restored crits — animation is exclusively for new messages (processNewCrit).
+          messageId && this.processedMessages.add(messageId);
+          return;
+        }
+        if (messageId) {
+          this.removeCritMessageCSS(messageId);
+        }
+
+        // Remove crit class only when there is no crit evidence.
+        // This prevents transient re-processing from stripping visuals on real crits.
+        const hasCritEvidence = this._hasCritEvidenceForMessage(messageElement, messageId);
+        const knownCritId = this._isKnownCritMessageId(messageId);
+        const critElement = messageElement?.classList?.contains('bd-crit-hit')
+          ? messageElement
+          : messageElement?.querySelector?.('.bd-crit-hit');
+        const hasCritLock = critElement?.dataset?.bdCritLocked === '1';
+        const hasActiveStyling = this._hasActiveCritStyling(messageElement);
+        const hasCritTextClass = !!(
+          messageElement?.classList?.contains('bd-crit-text-content') ||
+          messageElement?.querySelector?.('.bd-crit-text-content')
+        );
+        const normalizedMessageId = this.normalizeId(messageId) || this.extractPureDiscordId(messageId);
+        const pureMessageId = this.extractPureDiscordId(normalizedMessageId) || normalizedMessageId;
+        const hasStableDiscordMessageId = !!(
+          pureMessageId &&
+          !String(pureMessageId).startsWith('hash_') &&
+          this.isValidDiscordId(pureMessageId)
+        );
+        // Be conservative: never strip crit class from real Discord messages.
+        // This avoids visual loss when Discord re-renders faster than history reconciliation.
+        if (
+          critElement?.classList?.contains('bd-crit-hit') &&
+          !hasCritEvidence &&
+          !knownCritId &&
+          !hasCritLock &&
+          !hasActiveStyling &&
+          !hasCritTextClass &&
+          !hasStableDiscordMessageId
+        ) {
+          this.diagLog(
+            'STRIP_CLASS',
+            'Removing bd-crit-hit (message evaluated as non-crit with no retention evidence)',
+            {
+              messageId,
+              hasCritEvidence,
+              knownCritId,
+              hasCritLock,
+              hasActiveStyling,
+              hasCritTextClass,
+              hasStableDiscordMessageId,
+            },
+            'warn'
+          );
+          critElement.classList.remove('bd-crit-hit');
+          // Remove from critMessages if present
+          this.critMessages.delete(critElement);
+        } else if (critElement?.classList?.contains('bd-crit-hit')) {
+          this.diagLog('STRIP_GUARDED', 'Retained bd-crit-hit due guardrail', {
+            messageId,
+            hasCritEvidence,
+            knownCritId,
+            hasCritLock,
+            hasActiveStyling,
+            hasCritTextClass,
+            hasStableDiscordMessageId,
+          });
+        }
+
+        const authorId = this.getAuthorId(messageElement);
+        if (authorId && this.isOwnMessage(messageElement, authorId)) {
+          // Reset combo immediately for non-crit messages
+          const userId = this.getUserId(messageElement) || authorId;
+          if (this.isValidDiscordId(userId)) {
+            this.updateUserCombo(userId, 0, 0);
+          }
+        }
+
+        // CRITICAL: Only mark as processed if it's not a channel ID
+        if (!this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
+          this.processedMessages.add(messageId);
+        }
+        return;
+      }
+
+      // Content-hash dedup removed in v3.6.0 — FluxDispatcher handles own messages once;
+      // observer fallback relies on processedMessages ID check above.
+      if (!this.markAsProcessed(messageId)) return;
+
+      if (this.isLoadingChannel) return;
+      if (this.shouldFilterMessage(messageElement)) return;
+
+      // USER-ONLY: Only roll crits on your own messages — no styling other people's messages.
+      // The crit system is personal (Solo Leveling: only the Monarch sees the System).
+      // This also reduces DOM mutations and MutationObserver overhead significantly.
+      {
+        const msgAuthorId = this.getAuthorId(messageElement);
+        if (msgAuthorId && !this.isOwnMessage(messageElement, msgAuthorId)) {
+          // Not our message — skip crit roll entirely, mark as processed
+          messageId && this.processedMessages.add(messageId);
+          return;
+        }
+      }
+
+      const hasText =
+        messageElement.textContent?.trim().length > 0 ||
+        dc.query(messageElement, 'content')?.textContent?.trim().length > 0 ||
+        dc.query(messageElement, 'text')?.textContent?.trim().length > 0;
+
+      if (!hasText) return;
+
+      const effectiveCritChance = this.getEffectiveCritChance();
+      const roll = this.calculateCritRoll(messageId, messageElement);
+      const isCrit = roll <= effectiveCritChance;
+
+      const messageContent = messageElement.textContent?.trim() || '';
+      const author =
+        dc.query(messageElement, 'username')?.textContent?.trim() ||
+        messageElement.querySelector(dc.sel.author)?.textContent?.trim() ||
+        '';
+      const authorId = this.getAuthorId(messageElement);
+
+      this.stats.totalMessages++;
+
+      if (isCrit) {
+        this.processNewCrit(
+          messageElement,
+          messageId,
+          authorId,
+          messageContent,
+          author,
+          roll,
+          isValidDiscordId
+        );
+      } else {
+        this.processNonCrit(messageId, authorId, messageContent, author);
+      }
+    } catch (error) {
+      this.debugError('CHECK_FOR_CRIT', error, {
+        hasMessageElement: !!messageElement,
+        elementValid: !!messageElement?.offsetParent,
+      });
+    }
+  },
+};
