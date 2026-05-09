@@ -829,6 +829,17 @@ module.exports = class ShadowSenses {
   }
 
   _resolveStartupAiConfig() {
+    // 1) Plugin settings — explicit user-configured key (preferred path).
+    const apiKeyFromSettings = String(this.settings?.startupReportApiKey || "").trim();
+    const modelFromSettings = String(this.settings?.startupReportModel || "").trim();
+    if (apiKeyFromSettings) {
+      return {
+        apiKey: apiKeyFromSettings,
+        model: modelFromSettings || "gpt-4o-mini",
+      };
+    }
+
+    // 2) Process env vars — for users running Discord with shell-set env.
     const apiKeyFromProcess = String(process.env.OPENAI_API_KEY || "").trim();
     const modelFromProcess = String(process.env.OPENAI_MODEL || "").trim();
     if (apiKeyFromProcess) {
@@ -838,6 +849,10 @@ module.exports = class ShadowSenses {
       };
     }
 
+    // 3) Legacy fallback — sibling shadow-away-bot project's .env file.
+    // Only works on the original developer's machine layout; deprecated
+    // path kept for backwards-compatibility. New users should set the key
+    // via the plugin settings UI instead.
     const homeDir = process.env.HOME || "";
     if (!homeDir) return null;
 
@@ -931,6 +946,27 @@ module.exports = class ShadowSenses {
     const aiConfig = this._resolveStartupAiConfig();
     if (!aiConfig?.apiKey) return { narration: fallback, signalBreakdown: "" };
 
+    // Cache: identical signal-set within 30 minutes returns the same
+    // narration without paying for another OpenAI call. Key combines
+    // window, total/urgent counts, and the most-recent entry timestamp,
+    // which is deterministic across rapid restarts.
+    const STARTUP_CACHE_TTL_MS = 30 * 60 * 1000;
+    const lastEntryTs = recentEntries?.[0]?.timestamp || 0;
+    const cacheKey = [
+      windowHours,
+      Number(summary?.totalEvents || 0),
+      Number(summary?.urgentCount || 0),
+      Number(summary?.highCount || 0),
+      lastEntryTs,
+    ].join(":");
+    try {
+      const cached = BdApi.Data.load(PLUGIN_NAME, "startupReportCache");
+      if (cached && cached.cacheKey === cacheKey && Date.now() - (cached.ts || 0) < STARTUP_CACHE_TTL_MS) {
+        this.debugLog("StartupReport", "Cache hit — skipping OpenAI call", { cacheKey });
+        return cached.result || { narration: fallback, signalBreakdown: "" };
+      }
+    } catch (_) { /* cache read failure is non-fatal */ }
+
     const promptPayload = {
       windowHours,
       summary: {
@@ -1019,7 +1055,12 @@ module.exports = class ShadowSenses {
       if (!/^My liege,/i.test(report)) {
         report = `My liege, ${report.charAt(0).toLowerCase()}${report.slice(1)}`;
       }
-      return { narration: report.slice(0, 700), signalBreakdown: signalBreakdown.slice(0, 1200) };
+      const result = { narration: report.slice(0, 700), signalBreakdown: signalBreakdown.slice(0, 1200) };
+      // Persist to cache so a quick restart within 30 min reuses this.
+      try {
+        BdApi.Data.save(PLUGIN_NAME, "startupReportCache", { cacheKey, ts: Date.now(), result });
+      } catch (_) { /* cache write failure is non-fatal */ }
+      return result;
     } catch (error) {
       this.debugLog("StartupReport", "AI summary fallback", {
         reason: error?.message || String(error),

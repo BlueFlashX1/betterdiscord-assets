@@ -799,6 +799,41 @@ const ShadowSensesUiMethods = {
         })
       ),
 
+      // OpenAI API key + explicit privacy disclosure (audit Wave B / #6 / #8)
+      ce("div", { style: { ...rowStyle, alignItems: "flex-start", flexDirection: "column", gap: "6px" } },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "OpenAI API Key (optional)"),
+        ce("input", {
+          type: "password",
+          placeholder: "sk-... (leave empty for local fallback narration)",
+          defaultValue: this.settings.startupReportApiKey || "",
+          onChange: (e) => updateSetting("startupReportApiKey", String(e.target.value || "").trim()),
+          style: {
+            width: "100%",
+            padding: "5px 8px",
+            borderRadius: "6px",
+            border: "1px solid rgba(138, 43, 226, 0.4)",
+            background: "#111827",
+            color: "#ccc",
+            fontFamily: "monospace",
+            fontSize: "12px",
+            boxSizing: "border-box",
+          },
+        }),
+        ce("div", {
+          style: {
+            fontSize: "11px",
+            color: "#9090a0",
+            lineHeight: 1.4,
+            padding: "4px 0",
+          },
+        },
+          "Privacy: when a key is set, the report sends Discord usernames, server/channel names, ",
+          "and short message snippets (up to 180 chars per signal) to OpenAI. ",
+          "Leave empty to use the offline fallback narration — no data leaves your machine. ",
+          "Key is stored in plain text via BdApi.Data."
+        )
+      ),
+
       ce("div", {
         style: {
           ...rowStyle,
