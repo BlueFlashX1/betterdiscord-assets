@@ -1198,15 +1198,40 @@ module.exports = class ShadowSenses {
     if (!this.settings?.startupShadowReport) return;
     if (!this.sensesEngine?.getStartupSummary) return;
 
+    // #11: skip when there are no monitored friends — nothing to report on.
+    const monitoredCount = this.deploymentManager?.getMonitoredUserIds?.().size || 0;
+    if (monitoredCount === 0) {
+      this.debugLog("Lifecycle", "Startup report skipped — no deployments");
+      return;
+    }
+
     const windowMs = this._getStartupShadowReportWindowMs();
     const summary = this.sensesEngine.getStartupSummary(windowMs, 3, 2);
     if (!summary) return;
+
+    // #2: skip when nothing happened in the window — avoid useless modal +
+    // wasted AI call. summary.totalEvents counts all observed events
+    // (messages, presence, mentions, etc.) within the configured window.
+    if (!summary.totalEvents || summary.totalEvents === 0) {
+      this.debugLog("Lifecycle", "Startup report skipped — no activity in window");
+      return;
+    }
+
     const recentEntries = this.sensesEngine.getStartupEntries
       ? this.sensesEngine.getStartupEntries(windowMs, 50)
       : [];
 
     const windowHours = Math.max(1, Math.round(summary.windowMs / (60 * 60 * 1000)));
     const aiResult = await this._generateAiStartupNarration(summary, recentEntries, windowHours);
+
+    // #16: AI call can take 8-12s. If user toggled the skill off / stopped
+    // the plugin during the await, drop the result instead of rendering
+    // into a torn-down context.
+    if (this._stopped || !this._sensesResourcesActive) {
+      this.debugLog("Lifecycle", "Startup report aborted — plugin/resources stopped during AI call");
+      return;
+    }
+
     const narration = aiResult?.narration || aiResult;
     const signalBreakdown = aiResult?.signalBreakdown || "";
     this._showStartupShadowReportModal({
@@ -1216,6 +1241,11 @@ module.exports = class ShadowSenses {
       recentEntries,
       signalBreakdown,
     });
+
+    // #1: mark fired so a skill-toggle (off/on) within the same session
+    // doesn't re-fire the same report. Cleared on full plugin restart since
+    // the class is re-instantiated.
+    this._startupReportFired = true;
 
     this.debugLog("Lifecycle", "Startup shadow report emitted", {
       windowHours,
@@ -1233,6 +1263,14 @@ module.exports = class ShadowSenses {
       this._startupReportTimer = null;
     }
     if (!this.settings?.startupShadowReport) return;
+
+    // #1: don't re-schedule when this session already fired the report.
+    // Skill toggle off/on calls _deactivateSensesResources +
+    // _activateSensesResources which used to fire a fresh report each cycle.
+    if (this._startupReportFired) {
+      this.debugLog("Lifecycle", "Startup report skipped — already fired this session");
+      return;
+    }
 
     const delayMs = STARTUP_TOAST_GRACE_MS + 750;
     this._startupReportTimer = setTimeout(() => {
