@@ -274,7 +274,12 @@ module.exports = {
       const totalGrowth = messageBasedGrowth + levelBasedGrowth;
   
       if (totalGrowth > 0) {
-        const statNames = this.getStatKeys();
+        // S3 (audit): only distribute retroactive growth across the 5
+        // allocatable base stats. Including combat stats (attack/defense/
+        // critChance/critDamage) directly inflates raw critChance and
+        // bypasses the agility-based crit calculation, producing
+        // inconsistent crit behaviour vs player-allocated growth.
+        const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
         let statsAdded = 0;
   
         // Distribute growth evenly across all stats
