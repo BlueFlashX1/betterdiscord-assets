@@ -376,9 +376,17 @@ module.exports = {
         const rankPromotionBonuses = this.getRankPromotionBonusTable();
   
         const baseBonus = rankPromotionBonuses[nextRank] || 0;
-        const statKeys = this.getStatKeys();
-        const statSum = this.sumStatBlock(this.settings.stats);
-        const averageStat = statSum / Math.max(1, statKeys.length);
+        // S2 (audit): dampener average should consider only the 5
+        // allocatable base stats. Including combat stats (attack, defense,
+        // critChance, critDamage) — flat-additive at a different scale —
+        // dilutes the average and gives high-base-stat players a softer
+        // dampener tier (more bonus) than intended.
+        const BASE_STAT_KEYS = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const baseStatSum = BASE_STAT_KEYS.reduce(
+          (sum, k) => sum + (Number(this.settings.stats?.[k]) || 0),
+          0
+        );
+        const averageStat = baseStatSum / BASE_STAT_KEYS.length;
         const dampener = this.calculateRankPromotionDampener(averageStat);
         const bonus = Math.max(1, Math.round(baseBonus * dampener));
         if (bonus > 0) {

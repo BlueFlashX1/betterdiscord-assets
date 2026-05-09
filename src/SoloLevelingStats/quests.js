@@ -5,8 +5,11 @@ module.exports = {
       return;
     }
 
+    // S1 (audit): if quest.progress is undefined (e.g. after schema
+    // migration), `undefined += N` produces NaN. NaN > target is false →
+    // quest stalls forever, no XP, no error. Coerce via previousProgress.
     const previousProgress = Number(quest.progress || 0);
-    quest.progress += amount;
+    quest.progress = previousProgress + Number(amount || 0);
     // Cap progress at target to prevent exceeding
     if (quest.progress > quest.target) {
       quest.progress = quest.target;
