@@ -521,7 +521,18 @@ module.exports = {
       });
       this.settings.level = derivedLevelInfo.level;
       this.settings.xp = derivedLevelInfo.xp;
+      // Mark for post-load save so the corrected level/xp gets persisted to
+      // IDB and BdApi.Data — otherwise every restart re-enters the same
+      // mismatched state (level=1, totalXP=3.8B) and relies on the in-memory
+      // reconciliation alone, which is fragile if anything reads
+      // `this.settings.level` before this code runs.
+      this._needsPostLoadSave = true;
     }
+
+    // Invalidate the level cache so any subsequent getCurrentLevel() call
+    // recomputes from the corrected totalXP rather than returning a stale
+    // pre-reconciliation result that was primed during the guard above.
+    this.invalidatePerformanceCache?.(['currentLevel']);
 
     this.recomputeHPManaFromStats();
     this._hasRealProgress = this._isRealProgressState(this.settings);
@@ -539,12 +550,22 @@ module.exports = {
       hasRealProgress: this._hasRealProgress,
     });
 
-    if (loadedFromFile) {
+    // Persist after load when either:
+    //   1. We restored from a file backup — push that to IDB/BdApi.Data
+    //   2. The level/totalXP reconciliation in _initializeLoadedSettings
+    //      corrected stale values — write them back so future restarts
+    //      load clean data instead of relying on the in-memory fix.
+    if (loadedFromFile || this._needsPostLoadSave) {
       try {
         await this.saveSettings(true);
-        this.debugLog('LOAD_SETTINGS', 'Restored file backup to persistent stores');
+        this.debugLog('LOAD_SETTINGS', 'Persisted post-load reconciled settings', {
+          loadedFromFile,
+          reconciledOnLoad: !!this._needsPostLoadSave,
+        });
       } catch (saveErr) {
-        this.debugError('LOAD_SETTINGS', 'Failed to push file backup to stores', saveErr);
+        this.debugError('LOAD_SETTINGS', 'Failed to push post-load save', saveErr);
+      } finally {
+        this._needsPostLoadSave = false;
       }
     }
 

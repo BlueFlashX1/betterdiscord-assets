@@ -106,7 +106,9 @@ module.exports = {
           { batchSize: 250, sortBy: 'extractedAt', sortOrder: 'desc' }
         );
 
-        const currentCount = (await this.storageManager.getTotalCount()) || 0;
+        // Re-guard with optional chain: plugin.stop() can null storageManager
+        // mid-stream while we're awaiting forEachShadowBatch above.
+        const currentCount = (await this.storageManager?.getTotalCount()) || 0;
         this._persistTotalPowerCache(totals.totalPower, currentCount);
 
         this.debugLog('POWER', 'Total power calculated', {
