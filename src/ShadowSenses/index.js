@@ -1222,15 +1222,22 @@ module.exports = class ShadowSenses {
             lineHeight: 1.45,
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
+            // #13: bound the breakdown's height + give it its own scroll
+            // so a long AI response can't push the modal past 68vh and
+            // overflow narrow Discord windows.
+            maxHeight: "30vh",
+            overflowY: "auto",
           },
         },
         attentionSignalText
       )
     );
 
+    // #12: single dismiss button — "Understood" + "Dismiss" had no
+    // distinct callbacks, so showing both was confusing UX. Single confirm
+    // button + Esc/click-outside both close the modal cleanly.
     BdApi.UI.showConfirmationModal(title, content, {
       confirmText: "Understood",
-      cancelText: "Dismiss",
     });
   }
 
