@@ -16,17 +16,40 @@ const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { createToast } = require('../shared/toast');
 const _toast = createToast();
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
-const { isVoiceChannelChat } = require('../shared/channel-context');
 
 const STYLE_ID = 'EquipmentManager-styles';
 const HEADER_ICON_ID = 'eq-header-icon';
 const POPUP_ID = 'eq-header-popup';
 
-const HEADER_TOOLBAR_SELECTORS = [
-  '[aria-label="Channel header"] [class*="toolbar_"]',
-  '[class*="titleWrapper_"] [class*="toolbar_"]',
-  'header [class*="toolbar_"]',
-];
+// Discord channel types we DO NOT want to inject our icon into.
+// 2 = GUILD_VOICE, 13 = GUILD_STAGE_VOICE.
+const HIDDEN_CHANNEL_TYPES = new Set([2, 13]);
+
+// Resolve the channel currently shown in the URL — independent of any
+// VC overlay state. Returns null when ChannelStore isn't available or
+// the URL doesn't point at a channel.
+function _getUrlChannelType() {
+  try {
+    const path = String(window.location?.pathname || '');
+    const match = path.match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+    if (!match) return null;
+    const channel = BdApi?.Webpack?.getStore?.('ChannelStore')?.getChannel?.(match[1]);
+    return channel ? Number(channel.type) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// All visible channel-header sections. Discord renders one for the
+// active channel, plus one extra when the VC chat overlay is open
+// (the floating chat panel for the connected voice channel). The
+// presence of that second header is the unambiguous "VC chat is open"
+// signal — far more reliable than guessing channel state from stores.
+function _visibleChannelHeaders() {
+  return Array.from(
+    document.querySelectorAll('section[aria-label="Channel header"]')
+  ).filter((el) => el.offsetParent !== null);
+}
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -123,13 +146,19 @@ module.exports = class EquipmentManager {
   }
 
   // ─── Header Icon ────────────────────────────────────────────────────────────
+  //
+  // Injection rules (all must hold to inject):
+  //   1. URL channel must not be a voice / stage channel.
+  //   2. Exactly ONE channel-header section is visible. When the VC chat
+  //      overlay is open Discord renders TWO headers — refuse to inject
+  //      in that scenario.
+  //   3. The icon, if it already exists, must live inside the canonical
+  //      header. If it has migrated (Discord re-rendered into the wrong
+  //      header), we remove and re-inject in the right place.
 
-  _getToolbar() {
-    for (const sel of HEADER_TOOLBAR_SELECTORS) {
-      const el = document.querySelector(sel);
-      if (el && el.offsetParent !== null) return el;
-    }
-    return null;
+  _removeHeaderIcon() {
+    const el = document.getElementById(HEADER_ICON_ID);
+    if (el) el.remove();
   }
 
   _startHeaderIcon() {
@@ -138,23 +167,37 @@ module.exports = class EquipmentManager {
     this._headerIconLoop = setInterval(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 5000);
+    }, 2000);
   }
 
   _ensureHeaderIcon() {
-    // Hide in voice-channel chat — plugin icons aren't useful there.
-    // Pattern matches ShadowSenses: remove on detection, re-inject when leaving.
-    if (isVoiceChannelChat()) {
-      const stale = document.getElementById(HEADER_ICON_ID);
-      if (stale) stale.remove();
+    // Rule 1 — URL channel type
+    const channelType = _getUrlChannelType();
+    if (HIDDEN_CHANNEL_TYPES.has(channelType)) {
+      this._removeHeaderIcon();
       return;
     }
 
-    const existing = document.getElementById(HEADER_ICON_ID);
-    if (existing?.isConnected) return;
+    // Rule 2 — exactly one channel header
+    const headers = _visibleChannelHeaders();
+    if (headers.length !== 1) {
+      this._removeHeaderIcon();
+      return;
+    }
 
-    const toolbar = this._getToolbar();
-    if (!toolbar) return;
+    const canonical = headers[0];
+    const toolbar = canonical.querySelector('[class*="toolbar_"]');
+    if (!toolbar) {
+      this._removeHeaderIcon();
+      return;
+    }
+
+    // Rule 3 — existing icon must be inside the canonical header
+    const existing = document.getElementById(HEADER_ICON_ID);
+    if (existing?.isConnected) {
+      if (canonical.contains(existing)) return;
+      existing.remove();
+    }
     if (toolbar.querySelector(`#${HEADER_ICON_ID}`)) return;
 
     const btn = document.createElement('button');
