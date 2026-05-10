@@ -72,9 +72,21 @@ module.exports = {
   },
 
   _isDungeonWidgetContextAllowed() {
-    // Hide in voice-channel chat — the toolbar gets crowded and the
-    // dungeon icon isn't useful while in a VC's chat panel.
-    if (isVoiceChannelChat()) return false;
+    // Hide in voice / stage channel chat — the toolbar gets crowded and
+    // the dungeon icon isn't useful while in a VC's chat panel.
+    // Belt-and-suspenders: shared isVoiceChannelChat() helper AND a direct
+    // URL channel-type lookup, since the shared helper has been unreliable
+    // on some clients in this repo's history.
+    try { if (isVoiceChannelChat()) return false; } catch (_) {}
+    try {
+      const path = String(window.location?.pathname || '');
+      const m = path.match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+      if (m) {
+        const ch = BdApi?.Webpack?.getStore?.('ChannelStore')?.getChannel?.(m[1]);
+        const t = Number(ch?.type);
+        if (t === 2 || t === 13) return false;
+      }
+    } catch (_) {}
     const channelInfo = this.getChannelInfo?.();
     return Boolean(channelInfo && channelInfo.guildId && channelInfo.guildId !== 'DM');
   },

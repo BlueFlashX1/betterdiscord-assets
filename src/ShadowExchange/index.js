@@ -898,8 +898,25 @@ module.exports = class ShadowExchange {
     const targetIcon = icon || document.getElementById(SE_SWIRL_ID);
     if (!targetIcon) return false;
 
-    // Hide in voice-channel chat — plugin icons aren't useful there.
-    if (isVoiceChannelChat()) {
+    // Hide in voice / stage channel chat — plugin icons aren't useful there.
+    // Belt-and-suspenders: try the shared isVoiceChannelChat() helper AND
+    // also do a direct URL channel-type lookup so we don't depend on the
+    // shared helper's heuristics returning the right thing in every Discord
+    // build (it has been unreliable on some clients in this repo's history).
+    let isVc = false;
+    try { isVc = isVoiceChannelChat(); } catch (_) {}
+    if (!isVc) {
+      try {
+        const path = String(window.location?.pathname || "");
+        const m = path.match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+        if (m) {
+          const ch = BdApi?.Webpack?.getStore?.("ChannelStore")?.getChannel?.(m[1]);
+          const t = Number(ch?.type);
+          if (t === 2 || t === 13) isVc = true;
+        }
+      } catch (_) {}
+    }
+    if (isVc) {
       if (targetIcon.parentElement) targetIcon.parentElement.removeChild(targetIcon);
       targetIcon.classList.add("se-swirl-icon--hidden");
       return false;

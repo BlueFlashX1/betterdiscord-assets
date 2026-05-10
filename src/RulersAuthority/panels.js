@@ -48,6 +48,29 @@ function _userIsInVoice() {
     return false;
   }
 }
+
+// True when the user is currently VIEWING the chat tab of a voice / stage
+// channel — independent of whether they've actually joined as a participant.
+// Stage-channel listeners aren't "in voice" per VoiceStateStore but the
+// stage chat panel still renders the channel-header toolbar where RA's icon
+// would land, so we need to suppress it there too.
+function _viewingVoiceOrStageChat() {
+  try {
+    const path = String(window.location?.pathname || "");
+    const m = path.match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+    if (!m) return false;
+    const ch = BdApi?.Webpack?.getStore?.("ChannelStore")?.getChannel?.(m[1]);
+    const t = Number(ch?.type);
+    return t === 2 || t === 13;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Combined gate — RA hides when either condition is true.
+function _shouldHideRaIcon() {
+  return _userIsInVoice() || _viewingVoiceOrStageChat();
+}
 export function togglePanel(ctx, panelName) {
   const def = PANEL_DEFS[panelName];
   if (!def) return;
@@ -769,11 +792,13 @@ export function injectToolbarIcon(ctx) {
 
   updateToolbarIcon(ctx);
 
-  // Hide while user is connected to a voice / stage channel. Park the
-  // icon off-DOM (body) with the existing `.ra-toolbar-icon--hidden`
-  // class so the eventual VOICE_STATE_UPDATES dispatcher reattach
-  // path can reuse the same element.
-  if (_userIsInVoice()) {
+  // Hide while user is connected to a voice / stage channel OR while
+  // viewing the chat tab of a voice / stage channel (e.g. listening in
+  // on a stage as a non-participant). Park the icon off-DOM with the
+  // existing `.ra-toolbar-icon--hidden` class so the eventual reattach
+  // path (VOICE_STATE_UPDATES dispatcher / channel switch) can reuse
+  // the same element.
+  if (_shouldHideRaIcon()) {
     if (icon.parentElement && icon.parentElement.id !== "ra-icon-park") {
       icon.parentElement.removeChild(icon);
     }
@@ -814,19 +839,23 @@ export function setupToolbarObserver(ctx) {
     ctx._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('RulersAuthority', () => {
       const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
       const toolbar = getChannelHeaderToolbar(ctx);
-      // Skip layout-driven reinject while user is in voice — injectToolbarIcon
-      // already handles the hide path; we don't want a stale layout tick to
-      // pull the icon back to the toolbar between dispatcher events.
-      if (_userIsInVoice()) return;
+      // Skip layout-driven reinject while we're in a hide state —
+      // injectToolbarIcon already handles the hide path; we don't want a
+      // stale layout tick to pull the icon back to the toolbar between
+      // dispatcher events.
+      if (_shouldHideRaIcon()) return;
       if (!icon || !toolbar || icon.parentElement !== toolbar) {
         scheduleIconReinject(ctx);
       }
     }, 250);
   }
 
-  // VOICE_STATE_UPDATES dispatcher subscription — instant reaction to
-  // join/leave a voice channel. Without this we'd wait up to 250ms for
-  // the layout bus to notice, which is tolerable but feels laggy.
+  // Dispatcher subscriptions — instant reaction to:
+  //   VOICE_STATE_UPDATES : user joins/leaves a voice channel
+  //   CHANNEL_SELECT      : user navigates into/out of a stage-channel chat
+  //                         tab (no voice state change, just URL change)
+  // Without these we'd wait up to 250ms for the layout bus to notice; this
+  // makes the hide/show feel snappy.
   try {
     const Webpack = BdApi?.Webpack;
     const dispatcher =
@@ -835,8 +864,10 @@ export function setupToolbarObserver(ctx) {
     if (dispatcher && typeof dispatcher.subscribe === "function") {
       const handler = () => scheduleIconReinject(ctx, 0);
       dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
+      dispatcher.subscribe("CHANNEL_SELECT", handler);
       ctx._voiceStateUnsub = () => {
         try { dispatcher.unsubscribe("VOICE_STATE_UPDATES", handler); } catch (_) {}
+        try { dispatcher.unsubscribe("CHANNEL_SELECT", handler); } catch (_) {}
       };
     }
   } catch (_) {}
