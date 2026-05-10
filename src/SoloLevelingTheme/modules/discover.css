@@ -102,3 +102,24 @@ div[class^="headerBarInner_"] div[class^="tabBarItem_"]::after {
   border: none !important;
   height: 0 !important;
 }
+
+/* §13b — Discover hero gradient: swap Discord's stock blue radial for
+   SL violet. Discord ships:
+     radial-gradient(130.66% 324.98% at -3.95% 0px,
+       rgb(47, 114, 193)        0px,    blue
+       rgba(37, 34, 154, 0.8)   35.73%, blue-purple
+       rgba(25, 23, 92, 0)      100%    dark-blue fade
+     )
+   Replaced with SL theme's violet stops at the same geometry so only
+   the colors change — gradient angle, falloff, and dark backdrop stay
+   identical. Selector mirrors the parent > child path from CSS Picker
+   (gradientBackground_ > gradient_). */
+div[class^="gradientBackground_"] > div[class^="gradient_"] {
+  background-color: rgb(0, 0, 0) !important;
+  background-image: radial-gradient(
+    130.66% 324.98% at -3.95% 0px,
+    rgb(138, 43, 226) 0px,
+    rgba(107, 31, 176, 0.8) 35.73%,
+    rgba(58, 22, 105, 0) 100%
+  ) !important;
+}
