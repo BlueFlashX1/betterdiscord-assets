@@ -276,7 +276,11 @@ module.exports = {
           if (pendingAnim && !this.processedMessages.has(pendingMsgId)) {
             // CRITICAL: Stats/history/processedMessages intentionally deferred from _onMessageCreate
             // so this observer path can find the element and trigger animation properly.
-            this.processedMessages.add(pendingMsgId);
+            // MEMORY FIX: was `processedMessages.add(...)` — direct add
+            // bypassed `processedMessagesOrder` push, so this entry was
+            // never eligible for LRU eviction → unbounded growth.
+            // `markAsProcessed` funnels through the LRU bookkeeping.
+            this.markAsProcessed(pendingMsgId);
             this.stats.totalMessages++;
             this.stats.totalCrits++;
             this.updateStats();

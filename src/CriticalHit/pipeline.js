@@ -84,7 +84,10 @@ module.exports = {
           effectiveCritChance,
         });
       } else {
-        this.processedMessages.add(msg.id);
+        // MEMORY FIX: was `processedMessages.add(...)` — bypassed
+        // LRU bookkeeping. `markAsProcessed` keeps the order array
+        // consistent so eviction can reclaim oldest entries.
+        this.markAsProcessed(msg.id);
         this.stats.totalMessages++;
 
         this.addToHistory({
@@ -175,7 +178,10 @@ module.exports = {
             const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000;
             const messageTimestamp = Number(BigInt(messageId) >> 22n) + DISCORD_EPOCH;
             if (Date.now() - messageTimestamp > MESSAGE_AGE_GATE_MS) {
-              this.processedMessages.add(messageId);
+              // MEMORY FIX: funnel through markAsProcessed so the LRU
+              // ordering stays consistent and old age-gated entries
+              // can be evicted alongside everything else.
+              this.markAsProcessed(messageId);
               return;
             }
           }
@@ -248,7 +254,8 @@ module.exports = {
       if (existingEntry) {
         this.applyCritStyleWithSettings(messageElement, existingEntry.critSettings);
         this.critMessages.add(messageElement);
-        this.processedMessages.add(messageId);
+        // MEMORY FIX: funnel through markAsProcessed for LRU consistency.
+        this.markAsProcessed(messageId);
         this._processingCrits.delete(messageId);
         return;
       }
@@ -506,7 +513,8 @@ module.exports = {
           }
 
           // NO animation for restored crits — animation is exclusively for new messages (processNewCrit).
-          messageId && this.processedMessages.add(messageId);
+          // MEMORY FIX: funnel through markAsProcessed for LRU consistency.
+          messageId && this.markAsProcessed(messageId);
           return;
         }
         if (messageId) {
@@ -582,9 +590,10 @@ module.exports = {
           }
         }
 
-        // CRITICAL: Only mark as processed if it's not a channel ID
+        // CRITICAL: Only mark as processed if it's not a channel ID.
+        // MEMORY FIX: funnel through markAsProcessed for LRU consistency.
         if (!this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
-          this.processedMessages.add(messageId);
+          this.markAsProcessed(messageId);
         }
         return;
       }
@@ -602,8 +611,9 @@ module.exports = {
       {
         const msgAuthorId = this.getAuthorId(messageElement);
         if (msgAuthorId && !this.isOwnMessage(messageElement, msgAuthorId)) {
-          // Not our message — skip crit roll entirely, mark as processed
-          messageId && this.processedMessages.add(messageId);
+          // Not our message — skip crit roll entirely, mark as processed.
+          // MEMORY FIX: funnel through markAsProcessed for LRU consistency.
+          messageId && this.markAsProcessed(messageId);
           return;
         }
       }

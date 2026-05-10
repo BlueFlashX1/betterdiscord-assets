@@ -32,6 +32,24 @@ module.exports = {
     this.critMessages.clear();
     this.processedMessages.clear();
     this.processedMessagesOrder = [];
+    // MEMORY HYGIENE: previously these Maps accumulated stale entries
+    // from prior channels indefinitely. _restorationCheckThrottle has a
+    // 1000-entry cap so it was bounded; _pendingRechecks had no cap.
+    // Clearing on channel change releases stale references promptly.
+    // The _pendingRechecks values are timer handles registered via
+    // _setTrackedTimeout — cancelling them here prevents stale crit-
+    // recheck attempts from firing against the new channel's elements.
+    this._restorationCheckThrottle?.clear?.();
+    if (this._pendingRechecks?.size) {
+      for (const timers of this._pendingRechecks.values()) {
+        if (Array.isArray(timers)) {
+          for (const t of timers) {
+            try { clearTimeout(t); } catch (_) {}
+          }
+        }
+      }
+      this._pendingRechecks.clear();
+    }
   },
 
   /**
