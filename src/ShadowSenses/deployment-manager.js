@@ -44,7 +44,23 @@ class DeploymentManager {
     this._monitoredUserIds = new Set();
     this._deployedShadowIds = new Set();
     this._availableCache = _ttl(5000); // 5s TTL — avoids redundant IDB reads
-    this._version = 0;
+
+    // _version — incremented on every save. Setter fires a 'change'
+    // event on _bus so React components (DeploymentsTab,
+    // KeywordAlertsTab) can subscribe instead of polling. All
+    // `this._version++` write sites in _save() go through the setter
+    // unchanged.
+    this._bus = new EventTarget();
+    this.__version = 0;
+    Object.defineProperty(this, "_version", {
+      get() { return this.__version; },
+      set(value) {
+        this.__version = value;
+        if (this._bus) this._bus.dispatchEvent(new Event("change"));
+      },
+      configurable: true,
+      enumerable: true,
+    });
   }
 
   load() {

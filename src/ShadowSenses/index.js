@@ -71,7 +71,24 @@ class SensesEngine {
     this._handleRelationshipChange = null;
     this._subscribedEventHandlers = new Map(); // eventName -> Set<handler>
     this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
-    this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
+
+    // _feedVersion — bumped on every feed mutation. Setter emits a
+    // 'change' event on _feedBus so React components (FeedTab) can
+    // subscribe instead of polling. All `ctx._feedVersion++` write
+    // sites across senses-engine-feed.js go through this setter
+    // unchanged.
+    this._feedBus = new EventTarget();
+    this.__feedVersion = 0;
+    Object.defineProperty(this, "_feedVersion", {
+      get() { return this.__feedVersion; },
+      set(value) {
+        this.__feedVersion = value;
+        if (this._feedBus) this._feedBus.dispatchEvent(new Event("change"));
+      },
+      configurable: true,
+      enumerable: true,
+    });
+
     this._burstMap = new Map();  // "authorId:channelId" -> { guildId, feedIndex, timestamp }
 
     // Presence detection — in-memory only, resets on restart/reload
@@ -407,6 +424,27 @@ module.exports = class ShadowSenses {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
     this._stopped = true;
+
+    // Widget dirty-flag with event emission. Setter fires 'dirty' on
+    // every false→true transition so the SensesWidget React component
+    // can subscribe instead of polling every 3s. All ~8 existing write
+    // sites across this file, plugin-ui-methods.js, components.js,
+    // senses-engine-events.js go through the setter unchanged.
+    this._widgetBus = new EventTarget();
+    this.__widgetDirty = false;
+    Object.defineProperty(this, "_widgetDirty", {
+      get() { return this.__widgetDirty; },
+      set(value) {
+        const wasFalsy = !this.__widgetDirty;
+        this.__widgetDirty = !!value;
+        if (this.__widgetDirty && wasFalsy && this._widgetBus) {
+          this._widgetBus.dispatchEvent(new Event("dirty"));
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    });
+
     this._dispatcherPollHandle = null;
     this._widgetReinjectTimeout = null;
     this._unpatchContextMenu = null;

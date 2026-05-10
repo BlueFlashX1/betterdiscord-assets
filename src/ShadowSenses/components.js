@@ -514,27 +514,27 @@ function buildComponents(pluginRef) {
     const prevLenRef = useRef(0);
 
     useEffect(() => {
-      let lastVersion = -1;
-      const poll = setInterval(() => {
+      // Event-driven feed refresh — replaces the prior 5s setInterval
+      // that polled engine._feedVersion. The engine's _feedBus emits
+      // 'change' on every _feedVersion mutation (setter is in
+      // SensesEngine constructor); listener subscribes for the
+      // component's lifetime.
+      const engine = pluginRef.sensesEngine;
+      if (!engine) return undefined;
+      const refresh = () => {
         if (document.hidden) return;
         try {
-          const engine = pluginRef.sensesEngine;
-          if (!engine) return;
-          const currentVersion = engine._feedVersion;
-          if (currentVersion !== lastVersion) {
-            lastVersion = currentVersion;
-            setFeed(engine.getActiveFeed());
-          }
-        } catch (_) { pluginRef.debugLog?.("REACT", "Feed poll error", _); }
-      }, 5000);
-      try {
-        const engine = pluginRef.sensesEngine;
-        if (engine) {
           setFeed(engine.getActiveFeed());
-          lastVersion = engine._feedVersion;
-        }
-      } catch (_) { pluginRef.debugLog?.("REACT", "Feed initial load error", _); }
-      return () => clearInterval(poll);
+        } catch (err) { pluginRef.debugLog?.("REACT", "Feed refresh error", err); }
+      };
+      // Initial paint
+      try {
+        setFeed(engine.getActiveFeed());
+      } catch (err) { pluginRef.debugLog?.("REACT", "Feed initial load error", err); }
+      if (engine._feedBus) engine._feedBus.addEventListener("change", refresh);
+      return () => {
+        if (engine._feedBus) engine._feedBus.removeEventListener("change", refresh);
+      };
     }, []);
 
     useEffect(() => {
@@ -573,20 +573,24 @@ function buildComponents(pluginRef) {
     const versionRef = useRef(-1);
 
     useEffect(() => {
+      // Event-driven refresh — replaces the prior 2s setInterval that
+      // polled deploymentManager._version. The manager's _bus emits
+      // 'change' on every _version mutation (setter in
+      // deployment-manager.js constructor).
+      const dm = pluginRef.deploymentManager;
       try {
-        setDeployments(pluginRef.deploymentManager ? pluginRef.deploymentManager.getDeployments() : []);
-      } catch (_) { pluginRef.debugLog?.("REACT", "Deployments load error", _); }
-
-      const poll = setInterval(() => {
+        setDeployments(dm ? dm.getDeployments() : []);
+      } catch (err) { pluginRef.debugLog?.("REACT", "Deployments load error", err); }
+      if (!dm || !dm._bus) return undefined;
+      const refresh = () => {
         if (document.hidden) return;
         try {
-          const nextVersion = pluginRef.deploymentManager?._version ?? 0;
-          if (nextVersion === versionRef.current) return;
-          versionRef.current = nextVersion;
-          setDeployments(pluginRef.deploymentManager ? pluginRef.deploymentManager.getDeployments() : []);
+          versionRef.current = dm._version;
+          setDeployments(dm.getDeployments());
         } catch (_) {}
-      }, 2000);
-      return () => clearInterval(poll);
+      };
+      dm._bus.addEventListener("change", refresh);
+      return () => dm._bus.removeEventListener("change", refresh);
     }, []);
 
     const handleRecall = useCallback((deployment) => {
@@ -680,12 +684,17 @@ function buildComponents(pluginRef) {
     }, [readDeployments]);
 
     useEffect(() => {
+      // Event-driven sync — replaces the prior 5s setInterval. Same
+      // deploymentManager._bus 'change' event as DeploymentsTab.
       syncDeployments(true);
-      const poll = setInterval(() => {
+      const dm = pluginRef.deploymentManager;
+      if (!dm || !dm._bus) return undefined;
+      const refresh = () => {
         if (document.hidden) return;
         syncDeployments(false);
-      }, 5000);
-      return () => clearInterval(poll);
+      };
+      dm._bus.addEventListener("change", refresh);
+      return () => dm._bus.removeEventListener("change", refresh);
     }, [syncDeployments]);
 
     const persistKeywords = useCallback((userId, nextKeywords, successMessage) => {
@@ -1176,16 +1185,23 @@ function buildComponents(pluginRef) {
     const [, forceUpdate] = useReducer(x => x + 1, 0);
 
     useEffect(() => {
+      // Event-driven widget repaint — replaces the prior 3s setInterval
+      // that polled pluginRef._widgetDirty. The plugin's _widgetBus
+      // emits 'dirty' on every false→true transition of _widgetDirty
+      // (setter in ShadowSenses constructor); listener clears the flag
+      // and forces React re-render.
       pluginRef._widgetForceUpdate = forceUpdate;
-      const poll = setInterval(() => {
+      const bus = pluginRef._widgetBus;
+      const handler = () => {
         if (document.hidden) return;
         if (pluginRef._widgetDirty) {
           pluginRef._widgetDirty = false;
           forceUpdate();
         }
-      }, 3000);
+      };
+      if (bus) bus.addEventListener("dirty", handler);
       return () => {
-        clearInterval(poll);
+        if (bus) bus.removeEventListener("dirty", handler);
         pluginRef._widgetForceUpdate = null;
       };
     }, []);
