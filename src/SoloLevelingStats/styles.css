@@ -1465,3 +1465,30 @@
         text-align: center;
         padding: 8px;
       }
+
+      /* When in VC AND the VC chat overlay panel is open, shrink the
+         HP/MP/EXP strip so it doesn't extend underneath the chat panel.
+
+         Layout context: #sls-chat-ui mounts at the app-mount level (above
+         the main+chat column split), so its parent stays full-viewport-
+         width even when Discord's chatLayerWrapper opens to the right.
+         Adding right margin equal to the panel's typical width pulls the
+         strip's edge back so HP/MP numerics + the EXP bar stay fully
+         visible.
+
+         Gates (both must hold):
+           body[data-sl-in-voice-chat="true"]
+             only in voice / stage channels (set by the SoloLevelingTheme-
+             installed body-attr watcher)
+           :has(div[class^="chatLayerWrapper_"])
+             only when the VC chat overlay panel is actually present
+
+         Outside VC or with chat panel closed, the strip keeps its full
+         width unchanged.
+
+         400px is Discord's default chatLayerWrapper width. Drag-resize
+         can shift this — acceptable tradeoff vs JS-driven width sync. */
+      body[data-sl-in-voice-chat="true"]:has(div[class^="chatLayerWrapper_"]) #sls-chat-ui {
+        margin-right: 400px !important;
+        transition: margin-right 0.2s ease !important;
+      }
