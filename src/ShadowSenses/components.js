@@ -749,26 +749,112 @@ function buildComponents(pluginRef) {
       persistKeywords(normalizedUserId, [], "Cleared keyword alerts");
     }, [persistKeywords]);
 
+    // Inline-!important style appliers — same bulletproof pattern as Active
+    // Feed and Deployments. Each helper attaches via React ref so the
+    // styling wins against any external theme/plugin cascade.
+    const applyTargetCard = (el) => {
+      if (!el) return;
+      el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
+      el.style.setProperty("border", "1px solid rgba(167, 139, 250, 0.32)", "important");
+      el.style.setProperty("border-radius", "8px", "important");
+      el.style.setProperty("padding", "12px 14px", "important");
+      el.style.setProperty("margin", "0 0 10px 0", "important");
+      el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
+    };
+    const applyChip = (el) => {
+      if (!el) return;
+      el.style.setProperty("display", "inline-flex", "important");
+      el.style.setProperty("align-items", "center", "important");
+      el.style.setProperty("gap", "6px", "important");
+      el.style.setProperty("background", "rgba(52, 211, 153, 0.14)", "important");
+      el.style.setProperty("color", "#34d399", "important");
+      el.style.setProperty("border", "1px solid rgba(52, 211, 153, 0.35)", "important");
+      el.style.setProperty("border-radius", "999px", "important");
+      el.style.setProperty("padding", "3px 4px 3px 10px", "important");
+      el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+      el.style.setProperty("font-size", "12px", "important");
+      el.style.setProperty("font-weight", "500", "important");
+      el.style.setProperty("line-height", "1.3", "important");
+    };
+    const applyChipRemove = (el) => {
+      if (!el) return;
+      el.style.setProperty("background", "transparent", "important");
+      el.style.setProperty("color", "rgba(52, 211, 153, 0.7)", "important");
+      el.style.setProperty("border", "none", "important");
+      el.style.setProperty("border-radius", "999px", "important");
+      el.style.setProperty("width", "16px", "important");
+      el.style.setProperty("height", "16px", "important");
+      el.style.setProperty("padding", "0", "important");
+      el.style.setProperty("display", "inline-flex", "important");
+      el.style.setProperty("align-items", "center", "important");
+      el.style.setProperty("justify-content", "center", "important");
+      el.style.setProperty("font-size", "13px", "important");
+      el.style.setProperty("font-weight", "700", "important");
+      el.style.setProperty("line-height", "1", "important");
+      el.style.setProperty("cursor", "pointer", "important");
+      el.style.setProperty("outline", "none", "important");
+      el.style.setProperty("box-shadow", "none", "important");
+      el.style.setProperty("transition", "background 0.12s ease, color 0.12s ease", "important");
+    };
+    const applyKwInput = (el) => {
+      if (!el) return;
+      el.style.setProperty("flex", "1", "important");
+      el.style.setProperty("min-width", "0", "important");
+      el.style.setProperty("background", "rgba(20, 14, 36, 0.7)", "important");
+      el.style.setProperty("color", "#e8e3f5", "important");
+      el.style.setProperty("border", "1px solid rgba(167, 139, 250, 0.25)", "important");
+      el.style.setProperty("border-radius", "6px", "important");
+      el.style.setProperty("padding", "6px 10px", "important");
+      el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+      el.style.setProperty("font-size", "12px", "important");
+      el.style.setProperty("outline", "none", "important");
+      el.style.setProperty("box-shadow", "none", "important");
+      el.style.setProperty("transition", "border-color 0.15s ease", "important");
+    };
+    const applySmallPill = (color, bg, border) => (el) => {
+      if (!el) return;
+      el.style.setProperty("background", bg, "important");
+      el.style.setProperty("color", color, "important");
+      el.style.setProperty("border", `1px solid ${border}`, "important");
+      el.style.setProperty("border-radius", "999px", "important");
+      el.style.setProperty("padding", "5px 12px", "important");
+      el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+      el.style.setProperty("font-size", "11px", "important");
+      el.style.setProperty("font-weight", "600", "important");
+      el.style.setProperty("letter-spacing", "0.04em", "important");
+      el.style.setProperty("text-transform", "uppercase", "important");
+      el.style.setProperty("cursor", "pointer", "important");
+      el.style.setProperty("outline", "none", "important");
+      el.style.setProperty("box-shadow", "none", "important");
+      el.style.setProperty("white-space", "nowrap", "important");
+      el.style.setProperty("transition", "background 0.15s ease, border-color 0.15s ease", "important");
+    };
+
     if (deployments.length === 0) {
       return ce("div", { className: "shadow-senses-empty" },
         "No monitored targets yet. Deploy a shadow first, then add per-target keywords."
       );
     }
 
-    return ce("div", { style: { padding: "10px 16px", maxHeight: "50vh", overflowY: "auto" } },
+    return ce("div", { style: { padding: "12px 16px 16px", maxHeight: "50vh", overflowY: "auto" } },
       ce("div", {
         style: {
-          color: "#aab",
+          color: "rgba(196, 181, 253, 0.7)",
           fontSize: "12px",
-          lineHeight: 1.45,
-          marginBottom: "12px",
+          lineHeight: 1.5,
+          marginBottom: "10px",
+          fontFamily: "'gg sans', system-ui, sans-serif",
         },
       }, "Manage keywords per monitored target. Matching is case-insensitive and uses contains logic (not exact match)."),
       ce("div", {
         style: {
-          color: "#8ea2b8",
-          fontSize: "11px",
-          marginBottom: "10px",
+          color: "rgba(196, 181, 253, 0.45)",
+          fontSize: "10px",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          marginBottom: "12px",
+          fontFamily: "'gg sans', system-ui, sans-serif",
         },
       }, `${deployments.length} monitored target${deployments.length === 1 ? "" : "s"}`),
       deployments.map((deployment) => {
@@ -776,45 +862,91 @@ function buildComponents(pluginRef) {
         const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
         const draftValue = keywordDrafts[userId] ?? "";
         const userKeywords = keywordsByUser[userId] || [];
+        const HB_KW = {
+          fontFamily: "'gg sans', 'Helvetica Neue', system-ui, sans-serif",
+          fontSize: "13px",
+          lineHeight: 1.3,
+        };
         return ce("div", {
           key: deployment.shadowId,
           className: "shadow-senses-keyword-target",
+          ref: applyTargetCard,
         },
-          ce("div", { className: "shadow-senses-keyword-target-head" },
-            ce("div", { className: "shadow-senses-deploy-info" },
-              ce("span", { className: "shadow-senses-deploy-rank", style: { color: rankColor } }, `[${deployment.shadowRank}]`),
-              ce("span", null, deployment.shadowName),
-              ce("span", { className: "shadow-senses-deploy-arrow" }, "\u2192"),
-              ce("span", { className: "shadow-senses-deploy-target" }, deployment.targetUsername)
+          ce("div", {
+            className: "shadow-senses-keyword-target-head",
+            style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "10px" },
+          },
+            ce("div", {
+              style: { display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 },
+            },
+              ce("span", { style: { ...HB_KW, color: rankColor, fontWeight: 700, letterSpacing: "0.03em" } }, `[${deployment.shadowRank}]`),
+              ce("span", { style: { ...HB_KW, color: "#d4b0ff", fontWeight: 600 } }, deployment.shadowName),
+              ce("span", { style: { ...HB_KW, color: "#5a5a6e" } }, "\u2192"),
+              ce("span", { style: { ...HB_KW, color: "#a78bfa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, deployment.targetUsername)
             ),
-            ce("span", { className: "shadow-senses-keyword-count" },
-              `${userKeywords.length} keyword${userKeywords.length === 1 ? "" : "s"}`
-            )
+            ce("span", {
+              className: "shadow-senses-keyword-count",
+              style: {
+                fontFamily: "'gg sans', system-ui, sans-serif",
+                fontSize: "10px",
+                fontWeight: 600,
+                color: userKeywords.length > 0 ? "#34d399" : "rgba(196, 181, 253, 0.4)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                whiteSpace: "nowrap",
+                background: userKeywords.length > 0 ? "rgba(52, 211, 153, 0.12)" : "rgba(167, 139, 250, 0.08)",
+                border: `1px solid ${userKeywords.length > 0 ? "rgba(52, 211, 153, 0.3)" : "rgba(167, 139, 250, 0.18)"}`,
+                borderRadius: "999px",
+                padding: "2px 10px",
+              },
+            }, `${userKeywords.length} keyword${userKeywords.length === 1 ? "" : "s"}`)
           ),
-          ce("div", { className: "shadow-senses-keyword-list" },
+          ce("div", {
+            className: "shadow-senses-keyword-list",
+            style: { display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px", minHeight: "24px", alignItems: "center" },
+          },
             userKeywords.length === 0
-              ? ce("div", { className: "shadow-senses-keyword-empty" }, "No keywords set yet.")
+              ? ce("div", {
+                  className: "shadow-senses-keyword-empty",
+                  style: { color: "rgba(196, 181, 253, 0.4)", fontSize: "12px", fontStyle: "italic", fontFamily: "'gg sans', system-ui, sans-serif" },
+                }, "No keywords set yet.")
               : userKeywords.map((keyword) =>
                 ce("span", {
                   key: `${userId}:${keyword.toLowerCase()}`,
                   className: "shadow-senses-keyword-chip",
+                  ref: applyChip,
                 },
-                ce("span", null, keyword),
+                ce("span", { style: { whiteSpace: "nowrap" } }, keyword),
                 ce("button", {
                   type: "button",
                   className: "shadow-senses-keyword-chip-remove",
                   title: `Remove "${keyword}"`,
+                  ref: applyChipRemove,
                   onClick: () => removeKeywordForUser(userId, keyword),
+                  onMouseEnter: (e) => {
+                    e.currentTarget.style.setProperty("background", "rgba(239, 68, 68, 0.25)", "important");
+                    e.currentTarget.style.setProperty("color", "#f87171", "important");
+                  },
+                  onMouseLeave: (e) => {
+                    e.currentTarget.style.setProperty("background", "transparent", "important");
+                    e.currentTarget.style.setProperty("color", "rgba(52, 211, 153, 0.7)", "important");
+                  },
                 }, "×")
                 )
               )
           ),
-          ce("div", { className: "shadow-senses-keyword-input-row" },
+          ce("div", {
+            className: "shadow-senses-keyword-input-row",
+            style: { display: "flex", alignItems: "center", gap: "6px" },
+          },
             ce("input", {
               type: "text",
               className: "shadow-senses-keyword-input",
               value: draftValue,
               placeholder: "Add keyword (or comma-separated list)",
+              ref: applyKwInput,
+              onFocus: (e) => { e.currentTarget.style.setProperty("border-color", "rgba(167, 139, 250, 0.55)", "important"); },
+              onBlur: (e) => { e.currentTarget.style.setProperty("border-color", "rgba(167, 139, 250, 0.25)", "important"); },
               onChange: (event) => {
                 const value = event?.target?.value ?? "";
                 setKeywordDrafts((prev) => ({ ...prev, [userId]: value }));
@@ -829,11 +961,29 @@ function buildComponents(pluginRef) {
               className: "shadow-senses-deploy-btn shadow-senses-keyword-add-btn",
               onClick: () => addKeywordsForUser(userId),
               title: "Add keyword(s)",
+              ref: applySmallPill("#d4b0ff", "rgba(138, 43, 226, 0.18)", "rgba(138, 43, 226, 0.45)"),
+              onMouseEnter: (e) => {
+                e.currentTarget.style.setProperty("background", "rgba(138, 43, 226, 0.32)", "important");
+                e.currentTarget.style.setProperty("border-color", "rgba(167, 139, 250, 0.7)", "important");
+              },
+              onMouseLeave: (e) => {
+                e.currentTarget.style.setProperty("background", "rgba(138, 43, 226, 0.18)", "important");
+                e.currentTarget.style.setProperty("border-color", "rgba(138, 43, 226, 0.45)", "important");
+              },
             }, "Add"),
             ce("button", {
               className: "shadow-senses-recall-btn shadow-senses-keyword-clear-btn",
               onClick: () => clearKeywordsForUser(userId),
               title: "Clear all keywords",
+              ref: applySmallPill("#f87171", "rgba(239, 68, 68, 0.12)", "rgba(239, 68, 68, 0.35)"),
+              onMouseEnter: (e) => {
+                e.currentTarget.style.setProperty("background", "rgba(239, 68, 68, 0.22)", "important");
+                e.currentTarget.style.setProperty("border-color", "rgba(239, 68, 68, 0.55)", "important");
+              },
+              onMouseLeave: (e) => {
+                e.currentTarget.style.setProperty("background", "rgba(239, 68, 68, 0.12)", "important");
+                e.currentTarget.style.setProperty("border-color", "rgba(239, 68, 68, 0.35)", "important");
+              },
             }, "Clear All")
           )
         );
