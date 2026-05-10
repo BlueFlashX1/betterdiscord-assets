@@ -4,6 +4,17 @@ const { createToast } = require("../shared/toast");
 const dc = require("../shared/discord-classes");
 const { loadSettings, saveSettings } = require("../shared/settings");
 
+// HARDCODED wildcard selectors — bypass dc.sel for the two runtime queries
+// that matter most. Discord (2026-05) ships double-underscore class hashes
+// like `messageListItem__5126c`. Webpack getByKeys can return a STALE
+// single-underscore module if multiple modules export the same key, in
+// which case dc.sel.messageListItem resolves to `.messageListItem_oldhash`
+// and our `:scope > li${dc.sel.messageListItem}` query matches nothing.
+// Substring attribute-selectors are immune — they match both old (single
+// underscore) and new (double underscore) hashes uniformly.
+const SCROLLER_SELECTOR  = '[role="list"][class*="scrollerInner_"]';
+const MSG_LI_SELECTOR    = 'li[class*="messageListItem_"]';
+
 /**
  * 1) Lifecycle
  * 2) Observer + Classification
@@ -102,7 +113,7 @@ module.exports = class SystemWindow {
       }
     } catch (_) {}
 
-    const scroller = document.querySelector(`ol[role="list"]${dc.sel.scrollerInner}`);
+    const scroller = document.querySelector(SCROLLER_SELECTOR);
     if (!scroller) return;
     if (scroller !== this._lastScrollerEl) {
       this._lastScrollerEl = scroller;
@@ -117,7 +128,7 @@ module.exports = class SystemWindow {
   }
 
   _findAndObserve(retryCount = 0) {
-    const scroller = document.querySelector(`ol[role="list"]${dc.sel.scrollerInner}`);
+    const scroller = document.querySelector(SCROLLER_SELECTOR);
     if (scroller) {
       this._lastScrollerEl = scroller;
       this._classifyVersion += 1;
@@ -187,6 +198,41 @@ module.exports = class SystemWindow {
     return isSelf;
   }
 
+  /**
+   * Walk the React fiber attached to a message <article> to read its
+   * `message.author.id`. Cached on the element via data-sw-author so
+   * subsequent classify passes are O(1). Empty-string attribute value
+   * is the "looked up, fiber yielded nothing" sentinel.
+   *
+   * Author identity is the SOURCE OF TRUTH for grouping. Discord's
+   * `groupStart_` className is treated as a fallback only — they have
+   * a habit of either renaming the suffix or applying it to every
+   * article (observed 2026-05 with the new `groupStart__5126c`
+   * double-underscore hash format that lands on every message, not
+   * just true group-starts), which historically caused every message
+   * to be classified as its own solo group.
+   */
+  _getAuthorId(article) {
+    if (!article) return null;
+    if (article.hasAttribute('data-sw-author')) {
+      const v = article.getAttribute('data-sw-author');
+      return v === '' ? null : v;
+    }
+    let authorId = null;
+    try {
+      let fiber = BdApi.ReactUtils.getInternalInstance(article);
+      for (let i = 0; i < 8 && fiber; i++) {
+        const found =
+          fiber.memoizedProps?.message?.author?.id ||
+          fiber.memoizedState?.message?.author?.id;
+        if (found) { authorId = found; break; }
+        fiber = fiber.return;
+      }
+    } catch (_) {}
+    article.setAttribute('data-sw-author', authorId || '');
+    return authorId;
+  }
+
   _getDesiredGroupPosition(groupSize, index) {
     if (groupSize === 1) return "sw-group-solo";
     if (index === 0) return "sw-group-start";
@@ -236,10 +282,13 @@ module.exports = class SystemWindow {
   _classifyMessages() {
     const scroller =
       this._lastScrollerEl ||
-      document.querySelector(`ol[role="list"]${dc.sel.scrollerInner}`);
+      document.querySelector(SCROLLER_SELECTOR);
     if (!scroller) return;
 
-    const items = scroller.querySelectorAll(`:scope > li${dc.sel.messageListItem}`);
+    // `:scope > ...` requires the LI to be a DIRECT child of the scroller.
+    // If Discord re-wraps in a future build, fall back to descendant search.
+    let items = scroller.querySelectorAll(`:scope > ${MSG_LI_SELECTOR}`);
+    if (!items.length) items = scroller.querySelectorAll(MSG_LI_SELECTOR);
     if (!items.length) return;
 
     const ver = String(this._classifyVersion || 1);
@@ -247,6 +296,7 @@ module.exports = class SystemWindow {
     let groupCount = 0;
     let currentGroup = [];
     let groupHasNew = false;
+    let prevAuthorId = null;
 
     const flushGroup = () => {
       if (!currentGroup.length) return;
@@ -263,17 +313,39 @@ module.exports = class SystemWindow {
     };
 
     for (const li of items) {
-      const article = li.querySelector(':scope > div[role="article"]');
+      // Tolerant article query: prefer direct child, fall back to any
+      // descendant. Discord occasionally re-wraps the <article> one
+      // level deeper during render.
+      const article =
+        li.querySelector(':scope > div[role="article"]') ||
+        li.querySelector('div[role="article"]');
       if (!article) {
         flushGroup();
+        prevAuthorId = null;
         continue;
       }
 
-      const isGroupStart = article.className.includes('groupStart');
-      if (isGroupStart) flushGroup();
+      const authorId = this._getAuthorId(article);
+
+      // Boundary detection.
+      //   PRIMARY: author identity from React fiber. Two consecutive
+      //     messages share a group iff their authors match — immune to
+      //     Discord renaming `groupStart_` or applying it to every
+      //     article (the 2026-05 regression).
+      //   FALLBACK: Discord's `groupStart` className substring. Used
+      //     only when fiber lookup yields nothing (transient render
+      //     state). Worst case under fallback is the original behaviour.
+      let isBoundary;
+      if (prevAuthorId !== null && authorId !== null) {
+        isBoundary = authorId !== prevAuthorId;
+      } else {
+        isBoundary = article.className.includes('groupStart');
+      }
+      if (isBoundary) flushGroup();
 
       if (li.dataset.swVer !== ver) groupHasNew = true;
       currentGroup.push({ li, article });
+      if (authorId !== null) prevAuthorId = authorId;
     }
 
     flushGroup();
@@ -285,17 +357,7 @@ module.exports = class SystemWindow {
 
   _isOwnMessage(article) {
     if (!this._currentUserId || !article) return false;
-    try {
-      let fiber = BdApi.ReactUtils.getInternalInstance(article);
-      for (let i = 0; i < 8 && fiber; i++) {
-        const authorId =
-          fiber.memoizedProps?.message?.author?.id ||
-          fiber.memoizedState?.message?.author?.id;
-        if (authorId) return authorId === this._currentUserId;
-        fiber = fiber.return;
-      }
-    } catch (e) {}
-    return false;
+    return this._getAuthorId(article) === this._currentUserId;
   }
 
   _cleanupClasses() {
@@ -305,8 +367,11 @@ module.exports = class SystemWindow {
         el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned"),
       );
     document
-      .querySelectorAll('div[role="article"][data-sw-self]')
-      .forEach((el) => el.removeAttribute('data-sw-self'));
+      .querySelectorAll('div[role="article"][data-sw-self], div[role="article"][data-sw-author]')
+      .forEach((el) => {
+        el.removeAttribute('data-sw-self');
+        el.removeAttribute('data-sw-author');
+      });
     document
       .querySelectorAll('li[data-sw-ver]')
       .forEach((el) => delete el.dataset.swVer);
