@@ -4,6 +4,7 @@
  */
 
 const dc = require('../shared/discord-classes');
+const { compositeContentHash } = require('./hash');
 
 module.exports = {
   normalizeId(id) {
@@ -77,23 +78,25 @@ module.exports = {
   },
 
   calculateContentHash(author, content, timestamp = null) {
-    if (!content) return null;
-    const authorPart = author || 'unknown';
-    const hashContent = `${authorPart}:${content.substring(0, 100)}:${timestamp || ''}`;
-    let hash = 0;
-    for (let i = 0; i < hashContent.length; i++) {
-      hash = (hash << 5) - hash + hashContent.charCodeAt(i);
-      hash |= 0;
-    }
-    return `hash_${Math.abs(hash)}`;
+    // Delegates to the shared compositeContentHash util in ./hash.js —
+    // previously duplicated across crit-engine.js, restoration.js,
+    // id-extraction.js. Returns null if content is empty.
+    return compositeContentHash(author, content, timestamp);
   },
 
   getReactFiber(element) {
     if (!element) return null;
-
+    // Prefer BdApi.ReactUtils.getInternalInstance — encapsulates the
+    // key lookup so future React internal renames don't break the
+    // plugin. Falls back to manual key probing only if BdApi doesn't
+    // expose the helper (older BD versions). The `__reactInternalInstance`
+    // prefix was retired in React 17 and Discord runs React 18+, so the
+    // legacy startsWith check is included only for ancient builds.
     try {
+      const fiber = BdApi?.ReactUtils?.getInternalInstance?.(element);
+      if (fiber) return fiber;
       const reactKey = Object.keys(element).find(
-        (k) => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance')
+        (k) => k.startsWith('__reactFiber')
       );
       return reactKey ? element[reactKey] : null;
     } catch (e) {

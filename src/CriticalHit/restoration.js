@@ -6,6 +6,7 @@
 
 const C = require('./constants');
 const dc = require('../shared/discord-classes');
+const { prefixedContentHash } = require('./hash');
 
 module.exports = {
   // Core Restoration
@@ -99,12 +100,10 @@ module.exports = {
   // Content Hash Matching
 
   _createSimpleContentHash(content) {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      hash = (hash << 5) - hash + content.charCodeAt(i);
-      hash |= 0;
-    }
-    return `hash_${Math.abs(hash)}`;
+    // Delegates to the shared prefixedContentHash util in ./hash.js —
+    // previously duplicated across crit-engine.js, restoration.js,
+    // id-extraction.js.
+    return prefixedContentHash(content);
   },
 
   _matchesByContentHash(entry, contentHash) {

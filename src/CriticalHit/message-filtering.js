@@ -45,12 +45,20 @@ module.exports = {
 
   _checkReactFiberForReply(element) {
     try {
-      const reactKey = Object.keys(element).find(
-        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-      );
-      if (!reactKey) return false;
+      // Prefer BdApi.ReactUtils.getInternalInstance — encapsulates the
+      // React internal key lookup so future React renames don't break
+      // this. Falls back to legacy __reactFiber probing if BdApi doesn't
+      // expose it. `__reactInternalInstance` was retired in React 17;
+      // Discord runs React 18+, so that prefix is dead — removed.
+      let fiber = BdApi?.ReactUtils?.getInternalInstance?.(element);
+      if (!fiber) {
+        const reactKey = Object.keys(element).find((key) =>
+          key.startsWith('__reactFiber')
+        );
+        if (!reactKey) return false;
+        fiber = element[reactKey];
+      }
 
-      let fiber = element[reactKey];
       let depth = 0;
       while (fiber && depth < C.MAX_REPLY_FIBER_DEPTH) {
         if (
@@ -63,7 +71,7 @@ module.exports = {
         depth++;
       }
     } catch (e) {
-      // React access failed
+      // React access failed — return false (no reply detected)
     }
     return false;
   },

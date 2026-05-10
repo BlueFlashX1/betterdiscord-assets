@@ -5,6 +5,7 @@
  */
 
 const C = require('./constants');
+const { djb2Hash } = require('./hash');
 
 const _bonusCache = { agility: null, agilityTime: 0, skill: null, skillTime: 0, perception: null, perceptionTime: 0 };
 const BONUS_CACHE_TTL = 30000; // 30 seconds
@@ -71,12 +72,9 @@ module.exports = {
   },
 
   simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0; // Convert to 32bit integer
-    }
-    return Math.abs(hash);
+    // Delegates to the shared djb2Hash util in ./hash.js — previously
+    // duplicated across crit-engine.js, restoration.js, id-extraction.js.
+    return djb2Hash(String(str));
   },
 
   _seededUnitRoll(seed, step = '0') {
