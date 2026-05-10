@@ -69,6 +69,7 @@ const { buildPanelComponents } = require("./panel-components");
 const { getShadowExchangeCss } = require("./styles");
 const { PORTAL_TRANSITION_CSS } = require("./portal-transition-css");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
+const { isVoiceChannelChat } = require("../shared/channel-context");
 const {
   flushSaveSettings,
   initBackupPath,
@@ -896,6 +897,13 @@ module.exports = class ShadowExchange {
   _attachSwirlIconToHeader(icon = null) {
     const targetIcon = icon || document.getElementById(SE_SWIRL_ID);
     if (!targetIcon) return false;
+
+    // Hide in voice-channel chat — plugin icons aren't useful there.
+    if (isVoiceChannelChat()) {
+      if (targetIcon.parentElement) targetIcon.parentElement.removeChild(targetIcon);
+      targetIcon.classList.add("se-swirl-icon--hidden");
+      return false;
+    }
 
     const toolbar = this._getChannelHeaderToolbar();
     if (!toolbar) return false;

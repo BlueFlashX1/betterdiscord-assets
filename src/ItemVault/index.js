@@ -13,6 +13,7 @@ const { getAllItems, getItem, ITEMS } = require('./item-registry');
 const CSS = require('./styles.css');
 const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
+const { isVoiceChannelChat } = require('../shared/channel-context');
 
 const STYLE_ID = 'ItemVault-styles';
 const HEADER_ICON_ID = 'itemvault-header-icon';
@@ -143,6 +144,13 @@ module.exports = class ItemVault {
   }
 
   _ensureHeaderIcon() {
+    // Hide in voice-channel chat — plugin icons aren't useful there.
+    if (isVoiceChannelChat()) {
+      const stale = document.getElementById(HEADER_ICON_ID);
+      if (stale) stale.remove();
+      return;
+    }
+
     const existing = document.getElementById(HEADER_ICON_ID);
     if (existing?.isConnected) return;
 

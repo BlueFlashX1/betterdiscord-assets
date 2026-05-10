@@ -1,6 +1,7 @@
 const { getNavigationUtils } = require('../shared/navigation');
 const dc = require("../shared/discord-classes");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
+const { isVoiceChannelChat } = require('../shared/channel-context');
 
 const HEADER_WIDGET_ID = 'dungeons-header-widget';
 const HEADER_POPUP_ID = 'dungeons-header-popup';
@@ -71,6 +72,9 @@ module.exports = {
   },
 
   _isDungeonWidgetContextAllowed() {
+    // Hide in voice-channel chat — the toolbar gets crowded and the
+    // dungeon icon isn't useful while in a VC's chat panel.
+    if (isVoiceChannelChat()) return false;
     const channelInfo = this.getChannelInfo?.();
     return Boolean(channelInfo && channelInfo.guildId && channelInfo.guildId !== 'DM');
   },

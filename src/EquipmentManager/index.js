@@ -16,6 +16,7 @@ const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { createToast } = require('../shared/toast');
 const _toast = createToast();
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
+const { isVoiceChannelChat } = require('../shared/channel-context');
 
 const STYLE_ID = 'EquipmentManager-styles';
 const HEADER_ICON_ID = 'eq-header-icon';
@@ -140,6 +141,13 @@ module.exports = class EquipmentManager {
   }
 
   _ensureHeaderIcon() {
+    // Hide in voice-channel chat — plugin icons aren't useful there.
+    if (isVoiceChannelChat()) {
+      const existing = document.getElementById(HEADER_ICON_ID);
+      if (existing) existing.remove();
+      return;
+    }
+
     // Don't re-inject if already present and connected
     const existing = document.getElementById(HEADER_ICON_ID);
     if (existing?.isConnected) return;

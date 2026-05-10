@@ -12,6 +12,7 @@ const { buildCSS } = require("./styles");
 const { _PluginUtils, _ReactUtils } = require("./shared-utils");
 const { getCreateRoot } = require("../shared/react-dom");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
+const { isVoiceChannelChat } = require("../shared/channel-context");
 
 const ShadowSensesUiMethods = {
   injectCSS() {
@@ -445,6 +446,13 @@ const ShadowSensesUiMethods = {
   },
 
   _ensureSensesHeaderIcon() {
+    // Hide in voice-channel chat — plugin icons aren't useful there.
+    if (isVoiceChannelChat()) {
+      const stale = document.getElementById(this._SENSES_HEADER_ICON_ID);
+      if (stale) stale.remove();
+      return;
+    }
+
     const existing = document.getElementById(this._SENSES_HEADER_ICON_ID);
     if (existing?.isConnected) {
       // Just update badge
