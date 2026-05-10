@@ -1317,7 +1317,12 @@ module.exports = class ShadowSenses {
         const buttons = Array.from(dialog.querySelectorAll("button"));
         buttons.forEach((btn) => {
           const cls = String(btn.className || "");
-          const isConfirm = /colorBrand|confirm/i.test(cls) || btn === buttons[buttons.length - 1];
+          // Detect confirm by TEXT — Discord's DOM order puts Cancel last
+          // (visually right-aligned but DOM-last), so the previous "last
+          // button is confirm" heuristic mis-applied the gradient to Cancel.
+          // Text matches reliably since we know confirmText = "Understood".
+          const text = String(btn.textContent || "").trim().toLowerCase();
+          const isConfirm = text === "understood" || /colorBrand/i.test(cls);
 
           if (isConfirm) {
             setImp(btn, "background", "linear-gradient(120deg, rgba(138, 43, 226, 0.55), rgba(168, 80, 255, 0.7))");
