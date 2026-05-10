@@ -643,3 +643,15 @@ body[data-sl-in-voice-chat="true"] div[class^="sidebar_"][class*="theme-dark"]:h
   background-image: none !important;
   transition: background 0.2s ease !important;
 }
+
+/* §9aa — Forum / thread grid content: fill parent width.
+   CSS Picker analysis showed the forum post-grid inner content
+   (div.grid_f369db > div.content__99f8c) has a Discord-imposed
+   fixed width: 1020px, while its parent grid container is wider.
+   The leftover gap on the right reads as a thin vertical
+   transparent band where the page background shows through. Force
+   the inner content to fill parent so the seam disappears. */
+div[class^="grid_"] > div[class^="content_"] {
+  width: 100% !important;
+  max-width: 100% !important;
+}
