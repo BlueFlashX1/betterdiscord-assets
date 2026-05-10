@@ -1143,21 +1143,20 @@ module.exports = class ShadowSenses {
     const content = React.createElement(
       "div",
       {
+        // Marker class for the CSS in styles.js to scope-target this
+        // modal's frame (header + footer) and force opaque background.
+        className: "shadowsenses-igris-report-modal",
         style: {
           display: "flex",
           flexDirection: "column",
           gap: "10px",
           maxHeight: "68vh",
           overflowY: "auto",
-          // Solid background so Discord UI behind the modal doesn't bleed
-          // through. Negative margin pushes the fill out past the modal
-          // body's intrinsic padding so the entire modal interior (above,
-          // below, and beside the content) is opaque, not just the
-          // content area itself.
+          // Solid background on the content area itself. Outer modal
+          // frame (header/footer) is filled by the CSS rules in
+          // styles.js scoped via [role="dialog"]:has(.shadowsenses-igris-report-modal).
           background: "#0d0d18",
-          padding: "20px",
-          margin: "-16px -16px -16px -16px",
-          borderRadius: "8px",
+          padding: "16px",
         },
       },
       React.createElement(
