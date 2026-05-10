@@ -1272,6 +1272,78 @@ module.exports = class ShadowSenses {
     BdApi.UI.showConfirmationModal(title, content, {
       confirmText: "Understood",
     });
+
+    // CSS via :has() proved unreliable — BD's modal wrapping appears to
+    // swallow / re-render in a way that breaks the selector chain. Apply
+    // styles imperatively via inline styles with !important so the modal
+    // frame, header, footer, and buttons all match the SoloLeveling
+    // aesthetic regardless of Discord's hash-class shuffle or BD's
+    // React handling.
+    this._applyIgrisModalStyles();
+  }
+
+  _applyIgrisModalStyles() {
+    let attempts = 0;
+    const maxAttempts = 30; // ~1.5s polling window
+    const tick = () => {
+      attempts++;
+      const marker = document.querySelector(".shadowsenses-igris-report-modal");
+      if (!marker) {
+        if (attempts < maxAttempts) setTimeout(tick, 50);
+        return;
+      }
+      try {
+        const dialog = marker.closest('[role="dialog"]') || marker.parentElement?.parentElement?.parentElement;
+        if (!dialog) return;
+
+        const setImp = (el, prop, val) => el.style.setProperty(prop, val, "important");
+
+        setImp(dialog, "background-color", "#0d0d18");
+        Array.from(dialog.children).forEach((child) => setImp(child, "background-color", "#0d0d18"));
+
+        // Header / footer / content areas
+        dialog.querySelectorAll('[class*="header"], [class*="footer"], [class*="content"]').forEach((el) => {
+          if (el.closest("button")) return; // skip button internals
+          setImp(el, "background-color", "#0d0d18");
+        });
+
+        // Footer flex gap so buttons don't touch
+        dialog.querySelectorAll('[class*="footer"]').forEach((footer) => {
+          setImp(footer, "gap", "12px");
+          setImp(footer, "column-gap", "12px");
+        });
+
+        // Buttons
+        const buttons = Array.from(dialog.querySelectorAll("button"));
+        buttons.forEach((btn) => {
+          const cls = String(btn.className || "");
+          const isConfirm = /colorBrand|confirm/i.test(cls) || btn === buttons[buttons.length - 1];
+
+          if (isConfirm) {
+            setImp(btn, "background", "linear-gradient(120deg, rgba(138, 43, 226, 0.55), rgba(168, 80, 255, 0.7))");
+            setImp(btn, "color", "#ffffff");
+            setImp(btn, "text-shadow", "0 0 6px rgba(168, 80, 255, 0.55)");
+            setImp(btn, "box-shadow", "0 0 12px rgba(138, 43, 226, 0.45)");
+            setImp(btn, "border", "1px solid rgba(180, 110, 255, 0.85)");
+          } else {
+            setImp(btn, "background", "rgba(138, 43, 226, 0.14)");
+            setImp(btn, "color", "#d6bcff");
+            setImp(btn, "border", "1px solid rgba(138, 43, 226, 0.45)");
+          }
+          setImp(btn, "border-radius", "0");
+          setImp(btn, "font-weight", "600");
+          setImp(btn, "letter-spacing", "0.04em");
+
+          // Flatten inner label divs (they had Discord's dark fill)
+          btn.querySelectorAll("*").forEach((child) => {
+            setImp(child, "background-color", "transparent");
+          });
+        });
+      } catch (err) {
+        this.debugError("StartupReport", "applyIgrisModalStyles failed", err);
+      }
+    };
+    setTimeout(tick, 30);
   }
 
   // #22: serialize the modal's report content to plain text and write to
