@@ -119,7 +119,23 @@ function useScrollerBinding(React, options) {
       dbg("Initial bind failed — scheduling 150ms retry");
       initialRetryTimer = setTimeout(findAndBind, 150);
     }
-    pollRef.current = setInterval(findAndBind, POLL_INTERVAL_MS);
+
+    // Event-driven re-bind — replaces the prior 2s setInterval that
+    // polled findAndBind for scroller disconnection. Channel switches
+    // are the only event that nukes the message scroller; subscribe
+    // to SelectedChannelStore and let findAndBind run when the listener
+    // fires. findAndBind itself early-exits if the scroller is still
+    // valid, so re-firing is cheap.
+    let storeListener = null;
+    let store = null;
+    try {
+      const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
+      if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
+        storeListener = () => findAndBind();
+        SelectedChannelStore.addChangeListener(storeListener);
+        store = SelectedChannelStore;
+      }
+    } catch (_) {}
 
     return () => {
       dbg("useEffect cleanup");
@@ -130,9 +146,8 @@ function useScrollerBinding(React, options) {
       if (currentScroller && scrollHandler) {
         currentScroller.removeEventListener("scroll", scrollHandler);
       }
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      if (store && storeListener) {
+        try { store.removeChangeListener(storeListener); } catch (_) {}
       }
     };
   }, []);

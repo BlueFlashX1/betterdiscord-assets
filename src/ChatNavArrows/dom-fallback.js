@@ -168,6 +168,11 @@ function stopDomFallback(plugin) {
   const state = plugin._domFallback;
   if (!state) return;
 
+  if (state.store && state.storeListener) {
+    try { state.store.removeChangeListener(state.storeListener); } catch (_) {}
+    state.store = null;
+    state.storeListener = null;
+  }
   unbindScroller(state);
   state._timers.clearAll();
   if (state.downEl && state.downClickHandler) {
@@ -186,7 +191,18 @@ function startDomFallback(plugin) {
   stopDomFallback(plugin);
   plugin._domFallback = createFallbackState(plugin);
   plugin._domFallback.tick();
-  plugin._domFallback.pollTimer = plugin._domFallback._timers.setInterval(plugin._domFallback.tick, POLL_INTERVAL_MS);
+  // Event-driven re-bind — replaces the prior 2s setInterval. Channel
+  // switches nuke the message scroller; SelectedChannelStore fires
+  // exactly when that happens. tick() is idempotent and early-exits
+  // when the cached scroller is still connected.
+  try {
+    const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
+    if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
+      plugin._domFallback.storeListener = () => plugin._domFallback?.tick?.();
+      SelectedChannelStore.addChangeListener(plugin._domFallback.storeListener);
+      plugin._domFallback.store = SelectedChannelStore;
+    }
+  } catch (_) {}
   plugin._debugLog("Using DOM fallback mode");
 }
 
