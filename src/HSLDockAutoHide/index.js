@@ -108,26 +108,18 @@ module.exports = class HSLDockAutoHide {
 
   _startUserPanelPoller() {
     this._stopUserPanelPoller();
-    let found = this._trySetupUserPanel();
-    if (found) {
-      // Slow heartbeat to re-acquire after Discord re-renders
-      this._userPanelPollTimer = setInterval(() => this._trySetupUserPanel(), this._userPanelSlowPollMs);
-    } else {
-      // Fast poll until found, then switch to slow
-      this._userPanelPollTimer = setInterval(() => {
-        if (this._trySetupUserPanel()) {
-          clearInterval(this._userPanelPollTimer);
-          this._userPanelPollTimer = setInterval(() => this._trySetupUserPanel(), this._userPanelSlowPollMs);
-        }
-      }, this._userPanelPollIntervalMs);
-    }
+    // Event-driven re-detection via BD's built-in observer(mutation)
+    // lifecycle hook (defined below). Replaces the prior fast/slow
+    // setInterval heartbeat — BD already runs one global MutationObserver
+    // and calls observer() on every document mutation, so no extra
+    // observer instance is allocated. Initial attempt below catches
+    // the case where the panel is already mounted at start time.
+    this._trySetupUserPanel();
   }
 
   _stopUserPanelPoller() {
-    if (this._userPanelPollTimer) {
-      clearInterval(this._userPanelPollTimer);
-      this._userPanelPollTimer = null;
-    }
+    // No timer to clear — observer() lifecycle hook is bound to the
+    // plugin's lifetime by BD.
   }
 
   _trySetupUserPanel() {
@@ -186,18 +178,36 @@ module.exports = class HSLDockAutoHide {
 
       if (dockProbe()) { mountEngine(); return; }
 
-      // Dock not ready yet — poll briefly
-      let attempts = 0;
-      this._dockReadyPoller = setInterval(() => {
-        attempts++;
+      // Dock not ready yet — wait for it via one-shot MutationObserver
+      // (replaces the prior 100ms × 30 setInterval burst). Fires only
+      // when DOM actually changes, then disconnects. Hard 3s ceiling
+      // preserved as a safety timeout that mounts the engine regardless,
+      // matching the prior `attempts >= 30` exit branch.
+      this._dockReadyObserver = new MutationObserver(() => {
         if (this._isStopped || this._engineMounted) {
-          clearInterval(this._dockReadyPoller); this._dockReadyPoller = null; return;
+          this._dockReadyObserver?.disconnect();
+          this._dockReadyObserver = null;
+          return;
         }
-        if (dockProbe() || attempts >= 30) {  // ~3s max additional wait
-          clearInterval(this._dockReadyPoller); this._dockReadyPoller = null;
+        if (dockProbe()) {
+          this._dockReadyObserver.disconnect();
+          this._dockReadyObserver = null;
+          if (this._dockReadyTimeout) {
+            clearTimeout(this._dockReadyTimeout);
+            this._dockReadyTimeout = null;
+          }
           mountEngine();
         }
-      }, 100);
+      });
+      this._dockReadyObserver.observe(document.body, { childList: true, subtree: true });
+      this._dockReadyTimeout = setTimeout(() => {
+        this._dockReadyTimeout = null;
+        if (this._dockReadyObserver) {
+          this._dockReadyObserver.disconnect();
+          this._dockReadyObserver = null;
+        }
+        if (!this._isStopped && !this._engineMounted) mountEngine();
+      }, 3000);
     }, this._fallbackDelayMs);
 
     this._toast(`HSLDockAutoHide v${PLUGIN_VERSION} active (+ UserPanel)`, "success", 2200);
@@ -210,9 +220,13 @@ module.exports = class HSLDockAutoHide {
       clearTimeout(this._fallbackTimer);
       this._fallbackTimer = null;
     }
-    if (this._dockReadyPoller) {
-      clearInterval(this._dockReadyPoller);
-      this._dockReadyPoller = null;
+    if (this._dockReadyObserver) {
+      try { this._dockReadyObserver.disconnect(); } catch (_) {}
+      this._dockReadyObserver = null;
+    }
+    if (this._dockReadyTimeout) {
+      clearTimeout(this._dockReadyTimeout);
+      this._dockReadyTimeout = null;
     }
     if (this._fallbackEngine) {
       this._fallbackEngine.unmount();
@@ -231,6 +245,26 @@ module.exports = class HSLDockAutoHide {
     document.getElementById("sl-hsl-alert-rail")?.remove();
     // Only show revocation toast when triggered by a skill change, not by full plugin stop.
     if (!this._isStopped) this._toast("Ruler's Authority revoked — dock auto-hide disabled", "info", 2000);
+  }
+
+  // BD plugin lifecycle hook: called by BD's single global MutationObserver
+  // on every document mutation. Replaces the prior _userPanelPollTimer
+  // setInterval (fast/slow heartbeat) — _trySetupUserPanel is idempotent
+  // and fast on hot path (cached element check), so re-running on every
+  // mutation that adds/removes a panel-selector match is cheap.
+  observer(mutation) {
+    if (this._isStopped) return;
+    if (!mutation) return;
+    if (mutation.addedNodes.length === 0 && mutation.removedNodes.length === 0) return;
+    for (const list of [mutation.addedNodes, mutation.removedNodes]) {
+      for (const node of list) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches?.(PANEL_SELECTOR_STR) || node.querySelector?.(PANEL_SELECTOR_STR)) {
+          this._trySetupUserPanel();
+          return;
+        }
+      }
+    }
   }
 
   stop(showToast = true) {

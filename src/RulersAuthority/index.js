@@ -489,6 +489,7 @@ module.exports = class RulersAuthority {
     if (this._channelObserver) { this._channelObserver.disconnect(); this._channelObserver = null; }
     if (this._dmObserver) { this._dmObserver.disconnect(); this._dmObserver = null; }
     if (this._settingsObserver) { this._settingsObserver.disconnect(); this._settingsObserver = null; }
+    if (this._settingsGuardObserver) { try { this._settingsGuardObserver.disconnect(); } catch (_) {} this._settingsGuardObserver = null; }
     if (this._settingsGuardInterval) { clearInterval(this._settingsGuardInterval); this._settingsGuardInterval = null; }
   }
 

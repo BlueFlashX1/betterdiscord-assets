@@ -116,18 +116,32 @@ export function restorePanelStates(ctx) {
   const probe = () => ctx._findPanelElement("members") || ctx._findPanelElement("sidebar");
   if (probe()) { apply(); return; }
 
-  let attempts = 0;
-  const poller = setInterval(() => {
-    attempts++;
-    if (probe() || attempts >= 40) {   // ~4s max wait
-      clearInterval(poller);
-      apply();
-    }
-  }, 100);
+  // One-shot MutationObserver — replaces the prior 100ms × 40 startup
+  // burst poll. Fires only when DOM actually changes; when probe() returns
+  // a panel element, disconnect and apply. 4s ceiling preserved as a
+  // safety timeout that applies regardless (matches the prior attempts >=
+  // 40 exit branch).
+  let panelProbeObserver = null;
+  let panelProbeTimeout = null;
+  const finish = () => {
+    if (panelProbeObserver) { try { panelProbeObserver.disconnect(); } catch (_) {} panelProbeObserver = null; }
+    if (panelProbeTimeout) { clearTimeout(panelProbeTimeout); panelProbeTimeout = null; }
+    apply();
+  };
+  panelProbeObserver = new MutationObserver(() => {
+    if (probe()) finish();
+  });
+  panelProbeObserver.observe(document.body, { childList: true, subtree: true });
+  panelProbeTimeout = setTimeout(finish, 4000);
 
-  // Cleanup if plugin stops before poller finishes
+  // Cleanup if plugin stops before observer fires
   const origAbort = ctx._controller?.signal;
-  if (origAbort) origAbort.addEventListener("abort", () => clearInterval(poller), { once: true });
+  if (origAbort) {
+    origAbort.addEventListener("abort", () => {
+      if (panelProbeObserver) { try { panelProbeObserver.disconnect(); } catch (_) {} panelProbeObserver = null; }
+      if (panelProbeTimeout) { clearTimeout(panelProbeTimeout); panelProbeTimeout = null; }
+    }, { once: true });
+  }
 }
 
 export function getPushedPanelCount(ctx) {
@@ -1019,17 +1033,38 @@ export function setupSettingsGuard(ctx) {
     ctx._settingsObserver.disconnect();
     ctx._settingsObserver = null;
   }
+  if (ctx._settingsGuardObserver) {
+    try { ctx._settingsGuardObserver.disconnect(); } catch (_) {}
+    ctx._settingsGuardObserver = null;
+  }
   if (ctx._settingsGuardInterval) {
     clearInterval(ctx._settingsGuardInterval);
     ctx._settingsGuardInterval = null;
   }
 
   syncSettingsGuardState(ctx);
-  ctx._settingsGuardInterval = setInterval(() => {
+  // Event-driven settings-modal watch — replaces the prior 1.5s
+  // setInterval. Discord's settings modal is identified by
+  // dc.sel.standardSidebarView; MutationObserver fires only when an
+  // element matching that selector is added or removed from the DOM,
+  // which is exactly when the body class needs to toggle.
+  const settingsSel = dc.sel.standardSidebarView;
+  ctx._settingsGuardObserver = new MutationObserver((records) => {
     if (!ctx._controller) return;
     if (document.hidden) return;
-    syncSettingsGuardState(ctx);
-  }, 1500);
+    for (const r of records) {
+      for (const list of [r.addedNodes, r.removedNodes]) {
+        for (const node of list) {
+          if (node.nodeType !== 1) continue;
+          if (node.matches?.(settingsSel) || node.querySelector?.(settingsSel)) {
+            syncSettingsGuardState(ctx);
+            return;
+          }
+        }
+      }
+    }
+  });
+  ctx._settingsGuardObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 export function isSettingsModalOpen() {
