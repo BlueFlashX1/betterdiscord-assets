@@ -16,7 +16,7 @@ const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { createToast } = require('../shared/toast');
 const _toast = createToast();
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
-const { isVoiceChannelChat } = require('../shared/channel-context');
+const { isVoiceChannelChat, installVoiceChatBodyAttr } = require('../shared/channel-context');
 
 const STYLE_ID = 'EquipmentManager-styles';
 const HEADER_ICON_ID = 'eq-header-icon';
@@ -74,12 +74,23 @@ module.exports = class EquipmentManager {
     // Inject the header icon
     this._startHeaderIcon();
 
+    // Install shared VC-chat body-attribute watcher + CSS-based icon hider.
+    // Any one of the SL plugins calling this is enough to activate the
+    // global hide; refcounted so cleanup happens when the last unsubs.
+    this._uninstallVoiceChatHider = installVoiceChatBodyAttr();
+
     this._ready = true;
   }
 
   stop() {
     this._stopped = true;
     this._ready = false;
+
+    // Refcount-decrement the shared VC-chat watcher.
+    if (typeof this._uninstallVoiceChatHider === "function") {
+      try { this._uninstallVoiceChatHider(); } catch (_) {}
+      this._uninstallVoiceChatHider = null;
+    }
 
     this._unmountEventListeners();
     this._removePublicAPI();

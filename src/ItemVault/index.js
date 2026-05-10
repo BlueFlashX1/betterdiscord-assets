@@ -13,7 +13,7 @@ const { getAllItems, getItem, ITEMS } = require('./item-registry');
 const CSS = require('./styles.css');
 const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
-const { isVoiceChannelChat } = require('../shared/channel-context');
+const { isVoiceChannelChat, installVoiceChatBodyAttr } = require('../shared/channel-context');
 
 const STYLE_ID = 'ItemVault-styles';
 const HEADER_ICON_ID = 'itemvault-header-icon';
@@ -75,6 +75,9 @@ module.exports = class ItemVault {
     // Start header icon
     this._startHeaderIcon();
 
+    // Install shared VC-chat body-attribute watcher + CSS-based icon hider.
+    this._uninstallVoiceChatHider = installVoiceChatBodyAttr();
+
     console.log('[ItemVault] Started, toolbar:', !!this._getToolbar(), 'stopped:', this._stopped);
     this._log('ItemVault ready.');
   }
@@ -86,6 +89,11 @@ module.exports = class ItemVault {
     this._stopHeaderIcon();
     this._closePopup();
     removeToolbarTooltip('sl-toolbar-tip-iv');
+
+    if (typeof this._uninstallVoiceChatHider === "function") {
+      try { this._uninstallVoiceChatHider(); } catch (_) {}
+      this._uninstallVoiceChatHider = null;
+    }
 
     if (this._onChanged) {
       Events.off('ItemVault:changed', this._onChanged);
