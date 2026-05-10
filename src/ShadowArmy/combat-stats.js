@@ -34,7 +34,14 @@ module.exports = {
     }
     const role = this.shadowRoles[roleKey] || this.shadowRoles.knight || { name: roleKey };
     const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
-    const baseStats = this.generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier);
+    // A5 (audit): generate seed FIRST and pass to generateShadowBaseStats
+    // so extraction baseStats match what self-heal would later regenerate.
+    // Without this, the first heal silently shifts the army's stat
+    // foundation by ~10% (the heal uses seed, extraction used random).
+    const growthVarianceSeed = Math.random();
+    const baseStats = this.generateShadowBaseStats(
+      userStats, roleKey, shadowRank, rankMultiplier, growthVarianceSeed
+    );
     const baseStrength = this.calculateShadowPower(baseStats, 1);
 
     const shadow = {
@@ -52,7 +59,7 @@ module.exports = {
       totalCombatTime: 0,
       lastNaturalGrowth: Date.now(),
       ownerLevelAtExtraction: userLevel,
-      growthVarianceSeed: Math.random(),
+      growthVarianceSeed,
     };
 
     return shadow;
