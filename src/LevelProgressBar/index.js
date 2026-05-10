@@ -784,15 +784,16 @@ module.exports = class LevelProgressBar {
     if (fill) fill.style.transform = `scaleX(${Math.max(0, Math.min(xpPercent / 100, 1))})`;
   }
   _fallbackStartReconUpdates() {
-    if (this.reconUpdateInterval) return;
-    this.reconUpdateInterval = setInterval(() => {
-      if (this._isStopped || !this.settings.enabled || !this.progressBar || document.hidden) return;
-      this._fallbackUpdateProgressBar();
-    }, 1200);
+    // No-op — the 1.2s setInterval was a fallback for when ShadowRecon
+    // events weren't firing. subscribeToEvents() covers every state
+    // change that affects the recon visual; the poll was redundant.
+    // Method kept as a no-op so external runtime helpers that call
+    // startReconUpdates don't crash.
   }
   _fallbackStopReconUpdates() {
-    if (this.reconUpdateInterval) clearInterval(this.reconUpdateInterval);
-    this.reconUpdateInterval = null;
+    // No-op — see _fallbackStartReconUpdates. Resetting lastReconText
+    // preserved so callers that toggle visibility see a fresh paint
+    // on next event-driven update.
     this.lastReconText = '';
   }
   _invokeRuntimeHelper(name, ...args) {
@@ -925,17 +926,11 @@ module.exports = class LevelProgressBar {
     this.debugLog('UNSUBSCRIBE_EVENTS', 'Unsubscribed from all events');
   }
   startUpdating() {
-    if (this.updateInterval) {
-      this.debugLog('START_UPDATE', 'Update interval already running');
-      return;
-    }
-    this.updateInterval = setInterval(() => {
-      if (document.hidden) return;
-      this.queueProgressBarUpdate();
-    }, this.settings.updateInterval || 5000); // Default to 5 seconds for fallback
-    this.debugLog('START_UPDATE', 'Fallback polling started', {
-      interval: this.settings.updateInterval || 5000,
-    });
+    // No-op — the 5s setInterval was a fallback for when XP/level events
+    // weren't firing. subscribeToEvents() above covers every state
+    // change that affects the bar (MESSAGE_CREATE-driven XP, shadow
+    // extraction, level-up callbacks). Method kept for backwards
+    // compatibility with anything that might call it externally.
   }
   stopUpdating() {
     if (this.updateInterval) {

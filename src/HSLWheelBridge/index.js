@@ -101,7 +101,8 @@ module.exports = class HSLWheelBridge {
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
-    this._fallbackPoll = null;
+    this._fallbackStore = null;
+    this._fallbackStoreListener = null;
     this._toast = createToast();
     this._warnOnce = createWarnOnce();
   }
@@ -111,9 +112,10 @@ module.exports = class HSLWheelBridge {
       clearTimeout(this._fallbackTimer);
       this._fallbackTimer = null;
     }
-    if (this._fallbackPoll) {
-      clearInterval(this._fallbackPoll);
-      this._fallbackPoll = null;
+    if (this._fallbackStore && this._fallbackStoreListener) {
+      try { this._fallbackStore.removeChangeListener(this._fallbackStoreListener); } catch (_) {}
+      this._fallbackStore = null;
+      this._fallbackStoreListener = null;
     }
     if (this._fallbackEngine) {
       this._fallbackEngine.unmount();
@@ -143,11 +145,21 @@ module.exports = class HSLWheelBridge {
         this._fallbackEngine = engine;
         this._engineMounted = true;
         engine.syncScroller();
-        // Poll for scroller changes (replaces MutationObserver, much cheaper)
-        this._fallbackPoll = setInterval(() => {
-          if (this._isStopped || document.hidden) return;
-          engine.syncScroller();
-        }, 2000);
+        // Event-driven scroller re-discovery — replaces the prior 2s
+        // setInterval. SelectedChannelStore fires on every channel /
+        // DM / thread switch, which is the only event that swaps the
+        // scroller node identity. syncScroller is idempotent.
+        try {
+          const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
+          if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === 'function') {
+            this._fallbackStoreListener = () => {
+              if (this._isStopped || document.hidden) return;
+              engine.syncScroller();
+            };
+            SelectedChannelStore.addChangeListener(this._fallbackStoreListener);
+            this._fallbackStore = SelectedChannelStore;
+          }
+        } catch (_) {}
       }
     }, 3000);
 
@@ -212,23 +224,35 @@ module.exports = class HSLWheelBridge {
           pluginInstance._fallbackEngine.unmount();
           pluginInstance._fallbackEngine = null;
         }
-        if (pluginInstance._fallbackPoll) {
-          clearInterval(pluginInstance._fallbackPoll);
-          pluginInstance._fallbackPoll = null;
+        if (pluginInstance._fallbackStore && pluginInstance._fallbackStoreListener) {
+          try { pluginInstance._fallbackStore.removeChangeListener(pluginInstance._fallbackStoreListener); } catch (_) {}
+          pluginInstance._fallbackStore = null;
+          pluginInstance._fallbackStoreListener = null;
         }
 
         const engine = new WheelBridgeEngine();
         engineRef.current = engine;
         engine.syncScroller();
 
-        // Periodic sync to re-discover scroller after React renders
-        const syncInterval = setInterval(() => {
-          if (pluginInstance._isStopped || document.hidden) return;
-          engine.syncScroller();
-        }, 2000);
+        // Event-driven scroller re-discovery — replaces the prior 2s
+        // setInterval. Same rationale as the DOM-fallback path above.
+        let storeUnsub = null;
+        try {
+          const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
+          if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === 'function') {
+            const listener = () => {
+              if (pluginInstance._isStopped || document.hidden) return;
+              engine.syncScroller();
+            };
+            SelectedChannelStore.addChangeListener(listener);
+            storeUnsub = () => {
+              try { SelectedChannelStore.removeChangeListener(listener); } catch (_) {}
+            };
+          }
+        } catch (_) {}
 
         return () => {
-          clearInterval(syncInterval);
+          if (storeUnsub) storeUnsub();
           engine.unmount();
           engineRef.current = null;
         };
