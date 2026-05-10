@@ -142,27 +142,32 @@ function getUserPanelDockCss() {
       }
 
       /* Hide the docked user-panel nameplate CONTENT while in voice / stage
-         chat — but preserve the inner container's layout box so the purple
-         border-left rail (defined in the .sl-userpanel-docked container_
-         rule earlier in this file) stays visible as a vertical accent.
+         chat — and re-attach the purple-rail visual styling directly to the
+         outer section so the on-brand vertical accent stays visible no
+         matter what Discord renders inside.
 
-         Why visibility:hidden instead of display:none on the whole section:
-         display:none would also kill the inner container, taking the purple
-         rail with it. visibility:hidden on the children keeps the
-         container's bounding box (and therefore its border-left) drawn
-         while making the avatar / username / status / action buttons
-         invisible and non-interactive.
+         Why move the styling up to the section: in VC mode Discord can
+         replace / supplement the user-panel internals with a voice-details
+         card structure whose class names don't match [class^="container_"],
+         so the inner container with its `border-left: 1px solid rgba(138,
+         43, 226, 0.22)` may not be present at all — the purple rail
+         disappears even with visibility:hidden on the children. Putting
+         the rail + dark background on the section itself guarantees the
+         visual accent draws regardless of inner DOM shape.
 
-         Discord renders a "voice details" card (call controls, screen-
-         share, disconnect) in the same dock area when the user is in VC.
-         Hiding our nameplate's content removes the visible truncation /
-         overflow without taking down the on-brand purple accent.
+         Children (wrapper + container's contents) still get visibility:
+         hidden so the avatar / username / status / action buttons don't
+         show or take pointer events. The voice-details card (a separate
+         Discord layer) shows on its own. */
+      body[data-sl-in-voice-chat="true"]
+        section[aria-label="User status and settings"].sl-userpanel-docked {
+        background: rgba(8, 10, 20, 0.96) !important;
+        background-image: none !important;
+        border-left: 1px solid rgba(138, 43, 226, 0.22) !important;
+        box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3) !important;
+        pointer-events: none !important;
+      }
 
-         body[data-sl-in-voice-chat="true"] is toggled by the shared
-         installVoiceChatBodyAttr watcher (initialized from
-         SoloLevelingTheme.start), so this rule auto-engages whenever the
-         user views a voice / stage channel and auto-disengages on return
-         to text channels — no per-plugin install needed here. */
       body[data-sl-in-voice-chat="true"]
         section[aria-label="User status and settings"].sl-userpanel-docked
         > div[class^="wrapper_"],
