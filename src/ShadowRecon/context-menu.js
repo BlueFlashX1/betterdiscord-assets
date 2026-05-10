@@ -49,7 +49,7 @@ function buildGuildReconActions(plugin, BdApi, guildId, guild = null) {
   const marked = plugin.isGuildMarked(guildId);
   const guildName = guild?.name || guildId;
 
-  return [
+  const items = [
     BdApi.ContextMenu.buildItem({
       type: "text",
       label: marked ? "Unrecon Guild" : "Recon Guild",
@@ -63,12 +63,23 @@ function buildGuildReconActions(plugin, BdApi, guildId, guild = null) {
         );
       },
     }),
-    BdApi.ContextMenu.buildItem({
-      type: "text",
-      label: "Open Guild Dossier",
-      action: () => plugin.openGuildDossier(guildId),
-    }),
   ];
+
+  // Only show the dossier entry when the guild is actually marked as
+  // a recon target — otherwise the dossier would just be empty (no
+  // staff intel collected, no observed members), so the option is
+  // useless for unrecconed guilds. User-requested gate.
+  if (marked) {
+    items.push(
+      BdApi.ContextMenu.buildItem({
+        type: "text",
+        label: "Open Guild Dossier",
+        action: () => plugin.openGuildDossier(guildId),
+      })
+    );
+  }
+
+  return items;
 }
 
 function getDirectContextChildrenArray(node) {
