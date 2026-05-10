@@ -28,12 +28,20 @@ module.exports = {
 
     // Target ALL Discord message identification patterns:
     // 1. data-message-id="123" (direct attribute on some message wrappers)
-    // 2. id="chat-messages-123" (list item ID format)
-    // 3. data-list-item-id="chat-messages-123___..." (virtualized list item ID)
+    // 2. id="chat-messages-123" or id="chat-messages-CHANNELID-123" — match
+    //    via [id$=] suffix anchor. PERF FIX: was `[id*="123"]` (substring),
+    //    which forced the browser to substring-match every element with an
+    //    id on every style recalc — and with up to 300 cached crit rules
+    //    that's 300 × all-with-id substring matches per recalc. The suffix
+    //    anchor is dramatically faster and tighter (Discord's snowflake
+    //    suffix uniquely identifies the message even when the id prefix
+    //    varies between `chat-messages-` and `chat-messages-CHANNELID-`).
+    // 3. data-list-item-id contains the message id with a known prefix —
+    //    using [data-list-item-id*=] is fine here because the attribute
+    //    is much rarer than `id` in Discord's DOM (a few dozen vs hundreds).
     // 4. #message-content-123 (direct content element ID)
-    // This ensures CSS matches regardless of which extraction method found the ID.
     const selA = `[data-message-id="${messageId}"]`;
-    const selB = `[id*="${messageId}"]`;
+    const selB = `[id$="-${messageId}"]`;
     const selC = `[data-list-item-id*="${messageId}"]`;
     // Direct content targeting (no descendant selector needed for this one)
     const directContentSel = `#message-content-${messageId}`;

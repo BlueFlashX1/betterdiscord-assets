@@ -404,9 +404,18 @@ module.exports = {
       }
     }
 
-    // Invalidate cache to avoid race where restoration checks before crit is saved
-    this._cachedCritHistory = null;
-    this._cachedCritHistoryTimestamp = null;
+    // BUG FIX: previously this unconditionally invalidated the
+    // _cachedCritHistory + timestamp on EVERY checkForRestoration call.
+    // checkForRestoration fires per observer tick per message node,
+    // so the cache below in getCritHistory (which has its own 5s TTL)
+    // was being wiped before every single read. Net result: a TTL
+    // cache that never served a single hit.
+    //
+    // The original comment cited "race where restoration checks before
+    // crit is saved" as the rationale — but that case is now handled
+    // by history.js:421 where addToHistory invalidates the timestamp
+    // EXACTLY when a new crit is saved. There's no longer a need to
+    // pre-invalidate here, so the cache can do its job.
 
     if (messageElement) {
       let msgId = this.getMessageIdentifier(messageElement);

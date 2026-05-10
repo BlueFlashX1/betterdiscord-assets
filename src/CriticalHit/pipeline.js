@@ -115,11 +115,20 @@ module.exports = {
       if (this._isStopped) return;
       let messageElement = null;
 
-      // OPTIMIZED: Direct matching for message classes
+      // OPTIMIZED: Direct matching for message classes.
+      // PERF FIX: previously called Array.from(node.classList).some(...)
+      // which allocates a new array per mutation node — at busy typing
+      // rates (~20 DOM mutations/sec) that's ~20 allocations/sec for
+      // nothing. node.className.includes() is O(1) and allocates
+      // nothing. Discord's message classes always contain the
+      // substring "message" with a hash suffix, so substring match is
+      // correct and faster than per-class iteration.
       if (node.classList) {
-        const isMsg = node.classList.contains('message-2C84CH') || // Common Discord message class
-                      node.classList.contains('message-36f9Yy') ||
-                      Array.from(node.classList).some(c => c.includes('message') && !c.includes('Content') && !c.includes('Group'));
+        const className = typeof node.className === 'string' ? node.className : '';
+        const isMsg =
+          node.classList.contains('message-2C84CH') || // Common Discord message class
+          node.classList.contains('message-36f9Yy') ||
+          (className.includes('message') && !className.includes('Content') && !className.includes('Group'));
 
         if (isMsg && node.offsetParent !== null) {
           messageElement = node;
