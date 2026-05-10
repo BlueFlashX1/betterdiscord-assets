@@ -433,10 +433,9 @@ const ShadowArmy = class ShadowArmy {
       this.memberListObserver.disconnect();
       this.memberListObserver = null;
     }
-    if (this._memberListStore && this._memberListStoreListener) {
-      try { this._memberListStore.removeChangeListener(this._memberListStoreListener); } catch (_) {}
-      this._memberListStore = null;
-      this._memberListStoreListener = null;
+    if (this._memberListHealthCheck) {
+      clearInterval(this._memberListHealthCheck);
+      this._memberListHealthCheck = null;
     }
 
     // Unsubscribe NavigationBus
@@ -674,10 +673,9 @@ const ShadowArmy = class ShadowArmy {
     this._widgetRefreshQueued = false;
 
     // Clear member list observer health check
-    if (this._memberListStore && this._memberListStoreListener) {
-      try { this._memberListStore.removeChangeListener(this._memberListStoreListener); } catch (_) {}
-      this._memberListStore = null;
-      this._memberListStoreListener = null;
+    if (this._memberListHealthCheck) {
+      clearInterval(this._memberListHealthCheck);
+      this._memberListHealthCheck = null;
     }
 
     // Clear widget reinjection timeout

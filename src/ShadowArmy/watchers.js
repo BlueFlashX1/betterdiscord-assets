@@ -448,31 +448,27 @@ module.exports = {
       characterData: false,
     });
 
-    // Event-driven re-attach — replaces the prior 3s health-check poll.
-    // The member list gets replaced by React on channel/guild switches;
-    // subscribe to SelectedChannelStore and re-run setupMemberListWatcher
-    // when the listener fires. setupMemberListWatcher is idempotent (it
-    // disconnects any existing observer first), and the surrounding
-    // retry logic handles "no observeRoot yet" transient states.
-    if (this._memberListStore && this._memberListStoreListener) {
-      try { this._memberListStore.removeChangeListener(this._memberListStoreListener); } catch (_) {}
-      this._memberListStore = null;
-      this._memberListStoreListener = null;
-    }
-    try {
-      const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
-      if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
-        this._memberListStoreListener = () => {
-          if (this._isStopped) return;
-          if (document.hidden) return;
-          if (!observeRoot.isConnected) {
-            this.setupMemberListWatcher();
-          }
-        };
-        SelectedChannelStore.addChangeListener(this._memberListStoreListener);
-        this._memberListStore = SelectedChannelStore;
+    // Periodic observer health check. Polling here is intentional —
+    // member-list auto-show (the Discord "Show Members" toggle) re-renders
+    // the parent without firing a channel-switch event, so a pure
+    // SelectedChannelStore listener misses this case and the widget never
+    // gets injected when the user reveals the panel. Keep the 3s poll;
+    // its cost is negligible (one isConnected check per tick) and it
+    // covers every variant of member-list mount/unmount uniformly.
+    if (this._memberListHealthCheck) clearInterval(this._memberListHealthCheck);
+    this._memberListHealthCheck = setInterval(() => {
+      if (this._isStopped) {
+        clearInterval(this._memberListHealthCheck);
+        this._memberListHealthCheck = null;
+        return;
       }
-    } catch (_) {}
+      if (document.hidden) return;
+      if (!observeRoot.isConnected) {
+        clearInterval(this._memberListHealthCheck);
+        this._memberListHealthCheck = null;
+        this.setupMemberListWatcher();
+      }
+    }, 3000);
 
     // Immediate pass in case member list is already mounted
     this.injectShadowRankWidget();
