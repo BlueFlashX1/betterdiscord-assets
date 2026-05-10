@@ -210,7 +210,10 @@ module.exports = {
   },
 
   getEffectiveCritChance() {
-    let baseChance = this.settings.critChance || C.DEFAULT_CRIT_CHANCE;
+    // BUG FIX: previously `||` made a critChance of 0 impossible — falsy
+    // zero would coerce to DEFAULT_CRIT_CHANCE. Users who want to fully
+    // disable random crits via the chance slider couldn't. ?? respects 0.
+    let baseChance = this.settings.critChance ?? C.DEFAULT_CRIT_CHANCE;
     baseChance += this._loadAgilityBonus();
     baseChance += this._loadSkillTreeBonus();
     baseChance += this._loadEquipmentCritBonus();

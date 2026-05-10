@@ -520,10 +520,28 @@ module.exports = {
           const parentContainer = messageElement?.parentElement;
           if (!parentContainer || parentContainer === document.body) return;
 
-          // PERF: Cap concurrent restoration observers to avoid unbounded growth
+          // PERF: Cap concurrent restoration observers to avoid unbounded growth.
+          // The cap (5) is enforced by `_activeRestorationObservers`. Two
+          // previous bugs:
+          //   (a) Counter could go NEGATIVE because both the success branch
+          //       (checkForCrit returned true) and the safety timeout would
+          //       independently decrement. After ~5 of those races the cap
+          //       check `>= 5` failed forever and restoration died silently.
+          //   (b) Counter could LEAK if `observe()` threw between increment
+          //       and the safety setTimeout being scheduled.
+          // Fix: capture a `restorationResolved` boolean closed over by all
+          // three exit paths (success, timeout, observe-throw) and skip the
+          // decrement if already done. observer.observe() is wrapped so a
+          // throw still releases the counter slot.
           if (!this._activeRestorationObservers) this._activeRestorationObservers = 0;
           if (this._activeRestorationObservers >= 5) return;
           this._activeRestorationObservers++;
+          let restorationResolved = false;
+          const releaseRestorationSlot = () => {
+            if (restorationResolved) return;
+            restorationResolved = true;
+            this._activeRestorationObservers--;
+          };
 
           let lastRestorationCheck = 0;
 
@@ -560,7 +578,7 @@ module.exports = {
                 // Use requestAnimationFrame to batch checks
                 requestAnimationFrame(() => {
                   if (checkForCrit()) {
-                    this._activeRestorationObservers--;
+                    releaseRestorationSlot();
                     this._disconnectTransientObserver(restorationObserver);
                   }
                 });
@@ -568,16 +586,25 @@ module.exports = {
             })
           );
 
-          restorationObserver.observe(parentContainer, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class'],
-          });
+          try {
+            restorationObserver.observe(parentContainer, {
+              childList: true,
+              subtree: true,
+              attributes: true,
+              attributeFilter: ['class'],
+            });
+          } catch (_) {
+            // observe() can throw if parentContainer was GC'd or detached
+            // between the null-check above and now. Release the counter
+            // slot so future observers aren't blocked by a phantom +1.
+            releaseRestorationSlot();
+            this._disconnectTransientObserver(restorationObserver);
+            return;
+          }
 
           this._setTrackedTimeout(
             () => {
-              this._activeRestorationObservers--;
+              releaseRestorationSlot();
               this._disconnectTransientObserver(restorationObserver);
             },
             C.RESTORATION_OBSERVER_TIMEOUT_MS

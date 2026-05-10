@@ -303,7 +303,11 @@ module.exports = {
     if (combo === null || combo === undefined) {
       const userId = this.getUserId(messageElement) || 'unknown';
       const userCombo = this.getUserCombo(userId);
-      combo = userCombo.comboCount || 1;
+      // BUG FIX: `||` coerced a legitimate combo of 0 (post-reset) to 1,
+      // making "CRITICAL HIT! X1" appear instead of just the base
+      // "CRITICAL HIT!" after a combo timeout. Use ?? so only nullish
+      // values fall back to 1.
+      combo = userCombo.comboCount ?? 1;
     }
 
     const position = this.getMessageAreaPosition();
@@ -402,8 +406,13 @@ module.exports = {
         }
 
         if (messageId) {
+          // BUG FIX: previously this branch always `return;`'d, including
+          // when allElements.length === 1 (the normal one-element case).
+          // The single element was never removed, leaking animation
+          // overlays into the DOM until Discord navigated away. Now the
+          // forEach handles every matched element regardless of count.
           const allElements = container.querySelectorAll(`[data-cha-message-id="${messageId}"]`);
-          allElements.length > 1 &&
+          if (allElements.length > 0) {
             allElements.forEach((el) => {
               try {
                 this._cancelComboCountUp(el);
@@ -415,7 +424,11 @@ module.exports = {
                 this.activeAnimations.delete(el);
               }
             });
-          return;
+            return;
+          }
+          // Fall through: messageId set but no matching elements found
+          // (unusual — textElement may have been re-keyed). Remove
+          // textElement directly as the final safety path.
         }
 
         this._cancelComboCountUp(textElement);
