@@ -197,9 +197,9 @@ ${buildPortalTransitionCSS()}
    Previous version cascaded the chunky Persona-5 'Friend or Foe BB' onto
    every descendant via .shadow-senses-panel * { ... !important }. That
    wide-letter-form font extended each header span's glyph advance past
-   the flex `gap`, smushing username/server/channel/timestamp together
+   the flex gap, smushing username/server/channel/timestamp together
    despite the gap rule. Defeating the cascade also lets future inline
-   `style` props win without needing !important.
+   style props win without needing !important.
    Body content now inherits Discord's gg sans system font for legibility. */
 .shadow-senses-panel-title,
 .shadow-senses-widget-label,
