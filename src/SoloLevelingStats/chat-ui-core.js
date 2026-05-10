@@ -352,23 +352,39 @@ module.exports = {
       };
   
       if (!tryCreateUI()) {
-        // Retry after a delay if Discord hasn't loaded yet
-        this.chatUICreationRetryInterval = setInterval(() => {
-          if (tryCreateUI()) {
-            clearInterval(this.chatUICreationRetryInterval);
-            this.chatUICreationRetryInterval = null;
-            if (this.chatUICreationRetryTimeout) {
-              clearTimeout(this.chatUICreationRetryTimeout);
-              this.chatUICreationRetryTimeout = null;
+        // Wait for the channel-header element to appear, then retry.
+        // Replaces the prior 1s setInterval × 10 attempts pattern with a
+        // MutationObserver that only fires when DOM actually changes.
+        // If the header appears we attempt creation once; on success we
+        // disconnect, on failure we keep observing until the 10s ceiling.
+        this.chatUICreationObserver = new MutationObserver((records) => {
+          for (const r of records) {
+            for (const node of r.addedNodes) {
+              if (node.nodeType !== 1) continue;
+              const headerPresent =
+                node.matches?.('section[aria-label="Channel header"]') ||
+                node.querySelector?.('section[aria-label="Channel header"]');
+              if (headerPresent && tryCreateUI()) {
+                if (this.chatUICreationObserver) {
+                  this.chatUICreationObserver.disconnect();
+                  this.chatUICreationObserver = null;
+                }
+                if (this.chatUICreationRetryTimeout) {
+                  clearTimeout(this.chatUICreationRetryTimeout);
+                  this.chatUICreationRetryTimeout = null;
+                }
+                return;
+              }
             }
           }
-        }, 1000);
-  
-        // Stop retrying after 10 seconds
+        });
+        this.chatUICreationObserver.observe(document.body, { childList: true, subtree: true });
+
+        // Stop trying after 10 seconds (hard ceiling preserved).
         this.chatUICreationRetryTimeout = setTimeout(() => {
-          if (this.chatUICreationRetryInterval) {
-            clearInterval(this.chatUICreationRetryInterval);
-            this.chatUICreationRetryInterval = null;
+          if (this.chatUICreationObserver) {
+            this.chatUICreationObserver.disconnect();
+            this.chatUICreationObserver = null;
           }
           this.chatUICreationRetryTimeout = null;
         }, 10000);
@@ -485,9 +501,9 @@ module.exports = {
       clearTimeout(this._chatUiObserverDebounceTimeout);
       this._chatUiObserverDebounceTimeout = null;
     }
-    if (this.chatUICreationRetryInterval) {
-      clearInterval(this.chatUICreationRetryInterval);
-      this.chatUICreationRetryInterval = null;
+    if (this.chatUICreationObserver) {
+      try { this.chatUICreationObserver.disconnect(); } catch (_) {}
+      this.chatUICreationObserver = null;
     }
     if (this.chatUICreationRetryTimeout) {
       clearTimeout(this.chatUICreationRetryTimeout);
