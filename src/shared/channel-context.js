@@ -179,6 +179,50 @@ function debugVoiceChannelChat() {
 
 const VC_BODY_ATTR = "data-sl-in-voice-chat";
 const FORUM_THREAD_BODY_ATTR = "data-sl-in-forum-or-thread";
+const DM_BODY_ATTR = "data-sl-in-dm";
+const HOME_BODY_ATTR = "data-sl-in-home";
+
+// True when the user is currently in a DM or group DM. URL takes the
+// shape /channels/@me/<channelId>; we cross-check via ChannelStore so
+// /channels/@me/12345 with a missing channel doesn't false-positive.
+//   1 = DM
+//   3 = GROUP_DM
+function isDmChannel() {
+  try {
+    const Webpack = BdApi?.Webpack;
+    if (!Webpack || typeof window === "undefined" || !window.location) return false;
+    const path = String(window.location.pathname || "");
+    const m = path.match(/^\/channels\/@me\/(\d+)/);
+    if (!m || !m[1]) return false;
+    const ChannelStore = Webpack.getStore("ChannelStore");
+    const ch = ChannelStore?.getChannel?.(m[1]);
+    const t = Number(ch?.type);
+    // If we can't resolve the channel, the URL pattern alone is a
+    // strong DM signal — fall back to true so plugins err on hiding
+    // (better than rendering misplaced icons in DMs).
+    if (Number.isNaN(t)) return true;
+    return t === 1 || t === 3;
+  } catch (_) {
+    return false;
+  }
+}
+
+// True when the user is on a non-channel surface — Home/Friends, Store,
+// Discovery, Library, Nitro, Settings overview, etc. Specifically:
+// /channels/@me with NO channel ID, or any non-/channels/ path.
+function isHomeView() {
+  try {
+    if (typeof window === "undefined" || !window.location) return false;
+    const path = String(window.location.pathname || "");
+    if (path === "/channels/@me" || path === "/channels/@me/") return true;
+    if (/^\/channels\/@me(\?|$)/.test(path)) return true;
+    // Any non-/channels/ route means we're not viewing a channel at all.
+    if (!path.startsWith("/channels/")) return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
 
 // True when the user is currently viewing a forum or thread surface
 // (forum landing, thread standalone, or thread/forum post opened).
@@ -226,12 +270,20 @@ function _writeVcAttribute() {
     if (document.body.getAttribute(VC_BODY_ATTR) !== vcValue) {
       document.body.setAttribute(VC_BODY_ATTR, vcValue);
     }
-    // Same watcher writes the forum/thread attr — they share the same
-    // CHANNEL_SELECT trigger + 1s safety-net poll, so a single pass
-    // updates both. Cheap to read both states per tick.
+    // Same watcher writes the forum/thread/dm/home attrs — they share
+    // the same CHANNEL_SELECT trigger + 1s safety-net poll, so a single
+    // pass updates all four. Cheap to read all four states per tick.
     const ftValue = isForumOrThreadChannel() ? "true" : "false";
     if (document.body.getAttribute(FORUM_THREAD_BODY_ATTR) !== ftValue) {
       document.body.setAttribute(FORUM_THREAD_BODY_ATTR, ftValue);
+    }
+    const dmValue = isDmChannel() ? "true" : "false";
+    if (document.body.getAttribute(DM_BODY_ATTR) !== dmValue) {
+      document.body.setAttribute(DM_BODY_ATTR, dmValue);
+    }
+    const homeValue = isHomeView() ? "true" : "false";
+    if (document.body.getAttribute(HOME_BODY_ATTR) !== homeValue) {
+      document.body.setAttribute(HOME_BODY_ATTR, homeValue);
     }
   } catch (_) {}
 }
@@ -297,6 +349,8 @@ function installVoiceChatBodyAttr() {
         if (document.body) {
           document.body.removeAttribute(VC_BODY_ATTR);
           document.body.removeAttribute(FORUM_THREAD_BODY_ATTR);
+          document.body.removeAttribute(DM_BODY_ATTR);
+          document.body.removeAttribute(HOME_BODY_ATTR);
         }
       } catch (_) {}
       try {
@@ -310,8 +364,12 @@ module.exports = {
   getCurrentChannel,
   isVoiceChannelChat,
   isForumOrThreadChannel,
+  isDmChannel,
+  isHomeView,
   debugVoiceChannelChat,
   installVoiceChatBodyAttr,
   VC_BODY_ATTR,
   FORUM_THREAD_BODY_ATTR,
+  DM_BODY_ATTR,
+  HOME_BODY_ATTR,
 };

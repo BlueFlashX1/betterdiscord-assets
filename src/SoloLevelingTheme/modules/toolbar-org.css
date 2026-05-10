@@ -131,3 +131,45 @@ section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon
   padding-left: 6px !important;
   margin-left: 6px !important;
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   Context-based hide rules — driven by the body-attribute watcher in
+   shared/channel-context.js (installed by SoloLevelingTheme.start).
+
+   IN A DM: hide every SL toolbar icon. None of them apply to DM chats
+   (Equipment / ItemVault inventory, Shadow Senses presence-monitoring,
+   Active Dungeons, Shadow Exchange currency widget, Solo Leveling
+   Stats sidebar, RulersAuthority panel toggle). Both direct-child and
+   :has-wrapped forms covered.
+
+   IN HOME / FRIENDS / NON-CHANNEL VIEW: additionally hide RA. The
+   `header [class*="toolbar_"]` fallback selector RA uses for icon
+   placement matches Discord's Friends-page header too, so RA was
+   surfacing there. The body[data-sl-in-home="true"] gate now
+   suppresses it everywhere outside an actual channel view. */
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #sls-header-stats-button,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#sls-header-stats-button),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #shadow-senses-header-icon,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-header-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #dungeons-header-widget,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#dungeons-header-widget),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #itemvault-header-icon,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#itemvault-header-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #se-swirl-icon,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#se-swirl-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
+  display: none !important;
+}
+
+/* Hide the RA icon ANYWHERE on the page when in Home / Friends / non-
+   channel view. RA's TOOLBAR_FALLBACKS include `header [class*="toolbar_"]`
+   which can match Discord's Friends-page header — so we use a broad
+   selector unscoped to section[aria-label="Channel header"] for this
+   specific rule. */
+body[data-sl-in-home="true"] #ra-toolbar-icon,
+body[data-sl-in-home="true"] :has(> #ra-toolbar-icon) {
+  display: none !important;
+}
