@@ -6,6 +6,7 @@
  */
 
 const Events = require('../shared/event-bus');
+const { watchToolbar } = require('../shared/header-toolbar');
 const { ItemVaultStorage } = require('./storage');
 const { ItemVaultEventAPI } = require('./event-api');
 const { runMigration } = require('./migration');
@@ -51,7 +52,7 @@ module.exports = class ItemVault {
     this._storage = new ItemVaultStorage();
     this._eventAPI = null;
     this._debugMode = false;
-    this._headerIconLoop = null;
+    this._unwatchToolbar = null;
     this._popupTickLoop = null;
     this._stopped = true;
   }
@@ -149,18 +150,25 @@ module.exports = class ItemVault {
   }
 
   _startHeaderIcon() {
-    if (this._headerIconLoop) return;
-    this._ensureHeaderIcon();
-    this._headerIconLoop = setInterval(() => {
+    if (this._unwatchToolbar) return;
+    // Event-driven re-injection via shared/header-toolbar.js:
+    //   - CHANNEL_SELECT fires on every channel/DM/thread switch
+    //   - VOICE_STATE_UPDATES fires when VC overlay mounts/unmounts
+    //   - Narrow MutationObserver on #app-mount catches edge cases
+    //     (plugin reload, settings modal close) without subtree
+    //     querySelector overhead.
+    // Fires once immediately so the icon paints on first attach.
+    // Replaces the prior 2s setInterval self-heal loop.
+    this._unwatchToolbar = watchToolbar(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 2000);
+    });
   }
 
   _stopHeaderIcon() {
-    if (this._headerIconLoop) {
-      clearInterval(this._headerIconLoop);
-      this._headerIconLoop = null;
+    if (this._unwatchToolbar) {
+      try { this._unwatchToolbar(); } catch (_) {}
+      this._unwatchToolbar = null;
     }
     this._removeHeaderIcon();
   }
