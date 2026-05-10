@@ -683,6 +683,92 @@ ${buildPortalTransitionCSS()}
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[type="submit"]:active {
   transform: translateY(1px) !important;
 }
+
+/* ─── Header-popup hardening — overrides Discord/theme button defaults ─────
+   The header-anchored popup (#shadow-senses-header-popup) hosts the panel
+   in embedded mode — no full-screen overlay wrapper. Discord's default
+   <button> styling and SoloLevelingTheme can leak white pill backgrounds
+   onto our close-btn / tab buttons; force the SL palette here with
+   high specificity (#id .class) and !important. */
+
+#shadow-senses-header-popup .shadow-senses-panel--embedded {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  box-shadow: none !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-panel-title {
+  color: #d4b0ff !important;
+  font-weight: 700 !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-close-btn,
+#shadow-senses-header-popup .shadow-senses-tab,
+#shadow-senses-header-popup .shadow-senses-deploy-btn,
+#shadow-senses-header-popup .shadow-senses-recall-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-close-btn {
+  color: rgba(196, 181, 253, 0.7) !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-close-btn:hover {
+  color: #fff !important;
+  background: rgba(138, 43, 226, 0.15) !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-tab {
+  color: rgba(196, 181, 253, 0.6) !important;
+  border-bottom: 2px solid transparent !important;
+  padding: 10px 16px !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-tab:hover {
+  color: rgba(196, 181, 253, 0.9) !important;
+  background: rgba(138, 43, 226, 0.08) !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-tab.active {
+  color: #d4b0ff !important;
+  border-bottom-color: #8a2be2 !important;
+  background: rgba(138, 43, 226, 0.12) !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-tabs {
+  border-bottom: 1px solid rgba(138, 43, 226, 0.25) !important;
+  padding: 0 16px !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-empty {
+  color: rgba(196, 181, 253, 0.6) !important;
+  text-align: center !important;
+  padding: 32px 20px !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-footer {
+  color: rgba(196, 181, 253, 0.55) !important;
+  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+  padding: 10px 16px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 12px !important;
+  font-size: 11px !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-footer span {
+  white-space: nowrap !important;
+}
 `;
 }
 

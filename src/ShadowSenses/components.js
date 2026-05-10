@@ -586,7 +586,7 @@ function buildComponents(pluginRef) {
   }
 
   // SensesPanel
-  function SensesPanel({ onClose }) {
+  function SensesPanel({ onClose, embedded }) {
     const [activeTab, setActiveTab] = useState("feed");
 
     const handleOverlayClick = useCallback((e) => {
@@ -620,11 +620,9 @@ function buildComponents(pluginRef) {
       ? pluginRef.sensesEngine.getTotalDetections()
       : 0;
 
-    return ce("div", {
-      className: "shadow-senses-overlay",
-      onClick: handleOverlayClick,
+    const panelEl = ce("div", {
+      className: `shadow-senses-panel${embedded ? " shadow-senses-panel--embedded" : ""}`,
     },
-    ce("div", { className: "shadow-senses-panel" },
       ce("div", { className: "shadow-senses-panel-header" },
         ce("h2", { className: "shadow-senses-panel-title" }, "Shadow Senses"),
         ce("button", {
@@ -659,8 +657,19 @@ function buildComponents(pluginRef) {
         ),
         ce("span", null, `${msgCount.toLocaleString()} detection${msgCount !== 1 ? "s" : ""}`)
       )
-    )
     );
+
+    // When embedded inside the header-anchored popup, skip the full-screen
+    // overlay wrapper. The popup container already provides its own
+    // backdrop / position / fixed width \u2014 wrapping in shadow-senses-overlay
+    // would put a 700px panel inside a 480px popup and add a duplicate
+    // dimmer backdrop covering the whole viewport.
+    if (embedded) return panelEl;
+
+    return ce("div", {
+      className: "shadow-senses-overlay",
+      onClick: handleOverlayClick,
+    }, panelEl);
   }
 
   // SensesWidget
