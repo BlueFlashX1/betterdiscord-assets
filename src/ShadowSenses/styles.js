@@ -617,6 +617,22 @@ ${buildPortalTransitionCSS()}
 [role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="content"] {
   background-color: #0d0d18 !important;
 }
+/* IMPORTANT — undo the body fill INSIDE buttons. Discord wraps button
+   labels in nested divs whose classes start with "contents-" (plural),
+   which the [class*="content"] selector above accidentally matches.
+   Higher specificity here neutralises the dark fill bleed onto labels. */
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button *,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button [class*="content"] {
+  background-color: transparent !important;
+}
+/* Footer flex-gap so Cancel/Understood don't touch — ` + button` failed
+   because Discord wraps each button in its own div. Apply to any
+   flex/grid footer container that holds the buttons. */
+[role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="footer"] {
+  gap: 12px !important;
+  column-gap: 12px !important;
+}
 
 /* Buttons in the Igris modal — SoloLeveling purple aesthetic.
    Discord's default brand-colored button (Understood) gets the solid
@@ -633,20 +649,9 @@ ${buildPortalTransitionCSS()}
   transition: background 120ms ease, border-color 120ms ease,
               box-shadow 120ms ease, transform 80ms ease !important;
 }
-/* Discord wraps button text in nested divs with their own background —
-   that's the dark inner rectangle. Flatten it. */
-[role="dialog"]:has(.shadowsenses-igris-report-modal) button > div,
-[role="dialog"]:has(.shadowsenses-igris-report-modal) button > span {
-  background: transparent !important;
-  background-color: transparent !important;
-}
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button:hover {
   background: rgba(138, 43, 226, 0.22) !important;
   border-color: rgba(138, 43, 226, 0.65) !important;
-}
-/* Gap between adjacent buttons in the footer (e.g. Cancel + Understood). */
-[role="dialog"]:has(.shadowsenses-igris-report-modal) button + button {
-  margin-left: 12px !important;
 }
 
 /* Primary confirm ("Understood") — Discord brand class is the canonical
