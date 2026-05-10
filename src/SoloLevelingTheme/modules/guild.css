@@ -667,31 +667,33 @@ div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"] {
   max-width: 100% !important;
 }
 
-/* §9ac — Hide the member list across ALL forum and thread surfaces.
-   User opted to suppress the member list whenever they're in a forum
-   or thread context — landing pages, post listings, and opened posts
-   all included. These surfaces rarely have many active members so
-   the list isn't pulling its weight visually. Hiding it also
-   sidesteps the unclosable column-seam problem entirely (no member
-   list = no third column = no seam to worry about).
+/* §9ac — Hide the member list across forum, thread, AND VC chat surfaces.
+   User opted to suppress the member list across all three context types
+   — these surfaces rarely have many active members and the list isn't
+   pulling its weight visually. Hiding it also sidesteps the unclosable
+   column-seam problem entirely (no member list = no third column).
 
-   Two gates OR'd to cover all four sub-cases:
+   Three gates OR'd to cover every sub-case:
 
    A) body[data-sl-in-forum-or-thread="true"]
-      Set by the channel-context watcher (shared/channel-context.js)
-      whenever the URL channel type is forum (15) or thread (10/11/12).
-      Catches: forum browse / landing, thread channel viewed
-      standalone, forum post opened (URL flips to thread).
+      Forum landing, thread channel standalone, forum post opened
+      (URL channel type ∈ {10,11,12,15}).
 
-   B) body:not([data-sl-in-voice-chat="true"]):has(div[class^="chatLayerWrapper_"])
-      Catches the case where the URL channel is a regular text
-      channel (type 0) but a thread sidebar overlay is open on top —
-      chatLayerWrapper_ is in the DOM. Excludes VC because VC chat
-      uses chatLayerWrapper_ too but should keep its member list.
+   B) body[data-sl-in-voice-chat="true"]
+      Voice / stage channel viewed (URL channel type ∈ {2,13}) —
+      catches both the case before any chat tab opens AND while
+      viewing the VC chat tab.
 
-   Either gate engaging hides the member list. */
+   C) body:has(div[class^="chatLayerWrapper_"])
+      Thread sidebar overlay opened on top of a text channel
+      (URL channel still type 0, chatLayerWrapper_ in DOM). Also
+      redundantly catches forum-post and VC-chat openings already
+      handled by A/B — harmless redundancy.
+
+   Any gate engaging hides the member list. */
 body[data-sl-in-forum-or-thread="true"] aside[class^="membersWrap_"],
-body:not([data-sl-in-voice-chat="true"]):has(div[class^="chatLayerWrapper_"]) aside[class^="membersWrap_"] {
+body[data-sl-in-voice-chat="true"] aside[class^="membersWrap_"],
+body:has(div[class^="chatLayerWrapper_"]) aside[class^="membersWrap_"] {
   display: none !important;
 }
 
