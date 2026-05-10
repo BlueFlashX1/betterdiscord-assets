@@ -340,7 +340,11 @@ module.exports = {
     const perceptionStat = this.settings?.stats?.perception ?? 0;
     const perception = Math.max(0, Number(perceptionStat) || 0);
     const burstChance = Math.min(0.45, 0.05 + perception * 0.0035); // 5% base, +0.35% per PER
-    const maxHits = Math.min(40, Math.max(1, 1 + Math.floor(perception * 0.5))); // 1..40
+    // Raised from 40 → 80 ceiling: original cap meant any perception above
+    // 78 was wasted for burst length (formula derives 1612 at PER 3222 but
+    // clamped to 40). Same linear scaling, doubled headroom so high-PER
+    // builds actually feel different.
+    const maxHits = Math.min(80, Math.max(1, 1 + Math.floor(perception * 0.5))); // 1..80
     const jackpotChance = perception >= 40 ? Math.min(0.02, (perception - 39) * 0.0004) : 0;
   
     return {

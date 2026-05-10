@@ -142,7 +142,11 @@ module.exports = {
         if (burstHits > 1) {
           // PER burst bonus uses diminishing returns + hard caps.
           // This preserves burst reward identity without making leveling trivial.
-          const effectiveBurstHits = Math.min(25, burstHits); // ignore extreme jackpot tails for XP scaling
+          // Raised from 25 → 40 to match the normal-path maxHits ceiling.
+          // Bursts 26-40 now contribute to logGain instead of being
+          // silently capped. The +45% burstBonus and +135% total
+          // critMultiplier caps below still bound runaway scaling.
+          const effectiveBurstHits = Math.min(40, burstHits);
           const logGain = Math.log2(effectiveBurstHits + 1) * 0.045;
           const chainGain = (Math.min(12, effectiveBurstHits) - 1) * 0.008;
           const burstBonus = Math.min(0.45, logGain + chainGain); // Max +45%
