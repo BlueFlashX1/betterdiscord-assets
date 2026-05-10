@@ -395,24 +395,116 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // DeploymentRow
+  // DeploymentRow \u2014 same bulletproof inline-style pattern as FeedCard.
+  // CSS class rules keep getting beaten by external theme overrides, so
+  // every visual property goes through ref + setProperty('important').
   function DeploymentRow({ deployment, onRecall }) {
     const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
+    const HB = {
+      fontFamily: "'gg sans', 'Helvetica Neue', system-ui, sans-serif",
+      fontSize: "13px",
+      lineHeight: 1.3,
+    };
 
-    return ce("div", { className: "shadow-senses-deploy-row" },
-      ce("div", { className: "shadow-senses-deploy-info" },
-        ce("span", { className: "shadow-senses-deploy-rank", style: { color: rankColor } },
-          `[${deployment.shadowRank}]`
-        ),
-        ce("span", null, deployment.shadowName),
-        ce("span", { className: "shadow-senses-deploy-arrow" }, "\u2192"),
-        ce("span", { className: "shadow-senses-deploy-target" }, deployment.targetUsername)
+    return ce("div", {
+      className: "shadow-senses-deploy-row",
+      ref: (el) => {
+        if (!el) return;
+        el.style.setProperty("display", "flex", "important");
+        el.style.setProperty("align-items", "center", "important");
+        el.style.setProperty("justify-content", "space-between", "important");
+        el.style.setProperty("gap", "12px", "important");
+        el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
+        el.style.setProperty("border", "1px solid rgba(167, 139, 250, 0.32)", "important");
+        el.style.setProperty("border-radius", "8px", "important");
+        el.style.setProperty("padding", "10px 14px", "important");
+        el.style.setProperty("margin", "0 0 8px 0", "important");
+        el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
+      },
+    },
+      ce("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          flex: 1,
+          minWidth: 0,
+          ...HB,
+        },
+      },
+        ce("span", {
+          style: { ...HB, color: rankColor, fontWeight: 700, letterSpacing: "0.03em" },
+        }, `[${deployment.shadowRank}]`),
+        ce("span", { style: { ...HB, color: "#d4b0ff", fontWeight: 600 } }, deployment.shadowName),
+        ce("span", { style: { ...HB, color: "#5a5a6e" } }, "\u2192"),
+        ce("span", {
+          style: { ...HB, color: "#a78bfa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+        }, deployment.targetUsername)
       ),
       ce("button", {
         className: "shadow-senses-recall-btn",
         onClick: () => onRecall && onRecall(deployment),
+        ref: (el) => {
+          if (!el) return;
+          el.style.setProperty("background", "rgba(239, 68, 68, 0.12)", "important");
+          el.style.setProperty("color", "#f87171", "important");
+          el.style.setProperty("border", "1px solid rgba(239, 68, 68, 0.35)", "important");
+          el.style.setProperty("border-radius", "999px", "important");
+          el.style.setProperty("padding", "4px 12px", "important");
+          el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+          el.style.setProperty("font-size", "11px", "important");
+          el.style.setProperty("font-weight", "600", "important");
+          el.style.setProperty("letter-spacing", "0.04em", "important");
+          el.style.setProperty("text-transform", "uppercase", "important");
+          el.style.setProperty("cursor", "pointer", "important");
+          el.style.setProperty("box-shadow", "none", "important");
+          el.style.setProperty("outline", "none", "important");
+          el.style.setProperty("transition", "background 0.15s ease, border-color 0.15s ease", "important");
+        },
+        onMouseEnter: (e) => {
+          e.currentTarget.style.setProperty("background", "rgba(239, 68, 68, 0.22)", "important");
+          e.currentTarget.style.setProperty("border-color", "rgba(239, 68, 68, 0.55)", "important");
+        },
+        onMouseLeave: (e) => {
+          e.currentTarget.style.setProperty("background", "rgba(239, 68, 68, 0.12)", "important");
+          e.currentTarget.style.setProperty("border-color", "rgba(239, 68, 68, 0.35)", "important");
+        },
       }, "Recall")
     );
+  }
+
+  // Shared style applier for the "Deploy New Shadow" button \u2014 inline
+  // !important so the theme's white pill button default doesn't bleed
+  // through.
+  function _applyDeployButtonStyle(el) {
+    if (!el) return;
+    el.style.setProperty("background", "rgba(138, 43, 226, 0.18)", "important");
+    el.style.setProperty("color", "#d4b0ff", "important");
+    el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.5)", "important");
+    el.style.setProperty("border-radius", "999px", "important");
+    el.style.setProperty("padding", "8px 18px", "important");
+    el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+    el.style.setProperty("font-size", "12px", "important");
+    el.style.setProperty("font-weight", "700", "important");
+    el.style.setProperty("letter-spacing", "0.05em", "important");
+    el.style.setProperty("text-transform", "uppercase", "important");
+    el.style.setProperty("cursor", "pointer", "important");
+    el.style.setProperty("box-shadow", "0 2px 8px rgba(138, 43, 226, 0.18)", "important");
+    el.style.setProperty("outline", "none", "important");
+    el.style.setProperty("display", "inline-flex", "important");
+    el.style.setProperty("align-items", "center", "important");
+    el.style.setProperty("gap", "6px", "important");
+    el.style.setProperty("transition", "background 0.15s ease, border-color 0.15s ease, transform 0.15s ease", "important");
+  }
+  function _deployBtnHoverIn(e) {
+    e.currentTarget.style.setProperty("background", "rgba(138, 43, 226, 0.32)", "important");
+    e.currentTarget.style.setProperty("border-color", "rgba(167, 139, 250, 0.7)", "important");
+    e.currentTarget.style.setProperty("transform", "translateY(-1px)", "important");
+  }
+  function _deployBtnHoverOut(e) {
+    e.currentTarget.style.setProperty("background", "rgba(138, 43, 226, 0.18)", "important");
+    e.currentTarget.style.setProperty("border-color", "rgba(138, 43, 226, 0.5)", "important");
+    e.currentTarget.style.setProperty("transform", "none", "important");
   }
 
   // FeedTab
@@ -511,27 +603,33 @@ function buildComponents(pluginRef) {
     }, [onRecall]);
 
     if (deployments.length === 0) {
-      return ce("div", { style: { padding: "16px" } },
+      return ce("div", { style: { padding: "16px", textAlign: "center" } },
         ce("div", { className: "shadow-senses-empty" },
           "No shadows deployed. Right-click a user to deploy a shadow."
         ),
         ce("button", {
           className: "shadow-senses-deploy-btn",
           onClick: onDeployNew,
-          style: { marginTop: 12 },
-        }, "Deploy New Shadow")
+          ref: _applyDeployButtonStyle,
+          onMouseEnter: _deployBtnHoverIn,
+          onMouseLeave: _deployBtnHoverOut,
+        }, "+ Deploy New Shadow")
       );
     }
 
-    return ce("div", { style: { padding: "8px 16px", maxHeight: "50vh", overflowY: "auto" } },
+    return ce("div", { style: { padding: "10px 16px 16px", maxHeight: "50vh", overflowY: "auto" } },
       deployments.map((d) =>
         ce(DeploymentRow, { key: d.shadowId, deployment: d, onRecall: handleRecall })
       ),
-      ce("button", {
-        className: "shadow-senses-deploy-btn",
-        onClick: onDeployNew,
-        style: { marginTop: 8 },
-      }, "Deploy New Shadow")
+      ce("div", { style: { display: "flex", justifyContent: "center", marginTop: 12 } },
+        ce("button", {
+          className: "shadow-senses-deploy-btn",
+          onClick: onDeployNew,
+          ref: _applyDeployButtonStyle,
+          onMouseEnter: _deployBtnHoverIn,
+          onMouseLeave: _deployBtnHoverOut,
+        }, "+ Deploy New Shadow")
+      )
     );
   }
 
