@@ -374,8 +374,6 @@ ${buildPortalTransitionCSS()}
 }
 
 .shadow-senses-feed-content {
-  /* The single narrow !important here is justified — defeats any plugin
-     descendant rule that might creep in. NOT a wildcard. */
   font-family: var(--font-primary), 'gg sans', sans-serif !important;
   font-size: 14px;
   font-weight: 400;
@@ -384,6 +382,41 @@ ${buildPortalTransitionCSS()}
   word-wrap: break-word;
   overflow-wrap: anywhere;
   margin: 2px 0 0;
+}
+
+/* ─── ID-scoped overrides — defeat SoloLevelingTheme global font rules ─────
+   Two competing !important font-family rules ship from theme assets:
+     1. SoloLeveling-ClearVision.theme.css :
+          *:where(...) { font-family: 'Friend or Foe BB' !important }
+        Specificity (0,0,0) due to :where() — easy to beat.
+     2. SoloLevelingTheme.plugin.js :
+          #app-mount div { font-family: 'Friend or Foe BB' !important }
+        Specificity (1,0,1) + !important — this is the one that was
+        keeping the message bodies in chunky bold Persona-5 despite the
+        plain .shadow-senses-feed-content rule above (only 0,0,1,0).
+   Prefixing with the popup ID raises specificity to (1,1,1) which beats
+   (1,0,1). Same trick used for header bits + "First: ..." quote so the
+   theme's div rule can't reach into the popup. */
+#shadow-senses-header-popup .shadow-senses-feed-content,
+#shadow-senses-header-popup .shadow-senses-feed-card-header,
+#shadow-senses-header-popup .shadow-senses-feed-card-header *,
+#shadow-senses-header-popup .shadow-senses-empty,
+#shadow-senses-header-popup .shadow-senses-footer,
+#shadow-senses-header-popup .shadow-senses-footer *,
+#shadow-senses-header-popup .shadow-senses-tabs *,
+#shadow-senses-header-popup .shadow-senses-deploy-row,
+#shadow-senses-header-popup .shadow-senses-deploy-row *,
+#shadow-senses-header-popup .shadow-senses-keyword-target,
+#shadow-senses-header-popup .shadow-senses-keyword-target * {
+  font-family: var(--font-primary), 'gg sans', 'Helvetica Neue', sans-serif !important;
+  font-weight: inherit !important;
+  letter-spacing: normal !important;
+}
+
+/* The message body specifically wants 400 weight — defeating both theme
+   font-family AND any inherited bold from the cascade. */
+#shadow-senses-header-popup .shadow-senses-feed-content {
+  font-weight: 400 !important;
 }
 
 /* ─── Deploy / Recall ───────────────────────────────────────────────────── */
