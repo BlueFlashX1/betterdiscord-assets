@@ -178,6 +178,29 @@ function debugVoiceChannelChat() {
 // the same single watcher (refcounted), so subscribing is cheap.
 
 const VC_BODY_ATTR = "data-sl-in-voice-chat";
+const FORUM_THREAD_BODY_ATTR = "data-sl-in-forum-or-thread";
+
+// True when the user is currently viewing a forum or thread surface
+// (forum landing, thread standalone, or thread/forum post opened).
+// URL-based: most reliable across Discord client variants.
+//   10 = ANNOUNCEMENT_THREAD
+//   11 = PUBLIC_THREAD
+//   12 = PRIVATE_THREAD
+//   15 = GUILD_FORUM
+function isForumOrThreadChannel() {
+  try {
+    const Webpack = BdApi?.Webpack;
+    if (!Webpack || typeof window === "undefined" || !window.location) return false;
+    const m = String(window.location.pathname || "").match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+    if (!m || !m[1]) return false;
+    const ChannelStore = Webpack.getStore("ChannelStore");
+    const ch = ChannelStore?.getChannel?.(m[1]);
+    const t = Number(ch?.type);
+    return t === 10 || t === 11 || t === 12 || t === 15;
+  } catch (_) {
+    return false;
+  }
+}
 const VC_HIDE_STYLE_ID = "sl-vc-icon-hiding";
 const VC_HIDE_CSS = `
 /* Auto-injected by src/shared/channel-context.js — hides Solo-Leveling
@@ -198,9 +221,17 @@ let _vcDispatcherUnsub = null;
 
 function _writeVcAttribute() {
   try {
-    const value = isVoiceChannelChat() ? "true" : "false";
-    if (document.body && document.body.getAttribute(VC_BODY_ATTR) !== value) {
-      document.body.setAttribute(VC_BODY_ATTR, value);
+    if (!document.body) return;
+    const vcValue = isVoiceChannelChat() ? "true" : "false";
+    if (document.body.getAttribute(VC_BODY_ATTR) !== vcValue) {
+      document.body.setAttribute(VC_BODY_ATTR, vcValue);
+    }
+    // Same watcher writes the forum/thread attr — they share the same
+    // CHANNEL_SELECT trigger + 1s safety-net poll, so a single pass
+    // updates both. Cheap to read both states per tick.
+    const ftValue = isForumOrThreadChannel() ? "true" : "false";
+    if (document.body.getAttribute(FORUM_THREAD_BODY_ATTR) !== ftValue) {
+      document.body.setAttribute(FORUM_THREAD_BODY_ATTR, ftValue);
     }
   } catch (_) {}
 }
@@ -263,7 +294,10 @@ function installVoiceChatBodyAttr() {
         _vcDispatcherUnsub = null;
       }
       try {
-        if (document.body) document.body.removeAttribute(VC_BODY_ATTR);
+        if (document.body) {
+          document.body.removeAttribute(VC_BODY_ATTR);
+          document.body.removeAttribute(FORUM_THREAD_BODY_ATTR);
+        }
       } catch (_) {}
       try {
         if (BdApi?.DOM?.removeStyle) BdApi.DOM.removeStyle(VC_HIDE_STYLE_ID);
@@ -275,7 +309,9 @@ function installVoiceChatBodyAttr() {
 module.exports = {
   getCurrentChannel,
   isVoiceChannelChat,
+  isForumOrThreadChannel,
   debugVoiceChannelChat,
   installVoiceChatBodyAttr,
   VC_BODY_ATTR,
+  FORUM_THREAD_BODY_ATTR,
 };
