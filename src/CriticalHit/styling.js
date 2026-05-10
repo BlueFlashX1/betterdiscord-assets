@@ -55,12 +55,13 @@ module.exports = {
       `${directContentSel} *:not(code):not(pre):not(pre *)`,
     ].join(', ');
 
-    let glowValue = 'none';
-    if (useGlow) {
-      glowValue = useGradient
-        ? '0 0 5px rgba(138, 43, 226, 0.8), 0 0 10px rgba(123, 33, 198, 0.7), 0 0 15px rgba(107, 31, 176, 0.6), 0 0 20px rgba(75, 14, 130, 0.5)'
-        : `0 0 2px ${solidColor}, 0 0 3px ${solidColor}`;
-    }
+    // Glow is intentionally disabled at the rule level. Even if a user has
+    // a persisted `critGlow: true` from an earlier version, the visible
+    // crit treatment is gradient text only — clean, readable, no haze.
+    // (The setting is still loaded above for future re-introduction; it
+    // just doesn't translate to a text-shadow right now.)
+    void useGlow;
+    const glowValue = 'none';
 
     // v3.4.1: Removed redundant `background` shorthand — it resets background-clip to border-box
     // which can interfere with the explicit background-clip: text needed for gradient text.
@@ -76,7 +77,9 @@ ${contentSel} {
   text-shadow: ${glowValue} !important;
   font-family: ${messageFont} !important;
   font-weight: bold !important;
-  font-size: 1.15em !important;
+  /* font-size intentionally inherits from Discord's message base size —
+     crit treatment is colour/gradient only, no enlargement. */
+  font-size: inherit !important;
   font-synthesis: style !important;
   font-variant: inherit !important;
   font-style: inherit !important;
