@@ -36,7 +36,9 @@ module.exports = class SystemWindow {
     };
     this.settings = structuredClone(this._defaultSettings);
     this._observer = null;
-    this._pollInterval = null;
+    this._selChannelStore = null;
+    this._selChannelListener = null;
+    this._userListener = null;
     this._throttleTimer = null;
     this._lastScrollerEl = null;
     this._classifyRAF = null;
@@ -92,11 +94,24 @@ module.exports = class SystemWindow {
       this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => this._checkChannelSwitch());
     }
 
-    // Safety-net fallback: 10s poll
-    this._pollInterval = setInterval(() => {
-      if (document.hidden) return;
-      this._checkChannelSwitch();
-    }, 10000);
+    // Direct Webpack store subscriptions — replaces the prior 10s safety-net
+    // poll. SelectedChannelStore.addChangeListener fires on every
+    // channel/DM/thread switch, UserStore.addChangeListener fires on
+    // account switch. Both are pure event-driven and don't require
+    // BetterDiscordPluginUtils to be installed. Idle cost between
+    // navigation events is now zero.
+    try {
+      const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
+      if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
+        this._selChannelListener = () => this._checkChannelSwitch();
+        SelectedChannelStore.addChangeListener(this._selChannelListener);
+        this._selChannelStore = SelectedChannelStore;
+      }
+      if (this._UserStore && typeof this._UserStore.addChangeListener === "function") {
+        this._userListener = () => this._checkChannelSwitch();
+        this._UserStore.addChangeListener(this._userListener);
+      }
+    } catch (_) {}
   }
 
   _checkChannelSwitch() {
@@ -152,9 +167,14 @@ module.exports = class SystemWindow {
       this._observer.disconnect();
       this._observer = null;
     }
-    if (this._pollInterval) {
-      clearInterval(this._pollInterval);
-      this._pollInterval = null;
+    if (this._selChannelStore && this._selChannelListener) {
+      try { this._selChannelStore.removeChangeListener(this._selChannelListener); } catch (_) {}
+      this._selChannelStore = null;
+      this._selChannelListener = null;
+    }
+    if (this._UserStore && this._userListener) {
+      try { this._UserStore.removeChangeListener(this._userListener); } catch (_) {}
+      this._userListener = null;
     }
     if (this._findRetryTimer) {
       clearTimeout(this._findRetryTimer);
