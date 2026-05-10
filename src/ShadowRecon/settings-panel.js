@@ -21,7 +21,7 @@ function buildSettingsPanel(BdApi, plugin) {
   const React = BdApi.React;
   const ce = React.createElement;
 
-  const makeToggle = (label, key, note) => ce("div", { style: ROW_STYLE },
+  const makeToggle = (label, key, note, onChangeExtra) => ce("div", { style: ROW_STYLE },
     ce("div", null,
       ce("div", { style: LABEL_STYLE }, label),
       note ? ce("div", { style: NOTE_STYLE }, note) : null
@@ -33,10 +33,18 @@ function buildSettingsPanel(BdApi, plugin) {
         plugin.settings[key] = e.target.checked;
         plugin.saveSettings();
         plugin.refreshAllVisuals();
+        if (typeof onChangeExtra === "function") {
+          try { onChangeExtra(plugin); } catch (_) {}
+        }
       },
       style: { accentColor: "#8a2be2" },
     })
   );
+
+  // Toggle changes for skirmish / aura need to start or stop the
+  // FluxDispatcher subscriptions immediately — call refreshDispatcherSubs
+  // so the user doesn't have to disable / re-enable the plugin to apply.
+  const refreshSubs = (p) => p.refreshDispatcherSubs?.();
 
   const markedTargets = plugin._getShadowDeploymentMap().size;
   const currentGuildId = plugin._getCurrentGuildId();
@@ -58,6 +66,18 @@ function buildSettingsPanel(BdApi, plugin) {
     makeToggle("Guild Hover Intel Hint", "showGuildHoverIntel", "Adds recon hint text on guild icon hover elements."),
     makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without recon mark; detailed staff dossier unlocks when guild is recon-marked."),
     makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds limited target intel action only when monitored target is present in the same guild."),
+    makeToggle(
+      "Activity Log (24h)",
+      "enableSkirmishLog",
+      "Records when monitored targets change status, join voice channels, or appear in channels you visit (in marked guilds only). Local-only, capped at 200 entries per target.",
+      refreshSubs
+    ),
+    makeToggle(
+      "Status & Activity History",
+      "enableAuraReading",
+      "Captures custom-status text and what games / apps monitored targets are running over time. Local-only, capped at 100 entries per target.",
+      refreshSubs
+    ),
 
     ce("div", { style: { display: "flex", gap: "8px", marginTop: "14px" } },
       ce("button", {
