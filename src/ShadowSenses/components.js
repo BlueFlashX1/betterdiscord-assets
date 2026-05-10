@@ -693,15 +693,19 @@ function buildComponents(pluginRef) {
       if (!normalizedUserId || !pluginRef.deploymentManager) return false;
       try {
         const sanitized = parseKeywordInput((nextKeywords || []).join(","));
-        const didSave = pluginRef.deploymentManager.setAlertKeywordsForUser(normalizedUserId, sanitized);
-        if (!didSave) {
+        const result = pluginRef.deploymentManager.setAlertKeywordsForUser(normalizedUserId, sanitized);
+        if (!result || !result.ok) {
           pluginRef._toast("Unable to save keyword alerts for this target", "error", 2800);
           return false;
         }
         setKeywordsByUser((previous) => ({ ...previous, [normalizedUserId]: sanitized }));
         syncDeployments(true);
-        if (successMessage) {
+        // Only toast a save confirmation when something actually changed —
+        // a re-save of the identical list shouldn't lie with "Saved N keywords".
+        if (result.changed && successMessage) {
           pluginRef._toast(successMessage, "success", 1800);
+        } else if (!result.changed) {
+          pluginRef._toast("No changes", "info", 1200);
         }
         return true;
       } catch (error) {

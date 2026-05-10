@@ -170,20 +170,25 @@ class DeploymentManager {
     return deployment?.alertKeywords ? [...deployment.alertKeywords] : [];
   }
 
+  // Returns one of:
+  //   { ok: true,  changed: true }  — keywords were modified and persisted
+  //   { ok: true,  changed: false } — incoming keywords matched current; no-op
+  //   { ok: false }                  — invalid userId or no deployment found
+  // Callers can distinguish a real save from a no-op for accurate toasting.
   setAlertKeywordsForUser(userId, keywords) {
     const normalizedUserId = String(userId || "").trim();
-    if (!normalizedUserId) return false;
+    if (!normalizedUserId) return { ok: false };
     const deploymentIndex = this._deployments.findIndex(
       (entry) => String(entry.targetUserId) === normalizedUserId
     );
-    if (deploymentIndex < 0) return false;
+    if (deploymentIndex < 0) return { ok: false };
 
     const normalizedKeywords = normalizeAlertKeywords(keywords);
     const currentKeywords = this._deployments[deploymentIndex].alertKeywords || [];
     const hasSameKeywords =
       currentKeywords.length === normalizedKeywords.length &&
       currentKeywords.every((value, idx) => value === normalizedKeywords[idx]);
-    if (hasSameKeywords) return true;
+    if (hasSameKeywords) return { ok: true, changed: false };
 
     this._deployments[deploymentIndex].alertKeywords = normalizedKeywords;
     this._save();
@@ -191,7 +196,7 @@ class DeploymentManager {
       targetUserId: normalizedUserId,
       keywordCount: normalizedKeywords.length,
     });
-    return true;
+    return { ok: true, changed: true };
   }
 
   _getShadowArmyInstance() {
