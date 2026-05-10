@@ -55,6 +55,26 @@ section[aria-label="Channel header"] [class*="toolbar_"] > :has(#cbg-toggle-butt
   order: 1 !important;
 }
 
+/* Group 0b (DM ONLY): Pin Voice Call + Video Call right next to
+   the CallButtonGuard toggle so the three call-related icons read
+   as one cluster. Discord normally drops them mid-toolbar amongst
+   pins/search/profile; in DMs we want them adjacent to their guard.
+   Scope is `body[data-sl-in-dm="true"]` so this never affects guild
+   text channels (which don't have these buttons anyway, but the
+   gate keeps the rule minimal and intentional).
+
+   Both forms covered: aria-label on the wrapper div directly
+   (current Discord build) and aria-label deeper inside a wrapping
+   flex container (defensive against future re-wraps). */
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label="Start Voice Call"],
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(> [aria-label="Start Voice Call"]) {
+  order: 2 !important;
+}
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label="Start Video Call"],
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(> [aria-label="Start Video Call"]) {
+  order: 3 !important;
+}
+
 /* Group 1: Stats */
 section[aria-label="Channel header"] [class*="toolbar_"] > #sls-header-stats-button,
 section[aria-label="Channel header"] [class*="toolbar_"] > :has(#sls-header-stats-button) {
