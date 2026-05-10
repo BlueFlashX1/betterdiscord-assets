@@ -140,6 +140,22 @@ function getUserPanelDockCss() {
         margin: 0 !important;
         overflow: visible !important;
       }
+
+      /* Hide the docked user-panel nameplate while in voice / stage chat.
+         Discord renders a "voice details" card (call controls, screen
+         share, disconnect) in the same dock area when the user is in VC,
+         which crams the nameplate into a smaller width and produces ugly
+         truncation / overflow. Suppress the nameplate entirely so the
+         voice-details card has the dock area to itself.
+
+         body[data-sl-in-voice-chat="true"] is toggled by the shared
+         installVoiceChatBodyAttr watcher (initialized from
+         SoloLevelingTheme.start), so this rule auto-engages whenever the
+         user views a voice / stage channel and auto-disengages on return
+         to text channels — no per-plugin install needed here. */
+      body[data-sl-in-voice-chat="true"] section[aria-label="User status and settings"].sl-userpanel-docked {
+        display: none !important;
+      }
     `;
 }
 
