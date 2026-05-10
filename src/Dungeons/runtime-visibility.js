@@ -870,23 +870,35 @@ module.exports = {
     }
 
     // Header MutationObserver removed — redundant with pushState/replaceState wrappers,
-    // popstate listener, and fallback interval below. Reduces DOM listener overhead.
+    // popstate listener, and SelectedChannelStore listener below. Reduces DOM listener overhead.
     this.channelWatcher = {};
 
-    // PERF: Fallback polling extended to 15s — pushState/replaceState wrappers + popstate handle main path
-    this.channelWatcherInterval = setInterval(() => {
-      if (!this.isWindowVisible()) return; // PERF(P5-3): Skip when hidden
-      if (!this.activeDungeons || this.activeDungeons.size === 0) return;
-      scheduleCheckChannel();
-    }, 15000);
-    this._intervals.add(this.channelWatcherInterval);
+    // Event-driven safety net — replaces the prior 15s fallback poll.
+    // SelectedChannelStore.addChangeListener fires on every channel /
+    // DM / thread / voice switch and doesn't depend on the optional
+    // BetterDiscordPluginUtils NavigationBus being installed. Both
+    // triggers are kept (belt-and-suspenders) but neither requires a
+    // timer.
+    try {
+      const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
+      if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
+        this._channelWatcherStoreListener = () => {
+          if (!this.isWindowVisible()) return;
+          if (!this.activeDungeons || this.activeDungeons.size === 0) return;
+          scheduleCheckChannel();
+        };
+        SelectedChannelStore.addChangeListener(this._channelWatcherStoreListener);
+        this._channelWatcherStore = SelectedChannelStore;
+      }
+    } catch (_) {}
   },
 
   stopChannelWatcher() {
     this.channelWatcher = null;
-    if (this.channelWatcherInterval) {
-      clearInterval(this.channelWatcherInterval);
-      this.channelWatcherInterval = null;
+    if (this._channelWatcherStore && this._channelWatcherStoreListener) {
+      try { this._channelWatcherStore.removeChangeListener(this._channelWatcherStoreListener); } catch (_) {}
+      this._channelWatcherStore = null;
+      this._channelWatcherStoreListener = null;
     }
 
     // PERF(P5-1): Unsubscribe from shared NavigationBus
