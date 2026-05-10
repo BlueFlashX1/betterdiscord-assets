@@ -449,7 +449,14 @@ module.exports = {
   updateUserCombo(userId, comboCount, lastCritTime) {
     const key = userId || 'unknown';
     const combo = this.getUserCombo(key);
-    combo.comboCount = comboCount;
+    // Accumulate across messages within the COMBO_RESET_TIMEOUT_MS window
+    // (5s) so the counter reflects a true streak. Previously this was an
+    // assignment, so each crit overwrote combo.comboCount with the
+    // current message's burst length (1-80) — making combo 60+ unreachable
+    // since it would require a single message with 60+ crits. The reset
+    // timeout below already clears state on idle, so the accumulator
+    // decays naturally when the user stops critting.
+    combo.comboCount = (Number(combo.comboCount) || 0) + comboCount;
     combo.lastCritTime = lastCritTime;
 
     this._clearTrackedTimeout(combo.timeout);
