@@ -119,10 +119,12 @@ module.exports = class SoloLevelingToasts {
 
   _evictOldestToastIfNeeded() {
     if (this.activeToasts.length < this.settings.maxToasts) return;
-    const oldestToast = this.activeToasts.shift();
+    // Centralize cleanup through removeToast so fade timer + activeToasts
+    // splice + DOM removal stay in sync. Direct shift+remove bypassed the
+    // fade-timer clear path under specific timing windows.
+    const oldestToast = this.activeToasts[0];
     if (!oldestToast) return;
-    this._clearToastFadeTimeout(oldestToast);
-    oldestToast.remove();
+    this.removeToast(oldestToast, true);
   }
 
   // Settings panel cleanup
@@ -196,6 +198,15 @@ module.exports = class SoloLevelingToasts {
     }
     this._hookRetryCount = 0;
     this._clearTrackedTimeouts();
+
+    // Coalesce buffer cleanup — cancel any pending rAF flush and drop
+    // staged opts so a flush after teardown doesn't try to mount into
+    // a destroyed container.
+    if (this._coalesceFlushHandle != null) {
+      try { cancelAnimationFrame(this._coalesceFlushHandle); } catch (_) {}
+      this._coalesceFlushHandle = null;
+    }
+    if (this._pendingByKey) this._pendingByKey.clear();
 
     this.unhookIntoSoloLeveling();
     this.removeAllToasts();
@@ -685,6 +696,19 @@ module.exports = class SoloLevelingToasts {
 
   /**
    * Show a card-style toast with avatar, header, body, and optional detail.
+   *
+   * When a `replaceKey` is provided, calls are coalesced per-frame: rapid-fire
+   * updates with the same key are staged in `_pendingByKey` and only the
+   * LATEST opts is actually built into DOM on the next requestAnimationFrame.
+   * Without `replaceKey`, the call is built immediately (legacy slow-path,
+   * unchanged behavior for single-shot toasts).
+   *
+   * Rationale: presence updates for the same friend can arrive in rapid bursts
+   * (wake-from-sleep flush, gateway reconnect storm, friend toggling status).
+   * Building 100 toast DOM trees and discarding 99 of them is wasteful and
+   * causes a single-frame jank when the queued rAF callbacks all fire on
+   * window focus. Coalescing collapses the burst at the API surface — only
+   * the final state for each key actually constructs DOM.
    */
   showCardToast(opts = {}) {
     if (this._isStopped) return;
@@ -700,27 +724,45 @@ module.exports = class SoloLevelingToasts {
       return;
     }
 
-    // Rate limiting
-    if (opts.callerId) {
-      this._registeredConsumers.add(opts.callerId);
-      if (!this._checkRateLimit(opts.callerId, opts.maxPerMinute || 15)) {
-        this.debugLog("RATE_LIMIT", `Throttled card toast from ${opts.callerId}`);
-        return;
-      }
+    // No replaceKey → legacy synchronous build path.
+    if (!opts.replaceKey) {
+      return this._buildAndMountCardToast(opts);
     }
 
-    // Replace-by-key: if a caller provides replaceKey, dismiss EVERY active
-    // toast with the same key before showing this one. Used for per-entity
-    // toast streams where only the latest state is meaningful — e.g.
-    // ShadowSenses presence updates per friend, where an older "X went idle"
-    // should be cleared when a fresh "X went online" arrives.
-    //
-    // Filter (not find) — when the system wakes from sleep, multiple buffered
-    // presence updates can fire in rapid succession before any one toast's
-    // fade-out timer runs. Each call previously only removed ONE stale entry,
-    // leaving the rest stacked. Clearing every match guarantees at most one
-    // toast per key after this method returns.
+    // Coalesce by replaceKey: stage opts (last write wins) and schedule
+    // one rAF flush to drain the pending map. Multiple keys collected in
+    // the same frame all flush together, but each user produces exactly
+    // one toast regardless of pre-flush burst size.
+    if (!this._pendingByKey) this._pendingByKey = new Map();
+    this._pendingByKey.set(opts.replaceKey, opts);
+
+    if (this._coalesceFlushHandle != null) return;
+    this._coalesceFlushHandle = requestAnimationFrame(() => {
+      this._coalesceFlushHandle = null;
+      if (this._isStopped || !this._pendingByKey) return;
+      const batch = Array.from(this._pendingByKey.values());
+      this._pendingByKey.clear();
+      for (const o of batch) this._buildAndMountCardToast(o);
+    });
+  }
+
+  /**
+   * Internal — performs the actual rate-limit + replaceKey clear + DOM build.
+   * Called either synchronously (no replaceKey) or from the coalesce flush
+   * (replaceKey set). MUST clear stale on-screen toasts via replaceKey
+   * BEFORE the rate-limit check, otherwise a throttled call leaves the
+   * prior stale toast visible despite a newer state being known.
+   */
+  _buildAndMountCardToast(opts) {
+    if (this._isStopped) return;
+    const { avatarUrl, accentColor, header, body } = opts;
     const replaceKey = opts.replaceKey || null;
+
+    // Replace-by-key: dismiss every active toast with the same key BEFORE
+    // any rate-limit check. Cleanup of stale state is bookkeeping; it
+    // shouldn't be gated by the per-caller throttle. Filter (not find) so
+    // multiple co-resident stale toasts (possible after window-blur rAF
+    // queueing) all get cleared in one pass.
     if (replaceKey) {
       const stale = this.activeToasts.filter((t) => t._cardReplaceKey === replaceKey);
       if (stale.length > 0) {
@@ -729,6 +771,16 @@ module.exports = class SoloLevelingToasts {
           replaceKey,
           count: stale.length,
         });
+      }
+    }
+
+    // Rate limiting (post-coalesce, post-cleanup). One call per frame per
+    // key, so each user's burst consumes exactly 1 slot regardless of size.
+    if (opts.callerId) {
+      this._registeredConsumers.add(opts.callerId);
+      if (!this._checkRateLimit(opts.callerId, opts.maxPerMinute || 15)) {
+        this.debugLog("RATE_LIMIT", `Throttled card toast from ${opts.callerId}`);
+        return;
       }
     }
 
