@@ -23,24 +23,35 @@ const HEADER_ICON_ID = 'eq-header-icon';
 const POPUP_ID = 'eq-header-popup';
 
 // Return true when the given toolbar element lives inside Discord's VC
-// chat overlay panel (rather than the regular text-channel header). The
-// distinguishing signal is a "Close" / "Hide chat" button as a sibling
-// or ancestor — it only exists in the VC chat panel header, never in
-// text-channel headers.
+// chat overlay/panel rather than a regular text-channel header. Tries
+// multiple signals — any positive match returns true.
 function _toolbarBelongsToVCChat(toolbar) {
   if (!toolbar) return false;
   try {
-    // Walk up from the toolbar to the channel-header section, then check
-    // for the close button anywhere within that section.
-    let scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
-    if (!scope) return false;
-    const closeBtn = scope.querySelector(
-      '[aria-label="Close"], [aria-label*="Hide chat"], [aria-label*="Close chat"]'
-    );
-    return Boolean(closeBtn);
-  } catch (_) {
-    return false;
-  }
+    // 1) Close / Hide chat / Toggle chat button anywhere in the section
+    //    (case-insensitive — Discord aria-labels vary across versions)
+    const scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
+    if (scope) {
+      const btn = scope.querySelector(
+        '[aria-label*="lose" i], [aria-label*="ide" i][aria-label*="hat" i], [aria-label*="oggle" i][aria-label*="hat" i]'
+      );
+      if (btn) return true;
+    }
+    // 2) Walk up to 12 ancestors looking for ANY voice-related class.
+    //    Discord wraps VC overlays in containers whose class names
+    //    contain "voice" / "Voice" / "vc". Text channels never do.
+    let el = toolbar;
+    for (let i = 0; el && i < 12; i++) {
+      const cls = String(el.className || "");
+      if (/voice|vcChat|callChat/i.test(cls)) return true;
+      el = el.parentElement;
+    }
+    // 3) The toolbar's nearest layer-root has aria-label "Voice channel"
+    //    or similar.
+    const layer = toolbar.closest('[aria-label*="oice" i]');
+    if (layer && layer !== toolbar) return true;
+  } catch (_) {}
+  return false;
 }
 
 const HEADER_TOOLBAR_SELECTORS = [

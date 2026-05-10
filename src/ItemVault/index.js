@@ -20,20 +20,27 @@ const HEADER_ICON_ID = 'itemvault-header-icon';
 const POPUP_ID = 'itemvault-header-popup';
 
 // Return true when the given toolbar element lives inside Discord's VC
-// chat overlay panel. Distinguishing signal: a "Close" / "Hide chat"
-// button — only exists in VC chat panel headers, never in text channels.
+// chat overlay/panel. Multiple signals — any positive match returns true.
 function _toolbarBelongsToVCChat(toolbar) {
   if (!toolbar) return false;
   try {
-    let scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
-    if (!scope) return false;
-    const closeBtn = scope.querySelector(
-      '[aria-label="Close"], [aria-label*="Hide chat"], [aria-label*="Close chat"]'
-    );
-    return Boolean(closeBtn);
-  } catch (_) {
-    return false;
-  }
+    const scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
+    if (scope) {
+      const btn = scope.querySelector(
+        '[aria-label*="lose" i], [aria-label*="ide" i][aria-label*="hat" i], [aria-label*="oggle" i][aria-label*="hat" i]'
+      );
+      if (btn) return true;
+    }
+    let el = toolbar;
+    for (let i = 0; el && i < 12; i++) {
+      const cls = String(el.className || "");
+      if (/voice|vcChat|callChat/i.test(cls)) return true;
+      el = el.parentElement;
+    }
+    const layer = toolbar.closest('[aria-label*="oice" i]');
+    if (layer && layer !== toolbar) return true;
+  } catch (_) {}
+  return false;
 }
 
 const HEADER_TOOLBAR_SELECTORS = [
