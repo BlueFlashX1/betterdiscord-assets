@@ -276,7 +276,7 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
   }
 }
 
-function showMentionToast({ userId, userName, label, detail, accent, deployment }) {
+function showMentionToast({ userId, userName, label, detail, accent, deployment, onClick }) {
   if (this._toastEngine) {
     const avatarUrl = this._resolveUserAvatarUrl(userId)
       || "https://cdn.discordapp.com/embed/avatars/0.png";
@@ -289,6 +289,7 @@ function showMentionToast({ userId, userName, label, detail, accent, deployment 
       timeout: STATUS_TOAST_TIMEOUT_MS,
       callerId: "shadowSenses-mention",
       maxPerMinute: 30,
+      onClick: typeof onClick === "function" ? onClick : undefined,
     });
   } else {
     BdApi.UI.showToast(`${userName} ${label}`, { type: "info" });

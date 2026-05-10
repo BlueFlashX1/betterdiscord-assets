@@ -394,6 +394,10 @@ function showMatchReasonToast(ctx, params) {
   } = params;
   const snippet = entry.content ? `: "${entry.content.slice(0, 80)}"` : "";
   const invisibleSuffix = isInvisible ? " (invisible)" : "";
+  // Click-to-jump — every match-reason toast carries a #channel reference,
+  // so clicking the toast should navigate to that exact message. Captured
+  // by closure so the IDs stay stable even if `entry` is later mutated.
+  const jumpClick = () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId);
 
   if (entry.matchReason === "mention") {
     ctx._showMentionToast({
@@ -403,6 +407,7 @@ function showMatchReasonToast(ctx, params) {
       detail: `in ${guildName} #${entry.channelName}${snippet}`,
       accent: "#ef4444",
       deployment,
+      onClick: jumpClick,
     });
     return "mention";
   }
@@ -415,6 +420,7 @@ function showMatchReasonToast(ctx, params) {
       detail: `in ${guildName} #${entry.channelName}${snippet}`,
       accent: "#ec4899",
       deployment,
+      onClick: jumpClick,
     });
     return "name";
   }
@@ -430,6 +436,7 @@ function showMatchReasonToast(ctx, params) {
     detail: `in ${guildName} #${entry.channelName}${snippet}`,
     accent: "#34d399",
     deployment,
+    onClick: jumpClick,
   });
   return "keyword";
 }
@@ -474,6 +481,9 @@ function applyPresenceToastAndLastSeen(ctx, params) {
         shadowRank: entry.shadowRank,
         shadowName: entry.shadowName,
       },
+      // Click-to-jump — navigate to the exact message that triggered
+      // this toast, same as the match-reason toasts above.
+      onClick: () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId),
     });
     syncLastSeenCount(ctx, guildId);
     return;
@@ -935,7 +945,15 @@ function onMessageCreate(payload) {
 
     // Typing -> Sent: if this author had a typing toast active recently,
     // replace it with a "sent in #channel" toast that links to the message.
-    if (this._lastTypingAt) {
+    // SKIP entirely when the author is invisible — the red
+    // "sent a message while invisible" toast fired upstream by
+    // applyPresenceToastAndLastSeen already covers this case and has
+    // priority; firing the green typing→sent toast on top would be
+    // duplicate noise. Still clear the typing record so the next event
+    // doesn't see a stale entry.
+    if (this._lastTypingAt && isInvisible) {
+      this._lastTypingAt.delete(authorId);
+    } else if (this._lastTypingAt) {
       const recent = this._lastTypingAt.get(authorId);
       if (recent && Date.now() - recent.ts < 30000) {
         this._lastTypingAt.delete(authorId);
