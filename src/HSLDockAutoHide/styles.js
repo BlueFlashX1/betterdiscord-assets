@@ -141,20 +141,36 @@ function getUserPanelDockCss() {
         overflow: visible !important;
       }
 
-      /* Hide the docked user-panel nameplate while in voice / stage chat.
-         Discord renders a "voice details" card (call controls, screen
-         share, disconnect) in the same dock area when the user is in VC,
-         which crams the nameplate into a smaller width and produces ugly
-         truncation / overflow. Suppress the nameplate entirely so the
-         voice-details card has the dock area to itself.
+      /* Hide the docked user-panel nameplate CONTENT while in voice / stage
+         chat — but preserve the inner container's layout box so the purple
+         border-left rail (defined in the .sl-userpanel-docked container_
+         rule earlier in this file) stays visible as a vertical accent.
+
+         Why visibility:hidden instead of display:none on the whole section:
+         display:none would also kill the inner container, taking the purple
+         rail with it. visibility:hidden on the children keeps the
+         container's bounding box (and therefore its border-left) drawn
+         while making the avatar / username / status / action buttons
+         invisible and non-interactive.
+
+         Discord renders a "voice details" card (call controls, screen-
+         share, disconnect) in the same dock area when the user is in VC.
+         Hiding our nameplate's content removes the visible truncation /
+         overflow without taking down the on-brand purple accent.
 
          body[data-sl-in-voice-chat="true"] is toggled by the shared
          installVoiceChatBodyAttr watcher (initialized from
          SoloLevelingTheme.start), so this rule auto-engages whenever the
          user views a voice / stage channel and auto-disengages on return
          to text channels — no per-plugin install needed here. */
-      body[data-sl-in-voice-chat="true"] section[aria-label="User status and settings"].sl-userpanel-docked {
-        display: none !important;
+      body[data-sl-in-voice-chat="true"]
+        section[aria-label="User status and settings"].sl-userpanel-docked
+        > div[class^="wrapper_"],
+      body[data-sl-in-voice-chat="true"]
+        section[aria-label="User status and settings"].sl-userpanel-docked
+        > div[class^="container_"] > * {
+        visibility: hidden !important;
+        pointer-events: none !important;
       }
     `;
 }
