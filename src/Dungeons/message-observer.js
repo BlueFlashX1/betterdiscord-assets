@@ -96,22 +96,33 @@ module.exports = {
       // PERF: attributes/characterData false — we only care about added/removed nodes
       this.messageObserver.observe(messageContainer, { childList: true, subtree: true, attributes: false, characterData: false });
 
-      // Reattach if React replaces the container
-      if (this._messageContainerReattachId) {
-        clearInterval(this._messageContainerReattachId);
-        this._intervals?.delete?.(this._messageContainerReattachId);
+      // Event-driven reattach — replaces the prior 3s isConnected poll.
+      // The message container gets replaced by React on channel switches;
+      // SelectedChannelStore.addChangeListener fires when that happens.
+      // startMessageObserver is idempotent (stopMessageObserver runs first)
+      // and the surrounding retry path handles transient "no container
+      // yet" states.
+      if (this._messageContainerStore && this._messageContainerStoreListener) {
+        try { this._messageContainerStore.removeChangeListener(this._messageContainerStoreListener); } catch (_) {}
+        this._messageContainerStore = null;
+        this._messageContainerStoreListener = null;
       }
-      // PERF: Use isConnected (O(1) native) instead of contains() (DOM traversal)
-      this._messageContainerReattachId = setInterval(() => {
-        if (document.hidden) return; // PERF(P5-3): Skip health check when hidden
-        if (!this.messageObserver || !this._messageContainerRef) return;
-        if (!this._messageContainerRef.isConnected) {
-          this.debugLog('MESSAGE_OBSERVER', 'Container removed from DOM, reattaching');
-          this.stopMessageObserver();
-          this.startMessageObserver();
+      try {
+        const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
+        if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
+          this._messageContainerStoreListener = () => {
+            if (document.hidden) return;
+            if (!this.messageObserver || !this._messageContainerRef) return;
+            if (!this._messageContainerRef.isConnected) {
+              this.debugLog('MESSAGE_OBSERVER', 'Container removed from DOM, reattaching');
+              this.stopMessageObserver();
+              this.startMessageObserver();
+            }
+          };
+          SelectedChannelStore.addChangeListener(this._messageContainerStoreListener);
+          this._messageContainerStore = SelectedChannelStore;
         }
-      }, 3000);
-      this._intervals?.add?.(this._messageContainerReattachId);
+      } catch (_) {}
     } else {
       if (this._messageObserverRetryTimeoutId) return;
 
@@ -189,10 +200,10 @@ module.exports = {
       this._timeouts?.delete?.(this._messageObserverRetryTimeoutId);
       this._messageObserverRetryTimeoutId = null;
     }
-    if (this._messageContainerReattachId) {
-      clearInterval(this._messageContainerReattachId);
-      this._intervals?.delete?.(this._messageContainerReattachId);
-      this._messageContainerReattachId = null;
+    if (this._messageContainerStore && this._messageContainerStoreListener) {
+      try { this._messageContainerStore.removeChangeListener(this._messageContainerStoreListener); } catch (_) {}
+      this._messageContainerStore = null;
+      this._messageContainerStoreListener = null;
     }
     this._messageObserverRetryCount = 0;
     this._messageContainerRef = null;
