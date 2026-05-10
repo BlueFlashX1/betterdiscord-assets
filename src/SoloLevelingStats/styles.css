@@ -1486,12 +1486,14 @@
          Outside VC or with chat panel closed, the strip keeps its full
          width unchanged.
 
-         460px covers Discord's default chatLayerWrapper (~400px) plus the
-         right-aligned MP/HP numeric labels' overflow allowance — at 400
-         the right edge of the MP "X/Y" text was still clipped under the
-         panel. Drag-resize can shift this — acceptable tradeoff vs JS-
-         driven width sync. */
+         490px covers Discord's default chatLayerWrapper (~400px) plus the
+         right-aligned MP/HP numeric labels' overflow allowance plus a
+         small visual breathing buffer — at 400 the right edge of the
+         MP "X/Y" text was clipped, at 460 it was still slightly tight,
+         490 leaves a comfortable gap between strip and panel. Drag-
+         resize can shift this — acceptable tradeoff vs JS-driven width
+         sync. */
       body[data-sl-in-voice-chat="true"]:has(div[class^="chatLayerWrapper_"]) #sls-chat-ui {
-        margin-right: 460px !important;
+        margin-right: 490px !important;
         transition: margin-right 0.2s ease !important;
       }
