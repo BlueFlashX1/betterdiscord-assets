@@ -47,6 +47,14 @@ section[aria-label="Channel header"] [class*="toolbar_"] > * {
   order: 60;
 }
 
+/* Group 0: Safety toggles (CallButtonGuard etc.) — leftmost.
+   Sits before everything so the call-collapse toggle is the first
+   thing the user sees and can't be visually buried by other icons. */
+section[aria-label="Channel header"] [class*="toolbar_"] > #cbg-toggle-button,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#cbg-toggle-button) {
+  order: 1 !important;
+}
+
 /* Group 1: Stats */
 section[aria-label="Channel header"] [class*="toolbar_"] > #sls-header-stats-button,
 section[aria-label="Channel header"] [class*="toolbar_"] > :has(#sls-header-stats-button) {
