@@ -476,7 +476,14 @@ module.exports = {
     }
 
     try {
-      const path = `/channels/${guildId}/${channelId}`;
+      // Translate the "DM" sentinel that channel-discovery.js and
+      // spawn-core.js use for direct-message dungeons into Discord's
+      // actual @me URL segment. Without this, /channels/DM/<id> is
+      // silently rejected by Discord's router and the GO button
+      // appears to do nothing for DM dungeons. Same translation
+      // ShadowSenses' navigateToChannel uses.
+      const guildSeg = guildId && guildId !== "DM" ? guildId : "@me";
+      const path = `/channels/${guildSeg}/${channelId}`;
       this._navigationUtils ||= getNavigationUtils();
 
       if (this._navigationUtils?.transitionTo) {
