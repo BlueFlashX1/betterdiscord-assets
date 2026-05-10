@@ -91,6 +91,10 @@ module.exports = class EquipmentManager {
       try { this._uninstallVoiceChatHider(); } catch (_) {}
       this._uninstallVoiceChatHider = null;
     }
+    if (typeof this._headerIconDispatcherUnsub === "function") {
+      try { this._headerIconDispatcherUnsub(); } catch (_) {}
+      this._headerIconDispatcherUnsub = null;
+    }
 
     this._unmountEventListeners();
     this._removePublicAPI();
@@ -145,23 +149,53 @@ module.exports = class EquipmentManager {
 
   _startHeaderIcon() {
     this._ensureHeaderIcon();
+    // Tighter poll (500ms) so VC chat hide is responsive within ~half a
+    // second instead of up to 3s. The work is cheap — a single getById +
+    // a couple of style writes when state actually changes.
     this._headerIconLoop = setInterval(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 3000);
+    }, 500);
+
+    // Subscribe to FluxDispatcher channel-change events for instant hide
+    // when the user navigates into / out of a VC.
+    try {
+      const Webpack = BdApi?.Webpack;
+      const dispatcher =
+        Webpack?.Stores?.UserStore?._dispatcher ||
+        Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
+      if (dispatcher && typeof dispatcher.subscribe === "function") {
+        const handler = () => {
+          if (!this._stopped) this._ensureHeaderIcon();
+        };
+        dispatcher.subscribe("CHANNEL_SELECT", handler);
+        dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
+        this._headerIconDispatcherUnsub = () => {
+          try { dispatcher.unsubscribe("CHANNEL_SELECT", handler); } catch (_) {}
+          try { dispatcher.unsubscribe("VOICE_STATE_UPDATES", handler); } catch (_) {}
+        };
+      }
+    } catch (_) {}
   }
 
   _ensureHeaderIcon() {
-    // Hide in voice-channel chat — plugin icons aren't useful there.
+    const existingNow = document.getElementById(HEADER_ICON_ID);
+
+    // Hide in voice-channel chat. Force inline style.display = "none" on
+    // the icon element directly — beats the existing inline display: flex.
+    // This is the strongest hide we can do short of removing the node,
+    // and unlike removal it survives Discord re-renders without race.
     if (isVoiceChannelChat()) {
-      const existing = document.getElementById(HEADER_ICON_ID);
-      if (existing) existing.remove();
+      if (existingNow) existingNow.style.display = "none";
       return;
     }
 
-    // Don't re-inject if already present and connected
-    const existing = document.getElementById(HEADER_ICON_ID);
-    if (existing?.isConnected) return;
+    // Coming back from VC: restore the icon's display before bailing on
+    // the existence check.
+    if (existingNow?.isConnected) {
+      if (existingNow.style.display === "none") existingNow.style.display = "flex";
+      return;
+    }
 
     const toolbar = this._getToolbar();
     if (!toolbar) return;

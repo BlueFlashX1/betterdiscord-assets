@@ -136,10 +136,31 @@ module.exports = class ItemVault {
   _startHeaderIcon() {
     if (this._headerIconLoop) return;
     this._ensureHeaderIcon();
+    // Tighter poll (500ms) so VC-chat hide is responsive within ~half a
+    // second instead of up to 3s.
     this._headerIconLoop = setInterval(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 3000);
+    }, 500);
+
+    // FluxDispatcher subscription for instant response on channel change.
+    try {
+      const Webpack = BdApi?.Webpack;
+      const dispatcher =
+        Webpack?.Stores?.UserStore?._dispatcher ||
+        Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
+      if (dispatcher && typeof dispatcher.subscribe === "function") {
+        const handler = () => {
+          if (!this._stopped) this._ensureHeaderIcon();
+        };
+        dispatcher.subscribe("CHANNEL_SELECT", handler);
+        dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
+        this._headerIconDispatcherUnsub = () => {
+          try { dispatcher.unsubscribe("CHANNEL_SELECT", handler); } catch (_) {}
+          try { dispatcher.unsubscribe("VOICE_STATE_UPDATES", handler); } catch (_) {}
+        };
+      }
+    } catch (_) {}
   }
 
   _stopHeaderIcon() {
@@ -147,20 +168,28 @@ module.exports = class ItemVault {
       clearInterval(this._headerIconLoop);
       this._headerIconLoop = null;
     }
+    if (typeof this._headerIconDispatcherUnsub === "function") {
+      try { this._headerIconDispatcherUnsub(); } catch (_) {}
+      this._headerIconDispatcherUnsub = null;
+    }
     const el = document.getElementById(HEADER_ICON_ID);
     if (el) el.remove();
   }
 
   _ensureHeaderIcon() {
-    // Hide in voice-channel chat — plugin icons aren't useful there.
+    const existingNow = document.getElementById(HEADER_ICON_ID);
+
+    // Hide in voice-channel chat — force inline display:none. Beats the
+    // existing inline display:flex without the race of removal.
     if (isVoiceChannelChat()) {
-      const stale = document.getElementById(HEADER_ICON_ID);
-      if (stale) stale.remove();
+      if (existingNow) existingNow.style.display = "none";
       return;
     }
 
-    const existing = document.getElementById(HEADER_ICON_ID);
-    if (existing?.isConnected) return;
+    if (existingNow?.isConnected) {
+      if (existingNow.style.display === "none") existingNow.style.display = "flex";
+      return;
+    }
 
     const toolbar = this._getToolbar();
     if (!toolbar) {
