@@ -441,15 +441,29 @@ module.exports = {
     }
 
     const milestoneMultiplier = this._getMilestoneMultiplier(currentLevel);
-    if (milestoneMultiplier > 1.0) {
-      xp = Math.round(xp * milestoneMultiplier);
-    }
 
     let levelReductionMultiplier = null;
     if (currentLevel > 10) {
       const rawMultiplier = 1 / (1 + (currentLevel - 10) * 0.01);
       levelReductionMultiplier = Math.max(rawMultiplier, 0.6);
-      xp = Math.round(xp * levelReductionMultiplier);
+    }
+
+    // S4 (audit): combine milestone × reducer so a milestone bonus can
+    // never produce a net multiplier below 1.0×. Previously milestone
+    // 1.54× × reducer 0.6× = 0.924× — mathematically more than the
+    // 0.6× sub-milestone rate, but the advertised "+54% milestone"
+    // producing 0.924× net felt like a penalty. Floor the reducer at
+    // 1/milestone when a milestone bonus is active so combined ≥ 1.0×.
+    let effectiveReducer = levelReductionMultiplier;
+    if (milestoneMultiplier > 1.0 && levelReductionMultiplier !== null) {
+      effectiveReducer = Math.max(levelReductionMultiplier, 1.0 / milestoneMultiplier);
+    }
+
+    if (milestoneMultiplier > 1.0) {
+      xp = Math.round(xp * milestoneMultiplier);
+    }
+    if (effectiveReducer !== null) {
+      xp = Math.round(xp * effectiveReducer);
       xp = Math.max(xp, 10);
     }
 
