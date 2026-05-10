@@ -7,6 +7,11 @@
  * @author Curio
  */
 
+// Shared body-attribute watcher — toggles body[data-sl-in-voice-chat="true"]
+// while the user is viewing a voice / stage channel. Theme uses this to swap
+// the channel sidebar background to match the VC main-area dark background.
+const { installVoiceChatBodyAttr } = require('../shared/channel-context');
+
 // CSS modules imported as text strings by esbuild (loader: { ".css": "text" })
 const cssImports       = require('./modules/imports.css');
 const cssWallpaper     = require('./modules/wallpaper.css');
@@ -82,9 +87,24 @@ module.exports = class SoloLevelingTheme {
         this._injectModule(mod);
       }
     }
+
+    // Install the body-attr watcher. Refcounted, safe to call alongside
+    // any other plugin that also installs. Stores the unsubscribe so we
+    // can release on stop().
+    try {
+      this._uninstallVcBodyAttr = installVoiceChatBodyAttr();
+    } catch (_) {
+      this._uninstallVcBodyAttr = null;
+    }
   }
 
   stop() {
+    // Release the body-attr watcher refcount.
+    if (typeof this._uninstallVcBodyAttr === 'function') {
+      try { this._uninstallVcBodyAttr(); } catch (_) {}
+      this._uninstallVcBodyAttr = null;
+    }
+
     // Remove all injected style tags
     for (const [id, styleEl] of this._injectedStyles) {
       if (styleEl?.isConnected) styleEl.remove();

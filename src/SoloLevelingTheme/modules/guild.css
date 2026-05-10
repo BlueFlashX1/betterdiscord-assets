@@ -626,3 +626,20 @@ div[class^="tooltip_"] {
 div[class^="tooltip_"] div[class^="tooltipPointer_"] {
   border-top-color: rgba(138, 43, 226, 0.4) !important;
 }
+
+/* §9z — VC-mode sidebar background.
+   While body[data-sl-in-voice-chat="true"] (set by shared/channel-context's
+   installVoiceChatBodyAttr watcher when the user is viewing a voice or
+   stage channel), darken the channel sidebar background so it visually
+   unifies with the VC main-area dark surface instead of the standard
+   rgba(0, 0, 0, 0.24) overlay used in text-channel views.
+
+   The SVG-textured channel name backdrops on individual channel rows are
+   on different elements (the .link_ rows themselves carry the SVGs, not
+   the sidebar container), so this only swaps the OUTER sidebar fill —
+   channel decorations stay intact. */
+body[data-sl-in-voice-chat="true"] div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
+  background: rgba(0, 0, 0, 0.92) !important;
+  background-image: none !important;
+  transition: background 0.2s ease !important;
+}
