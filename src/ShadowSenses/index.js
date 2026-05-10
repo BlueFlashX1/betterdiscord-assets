@@ -1150,11 +1150,14 @@ module.exports = class ShadowSenses {
           maxHeight: "68vh",
           overflowY: "auto",
           // Solid background so Discord UI behind the modal doesn't bleed
-          // through. The previous transparent default let the camera/voice
-          // panel show through the report area.
+          // through. Negative margin pushes the fill out past the modal
+          // body's intrinsic padding so the entire modal interior (above,
+          // below, and beside the content) is opaque, not just the
+          // content area itself.
           background: "#0d0d18",
-          padding: "14px",
-          borderRadius: "10px",
+          padding: "20px",
+          margin: "-16px -16px -16px -16px",
+          borderRadius: "8px",
         },
       },
       React.createElement(
