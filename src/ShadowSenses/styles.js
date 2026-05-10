@@ -629,16 +629,29 @@ ${buildPortalTransitionCSS()}
   color: #d6bcff !important;
   font-weight: 600 !important;
   letter-spacing: 0.04em !important;
+  border-radius: 0 !important;
   transition: background 120ms ease, border-color 120ms ease,
               box-shadow 120ms ease, transform 80ms ease !important;
+}
+/* Discord wraps button text in nested divs with their own background —
+   that's the dark inner rectangle. Flatten it. */
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button > div,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button > span {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button:hover {
   background: rgba(138, 43, 226, 0.22) !important;
   border-color: rgba(138, 43, 226, 0.65) !important;
 }
+/* Gap between adjacent buttons in the footer (e.g. Cancel + Understood). */
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button + button {
+  margin-left: 12px !important;
+}
 
 /* Primary confirm ("Understood") — Discord brand class is the canonical
-   confirm marker. Override its blue with the Igris purple gradient. */
+   confirm marker. Override its blue with the Igris purple gradient.
+   No inset shadow — keep the fill flat to match the user's preference. */
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="colorBrand"],
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="confirm"],
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[type="submit"] {
@@ -648,8 +661,8 @@ ${buildPortalTransitionCSS()}
   border: 1px solid rgba(180, 110, 255, 0.85) !important;
   color: #ffffff !important;
   text-shadow: 0 0 6px rgba(168, 80, 255, 0.55) !important;
-  box-shadow: 0 0 12px rgba(138, 43, 226, 0.45),
-              inset 0 0 8px rgba(138, 43, 226, 0.25) !important;
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.45) !important;
+  border-radius: 0 !important;
 }
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="colorBrand"]:hover,
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="confirm"]:hover,
@@ -658,8 +671,7 @@ ${buildPortalTransitionCSS()}
     rgba(168, 80, 255, 0.7),
     rgba(196, 120, 255, 0.85)) !important;
   border-color: rgba(210, 140, 255, 1) !important;
-  box-shadow: 0 0 18px rgba(168, 80, 255, 0.7),
-              inset 0 0 10px rgba(138, 43, 226, 0.35) !important;
+  box-shadow: 0 0 18px rgba(168, 80, 255, 0.7) !important;
 }
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="colorBrand"]:active,
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="confirm"]:active,
