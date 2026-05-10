@@ -260,7 +260,24 @@ function buildComponents(pluginRef) {
       onClick: createFeedCardClickHandler(isNavigable, onNavigate, entry),
     },
     ce("div", { className: "shadow-senses-feed-card-header" }, ...headerNodes),
-    ce("div", { className: "shadow-senses-feed-content" }, contentText),
+    ce("div", {
+      className: "shadow-senses-feed-content",
+      // ref + setProperty('important') is the only way to ship inline
+      // !important from React. JSX `style` props can't carry !important;
+      // class-based !important rules can be beaten by competing
+      // !important rules from external themes/plugins; CSS variable
+      // values can be poisoned upstream. Inline `!important`
+      // declarations are the unambiguous winner per the CSS cascade
+      // (highest specificity tier in the author origin).
+      ref: (el) => {
+        if (!el) return;
+        el.style.setProperty("font-family", "'gg sans', 'Helvetica Neue', system-ui, sans-serif", "important");
+        el.style.setProperty("font-weight", "400", "important");
+        el.style.setProperty("font-size", "14px", "important");
+        el.style.setProperty("line-height", "1.45", "important");
+        el.style.setProperty("color", "#e8e3f5", "important");
+      },
+    }, contentText),
     firstContent
     );
   }
