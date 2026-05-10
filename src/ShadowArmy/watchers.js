@@ -191,16 +191,29 @@ module.exports = {
     if (typeof window === 'undefined' || typeof document === 'undefined') return false;
 
     const routeInfo = this.getCurrentChannelRouteInfo();
-    if (!routeInfo || routeInfo.routeType !== 'server') return false;
-    if ((window.location?.pathname || '').includes('/threads/')) return false;
+    // Accept both 'server' (regular guild channel route) and 'thread'
+    // (route info comes from the /threads/ URL match in
+    // getCurrentChannelRouteInfo). The widget should mount in the
+    // member list of any guild surface that has one.
+    if (!routeInfo || (routeInfo.routeType !== 'server' && routeInfo.routeType !== 'thread')) return false;
 
     const ChannelStore = this.getChannelStoreModule();
     const channel = ChannelStore?.getChannel
       ? ChannelStore.getChannel(routeInfo.rawChannelId)
       : null;
     if (channel) {
+      // Allow any guild channel surface that has a member list. Previously
+      // restricted to GUILD_TEXT (0) + GUILD_ANNOUNCEMENT (5); user wants
+      // the widget to also mount in:
+      //   10 = ANNOUNCEMENT_THREAD
+      //   11 = PUBLIC_THREAD
+      //   12 = PRIVATE_THREAD
+      //   15 = GUILD_FORUM
+      // The /threads/ URL early-bail above this block was also removed
+      // since thread routes are now legitimate widget mount surfaces.
       const channelType = Number(channel.type);
-      if (channelType !== 0 && channelType !== 5) return false;
+      const ALLOWED_TYPES = new Set([0, 5, 10, 11, 12, 15]);
+      if (!ALLOWED_TYPES.has(channelType)) return false;
       return this.hasViewAndSendPermissions(channel);
     }
 
