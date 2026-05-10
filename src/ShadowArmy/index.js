@@ -113,7 +113,29 @@ const ShadowArmy = class ShadowArmy {
     this._retryTimeouts = new Set();
     this._memberListSetupRetryTimeout = null;
     this._isStopped = true;
-    this._widgetDirty = true;
+
+    // Widget dirty-flag with event emission. Replaces the 30s widget
+    // refresh poll and the 60s modal auto-refresh poll. The setter
+    // emits a 'dirty' event on every false→true transition so listeners
+    // refresh exactly when state mutates. Reads of _widgetDirty still
+    // return the underlying boolean. Eight+ existing write sites
+    // across this file, combat-stats, widget, migrations, extraction,
+    // and modal modules go through this setter unchanged.
+    this._widgetBus = new EventTarget();
+    this.__widgetDirty = true;
+    Object.defineProperty(this, "_widgetDirty", {
+      get() { return this.__widgetDirty; },
+      set(value) {
+        const wasFalsy = !this.__widgetDirty;
+        this.__widgetDirty = !!value;
+        if (this.__widgetDirty && wasFalsy && this._widgetBus) {
+          this._widgetBus.dispatchEvent(new Event("dirty"));
+        }
+      },
+      configurable: true,
+      enumerable: true,
+    });
+
     this._widgetRefreshTimer = null;
     this._widgetRefreshInFlight = false;
     this._widgetRefreshQueued = false;
@@ -398,15 +420,24 @@ const ShadowArmy = class ShadowArmy {
     }, 100);
     this._retryTimeouts.add(widgetStartupTimeoutId);
 
-    // 30s refresh interval (only fires when data changed and window visible)
-    if (this.widgetUpdateInterval) {
-      clearInterval(this.widgetUpdateInterval);
+    // Event-driven refresh — replaces the prior 30s setInterval that
+    // polled _widgetDirty. Listener fires whenever the dirty-flag setter
+    // (defined in constructor) transitions false→true.
+    if (this._widgetDirtyHandler) {
+      this._widgetBus.removeEventListener("dirty", this._widgetDirtyHandler);
     }
-    this.widgetUpdateInterval = setInterval(() => {
+    this._widgetDirtyHandler = () => {
+      if (this._isStopped) return;
       if (document.hidden) return;
       if (!this._widgetDirty) return;
-      this.scheduleWidgetRefresh({ reason: 'interval', delayMs: 0 });
-    }, 30000);
+      this.scheduleWidgetRefresh({ reason: "event", delayMs: 0 });
+    };
+    this._widgetBus.addEventListener("dirty", this._widgetDirtyHandler);
+    // Kick once for initial paint in case _widgetDirty was set during
+    // construction before the listener was attached.
+    if (this._widgetDirty && !document.hidden) {
+      this.scheduleWidgetRefresh({ reason: "initial", delayMs: 0 });
+    }
 
     this.debugLog('SKILL_GATE', 'Widget resources activated (components + CSS + watchers + interval)');
   }
@@ -423,9 +454,9 @@ const ShadowArmy = class ShadowArmy {
     this.removeShadowRankWidget();
 
     // Clear refresh interval
-    if (this.widgetUpdateInterval) {
-      clearInterval(this.widgetUpdateInterval);
-      this.widgetUpdateInterval = null;
+    if (this._widgetDirtyHandler) {
+      try { this._widgetBus?.removeEventListener("dirty", this._widgetDirtyHandler); } catch (_) {}
+      this._widgetDirtyHandler = null;
     }
 
     // Disconnect member list MutationObserver
@@ -653,9 +684,9 @@ const ShadowArmy = class ShadowArmy {
     }
 
     // Clear widget update interval
-    if (this.widgetUpdateInterval) {
-      clearInterval(this.widgetUpdateInterval);
-      this.widgetUpdateInterval = null;
+    if (this._widgetDirtyHandler) {
+      try { this._widgetBus?.removeEventListener("dirty", this._widgetDirtyHandler); } catch (_) {}
+      this._widgetDirtyHandler = null;
     }
 
     // Clear modal auto-refresh interval

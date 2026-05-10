@@ -312,7 +312,12 @@ module.exports = {
       }, [onClose]);
 
       useEffect(() => {
-        const intervalId = setInterval(async () => {
+        // Event-driven refresh — replaces the prior 60s setInterval that
+        // polled _widgetDirty. The plugin's _widgetBus (defined in
+        // ShadowArmy/index.js constructor) emits 'dirty' on every
+        // false→true transition of _widgetDirty, so the modal refreshes
+        // exactly when something marks the army state dirty.
+        const refresh = async () => {
           if (document.hidden) return;
           if (refreshInFlightRef.current) return;
           if (!pluginRef._widgetDirty) return;
@@ -340,8 +345,10 @@ module.exports = {
           } finally {
             refreshInFlightRef.current = false;
           }
-        }, 60000);
-        return () => clearInterval(intervalId);
+        };
+        const bus = pluginRef._widgetBus;
+        if (bus) bus.addEventListener('dirty', refresh);
+        return () => { if (bus) bus.removeEventListener('dirty', refresh); };
       }, []);
 
       const handleOverlayClick = useCallback((e) => {
