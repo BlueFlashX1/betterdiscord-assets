@@ -13,6 +13,7 @@ const { _PluginUtils, _ReactUtils } = require("./shared-utils");
 const { getCreateRoot } = require("../shared/react-dom");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
 const { isVoiceChannelChat } = require("../shared/channel-context");
+const { watchToolbar } = require("../shared/header-toolbar");
 
 const ShadowSensesUiMethods = {
   injectCSS() {
@@ -423,22 +424,23 @@ const ShadowSensesUiMethods = {
   },
 
   startSensesHeaderIcon() {
-    if (this._sensesHeaderIconLoop) return;
-
-    const tick = () => {
+    if (this._unwatchSensesToolbar) return;
+    // Event-driven re-injection via shared/header-toolbar.js. Replaces
+    // the prior 5s setInterval self-heal loop. CHANNEL_SELECT +
+    // VOICE_STATE_UPDATES + narrow MutationObserver on #app-mount cover
+    // every case the poll was guarding against. Fires once on attach so
+    // the icon paints on initial mount.
+    this._unwatchSensesToolbar = watchToolbar(() => {
       if (this._stopped) return;
       if (document.hidden) return;
       this._ensureSensesHeaderIcon();
-    };
-
-    this._ensureSensesHeaderIcon();
-    this._sensesHeaderIconLoop = setInterval(tick, 5000);
+    });
   },
 
   stopSensesHeaderIcon() {
-    if (this._sensesHeaderIconLoop) {
-      clearInterval(this._sensesHeaderIconLoop);
-      this._sensesHeaderIconLoop = null;
+    if (this._unwatchSensesToolbar) {
+      try { this._unwatchSensesToolbar(); } catch (_) {}
+      this._unwatchSensesToolbar = null;
     }
     const existing = document.getElementById(this._SENSES_HEADER_ICON_ID);
     if (existing) existing.remove();
