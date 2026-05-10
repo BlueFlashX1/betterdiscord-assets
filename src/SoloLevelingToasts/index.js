@@ -709,17 +709,26 @@ module.exports = class SoloLevelingToasts {
       }
     }
 
-    // Replace-by-key: if a caller provides replaceKey, dismiss any active
+    // Replace-by-key: if a caller provides replaceKey, dismiss EVERY active
     // toast with the same key before showing this one. Used for per-entity
     // toast streams where only the latest state is meaningful — e.g.
     // ShadowSenses presence updates per friend, where an older "X went idle"
     // should be cleared when a fresh "X went online" arrives.
+    //
+    // Filter (not find) — when the system wakes from sleep, multiple buffered
+    // presence updates can fire in rapid succession before any one toast's
+    // fade-out timer runs. Each call previously only removed ONE stale entry,
+    // leaving the rest stacked. Clearing every match guarantees at most one
+    // toast per key after this method returns.
     const replaceKey = opts.replaceKey || null;
     if (replaceKey) {
-      const stale = this.activeToasts.find((t) => t._cardReplaceKey === replaceKey);
-      if (stale) {
-        this.removeToast(stale, true);
-        this.debugLog("CARD_TOAST", "Replaced stale toast", { replaceKey });
+      const stale = this.activeToasts.filter((t) => t._cardReplaceKey === replaceKey);
+      if (stale.length > 0) {
+        for (const t of stale) this.removeToast(t, true);
+        this.debugLog("CARD_TOAST", "Replaced stale toast(s)", {
+          replaceKey,
+          count: stale.length,
+        });
       }
     }
 

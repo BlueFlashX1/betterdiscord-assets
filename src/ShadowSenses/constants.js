@@ -57,7 +57,7 @@ const STATUS_ACCENT_COLORS = {
   offline: "#9ca3af",
   invisible: "#9ca3af",
 };
-const STATUS_TOAST_TIMEOUT_MS = 5200;
+const STATUS_TOAST_TIMEOUT_MS = 5000;
 const STARTUP_REPORT_ARTWORK_FALLBACK_URL =
   "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/assets/igris/Igris.svg";
 const DEFAULT_SETTINGS = {
