@@ -148,12 +148,12 @@ function getUserPanelDockCss() {
 
          Why move the styling up to the section: in VC mode Discord can
          replace / supplement the user-panel internals with a voice-details
-         card structure whose class names don't match [class^="container_"],
-         so the inner container with its `border-left: 1px solid rgba(138,
-         43, 226, 0.22)` may not be present at all — the purple rail
-         disappears even with visibility:hidden on the children. Putting
-         the rail + dark background on the section itself guarantees the
-         visual accent draws regardless of inner DOM shape.
+         card structure whose class names don't match container_, so the
+         inner container with its border-left 1px solid rgba(138, 43, 226,
+         0.22) may not be present at all — the purple rail disappears
+         even with visibility:hidden on the children. Putting the rail +
+         dark background on the section itself guarantees the visual
+         accent draws regardless of inner DOM shape.
 
          Children (wrapper + container's contents) still get visibility:
          hidden so the avatar / username / status / action buttons don't
