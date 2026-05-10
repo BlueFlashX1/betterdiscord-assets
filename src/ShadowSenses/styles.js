@@ -349,14 +349,31 @@ ${buildPortalTransitionCSS()}
 /* ─── Feed Card ─────────────────────────────────────────────────────────── */
 
 .shadow-senses-feed-card {
-  background: rgba(30, 22, 50, 0.55);
-  border: 1px solid rgba(167, 139, 250, 0.18);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin: 0 0 8px;
+  background: rgba(38, 28, 60, 0.85);
+  border: 1px solid rgba(167, 139, 250, 0.32);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 10px;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45);
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+/* ID-scoped to win against any external !important rule that might
+   set background on `#app-mount div` or similar generic selectors.
+   Specificity (1,1,0) beats (1,0,1). */
+#shadow-senses-header-popup .shadow-senses-feed-card {
+  background: rgba(38, 28, 60, 0.85) !important;
+  border: 1px solid rgba(167, 139, 250, 0.32) !important;
+  border-radius: 8px !important;
+  padding: 12px 14px !important;
+  margin: 0 0 10px !important;
+  box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45) !important;
+}
+
+#shadow-senses-header-popup .shadow-senses-feed-card:hover {
+  background: rgba(52, 38, 80, 0.92) !important;
+  border-color: rgba(167, 139, 250, 0.55) !important;
 }
 
 .shadow-senses-feed-card:hover {
