@@ -617,6 +617,55 @@ ${buildPortalTransitionCSS()}
 [role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="content"] {
   background-color: #0d0d18 !important;
 }
+
+/* Buttons in the Igris modal — SoloLeveling purple aesthetic.
+   Discord's default brand-colored button (Understood) gets the solid
+   gradient treatment; any auxiliary buttons (Cancel etc.) get the
+   subtle outline variant. */
+
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button {
+  background: rgba(138, 43, 226, 0.14) !important;
+  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  color: #d6bcff !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+  transition: background 120ms ease, border-color 120ms ease,
+              box-shadow 120ms ease, transform 80ms ease !important;
+}
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button:hover {
+  background: rgba(138, 43, 226, 0.22) !important;
+  border-color: rgba(138, 43, 226, 0.65) !important;
+}
+
+/* Primary confirm ("Understood") — Discord brand class is the canonical
+   confirm marker. Override its blue with the Igris purple gradient. */
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="colorBrand"],
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="confirm"],
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[type="submit"] {
+  background: linear-gradient(120deg,
+    rgba(138, 43, 226, 0.55),
+    rgba(168, 80, 255, 0.7)) !important;
+  border: 1px solid rgba(180, 110, 255, 0.85) !important;
+  color: #ffffff !important;
+  text-shadow: 0 0 6px rgba(168, 80, 255, 0.55) !important;
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.45),
+              inset 0 0 8px rgba(138, 43, 226, 0.25) !important;
+}
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="colorBrand"]:hover,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="confirm"]:hover,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[type="submit"]:hover {
+  background: linear-gradient(120deg,
+    rgba(168, 80, 255, 0.7),
+    rgba(196, 120, 255, 0.85)) !important;
+  border-color: rgba(210, 140, 255, 1) !important;
+  box-shadow: 0 0 18px rgba(168, 80, 255, 0.7),
+              inset 0 0 10px rgba(138, 43, 226, 0.35) !important;
+}
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="colorBrand"]:active,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[class*="confirm"]:active,
+[role="dialog"]:has(.shadowsenses-igris-report-modal) button[type="submit"]:active {
+  transform: translateY(1px) !important;
+}
 `;
 }
 
