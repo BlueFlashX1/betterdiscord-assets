@@ -681,7 +681,10 @@ function buildComponents(pluginRef) {
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        fontFamily: "'Friend or Foe BB', sans-serif",
+        // Default font for the embedded panel. Title gets the brand font
+        // via its own inline style override below; everything else
+        // inherits from here.
+        fontFamily: "'gg sans', 'Helvetica Neue', system-ui, sans-serif",
       },
       header: {
         display: "flex",
