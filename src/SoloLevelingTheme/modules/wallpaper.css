@@ -48,3 +48,29 @@ body::after {
   pointer-events: none;
   background: var(--sl-bg-overlay);
 }
+
+/* §2 (continued, user-requested 2026-05-10) — Force the wallpaper-overlay
+   layer to 100% opaque black when the user is viewing a forum or thread
+   post (chatLayerWrapper_ in DOM AND not in voice channel). Approach:
+
+     - body::before holds the GIF; body::after sits above it as a dark
+       wash. Setting body::after's background to rgba(0, 0, 0, 1) at full
+       opacity completely covers the GIF without removing it — when the
+       gate clears (close the post / leave the thread) the wash drops back
+       to var(--sl-bg-overlay) and the wallpaper returns instantly.
+     - Forum browse view, thread sidebar previews, regular text channels
+       and DMs do NOT have chatLayerWrapper_ in the DOM, so the wallpaper
+       stays visible there (matches user spec: "not the channels, just
+       forum and thread chat").
+     - VC chat also uses chatLayerWrapper_ but is excluded via
+       :not([data-sl-in-voice-chat="true"]) so VC retains the wallpaper /
+       VC dark surface treatment shipped earlier.
+
+   This is a workaround for an unclosable Discord layout seam between the
+   forum post-list column and the thread chat panel — by darkening the
+   wallpaper, the seam stops showing wallpaper through and visually
+   disappears. */
+body:not([data-sl-in-voice-chat="true"]):has(div[class^="chatLayerWrapper_"])::after {
+  background: rgba(0, 0, 0, 1) !important;
+  transition: background 0.2s ease !important;
+}
