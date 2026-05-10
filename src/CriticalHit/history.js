@@ -129,19 +129,38 @@ module.exports = {
         return lean;
       });
 
-      // Yield to event loop before save to avoid blocking keystrokes
+      // Yield to event loop before save to avoid blocking keystrokes.
+      // BUG FIXES:
+      //   (a) Deferred save's `catch (_) {}` swallowed every failure
+      //       silently. A disk-full or BD storage error was completely
+      //       invisible — crit history would fail to persist with no
+      //       trace. Now uses debugError (which always logs since the
+      //       debug.js change in this wave).
+      //   (b) "SUCCESS" debugLog used to fire SYNCHRONOUSLY before this
+      //       setTimeout callback ran, so logs lied — they reported
+      //       success before the save attempt happened. Moved inside
+      //       the callback so success is only logged after the actual
+      //       BdApi.Data.save call returns.
+      const messageCount = this.messageHistory.length;
       setTimeout(() => {
-        try { BdApi.Data.save('CriticalHit', 'messageHistory', leanHistory); } catch (_) {}
+        try {
+          BdApi.Data.save('CriticalHit', 'messageHistory', leanHistory);
+          this.debugLog?.('SAVE_MESSAGE_HISTORY', 'SUCCESS: Message history saved', {
+            messageCount,
+            critCount,
+          });
+          this.debugLog?.(
+            'SAVE_MESSAGE_HISTORY_SUMMARY',
+            `Saved ${messageCount} messages (${critCount} crits) to history`
+          );
+        } catch (saveError) {
+          this.debugError?.('SAVE_MESSAGE_HISTORY', saveError, {
+            messageCount,
+            critCount,
+            phase: 'deferred_write',
+          });
+        }
       }, 0);
-
-      this.debugLog('SAVE_MESSAGE_HISTORY', 'SUCCESS: Message history saved', {
-        messageCount: this.messageHistory.length,
-        critCount: critCount,
-      });
-      this.debugLog(
-        'SAVE_MESSAGE_HISTORY_SUMMARY',
-        `Saved ${this.messageHistory.length} messages (${critCount} crits) to history`
-      );
     } catch (error) {
       this.debugError('SAVE_MESSAGE_HISTORY', error, {
         historySize: this.messageHistory.length,

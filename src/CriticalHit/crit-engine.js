@@ -205,7 +205,19 @@ module.exports = {
       timestamp: Date.now(),
     };
     setTimeout(() => {
-      try { BdApi.Data.save('CriticalHit', 'lastCritBurst', payload); } catch (_) {}
+      // BUG FIX: previously the catch swallowed every save failure
+      // silently. lastCritBurst is the cross-plugin handoff for stats
+      // displays — a silent failure here meant SoloLevelingStats /
+      // LevelProgressBar would never see the most recent burst. Now
+      // surfaced via debugError (which always logs since the debug.js
+      // change in this wave).
+      try {
+        BdApi.Data.save('CriticalHit', 'lastCritBurst', payload);
+      } catch (saveError) {
+        this.debugError?.('PERSIST_LAST_CRIT_BURST', saveError, {
+          phase: 'deferred_write',
+        });
+      }
     }, 0);
   },
 

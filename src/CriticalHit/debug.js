@@ -77,24 +77,38 @@ module.exports = {
   },
 
   debugError(operation, error, context = {}) {
+    // Stat tracking (gated by debug.enabled to avoid memory growth in
+    // production for non-error tracking).
     this.debug?.enabled &&
       (this.debug.errorCount++,
       (this.debug.lastError = {
         operation,
-        error: error.message || error,
-        stack: error.stack,
+        error: error?.message || error,
+        stack: error?.stack,
         context,
         timestamp: Date.now(),
       }));
 
-    if (this.settings?.debugMode === true) {
-      const timestamp = new Date().toISOString();
+    // BUG FIX: previously errors were ONLY logged when debugMode was
+    // true. `debugMode` defaults to false and gets reset to false on
+    // every loadSettings() call, so every `debugError(...)` call across
+    // the plugin was silently inert in production — save failures,
+    // dispatcher subscribe failures, and webpack init errors all
+    // invisible to the user.
+    //
+    // Errors are by definition important and rare. ALWAYS log them
+    // via console.error regardless of debugMode. The verbose
+    // `debugLog` (per-operation tracing) stays gated as before.
+    const timestamp = new Date().toISOString();
+    try {
       console.error(`[CriticalHit:ERROR:${operation}]`, {
-        message: error.message || error,
-        stack: error.stack,
+        message: error?.message || error,
+        stack: error?.stack,
         context,
         timestamp,
       });
+    } catch (_) {
+      // console.error itself failed (extremely rare). Nothing to do.
     }
   },
 };
