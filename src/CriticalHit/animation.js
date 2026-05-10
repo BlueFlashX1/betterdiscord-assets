@@ -450,13 +450,17 @@ module.exports = {
     const key = userId || 'unknown';
     const combo = this.getUserCombo(key);
     // Accumulate across messages within the COMBO_RESET_TIMEOUT_MS window
-    // (5s) so the counter reflects a true streak. Previously this was an
-    // assignment, so each crit overwrote combo.comboCount with the
-    // current message's burst length (1-80) — making combo 60+ unreachable
-    // since it would require a single message with 60+ crits. The reset
-    // timeout below already clears state on idle, so the accumulator
-    // decays naturally when the user stops critting.
-    combo.comboCount = (Number(combo.comboCount) || 0) + comboCount;
+    // (5s). The total streak has NO hard cap — it can grow indefinitely
+    // with sustained crit activity. But per-message contribution is
+    // capped at COMBO_GROWTH_CAP so high-perception bursts (up to 80
+    // hits/message) don't trivially explode the streak counter into
+    // four-digit territory after a couple of messages. burstHits still
+    // drives visual + XP effects through their own paths; this cap only
+    // governs how fast the long-running streak metric grows.
+    const COMBO_GROWTH_CAP = 15;
+    const rawAdd = Math.max(0, Number(comboCount) || 0);
+    const comboAdd = Math.min(rawAdd, COMBO_GROWTH_CAP);
+    combo.comboCount = (Number(combo.comboCount) || 0) + comboAdd;
     combo.lastCritTime = lastCritTime;
 
     this._clearTrackedTimeout(combo.timeout);
