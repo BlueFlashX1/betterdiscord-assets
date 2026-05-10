@@ -193,17 +193,27 @@ ${buildPortalTransitionCSS()}
 
 /* ── Font Override ───────────────────────────────────────────────────────── */
 
+/* Brand font: scoped to the panel TITLE only.
+   Previous version cascaded the chunky Persona-5 'Friend or Foe BB' onto
+   every descendant via .shadow-senses-panel * { ... !important }. That
+   wide-letter-form font extended each header span's glyph advance past
+   the flex `gap`, smushing username/server/channel/timestamp together
+   despite the gap rule. Defeating the cascade also lets future inline
+   `style` props win without needing !important.
+   Body content now inherits Discord's gg sans system font for legibility. */
+.shadow-senses-panel-title,
+.shadow-senses-widget-label,
+.shadow-senses-brand-font {
+  font-family: 'Friend or Foe BB', 'gg sans', sans-serif !important;
+  letter-spacing: 0.02em;
+}
+
 .shadow-senses-panel,
-.shadow-senses-panel *,
 .shadow-senses-widget,
-.shadow-senses-widget *,
 #shadow-senses-header-popup,
-#shadow-senses-header-popup *,
 .shadow-senses-feed-card,
-.shadow-senses-feed-card *,
-.shadow-senses-deploy-row,
-.shadow-senses-deploy-row * {
-  font-family: 'Friend or Foe BB', sans-serif !important;
+.shadow-senses-deploy-row {
+  font-family: var(--font-primary), 'gg sans', 'Helvetica Neue', sans-serif;
 }
 
 /* ─── Shadow Senses Widget ──────────────────────────────────────────────── */
@@ -339,49 +349,41 @@ ${buildPortalTransitionCSS()}
 /* ─── Feed Card ─────────────────────────────────────────────────────────── */
 
 .shadow-senses-feed-card {
-  background: rgba(20, 20, 40, 0.6);
-  border: 1px solid rgba(138, 43, 226, 0.15);
-  border-radius: 2px;
-  padding: 10px 14px;
-  margin: 4px 0;
+  background: rgba(30, 22, 50, 0.55);
+  border: 1px solid rgba(167, 139, 250, 0.18);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0 0 8px;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
 .shadow-senses-feed-card:hover {
-  border-color: #8a2be2;
-  background: rgba(20, 20, 40, 0.8);
+  background: rgba(40, 28, 65, 0.7);
+  border-color: rgba(167, 139, 250, 0.4);
+  transform: translateX(1px);
 }
 
 .shadow-senses-feed-card-header {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #a78bfa;
-  margin-bottom: 4px;
-}
-
-.shadow-senses-feed-card-header .time {
-  color: #666;
-  margin-left: auto;
-}
-
-.shadow-senses-feed-card-header .channel {
-  color: #a78bfa;
-}
-
-.shadow-senses-feed-card-header .shadow-info {
-  font-weight: 600;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  margin-bottom: 6px;
 }
 
 .shadow-senses-feed-content {
-  color: #ccc;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
+  /* The single narrow !important here is justified — defeats any plugin
+     descendant rule that might creep in. NOT a wildcard. */
+  font-family: var(--font-primary), 'gg sans', sans-serif !important;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: #e8e3f5;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+  margin: 2px 0 0;
 }
 
 /* ─── Deploy / Recall ───────────────────────────────────────────────────── */

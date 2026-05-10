@@ -154,7 +154,14 @@ function buildComponents(pluginRef) {
       "div",
       {
         className: "shadow-senses-feed-content",
-        style: { color: "#888", fontSize: "11px", marginTop: "2px", fontStyle: "italic" },
+        style: {
+          color: "rgba(196, 181, 253, 0.55)",
+          fontSize: "12px",
+          marginTop: "4px",
+          fontStyle: "italic",
+          lineHeight: 1.4,
+          fontFamily: "var(--font-primary), 'gg sans', sans-serif",
+        },
       },
       `First: “${entry.firstContent}”`
     );
@@ -168,26 +175,47 @@ function buildComponents(pluginRef) {
       eventLabel,
       timeStr,
     } = options;
+    // Shared base — keeps every span at 11px in Discord's text font so
+    // glyph advance is uniform and the .feed-card-header gap (6px row /
+    // 10px column) actually shows as separation. paddingRight on each
+    // span is a belt-and-suspenders defense; padding is part of the box
+    // model and immune to font-metric variance, unlike flex `gap`.
+    const HB = {
+      fontSize: "11px",
+      fontFamily: "var(--font-primary), 'gg sans', sans-serif",
+      lineHeight: 1.3,
+    };
     const nodes = [
-      ce("span", { style: { color: rankColor, fontWeight: 600 } }, `[${entry.shadowRank}] ${entry.shadowName}`),
-      ce("span", { style: { color: "#666" } }, "→"),
-      ce("span", { style: { color: "#ccc" } }, entry.authorName),
+      ce("span", {
+        style: { ...HB, color: rankColor, fontWeight: 700, letterSpacing: "0.03em" },
+      }, `[${entry.shadowRank}] ${entry.shadowName}`),
+      ce("span", { style: { ...HB, color: "#4a4a5e" } }, "→"),
+      ce("span", { style: { ...HB, color: "#d4b0ff", fontWeight: 600 } }, entry.authorName),
     ];
     const matchBadgeNode = renderTagBadge(badge);
     if (matchBadgeNode) nodes.push(matchBadgeNode);
     if (burstBadge) nodes.push(renderTagBadge({ ...burstBadge, fontWeight: 600 }));
     if (eventLabel) {
       nodes.push(
-        ce("span", { style: { color: "#fbbf24", fontSize: "0.8em", fontWeight: 700 } }, eventLabel)
+        ce("span", { style: { ...HB, color: "#fbbf24", fontWeight: 700 } }, eventLabel)
       );
     }
     if (entry.guildName) {
-      nodes.push(ce("span", { style: { color: "#a78bfa", fontSize: "0.85em" } }, entry.guildName));
+      nodes.push(ce("span", {
+        style: { ...HB, color: "#a78bfa", opacity: 0.75 },
+      }, entry.guildName));
     }
     if (entry.channelId) {
-      nodes.push(ce("span", { style: { color: "#60a5fa" } }, `#${entry.channelName}`));
+      nodes.push(ce("span", { style: { ...HB, color: "#7a8ba8" } }, `#${entry.channelName}`));
     }
-    nodes.push(ce("span", { style: { color: "#666", marginLeft: "auto" } }, timeStr));
+    nodes.push(ce("span", {
+      style: {
+        ...HB,
+        color: "#5a5a6e",
+        marginLeft: "auto",
+        fontVariantNumeric: "tabular-nums",
+      },
+    }, timeStr));
     return nodes;
   }
 
