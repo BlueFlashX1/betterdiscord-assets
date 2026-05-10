@@ -14,6 +14,7 @@ const eventAPI = require('./event-api');
 const CSS = require('./styles.css');
 const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { createToast } = require('../shared/toast');
+const { watchToolbar } = require('../shared/header-toolbar');
 const _toast = createToast();
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
 
@@ -64,7 +65,7 @@ module.exports = class EquipmentManager {
     this.storage = new EquipmentStorage();
     this._userLevel = 1;
     this._cachedBonuses = null;
-    this._headerIconLoop = null;
+    this._unwatchToolbar = null;
     this._popupTickLoop = null;
     this._popupDocClick = null;
     this._stopped = true;
@@ -108,9 +109,9 @@ module.exports = class EquipmentManager {
     this._unmountEventListeners();
     this._removePublicAPI();
 
-    if (this._headerIconLoop) {
-      clearInterval(this._headerIconLoop);
-      this._headerIconLoop = null;
+    if (this._unwatchToolbar) {
+      try { this._unwatchToolbar(); } catch (_) {}
+      this._unwatchToolbar = null;
     }
     if (this._popupTickLoop) {
       clearInterval(this._popupTickLoop);
@@ -163,12 +164,15 @@ module.exports = class EquipmentManager {
   }
 
   _startHeaderIcon() {
-    if (this._headerIconLoop) return;
-    this._ensureHeaderIcon();
-    this._headerIconLoop = setInterval(() => {
+    if (this._unwatchToolbar) return;
+    // Event-driven re-injection via shared/header-toolbar.js. Replaces
+    // the prior 2s setInterval self-heal loop. CHANNEL_SELECT +
+    // VOICE_STATE_UPDATES + narrow MutationObserver on #app-mount cover
+    // every case the poll was guarding against.
+    this._unwatchToolbar = watchToolbar(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 2000);
+    });
   }
 
   _ensureHeaderIcon() {
