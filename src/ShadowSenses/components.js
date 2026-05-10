@@ -258,6 +258,28 @@ function buildComponents(pluginRef) {
       className: "shadow-senses-feed-card",
       style: buildFeedCardStyle(isNavigable, borderColor),
       onClick: createFeedCardClickHandler(isNavigable, onNavigate, entry),
+      // Same bulletproof technique as the message body inside —
+      // class-based !important rules keep getting beaten by something
+      // upstream. Inline !important via setProperty wins absolutely.
+      // Note: the inline buildFeedCardStyle borderLeft (priority color)
+      // is set via React style prop; setProperty here uses the OTHER
+      // 3 sides only (border-top/right/bottom) so we don't override the
+      // priority indicator on the left.
+      ref: (el) => {
+        if (!el) return;
+        el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
+        el.style.setProperty("border-top", "1px solid rgba(167, 139, 250, 0.32)", "important");
+        el.style.setProperty("border-right", "1px solid rgba(167, 139, 250, 0.32)", "important");
+        el.style.setProperty("border-bottom", "1px solid rgba(167, 139, 250, 0.32)", "important");
+        if (!borderColor) {
+          // No priority color — also set border-left so the card has all 4 sides
+          el.style.setProperty("border-left", "1px solid rgba(167, 139, 250, 0.32)", "important");
+        }
+        el.style.setProperty("border-radius", "8px", "important");
+        el.style.setProperty("padding", "12px 14px", "important");
+        el.style.setProperty("margin", "0 0 10px 0", "important");
+        el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
+      },
     },
     ce("div", { className: "shadow-senses-feed-card-header" }, ...headerNodes),
     ce("div", {
