@@ -319,19 +319,16 @@ module.exports = class Stealth {
     document.addEventListener("SkillTree:activeSkillActivated", this._skillTreeWatcher.activatedHandler);
     document.addEventListener("SkillTree:activeSkillExpired", this._skillTreeWatcher.expiredHandler);
 
-    this._skillTreeWatcher.pollTimer = setInterval(() => {
-      this._refreshStealthSkillGate("poll");
-    }, STEALTH_GATE_REFRESH_MS);
-
+    // No fallback poll — the three SkillTree CustomEvents above cover every
+    // state transition (state-change, activate, expire). Previous 15s
+    // setInterval was redundant "just in case" coverage that fired
+    // _refreshStealthSkillGate even when nothing changed. Removed as part of
+    // the polling → event-driven refactor.
     this._refreshStealthSkillGate("start");
   }
 
   _teardownStealthSkillGate() {
     if (!this._skillTreeWatcher) return;
-    if (this._skillTreeWatcher.pollTimer) {
-      clearInterval(this._skillTreeWatcher.pollTimer);
-      this._skillTreeWatcher.pollTimer = null;
-    }
     if (this._skillTreeWatcher.stateChangeHandler) {
       document.removeEventListener("SkillTree:activeSkillStateChanged", this._skillTreeWatcher.stateChangeHandler);
       this._skillTreeWatcher.stateChangeHandler = null;

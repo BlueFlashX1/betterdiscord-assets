@@ -395,10 +395,12 @@ module.exports = {
       this._autoSaveHandlers = null;
     }
 
-    // Stop channel tracking
-    if (this.channelTrackingInterval) {
-      clearInterval(this.channelTrackingInterval);
-      this.channelTrackingInterval = null;
+    // Stop channel tracking (event-driven via SelectedChannelStore — see
+    // activity-tracking.js; the prior 3s setInterval was removed).
+    if (this._channelTrackingStore && this._channelTrackingStoreListener) {
+      try { this._channelTrackingStore.removeChangeListener(this._channelTrackingStoreListener); } catch (_) {}
+      this._channelTrackingStore = null;
+      this._channelTrackingStoreListener = null;
       this.debugLog('STOP', 'Channel tracking stopped');
     }
     // PERF(P5-1): Unsubscribe from shared NavigationBus

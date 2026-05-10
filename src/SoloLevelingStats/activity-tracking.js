@@ -152,28 +152,37 @@ module.exports = {
         });
       }
   
-      // Method 3: Poll URL changes (safety-net fallback)
-      this.channelTrackingInterval = setInterval(() => {
-        if (document.hidden) return;
-        const currentUrl = window.location.href;
-        if (currentUrl !== state.lastUrl) {
-          this.debugLog('START_CHANNEL_TRACKING', 'URL changed via polling', {
-            oldUrl: state.lastUrl,
-            newUrl: currentUrl,
-          });
-          state.lastUrl = currentUrl;
-          this._channelInfoCacheUrl = null;
-          this._channelInfoCache = null;
-          state.lastChannelId = this.handleChannelChange(state.lastChannelId);
+      // Method 3: SelectedChannelStore change listener (event-driven —
+      // replaces the prior 3s safety-net poll). Fires on every channel /
+      // DM / thread / voice switch, no fallback needed because the store
+      // is the source of truth that Discord's own UI subscribes to.
+      try {
+        const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
+        if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === 'function') {
+          this._channelTrackingStoreListener = () => {
+            if (document.hidden) return;
+            const currentUrl = window.location.href;
+            if (currentUrl !== state.lastUrl) {
+              this.debugLog('START_CHANNEL_TRACKING', 'Channel changed via SelectedChannelStore', {
+                oldUrl: state.lastUrl,
+                newUrl: currentUrl,
+              });
+              state.lastUrl = currentUrl;
+              this._channelInfoCacheUrl = null;
+              this._channelInfoCache = null;
+              state.lastChannelId = this.handleChannelChange(state.lastChannelId);
+            }
+          };
+          SelectedChannelStore.addChangeListener(this._channelTrackingStoreListener);
+          this._channelTrackingStore = SelectedChannelStore;
         }
-      }, 3000); // PERF: 3s fallback poll (NavigationBus handles most navigation)
-  
+      } catch (_) {}
+
       this._channelTrackingState = state;
       this._channelTrackingHooks = true;
-  
+
       this.debugLog('START_CHANNEL_TRACKING', 'Channel tracking started successfully', {
-        methods: ['NavigationBus', 'polling'],
-        pollInterval: '3000ms',
+        methods: ['NavigationBus', 'SelectedChannelStore'],
       });
     } catch (error) {
       this._channelTrackingHooks = null;

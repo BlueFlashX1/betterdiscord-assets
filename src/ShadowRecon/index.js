@@ -520,16 +520,44 @@ module.exports = class ShadowRecon {
 
   startRefreshLoops() {
     this.stopRefreshLoops();
-    // PERF: 15s refresh (was 4s — guild hints rarely change, MutationObserver handles DOM)
-    this._refreshInterval = setInterval(() => {
-      if (this._stopped || document.hidden) return;
-      this._queueVisualRefresh(0);
-    }, 15000);
+    // Event-driven refresh — replaces the prior 15s setInterval. Guild hints
+    // change when guilds are joined/left/renamed/updated; subscribing to
+    // GuildStore + SelectedGuildStore catches every such case and fires
+    // immediately instead of waiting up to 15s for the next tick. The
+    // existing MutationObserver handles DOM-only re-renders.
+    try {
+      const GuildStore = BdApi.Webpack.getStore?.("GuildStore");
+      if (GuildStore && typeof GuildStore.addChangeListener === "function") {
+        this._guildStoreListener = () => {
+          if (this._stopped || document.hidden) return;
+          this._queueVisualRefresh(0);
+        };
+        GuildStore.addChangeListener(this._guildStoreListener);
+        this._guildStore = GuildStore;
+      }
+      const SelectedGuildStore = BdApi.Webpack.getStore?.("SelectedGuildStore");
+      if (SelectedGuildStore && typeof SelectedGuildStore.addChangeListener === "function") {
+        this._selGuildStoreListener = () => {
+          if (this._stopped || document.hidden) return;
+          this._queueVisualRefresh(0);
+        };
+        SelectedGuildStore.addChangeListener(this._selGuildStoreListener);
+        this._selGuildStore = SelectedGuildStore;
+      }
+    } catch (_) {}
   }
 
   stopRefreshLoops() {
-    if (this._refreshInterval) clearInterval(this._refreshInterval);
-    this._refreshInterval = null;
+    if (this._guildStore && this._guildStoreListener) {
+      try { this._guildStore.removeChangeListener(this._guildStoreListener); } catch (_) {}
+      this._guildStore = null;
+      this._guildStoreListener = null;
+    }
+    if (this._selGuildStore && this._selGuildStoreListener) {
+      try { this._selGuildStore.removeChangeListener(this._selGuildStoreListener); } catch (_) {}
+      this._selGuildStore = null;
+      this._selGuildStoreListener = null;
+    }
     if (this._visualRefreshTimeout) clearTimeout(this._visualRefreshTimeout);
     this._visualRefreshTimeout = null;
   }
