@@ -75,6 +75,7 @@ module.exports = class EquipmentManager {
 
   async start() {
     this._stopped = false;
+    console.log(`[EquipmentManager] header-icon rules engaged · rev fd46eb0+ · ${new Date().toLocaleTimeString()}`);
     BdApi.DOM.addStyle(STYLE_ID, CSS);
 
     try {
