@@ -141,41 +141,35 @@ function getUserPanelDockCss() {
         overflow: visible !important;
       }
 
-      /* Hide the docked user-panel nameplate CONTENT while in voice / stage
-         chat — and re-attach the purple-rail visual styling directly to the
-         outer section so the on-brand vertical accent stays visible no
-         matter what Discord renders inside.
-
-         Why move the styling up to the section: in VC mode Discord can
-         replace / supplement the user-panel internals with a voice-details
-         card structure whose class names don't match container_, so the
-         inner container with its border-left 1px solid rgba(138, 43, 226,
-         0.22) may not be present at all — the purple rail disappears
-         even with visibility:hidden on the children. Putting the rail +
-         dark background on the section itself guarantees the visual
-         accent draws regardless of inner DOM shape.
-
-         Children (wrapper + container's contents) still get visibility:
-         hidden so the avatar / username / status / action buttons don't
-         show or take pointer events. The voice-details card (a separate
-         Discord layer) shows on its own. */
-      body[data-sl-in-voice-chat="true"]
-        section[aria-label="User status and settings"].sl-userpanel-docked {
-        background: rgba(8, 10, 20, 0.96) !important;
-        background-image: none !important;
-        border-left: 1px solid rgba(138, 43, 226, 0.22) !important;
-        box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3) !important;
-        pointer-events: none !important;
-      }
-
+      /* Hide the docked user-panel nameplate content while in voice / stage
+         chat. The voice-details card (call controls, screen-share,
+         disconnect — a separate Discord layer) shows up next to the dock
+         in VC and crams the nameplate into a smaller width, producing
+         visible truncation / overflow on the username and status. Hide
+         the wrapper + container children so nothing inside renders. */
       body[data-sl-in-voice-chat="true"]
         section[aria-label="User status and settings"].sl-userpanel-docked
         > div[class^="wrapper_"],
       body[data-sl-in-voice-chat="true"]
         section[aria-label="User status and settings"].sl-userpanel-docked
-        > div[class^="container_"] > * {
+        > div[class^="container_"] {
         visibility: hidden !important;
         pointer-events: none !important;
+      }
+
+      /* Defensively keep the HSL dock's purple top-edge rail visible while
+         in VC. The rail itself is defined in
+         SoloLevelingTheme/modules/server-list.css §8e as a 4px border-right
+         on nav[aria-label="Servers sidebar"] (HSL rotates the nav -90deg so
+         border-right renders as the visual top edge). In voice channels
+         Discord renders a voice-details overlay that can z-stack above the
+         dock and visually clip the rail at the join. Bumping the nav's
+         z-index above the typical Discord overlay range keeps the rail
+         drawn on top. */
+      body[data-sl-in-voice-chat="true"] nav[aria-label="Servers sidebar"],
+      body[data-sl-in-voice-chat="true"] nav.sl-hsl-dock-target {
+        z-index: 50 !important;
+        border-right: 4px solid var(--sl-color-primary, #8a2be2) !important;
       }
     `;
 }
