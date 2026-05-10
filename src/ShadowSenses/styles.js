@@ -360,7 +360,7 @@ ${buildPortalTransitionCSS()}
 }
 
 /* ID-scoped to win against any external !important rule that might
-   set background on `#app-mount div` or similar generic selectors.
+   set background on #app-mount div or similar generic selectors.
    Specificity (1,1,0) beats (1,0,1). */
 #shadow-senses-header-popup .shadow-senses-feed-card {
   background: rgba(38, 28, 60, 0.85) !important;
