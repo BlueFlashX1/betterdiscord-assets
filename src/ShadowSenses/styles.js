@@ -684,9 +684,9 @@ ${buildPortalTransitionCSS()}
 [role="dialog"]:has(.shadowsenses-igris-report-modal) button [class*="content"] {
   background-color: transparent !important;
 }
-/* Footer flex-gap so Cancel/Understood don't touch — ` + button` failed
-   because Discord wraps each button in its own div. Apply to any
-   flex/grid footer container that holds the buttons. */
+/* Footer flex-gap so Cancel/Understood don't touch — using button + button
+   sibling combinator failed because Discord wraps each button in its own
+   div. Apply to any flex/grid footer container that holds the buttons. */
 [role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="footer"] {
   gap: 12px !important;
   column-gap: 12px !important;
