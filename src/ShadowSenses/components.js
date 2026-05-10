@@ -620,27 +620,112 @@ function buildComponents(pluginRef) {
       ? pluginRef.sensesEngine.getTotalDetections()
       : 0;
 
+    // Inline styles for embedded (popup) mode. Bypasses CSS-vs-theme
+    // specificity battles entirely \u2014 React applies these as `style="..."`
+    // attributes on the element, which beat any external stylesheet that
+    // doesn't itself use !important on a same-or-higher specificity rule.
+    const SS = embedded ? {
+      panel: {
+        background: "transparent",
+        border: "none",
+        borderRadius: 0,
+        width: "100%",
+        maxWidth: "none",
+        maxHeight: "none",
+        boxShadow: "none",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        fontFamily: "'Friend or Foe BB', sans-serif",
+      },
+      header: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "14px 16px 8px",
+        borderBottom: "1px solid rgba(138,43,226,0.25)",
+      },
+      title: {
+        margin: 0,
+        color: "#d4b0ff",
+        fontSize: "16px",
+        fontWeight: 700,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+      },
+      closeBtn: {
+        background: "transparent",
+        border: "none",
+        color: "rgba(196,181,253,0.7)",
+        fontSize: "16px",
+        cursor: "pointer",
+        padding: "4px 8px",
+        borderRadius: 0,
+        outline: "none",
+        boxShadow: "none",
+        fontFamily: "inherit",
+      },
+      tabs: {
+        display: "flex",
+        gap: "4px",
+        padding: "0 12px",
+        borderBottom: "1px solid rgba(138,43,226,0.25)",
+        background: "transparent",
+      },
+      tab: (isActive) => ({
+        background: isActive ? "rgba(138,43,226,0.12)" : "transparent",
+        border: "none",
+        borderBottom: `2px solid ${isActive ? "#8a2be2" : "transparent"}`,
+        color: isActive ? "#d4b0ff" : "rgba(196,181,253,0.6)",
+        fontSize: "12px",
+        fontWeight: 600,
+        padding: "8px 14px",
+        cursor: "pointer",
+        borderRadius: 0,
+        outline: "none",
+        boxShadow: "none",
+        fontFamily: "inherit",
+        letterSpacing: "0.03em",
+      }),
+      footer: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        padding: "10px 16px",
+        borderTop: "1px solid rgba(138,43,226,0.2)",
+        color: "rgba(196,181,253,0.55)",
+        fontSize: "11px",
+      },
+      footerSpan: { whiteSpace: "nowrap" },
+    } : null;
+
     const panelEl = ce("div", {
       className: `shadow-senses-panel${embedded ? " shadow-senses-panel--embedded" : ""}`,
+      style: SS?.panel,
     },
-      ce("div", { className: "shadow-senses-panel-header" },
-        ce("h2", { className: "shadow-senses-panel-title" }, "Shadow Senses"),
+      ce("div", { className: "shadow-senses-panel-header", style: SS?.header },
+        ce("h2", { className: "shadow-senses-panel-title", style: SS?.title }, "Shadow Senses"),
         ce("button", {
           className: "shadow-senses-close-btn",
+          style: SS?.closeBtn,
           onClick: onClose,
         }, "\u2715")
       ),
-      ce("div", { className: "shadow-senses-tabs" },
+      ce("div", { className: "shadow-senses-tabs", style: SS?.tabs },
         ce("button", {
           className: `shadow-senses-tab${activeTab === "feed" ? " active" : ""}`,
+          style: SS ? SS.tab(activeTab === "feed") : undefined,
           onClick: () => setActiveTab("feed"),
         }, "Active Feed"),
         ce("button", {
           className: `shadow-senses-tab${activeTab === "deployments" ? " active" : ""}`,
+          style: SS ? SS.tab(activeTab === "deployments") : undefined,
           onClick: () => setActiveTab("deployments"),
         }, "Deployments"),
         ce("button", {
           className: `shadow-senses-tab${activeTab === "keywords" ? " active" : ""}`,
+          style: SS ? SS.tab(activeTab === "keywords") : undefined,
           onClick: () => setActiveTab("keywords"),
         }, "Keyword Alerts")
       ),
@@ -649,13 +734,14 @@ function buildComponents(pluginRef) {
         : activeTab === "deployments"
           ? ce(DeploymentsTab, { onRecall: null, onDeployNew: handleDeployNew })
           : ce(KeywordAlertsTab),
-      ce("div", { className: "shadow-senses-footer" },
-        ce("span", null,
+      ce("div", { className: "shadow-senses-footer", style: SS?.footer },
+        ce("span", { style: SS?.footerSpan },
           pluginRef.settings?.showMarkedOnlineCount
             ? `${deployCount} deployed \u2022 ${onlineMarkedCount} online`
             : `${deployCount} shadow${deployCount !== 1 ? "s" : ""} deployed`
         ),
-        ce("span", null, `${msgCount.toLocaleString()} detection${msgCount !== 1 ? "s" : ""}`)
+        ce("span", { style: SS?.footerSpan },
+          `${msgCount.toLocaleString()} detection${msgCount !== 1 ? "s" : ""}`)
       )
     );
 
