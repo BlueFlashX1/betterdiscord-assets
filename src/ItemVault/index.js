@@ -13,35 +13,11 @@ const { getAllItems, getItem, ITEMS } = require('./item-registry');
 const CSS = require('./styles.css');
 const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
-const { isVoiceChannelChat, installVoiceChatBodyAttr } = require('../shared/channel-context');
+const { isVoiceChannelChat } = require('../shared/channel-context');
 
 const STYLE_ID = 'ItemVault-styles';
 const HEADER_ICON_ID = 'itemvault-header-icon';
 const POPUP_ID = 'itemvault-header-popup';
-
-// Return true when the given toolbar element lives inside Discord's VC
-// chat overlay/panel. Multiple signals — any positive match returns true.
-function _toolbarBelongsToVCChat(toolbar) {
-  if (!toolbar) return false;
-  try {
-    const scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
-    if (scope) {
-      const btn = scope.querySelector(
-        '[aria-label*="lose" i], [aria-label*="ide" i][aria-label*="hat" i], [aria-label*="oggle" i][aria-label*="hat" i]'
-      );
-      if (btn) return true;
-    }
-    let el = toolbar;
-    for (let i = 0; el && i < 12; i++) {
-      const cls = String(el.className || "");
-      if (/voice|vcChat|callChat/i.test(cls)) return true;
-      el = el.parentElement;
-    }
-    const layer = toolbar.closest('[aria-label*="oice" i]');
-    if (layer && layer !== toolbar) return true;
-  } catch (_) {}
-  return false;
-}
 
 const HEADER_TOOLBAR_SELECTORS = [
   '[aria-label="Channel header"] [class*="toolbar_"]',
@@ -99,10 +75,6 @@ module.exports = class ItemVault {
     // Start header icon
     this._startHeaderIcon();
 
-    // Install shared VC-chat body-attribute watcher + CSS-based icon hider.
-    this._uninstallVoiceChatHider = installVoiceChatBodyAttr();
-
-    console.log('[ItemVault] Started, toolbar:', !!this._getToolbar(), 'stopped:', this._stopped);
     this._log('ItemVault ready.');
   }
 
@@ -113,11 +85,6 @@ module.exports = class ItemVault {
     this._stopHeaderIcon();
     this._closePopup();
     removeToolbarTooltip('sl-toolbar-tip-iv');
-
-    if (typeof this._uninstallVoiceChatHider === "function") {
-      try { this._uninstallVoiceChatHider(); } catch (_) {}
-      this._uninstallVoiceChatHider = null;
-    }
 
     if (this._onChanged) {
       Events.off('ItemVault:changed', this._onChanged);
@@ -142,11 +109,7 @@ module.exports = class ItemVault {
   _getToolbar() {
     for (const sel of HEADER_TOOLBAR_SELECTORS) {
       const el = document.querySelector(sel);
-      if (!el || el.offsetParent === null) continue;
-      // Skip VC chat panel toolbars — they have a Close button sibling
-      // that text channel toolbars don't.
-      if (_toolbarBelongsToVCChat(el)) continue;
-      return el;
+      if (el && el.offsetParent !== null) return el;
     }
     return null;
   }
@@ -164,31 +127,10 @@ module.exports = class ItemVault {
   _startHeaderIcon() {
     if (this._headerIconLoop) return;
     this._ensureHeaderIcon();
-    // Tighter poll (500ms) so VC-chat hide is responsive within ~half a
-    // second instead of up to 3s.
     this._headerIconLoop = setInterval(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 500);
-
-    // FluxDispatcher subscription for instant response on channel change.
-    try {
-      const Webpack = BdApi?.Webpack;
-      const dispatcher =
-        Webpack?.Stores?.UserStore?._dispatcher ||
-        Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
-      if (dispatcher && typeof dispatcher.subscribe === "function") {
-        const handler = () => {
-          if (!this._stopped) this._ensureHeaderIcon();
-        };
-        dispatcher.subscribe("CHANNEL_SELECT", handler);
-        dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
-        this._headerIconDispatcherUnsub = () => {
-          try { dispatcher.unsubscribe("CHANNEL_SELECT", handler); } catch (_) {}
-          try { dispatcher.unsubscribe("VOICE_STATE_UPDATES", handler); } catch (_) {}
-        };
-      }
-    } catch (_) {}
+    }, 5000);
   }
 
   _stopHeaderIcon() {
@@ -196,36 +138,25 @@ module.exports = class ItemVault {
       clearInterval(this._headerIconLoop);
       this._headerIconLoop = null;
     }
-    if (typeof this._headerIconDispatcherUnsub === "function") {
-      try { this._headerIconDispatcherUnsub(); } catch (_) {}
-      this._headerIconDispatcherUnsub = null;
-    }
     const el = document.getElementById(HEADER_ICON_ID);
     if (el) el.remove();
   }
 
   _ensureHeaderIcon() {
-    const existingNow = document.getElementById(HEADER_ICON_ID);
-
-    // Hide in voice-channel chat — force inline display:none. Beats the
-    // existing inline display:flex without the race of removal.
+    // Hide in voice-channel chat — plugin icons aren't useful there.
+    // Pattern matches ShadowSenses: remove on detection, re-inject when leaving.
     if (isVoiceChannelChat()) {
-      if (existingNow) existingNow.style.display = "none";
+      const stale = document.getElementById(HEADER_ICON_ID);
+      if (stale) stale.remove();
       return;
     }
 
-    if (existingNow?.isConnected) {
-      if (existingNow.style.display === "none") existingNow.style.display = "flex";
-      return;
-    }
+    const existing = document.getElementById(HEADER_ICON_ID);
+    if (existing?.isConnected) return;
 
     const toolbar = this._getToolbar();
-    if (!toolbar) {
-      this._log('Header icon: toolbar not found');
-      return;
-    }
+    if (!toolbar) return;
     if (toolbar.querySelector(`#${HEADER_ICON_ID}`)) return;
-    this._log('Header icon: injecting into toolbar');
 
     const btn = document.createElement('div');
     btn.id = HEADER_ICON_ID;

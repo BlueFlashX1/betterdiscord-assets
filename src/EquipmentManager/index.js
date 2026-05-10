@@ -16,43 +16,11 @@ const { version: PLUGIN_VERSION } = require('./manifest.json');
 const { createToast } = require('../shared/toast');
 const _toast = createToast();
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
-const { isVoiceChannelChat, installVoiceChatBodyAttr } = require('../shared/channel-context');
+const { isVoiceChannelChat } = require('../shared/channel-context');
 
 const STYLE_ID = 'EquipmentManager-styles';
 const HEADER_ICON_ID = 'eq-header-icon';
 const POPUP_ID = 'eq-header-popup';
-
-// Return true when the given toolbar element lives inside Discord's VC
-// chat overlay/panel rather than a regular text-channel header. Tries
-// multiple signals — any positive match returns true.
-function _toolbarBelongsToVCChat(toolbar) {
-  if (!toolbar) return false;
-  try {
-    // 1) Close / Hide chat / Toggle chat button anywhere in the section
-    //    (case-insensitive — Discord aria-labels vary across versions)
-    const scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
-    if (scope) {
-      const btn = scope.querySelector(
-        '[aria-label*="lose" i], [aria-label*="ide" i][aria-label*="hat" i], [aria-label*="oggle" i][aria-label*="hat" i]'
-      );
-      if (btn) return true;
-    }
-    // 2) Walk up to 12 ancestors looking for ANY voice-related class.
-    //    Discord wraps VC overlays in containers whose class names
-    //    contain "voice" / "Voice" / "vc". Text channels never do.
-    let el = toolbar;
-    for (let i = 0; el && i < 12; i++) {
-      const cls = String(el.className || "");
-      if (/voice|vcChat|callChat/i.test(cls)) return true;
-      el = el.parentElement;
-    }
-    // 3) The toolbar's nearest layer-root has aria-label "Voice channel"
-    //    or similar.
-    const layer = toolbar.closest('[aria-label*="oice" i]');
-    if (layer && layer !== toolbar) return true;
-  } catch (_) {}
-  return false;
-}
 
 const HEADER_TOOLBAR_SELECTORS = [
   '[aria-label="Channel header"] [class*="toolbar_"]',
@@ -106,27 +74,12 @@ module.exports = class EquipmentManager {
     // Inject the header icon
     this._startHeaderIcon();
 
-    // Install shared VC-chat body-attribute watcher + CSS-based icon hider.
-    // Any one of the SL plugins calling this is enough to activate the
-    // global hide; refcounted so cleanup happens when the last unsubs.
-    this._uninstallVoiceChatHider = installVoiceChatBodyAttr();
-
     this._ready = true;
   }
 
   stop() {
     this._stopped = true;
     this._ready = false;
-
-    // Refcount-decrement the shared VC-chat watcher.
-    if (typeof this._uninstallVoiceChatHider === "function") {
-      try { this._uninstallVoiceChatHider(); } catch (_) {}
-      this._uninstallVoiceChatHider = null;
-    }
-    if (typeof this._headerIconDispatcherUnsub === "function") {
-      try { this._headerIconDispatcherUnsub(); } catch (_) {}
-      this._headerIconDispatcherUnsub = null;
-    }
 
     this._unmountEventListeners();
     this._removePublicAPI();
@@ -174,66 +127,31 @@ module.exports = class EquipmentManager {
   _getToolbar() {
     for (const sel of HEADER_TOOLBAR_SELECTORS) {
       const el = document.querySelector(sel);
-      if (!el) continue;
-      // The VC chat panel renders the same section[aria-label="Channel header"]
-      // structure as text channels — but it uniquely contains a "Close" /
-      // "Hide chat" button (the X). If this toolbar belongs to that panel,
-      // refuse to inject (returning null is treated as "not found upstream").
-      if (_toolbarBelongsToVCChat(el)) continue;
-      return el;
+      if (el && el.offsetParent !== null) return el;
     }
     return null;
   }
 
   _startHeaderIcon() {
+    if (this._headerIconLoop) return;
     this._ensureHeaderIcon();
-    // Tighter poll (500ms) so VC chat hide is responsive within ~half a
-    // second instead of up to 3s. The work is cheap — a single getById +
-    // a couple of style writes when state actually changes.
     this._headerIconLoop = setInterval(() => {
       if (this._stopped || document.hidden) return;
       this._ensureHeaderIcon();
-    }, 500);
-
-    // Subscribe to FluxDispatcher channel-change events for instant hide
-    // when the user navigates into / out of a VC.
-    try {
-      const Webpack = BdApi?.Webpack;
-      const dispatcher =
-        Webpack?.Stores?.UserStore?._dispatcher ||
-        Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
-      if (dispatcher && typeof dispatcher.subscribe === "function") {
-        const handler = () => {
-          if (!this._stopped) this._ensureHeaderIcon();
-        };
-        dispatcher.subscribe("CHANNEL_SELECT", handler);
-        dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
-        this._headerIconDispatcherUnsub = () => {
-          try { dispatcher.unsubscribe("CHANNEL_SELECT", handler); } catch (_) {}
-          try { dispatcher.unsubscribe("VOICE_STATE_UPDATES", handler); } catch (_) {}
-        };
-      }
-    } catch (_) {}
+    }, 5000);
   }
 
   _ensureHeaderIcon() {
-    const existingNow = document.getElementById(HEADER_ICON_ID);
-
-    // Hide in voice-channel chat. Force inline style.display = "none" on
-    // the icon element directly — beats the existing inline display: flex.
-    // This is the strongest hide we can do short of removing the node,
-    // and unlike removal it survives Discord re-renders without race.
+    // Hide in voice-channel chat — plugin icons aren't useful there.
+    // Pattern matches ShadowSenses: remove on detection, re-inject when leaving.
     if (isVoiceChannelChat()) {
-      if (existingNow) existingNow.style.display = "none";
+      const stale = document.getElementById(HEADER_ICON_ID);
+      if (stale) stale.remove();
       return;
     }
 
-    // Coming back from VC: restore the icon's display before bailing on
-    // the existence check.
-    if (existingNow?.isConnected) {
-      if (existingNow.style.display === "none") existingNow.style.display = "flex";
-      return;
-    }
+    const existing = document.getElementById(HEADER_ICON_ID);
+    if (existing?.isConnected) return;
 
     const toolbar = this._getToolbar();
     if (!toolbar) return;
