@@ -61,7 +61,9 @@ class SensesEngine {
     this._dirty = false;
     this._dirtyGuilds = new Set();  // Per-guild dirty tracking — flush only changed guilds
     this._flushInterval = null;
-    this._presencePollInterval = null;
+    this._presenceStore = null;
+    this._presenceStoreListener = null;
+    this._presencePollDebounce = null;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
     this._handlePresenceUpdate = null;
@@ -211,13 +213,31 @@ class SensesEngine {
     this._seedUserActivityFromFeeds();
     this._snapshotFriendRelationships();
 
-    // Presence polling fallback (10s): catches missed transitions when dispatcher payloads are partial.
-    // Kept intentionally low frequency and tiny scope (monitored users only) to avoid UI lag.
-    this._presencePollInterval = setInterval(() => {
-      if (this._plugin._stopped) return;
-      if (document.hidden) return; // PERF: skip polling when Discord is backgrounded
-      this._pollMonitoredPresenceStatuses("interval");
-    }, STATUS_POLL_INTERVAL_MS);
+    // Presence change listener — replaces the prior 10s setInterval
+    // fallback. PresenceStore.addChangeListener fires on every store
+    // mutation (which is broader than dispatcher payloads — it catches
+    // the merged-truth state Discord uses internally). Debounced via
+    // setTimeout(200ms) so a burst of presence changes triggers one
+    // _pollMonitoredPresenceStatuses pass instead of N. The dispatcher
+    // subscriptions above remain primary; this store listener is the
+    // belt-and-suspenders that fills the "missed transitions" gap the
+    // poll used to handle.
+    try {
+      const PresenceStore = BdApi.Webpack.getStore?.("PresenceStore");
+      if (PresenceStore && typeof PresenceStore.addChangeListener === "function") {
+        this._presenceStoreListener = () => {
+          if (this._plugin._stopped) return;
+          if (document.hidden) return;
+          if (this._presencePollDebounce) return;
+          this._presencePollDebounce = setTimeout(() => {
+            this._presencePollDebounce = null;
+            this._pollMonitoredPresenceStatuses("store-change");
+          }, 200);
+        };
+        PresenceStore.addChangeListener(this._presenceStoreListener);
+        this._presenceStore = PresenceStore;
+      }
+    } catch (_) {}
 
     // Start debounced flush interval (30s)
     this._flushInterval = setInterval(() => {
@@ -263,9 +283,14 @@ class SensesEngine {
       clearInterval(this._purgeInterval);
       this._purgeInterval = null;
     }
-    if (this._presencePollInterval) {
-      clearInterval(this._presencePollInterval);
-      this._presencePollInterval = null;
+    if (this._presenceStore && this._presenceStoreListener) {
+      try { this._presenceStore.removeChangeListener(this._presenceStoreListener); } catch (_) {}
+      this._presenceStore = null;
+      this._presenceStoreListener = null;
+    }
+    if (this._presencePollDebounce) {
+      clearTimeout(this._presencePollDebounce);
+      this._presencePollDebounce = null;
     }
     if (this._dirty || this._activityIndexDirty) {
       this._flushToDisk();
