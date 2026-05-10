@@ -43,12 +43,12 @@ function getCurrentChannel() {
 }
 
 /**
- * True when the user is currently viewing a voice or stage channel (i.e.
- * the chat panel attached to a VC). Three detection paths so any one
- * positive signal hides the plugin icons — robust to Discord refactors,
- * BD timing edge cases, and unusual store states.
+ * True when the user is currently viewing a voice or stage channel.
+ * Four detection paths — any positive triggers hide.
  */
 function isVoiceChannelChat() {
+  const Webpack = BdApi?.Webpack;
+
   // 1) Primary: selected channel type === voice or stage
   try {
     const channel = getCurrentChannel();
@@ -58,10 +58,25 @@ function isVoiceChannelChat() {
     }
   } catch (_) {}
 
-  // 2) Voice-connect state: user is connected to a VC AND the currently
-  //    selected channel matches that VC (i.e. they're viewing its chat).
+  // 2) URL-based: most reliable — Discord's URL is /channels/<g>/<id>
+  //    whenever a channel is being viewed. Look up that ID in
+  //    ChannelStore and check its type. Bypasses any
+  //    SelectedChannelStore staleness.
   try {
-    const Webpack = BdApi?.Webpack;
+    if (typeof window !== "undefined" && window.location && Webpack) {
+      const m = String(window.location.pathname || "").match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+      if (m && m[1]) {
+        const ChannelStore = Webpack.getStore("ChannelStore");
+        const ch = ChannelStore?.getChannel?.(m[1]);
+        const t = Number(ch?.type);
+        if (t === 2 || t === 13) return true;
+      }
+    }
+  } catch (_) {}
+
+  // 3) Voice-connect state: user is connected to a VC AND the currently
+  //    selected channel matches that VC.
+  try {
     if (Webpack) {
       const VoiceStateStore = Webpack.getStore("VoiceStateStore");
       const UserStore = Webpack.getStore("UserStore");
@@ -76,10 +91,7 @@ function isVoiceChannelChat() {
     }
   } catch (_) {}
 
-  // 3) DOM-marker fallback: Discord renders a panel with class names
-  //    containing "voiceChannel" + "chat" (hash-suffixed) when the VC
-  //    chat overlay is open. Visible (offsetParent !== null) means it's
-  //    actually being shown, not just attached for animation.
+  // 4) DOM-marker fallback
   try {
     const vcMarkers = document.querySelectorAll(
       '[class*="voiceChannelChat"], [class*="voiceChannel_"][class*="chat_"]'
@@ -90,6 +102,72 @@ function isVoiceChannelChat() {
   } catch (_) {}
 
   return false;
+}
+
+/**
+ * Diagnostic helper — call from DevTools console to see what each
+ * detection path returns. Useful when isVoiceChannelChat returns
+ * the wrong value for a particular VC context.
+ *
+ * Usage:  BdApi.Plugins.get("ItemVault").instance._debugVCDetection?.()
+ *   or paste the body of this function directly into the console.
+ */
+function debugVoiceChannelChat() {
+  const Webpack = BdApi?.Webpack;
+  const out = { final: null, paths: {} };
+
+  try {
+    const channel = getCurrentChannel();
+    out.paths.selectedChannelType = {
+      id: channel?.id,
+      type: channel?.type,
+      name: channel?.name,
+      hit: channel && (channel.type === 2 || channel.type === 13),
+    };
+  } catch (e) { out.paths.selectedChannelType = { error: String(e) }; }
+
+  try {
+    const path = String(window.location.pathname || "");
+    const m = path.match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+    const ChannelStore = Webpack?.getStore("ChannelStore");
+    const ch = m && m[1] ? ChannelStore?.getChannel?.(m[1]) : null;
+    out.paths.urlBased = {
+      url: path,
+      extractedId: m?.[1] || null,
+      type: ch?.type,
+      name: ch?.name,
+      hit: ch && (ch.type === 2 || ch.type === 13),
+    };
+  } catch (e) { out.paths.urlBased = { error: String(e) }; }
+
+  try {
+    const VoiceStateStore = Webpack?.getStore("VoiceStateStore");
+    const UserStore = Webpack?.getStore("UserStore");
+    const SelectedChannelStore = Webpack?.getStore("SelectedChannelStore");
+    const userId = UserStore?.getCurrentUser?.()?.id;
+    const voiceState = userId ? VoiceStateStore?.getVoiceStateForUser?.(userId) : null;
+    const selectedId = SelectedChannelStore?.getChannelId?.();
+    out.paths.voiceStateMatch = {
+      userId,
+      voiceChannelId: voiceState?.channelId,
+      selectedId,
+      hit: voiceState?.channelId && selectedId && voiceState.channelId === selectedId,
+    };
+  } catch (e) { out.paths.voiceStateMatch = { error: String(e) }; }
+
+  try {
+    const vcMarkers = Array.from(document.querySelectorAll(
+      '[class*="voiceChannelChat"], [class*="voiceChannel_"][class*="chat_"]'
+    ));
+    out.paths.domMarkers = {
+      total: vcMarkers.length,
+      visible: vcMarkers.filter((el) => el.offsetParent !== null).length,
+      hit: vcMarkers.some((el) => el.offsetParent !== null),
+    };
+  } catch (e) { out.paths.domMarkers = { error: String(e) }; }
+
+  out.final = isVoiceChannelChat();
+  return out;
 }
 
 // ─── Body attribute manager ──────────────────────────────────────────────
@@ -197,6 +275,7 @@ function installVoiceChatBodyAttr() {
 module.exports = {
   getCurrentChannel,
   isVoiceChannelChat,
+  debugVoiceChannelChat,
   installVoiceChatBodyAttr,
   VC_BODY_ATTR,
 };
