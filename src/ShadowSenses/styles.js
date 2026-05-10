@@ -213,7 +213,7 @@ ${buildPortalTransitionCSS()}
 #shadow-senses-header-popup,
 .shadow-senses-feed-card,
 .shadow-senses-deploy-row {
-  font-family: var(--font-primary), 'gg sans', 'Helvetica Neue', sans-serif;
+  font-family: 'gg sans', 'Helvetica Neue', system-ui, sans-serif;
 }
 
 /* ─── Shadow Senses Widget ──────────────────────────────────────────────── */
@@ -374,7 +374,7 @@ ${buildPortalTransitionCSS()}
 }
 
 .shadow-senses-feed-content {
-  font-family: var(--font-primary), 'gg sans', sans-serif !important;
+  font-family: 'gg sans', system-ui, sans-serif !important;
   font-size: 14px;
   font-weight: 400;
   line-height: 1.45;
@@ -408,7 +408,7 @@ ${buildPortalTransitionCSS()}
 #shadow-senses-header-popup .shadow-senses-deploy-row *,
 #shadow-senses-header-popup .shadow-senses-keyword-target,
 #shadow-senses-header-popup .shadow-senses-keyword-target * {
-  font-family: var(--font-primary), 'gg sans', 'Helvetica Neue', sans-serif !important;
+  font-family: 'gg sans', 'Helvetica Neue', system-ui, sans-serif !important;
   font-weight: inherit !important;
   letter-spacing: normal !important;
 }
@@ -636,7 +636,7 @@ ${buildPortalTransitionCSS()}
   letter-spacing: 0.02em !important;
   /* Override the global Persona-5 chunky font (line ~206) for empty states —
      it makes the prompt text hard to read at small sizes on dark bg. */
-  font-family: var(--font-primary), 'gg sans', system-ui, sans-serif !important;
+  font-family: 'gg sans', system-ui, sans-serif !important;
   font-weight: 400 !important;
 }
 

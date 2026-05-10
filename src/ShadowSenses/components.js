@@ -160,7 +160,7 @@ function buildComponents(pluginRef) {
           marginTop: "4px",
           fontStyle: "italic",
           lineHeight: 1.4,
-          fontFamily: "var(--font-primary), 'gg sans', sans-serif",
+          fontFamily: "'gg sans', system-ui, sans-serif",
         },
       },
       `First: “${entry.firstContent}”`
@@ -182,7 +182,7 @@ function buildComponents(pluginRef) {
     // model and immune to font-metric variance, unlike flex `gap`.
     const HB = {
       fontSize: "11px",
-      fontFamily: "var(--font-primary), 'gg sans', sans-serif",
+      fontFamily: "'gg sans', system-ui, sans-serif",
       lineHeight: 1.3,
     };
     const nodes = [

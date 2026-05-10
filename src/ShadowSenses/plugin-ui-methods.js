@@ -504,7 +504,7 @@ const ShadowSensesUiMethods = {
       line-height: 16px;
       box-sizing: border-box;
       pointer-events: none;
-      font-family: var(--font-primary), 'gg sans', sans-serif;
+      font-family: 'gg sans', system-ui, sans-serif;
     `;
     badge.textContent = '0';
     wrapper.appendChild(badge);
