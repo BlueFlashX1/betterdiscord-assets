@@ -33,6 +33,7 @@ function buildCSS() {
    Colors:
      BLUE:   59, 130, 246  (#3b82f6) — System (others)
      PURPLE: 155, 50, 255  (#9b32ff) — Monarch (self)
+     GOLD:   251, 191, 36  (#fbbf24) — Mentioned (you / replies-to-you)
      BG:     rgba(0, 0, 0, 0.55) — Darker codeblock background
      R:      2px — Border radius
    ═══════════════════════════════════════════════ */
@@ -62,11 +63,11 @@ li${messageListItem} {
 
 /* Mentioned messages pre-style (CSS-only) */
 li${messageListItem}:has(div${mentioned}) {
-  border-left-color: rgba(239, 68, 68, 0.7) !important;
-  border-right-color: rgba(239, 68, 68, 0.25) !important;
-  border-top-color: rgba(239, 68, 68, 0.25) !important;
-  border-bottom-color: rgba(239, 68, 68, 0.25) !important;
-  background: rgba(239, 68, 68, 0.08) !important;
+  border-left-color: rgba(251, 191, 36, 0.7) !important;
+  border-right-color: rgba(251, 191, 36, 0.25) !important;
+  border-top-color: rgba(251, 191, 36, 0.25) !important;
+  border-bottom-color: rgba(251, 191, 36, 0.25) !important;
+  background: rgba(251, 191, 36, 0.08) !important;
 }
 
 /* ════════════════════════════════════════════
@@ -263,23 +264,25 @@ li.sw-self ${embedWrapper} {
 }
 
 /* ════════════════════════════════════════════
-   MENTIONED: Crimson "Emergency Quest" accent
+   MENTIONED: Gold "Emergency Quest" accent — high contrast vs the
+   blue (others) and purple (self) palette so an @-ping or reply-to-you
+   reads at a glance even mid-scroll.
    ════════════════════════════════════════════ */
 
 li.sw-mentioned {
-  border-left-color: rgba(239, 68, 68, 0.7) !important;
-  border-right-color: rgba(239, 68, 68, 0.25) !important;
-  background: rgba(239, 68, 68, 0.08) !important;
+  border-left-color: rgba(251, 191, 36, 0.7) !important;
+  border-right-color: rgba(251, 191, 36, 0.25) !important;
+  background: rgba(251, 191, 36, 0.08) !important;
 }
 
 li.sw-mentioned.sw-group-solo,
 li.sw-mentioned.sw-group-start {
-  border-top-color: rgba(239, 68, 68, 0.25) !important;
+  border-top-color: rgba(251, 191, 36, 0.25) !important;
 }
 
 li.sw-mentioned.sw-group-solo,
 li.sw-mentioned.sw-group-end {
-  border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+  border-bottom-color: rgba(251, 191, 36, 0.25) !important;
 }
 
 /* Kill the theme's mention bg + ::before bar inside codeblocks */
@@ -307,10 +310,10 @@ li.sw-mentioned.sw-group-solo:hover,
 li.sw-mentioned.sw-group-start:hover,
 li.sw-mentioned.sw-group-middle:hover,
 li.sw-mentioned.sw-group-end:hover {
-  box-shadow: 0 0 18px rgba(239, 68, 68, 0.5),
-              0 0 40px rgba(239, 68, 68, 0.2),
-              inset 0 0 12px rgba(239, 68, 68, 0.1) !important;
-  border-left-color: rgba(239, 68, 68, 1) !important;
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.5),
+              0 0 40px rgba(251, 191, 36, 0.2),
+              inset 0 0 12px rgba(251, 191, 36, 0.1) !important;
+  border-left-color: rgba(251, 191, 36, 1) !important;
 }
 `;
 }

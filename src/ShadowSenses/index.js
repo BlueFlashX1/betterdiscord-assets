@@ -1344,6 +1344,39 @@ module.exports = class ShadowSenses {
             setImp(child, "background-color", "transparent");
           });
         });
+
+        // Pre-emptive bg-clear on close. Discord's modal close animation
+        // fades only the inner modal-box opacity, but our inline-style
+        // paint sits on the outer [role="dialog"] (and on header/footer/
+        // content). Inline styles persist until React unmounts the DOM,
+        // so the painted outer rect stays solid for ~1-2 frames after
+        // the inner box has reached opacity 0 — visible as a lingering
+        // dark afterimage when clicking Understood. Wipe the paint
+        // synchronously on any close trigger so the dialog turns
+        // transparent BEFORE the close animation starts.
+        const paintTargets = new Set([dialog]);
+        Array.from(dialog.children).forEach((c) => paintTargets.add(c));
+        dialog.querySelectorAll('[class*="header"], [class*="footer"], [class*="content"]').forEach((el) => {
+          if (!el.closest("button")) paintTargets.add(el);
+        });
+        const clearBgPaint = () => {
+          for (const el of paintTargets) {
+            try { el.style.removeProperty("background-color"); } catch (_) {}
+          }
+        };
+
+        // Click on any action button (Understood / Cancel / etc.).
+        buttons.forEach((btn) => btn.addEventListener("click", clearBgPaint, { once: true, capture: true }));
+        // Escape key while focus is anywhere inside the dialog.
+        dialog.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") clearBgPaint();
+        }, { capture: true });
+        // Click on the dialog backdrop (outside the modal-box). If the
+        // click target IS the dialog itself, the user clicked outside
+        // the modal — Discord treats that as a close trigger.
+        dialog.addEventListener("mousedown", (e) => {
+          if (e.target === dialog) clearBgPaint();
+        }, { capture: true });
       } catch (err) {
         this.debugError("StartupReport", "applyIgrisModalStyles failed", err);
       }

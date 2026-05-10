@@ -662,11 +662,20 @@ ${buildPortalTransitionCSS()}
    frame (header with title, footer with action buttons) is transparent
    by default and lets Discord UI bleed through. Scope-target only
    modals that contain the marker class so other BD/Discord modals
-   are unaffected. */
+   are unaffected.
 
-[role="dialog"]:has(.shadowsenses-igris-report-modal) {
-  background-color: #0d0d18 !important;
-}
+   IMPORTANT — close-animation alignment. Discord runs its modal close
+   animation (opacity 1 → 0, ~150ms) on the INNER modal-box element,
+   not on the outer [role="dialog"] wrapper. If we paint the outer
+   wrapper solid, the inner box fades to opacity 0 while the outer
+   wrapper's solid fill stays visible until React unmounts the DOM —
+   that's the 1-2 frame "afterimage" the user was seeing when clicking
+   Understood. So we paint ONLY:
+     1. The direct child (the modal-box itself, which fades)
+     2. Inner header / footer / content (also fade with the box)
+   The outer [role="dialog"] is left transparent so when the box
+   fades, the entire fill leaves the screen at the same instant. */
+
 [role="dialog"]:has(.shadowsenses-igris-report-modal) > * {
   background-color: #0d0d18 !important;
 }

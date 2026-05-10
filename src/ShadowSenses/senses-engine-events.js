@@ -563,6 +563,16 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
   ctx._statusByUserId.set(userId, nextStatus);
   if (!hasPriorStatus || previousStatus === nextStatus) return false;
 
+  // Suppress toasts during the early-startup grace window. seedTrackedStatuses()
+  // runs immediately after subscribe() but the PresenceStore is typically empty
+  // on Discord cold-start (gateway hasn't yet streamed PRESENCE_UPDATE frames),
+  // so the seed snapshot is "everyone offline". The first real frames per
+  // friend arrive within seconds and look like offline→online transitions —
+  // which historically fired a toast for every online friend on every Discord
+  // launch. The state mutation above ALREADY ran, so _statusByUserId is now
+  // correctly baselined; we just skip the user-facing toast for this entry.
+  if (startupState.isEarlyStartup) return true;
+
   if (ctx._plugin.settings?.statusAlerts) {
     const toastPayload = {
       userId,
@@ -572,10 +582,6 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
       nextStatus,
       deployment,
     };
-    // seedTrackedStatuses() already prevents startup false-positives via the
-    // previousStatus !== nextStatus guard above. Deferring through setTimeout
-    // risks the timer being cleared on unsubscribe (plugin reload / Discord
-    // reconnect) and the toast being silently dropped forever.
     ctx._showStatusToast(toastPayload);
   }
 

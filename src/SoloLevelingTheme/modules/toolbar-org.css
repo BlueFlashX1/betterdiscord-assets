@@ -42,9 +42,25 @@ section[aria-label="Channel header"] [class*="toolbar_"] {
   align-items: center !important;
 }
 
-/* Default position for any unrecognized direct child. */
+/* Default position for any unrecognized direct child + force vertical
+   center alignment on the cross-axis. Some plugin icons inject a button
+   without setting their own align-self and end up sitting at the top
+   or bottom of the flex track instead of the centre line. */
 section[aria-label="Channel header"] [class*="toolbar_"] > * {
   order: 60;
+  align-self: center !important;
+}
+
+/* Center the SVG/IMG content inside each toolbar button. A plain
+   <button> without explicit display defaults to inline-block, which
+   leaves the icon baseline-aligned (visually shifted up/down depending
+   on font). inline-flex + center forces every icon to sit in the
+   middle of its button box. */
+section[aria-label="Channel header"] [class*="toolbar_"] button,
+section[aria-label="Channel header"] [class*="toolbar_"] [role="button"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 /* Group 0: Safety toggles (CallButtonGuard etc.) — leftmost.
