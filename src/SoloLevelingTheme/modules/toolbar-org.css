@@ -1,0 +1,133 @@
+/* Module: Channel Header Toolbar Organization (§14)
+
+   Pure-CSS reordering of the channel header toolbar icons into logical
+   groups via flexbox `order`, with a thin violet `|` separator between
+   groups via left-border on the canonical leading wrapper of each group.
+
+   Why pure CSS:
+     - Does NOT modify any plugin's injection logic
+     - Does NOT modify any plugin's visibility / hide rules
+     - Idempotent — Discord re-rendering the toolbar doesn't break order
+     - Applies everywhere section[aria-label="Channel header"] mounts:
+       text, voice, stage, forum, thread chat, VC chat overlay
+
+   IMPORTANT — flexbox `order` only applies to DIRECT children of the
+   flex container. Discord wraps its native icons in unnamed container
+   divs (so [aria-label*="..." i] matches the inner button, NOT the
+   direct toolbar child). Some of our SL plugin icons inject as direct
+   children (Equipment, ItemVault, Dungeons, ShadowExchange, RA all
+   appendChild into the toolbar) but a few may also be wrapped.
+
+   Solution: every group rule uses TWO comma-separated selectors:
+     > #icon-id              direct-child case (most SL icons)
+     > :has(#icon-id)        wrapped case (Discord natives)
+   That way whichever element is the actual flex child gets the order.
+
+   Group layout (left → right):
+
+     [Stats] | [Gameplay] | [Inventory] | [Discord native] | [Layout]
+       SLS   |  SS, Dung  | Eq, IV, SE  | threads, notif,  | RA
+                                          pins, members,
+                                          search
+
+   Default `order` for any new / unknown icon is 60 so unmatched items
+   sit at the right end without blocking the established groups. */
+
+/* Ensure the toolbar is a flex row so `order` actually applies.
+   Discord typically already sets display:flex here; this is a
+   guarantee, not a behavioral change. */
+section[aria-label="Channel header"] [class*="toolbar_"] {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+}
+
+/* Default position for any unrecognized direct child. */
+section[aria-label="Channel header"] [class*="toolbar_"] > * {
+  order: 60;
+}
+
+/* Group 1: Stats */
+section[aria-label="Channel header"] [class*="toolbar_"] > #sls-header-stats-button,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#sls-header-stats-button) {
+  order: 10 !important;
+}
+
+/* Group 2: Gameplay */
+section[aria-label="Channel header"] [class*="toolbar_"] > #shadow-senses-header-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-header-icon) {
+  order: 20 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > #dungeons-header-widget,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#dungeons-header-widget) {
+  order: 21 !important;
+}
+
+/* Group 3: Inventory / Economy */
+section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon) {
+  order: 30 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > #itemvault-header-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#itemvault-header-icon) {
+  order: 31 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > #se-swirl-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#se-swirl-icon) {
+  order: 32 !important;
+}
+
+/* Group 4: Discord native — matched by case-insensitive aria-label
+   substring. Selector form: direct child of toolbar that CONTAINS the
+   aria-labeled element anywhere underneath. Discord's native toolbar
+   icons are always wrapped in a container div, so :has() targets the
+   wrapper div which is the actual flex child. */
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="hread" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" i] {
+  order: 40 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="otification" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="nmute" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="ute Channel" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="otification" i],
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="nmute" i] {
+  order: 41 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="inned" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="inned" i] {
+  order: 42 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="ember List" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="how Members" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="ember List" i] {
+  order: 43 !important;
+}
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="earch" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="earch" i] {
+  order: 44 !important;
+}
+
+/* Group 5: Layout */
+section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
+  order: 50 !important;
+}
+
+/* Visual `|` separators between groups.
+   Apply a thin violet left-border + small padding/margin to the
+   canonical leading element of each group except the first. Both
+   forms (direct child IS the icon OR contains the icon) get the
+   border so it works whether the SL icon is direct or wrapped, and
+   for Discord natives it always lands on the wrapper. */
+section[aria-label="Channel header"] [class*="toolbar_"] > #shadow-senses-header-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-header-icon),
+section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon),
+section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="hread" i]),
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" i],
+section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
+section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
+  border-left: 1px solid rgba(167, 139, 250, 0.3) !important;
+  padding-left: 6px !important;
+  margin-left: 6px !important;
+}

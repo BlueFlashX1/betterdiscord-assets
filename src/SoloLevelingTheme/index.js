@@ -25,6 +25,7 @@ const cssGuild         = require('./modules/guild.css');
 const cssChat          = require('./modules/chat.css');
 const cssProfile       = require('./modules/profile.css');
 const cssDiscover      = require('./modules/discover.css');
+const cssToolbarOrg    = require('./modules/toolbar-org.css');
 const cssSettings      = require('./modules/settings.css');
 const cssSnippets      = require('./modules/snippets.css');
 
@@ -59,6 +60,7 @@ const CSS_MODULES = [
   { id: 'chat',           label: 'Chat & Messages',          css: cssChat },
   { id: 'profile',        label: 'User Profile',             css: cssProfile },
   { id: 'discover',       label: 'Discover & Quests',        css: cssDiscover },
+  { id: 'toolbar-org',    label: 'Channel Toolbar Order',    css: cssToolbarOrg },
   { id: 'settings',       label: 'Settings',                 css: cssSettings },
   { id: 'snippets',       label: 'Community Snippets',       css: cssSnippets },
 ];
