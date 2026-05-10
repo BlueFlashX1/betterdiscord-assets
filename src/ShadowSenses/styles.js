@@ -593,10 +593,16 @@ ${buildPortalTransitionCSS()}
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #666;
-  font-size: 14px;
-  padding: 30px;
-  text-align: center;
+  color: rgba(196, 181, 253, 0.55) !important;
+  font-size: 13px !important;
+  padding: 36px 24px !important;
+  text-align: center !important;
+  font-style: italic !important;
+  letter-spacing: 0.02em !important;
+  /* Override the global Persona-5 chunky font (line ~206) for empty states —
+     it makes the prompt text hard to read at small sizes on dark bg. */
+  font-family: var(--font-primary), 'gg sans', system-ui, sans-serif !important;
+  font-weight: 400 !important;
 }
 
 /* ─── Igris Report Modal — opaque fill ────────────────────────────────── */
