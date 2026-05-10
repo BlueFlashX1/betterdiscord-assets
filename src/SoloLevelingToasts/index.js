@@ -834,6 +834,16 @@ module.exports = class SoloLevelingToasts {
 
     requestAnimationFrame(() => {
       if (this._isStopped || !this.toastContainer) return;
+      // If the toast was replaced/evicted before this rAF fired — e.g.
+      // window was unfocused while a flood of presence updates arrived
+      // and a later showCardToast call cleared this one via replaceKey
+      // before its append rAF could run — don't resurrect it onto the
+      // DOM. activeToasts is the source of truth for "should still
+      // exist"; rAF callbacks must verify membership before mutating
+      // the DOM.
+      if (!this.activeToasts.includes(toast)) return;
+      // Idempotent — if somehow appended already, don't double-append.
+      if (toast.parentElement) return;
       this.toastContainer.appendChild(toast);
     });
 
