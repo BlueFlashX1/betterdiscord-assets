@@ -48,15 +48,24 @@ module.exports = {
       return false;
     }
 
-    // Hide the toolbar header button in voice / stage channels even though
-    // _isGuildTextChannel now allows them (so the HP/MP/EXP strip can show).
-    // User wants the chat-anchored stats strip visible while in VC chat but
-    // does NOT want the small toolbar icon. Strip = always in guild chat;
-    // icon = only in real text / announcement channels.
+    // Hide the toolbar header button on every non-text-channel surface
+    // even though _isGuildTextChannel now allows them (so the HP/MP/EXP
+    // strip can mount there). Stats strip = always in guild chat; icon
+    // = only in real text / announcement channels.
+    //   2  = GUILD_VOICE         13 = GUILD_STAGE_VOICE
+    //   10 = ANNOUNCEMENT_THREAD 11 = PUBLIC_THREAD   12 = PRIVATE_THREAD
+    //   15 = GUILD_FORUM
     try {
       const channelInfo = this.getCurrentChannelInfo?.();
       const channelType = this.getChannelTypeById?.(channelInfo?.rawChannelId);
-      if (channelType === 2 || channelType === 13) {
+      if (
+        channelType === 2 ||
+        channelType === 13 ||
+        channelType === 10 ||
+        channelType === 11 ||
+        channelType === 12 ||
+        channelType === 15
+      ) {
         this.removeHeaderStatsButton();
         return false;
       }

@@ -251,38 +251,43 @@ module.exports = {
 
   _isGuildTextChannel() {
     try {
-      const pathname = window.location?.pathname || '';
-      if (/\/threads\/\d+/.test(pathname)) return false;
-  
       const channelInfo = this.getCurrentChannelInfo();
       if (!channelInfo) return false;
-  
-      // DMs and group DMs are never guild text channels
+
+      // DMs and group DMs never get the strip
       if (channelInfo.isDM) return false;
       if (channelInfo.channelType === 'dm' || channelInfo.channelType === 'group_dm') return false;
-      if (channelInfo.channelType === 'thread') return false;
-  
+
       // Use ChannelStore for accurate channel type detection
       const channelStore = this.getChannelStore();
       if (channelStore?.getChannel && channelInfo.rawChannelId) {
         const channel = channelStore.getChannel(channelInfo.rawChannelId);
         if (channel) {
-          // Allow any guild channel that has a chat surface:
+          // Allow any guild channel surface where the strip should mount:
           //   0  = GUILD_TEXT
           //   5  = GUILD_ANNOUNCEMENT
-          //   2  = GUILD_VOICE        (built-in voice-channel chat in modern
-          //                            Discord — the chat input + header DOM
-          //                            we anchor to exists here too)
-          //   13 = GUILD_STAGE_VOICE  (stage channels also support chat)
-          // Exclude: 10/11/12 = threads, 15 = GUILD_FORUM, 16 = GUILD_MEDIA.
-          // User reported HP/MP strip was missing in VC despite the EXP bar
-          // (different plugin) showing — character stats should always be
-          // visible while in a guild.
+          //   2  = GUILD_VOICE          (built-in voice-channel chat)
+          //   13 = GUILD_STAGE_VOICE    (stage chat)
+          //   10 = ANNOUNCEMENT_THREAD
+          //   11 = PUBLIC_THREAD
+          //   12 = PRIVATE_THREAD
+          //   15 = GUILD_FORUM          (forum landing page)
+          // User wants HP/MP/EXP visible in every chat surface inside a
+          // guild — character stats are global, not text-channel-specific.
+          // Forum / thread types added here so the strip mounts there too;
+          // the URL "/threads/" bail and the channelType==='thread' bail
+          // were removed because they were the historical cutoff that
+          // prevented the strip from ever rendering in those surfaces.
+          // Excludes: 16 = GUILD_MEDIA (no chat input there).
           return (
             channel.type === 0 ||
             channel.type === 5 ||
             channel.type === 2 ||
-            channel.type === 13
+            channel.type === 13 ||
+            channel.type === 10 ||
+            channel.type === 11 ||
+            channel.type === 12 ||
+            channel.type === 15
           );
         }
       }
