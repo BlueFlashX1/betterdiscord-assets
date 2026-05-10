@@ -667,15 +667,17 @@ div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"] {
   max-width: 100% !important;
 }
 
-/* §9ab — Hairline violet rail between forum/thread post list and chat.
-   With the seam closed by the width-fill rules above, a 1px violet
-   left-border on the chat panel marks the column boundary cleanly.
-   On-brand with the SL theme's existing accent palette
-   (rgba(138, 43, 226, 0.35) is the same alpha used on subtle
-   borders elsewhere). focus-within bumps to 0.55 alpha so
-   keyboard / screen-reader users get a non-color-only "you are here"
-   cue (WCAG 2.2 SC 2.4.11 Focus Appearance). */
+/* §9ab — Bleed the chat panel over the unclosable forum/thread seam.
+   The transparent gap between forum post-list column and chat panel
+   comes from a Discord layout container whose padding/margin we can't
+   reach via CSS alone (would need React patching). Workaround: pull
+   the chat panel's left edge ~3px into the seam via negative
+   margin-left so its 0.7-alpha dark wash paints over the gap.
+   Combined with a 1px violet hairline at the new left edge, the
+   seam becomes a deliberate column divider instead of a transparent
+   slit showing the wallpaper. */
 div[class^="chatLayerWrapper_"] {
+  margin-left: -3px !important;
   border-left: 1px solid rgba(138, 43, 226, 0.35) !important;
   transition: border-color 0.15s ease !important;
 }
