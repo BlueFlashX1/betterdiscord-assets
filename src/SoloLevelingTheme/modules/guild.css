@@ -655,3 +655,44 @@ div[class^="grid_"] > div[class^="content_"] {
   width: 100% !important;
   max-width: 100% !important;
 }
+
+/* §9aa (continued) — Same fix for the post-open split layout.
+   When a forum post is opened, the LEFT column becomes
+   chat_…threadSidebarOpen_… and its > content_ inherits the same
+   Discord-imposed fixed inner width, leaving a transparent seam
+   against the chatLayerWrapper_ on the right. Force fill so the
+   left column hits flush. */
+div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"] {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* §9ab — Hairline violet rail between forum/thread post list and chat.
+   With the seam closed by the width-fill rules above, a 1px violet
+   left-border on the chat panel marks the column boundary cleanly.
+   On-brand with the SL theme's existing accent palette
+   (rgba(138, 43, 226, 0.35) is the same alpha used on subtle
+   borders elsewhere). focus-within bumps to 0.55 alpha so
+   keyboard / screen-reader users get a non-color-only "you are here"
+   cue (WCAG 2.2 SC 2.4.11 Focus Appearance). */
+div[class^="chatLayerWrapper_"] {
+  border-left: 1px solid rgba(138, 43, 226, 0.35) !important;
+  transition: border-color 0.15s ease !important;
+}
+
+div[class^="chatLayerWrapper_"]:focus-within {
+  border-left-color: rgba(138, 43, 226, 0.55) !important;
+}
+
+/* Strip any inherited padding/margin between the columns so they
+   sit flush against the new violet rail. */
+div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"],
+div[data-list-id^="forum-channel-list"] > div[class^="container_"] {
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+}
+
+div[class^="chatLayerWrapper_"] section[role="complementary"] {
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
