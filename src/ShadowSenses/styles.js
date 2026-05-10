@@ -598,6 +598,25 @@ ${buildPortalTransitionCSS()}
   padding: 30px;
   text-align: center;
 }
+
+/* ─── Igris Report Modal — opaque fill ────────────────────────────────── */
+/* The body content carries its own background, but the modal's outer
+   frame (header with title, footer with action buttons) is transparent
+   by default and lets Discord UI bleed through. Scope-target only
+   modals that contain the marker class so other BD/Discord modals
+   are unaffected. */
+
+[role="dialog"]:has(.shadowsenses-igris-report-modal) {
+  background-color: #0d0d18 !important;
+}
+[role="dialog"]:has(.shadowsenses-igris-report-modal) > * {
+  background-color: #0d0d18 !important;
+}
+[role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="header"],
+[role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="footer"],
+[role="dialog"]:has(.shadowsenses-igris-report-modal) [class*="content"] {
+  background-color: #0d0d18 !important;
+}
 `;
 }
 
