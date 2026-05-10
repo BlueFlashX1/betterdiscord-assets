@@ -267,9 +267,23 @@ module.exports = {
       if (channelStore?.getChannel && channelInfo.rawChannelId) {
         const channel = channelStore.getChannel(channelInfo.rawChannelId);
         if (channel) {
-          // type 0 = GUILD_TEXT, type 5 = GUILD_ANNOUNCEMENT (text-based)
-          // Exclude: 10/11/12=threads, 15=GUILD_FORUM, 2=VOICE, 13=STAGE
-          return channel.type === 0 || channel.type === 5;
+          // Allow any guild channel that has a chat surface:
+          //   0  = GUILD_TEXT
+          //   5  = GUILD_ANNOUNCEMENT
+          //   2  = GUILD_VOICE        (built-in voice-channel chat in modern
+          //                            Discord — the chat input + header DOM
+          //                            we anchor to exists here too)
+          //   13 = GUILD_STAGE_VOICE  (stage channels also support chat)
+          // Exclude: 10/11/12 = threads, 15 = GUILD_FORUM, 16 = GUILD_MEDIA.
+          // User reported HP/MP strip was missing in VC despite the EXP bar
+          // (different plugin) showing — character stats should always be
+          // visible while in a guild.
+          return (
+            channel.type === 0 ||
+            channel.type === 5 ||
+            channel.type === 2 ||
+            channel.type === 13
+          );
         }
       }
   
