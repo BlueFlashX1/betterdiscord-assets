@@ -153,12 +153,11 @@ module.exports = {
       };
       document.addEventListener('shadowExtracted', this._shadowExtractedHandler);
 
-      // Fallback: Update shadow power periodically (safe call with optional chaining)
-      // 15s is sufficient for a visual-only update — reduced from 5s to ease typing lag
-      this.shadowPowerInterval = this._timers.setInterval(() => {
-        if (document.hidden) return; // PERF: Skip when window not visible
-        this.updateShadowPower?.();
-      }, 15e3);
+      // No fallback poll — the shadowExtracted CustomEvent above is fired
+      // by ShadowArmy on every shadow extraction (the only event that
+      // changes shadow power). Prior 15s setInterval was redundant
+      // safety-net coverage; removed as part of the polling →
+      // event-driven refactor.
 
       // PERIODIC BACKUP SAVE (Every 30 seconds)
       // Safety net — only saves if settings actually changed since last save.
@@ -464,10 +463,6 @@ module.exports = {
     if (this.shadowPowerObserver) {
       this.shadowPowerObserver.disconnect();
       this.shadowPowerObserver = null;
-    }
-    if (this.shadowPowerInterval) {
-      clearInterval(this.shadowPowerInterval);
-      this.shadowPowerInterval = null;
     }
     if (this.shadowPowerUpdateTimeout) {
       clearTimeout(this.shadowPowerUpdateTimeout);

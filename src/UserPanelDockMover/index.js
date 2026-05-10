@@ -14,9 +14,8 @@ module.exports = class UserPanelDockMover {
     this.dockSelector = "nav[aria-label='Servers sidebar']";
     this.panel = null;
     this.dock = null;
-    this.pollInterval = null;
     this.isPositioned = false;
-    this._pollSlowed = false;
+    this._stopped = false;
     this._layoutUnsub = null;
     this.debug = false;
   }
@@ -52,7 +51,7 @@ module.exports = class UserPanelDockMover {
       this._logDebug("Failed to register singleton instance", error);
     }
 
-    this._pollSlowed = false;
+    this._stopped = false;
 
     // NOTE: Dock-hover bridge code was removed in v3.7.0.
     // HSLDockAutoHide v4.0.0+ handles user panel hover internally via
@@ -67,11 +66,12 @@ module.exports = class UserPanelDockMover {
     this.injectStyles();
 
     this.trySetup();
-    const startupPollMs = 1000;
-    this.pollInterval = setInterval(() => {
-      if (document.hidden) return;
-      this.trySetup();
-    }, startupPollMs);
+    // Event-driven re-detection via BD's built-in observer(mutation)
+    // lifecycle hook (defined below). Replaces the prior 1s startup
+    // poll and the 10s post-success safety-net poll. BD runs a single
+    // global MutationObserver and calls our observer() method for
+    // every document mutation, so no extra observer instance is
+    // allocated.
 
     if (_PluginUtils?.LayoutObserverBus) {
       this._layoutUnsub = _PluginUtils.LayoutObserverBus.subscribe(
@@ -85,10 +85,7 @@ module.exports = class UserPanelDockMover {
   }
 
   stop({ silent = false } = {}) {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
+    this._stopped = true;
     if (this._layoutUnsub) {
       this._layoutUnsub();
       this._layoutUnsub = null;
@@ -155,7 +152,6 @@ module.exports = class UserPanelDockMover {
       }
       return;
     }
-    this._pollSlowed = false;
 
     if (this.panel && this.panel !== panel) {
       this.panel.classList.remove("sl-userpanel-docked");
@@ -168,15 +164,33 @@ module.exports = class UserPanelDockMover {
 
     panel.classList.add("sl-userpanel-docked");
     this.isPositioned = true;
+    // Slow-down poll logic removed — BD observer(mutation) hook below
+    // handles re-detection without any timer.
+  }
 
-    // PERF: Slow down poll after successful setup (2s → 10s safety net)
-    if (this.pollInterval && !this._pollSlowed) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = setInterval(() => {
-        if (document.hidden) return;
-        this.trySetup();
-      }, 10000);
-      this._pollSlowed = true;
+  // BD plugin lifecycle hook: called for every document mutation by the
+  // global observer BD already runs. Replaces the previous start-up /
+  // safety-net setInterval polls. trySetup() is idempotent and fast on
+  // its hot path (skips DOM queries when cached refs are still
+  // connected) so re-running on every relevant mutation is cheap.
+  observer(mutation) {
+    if (this._stopped) return;
+    if (!mutation) return;
+    if (document.hidden) return;
+    if (mutation.addedNodes.length === 0 && mutation.removedNodes.length === 0) return;
+    for (const list of [mutation.addedNodes, mutation.removedNodes]) {
+      for (const node of list) {
+        if (node.nodeType !== 1) continue;
+        const hit =
+          node.matches?.(this.panelSelector) ||
+          node.matches?.(this.dockSelector) ||
+          node.querySelector?.(this.panelSelector) ||
+          node.querySelector?.(this.dockSelector);
+        if (hit) {
+          this.trySetup();
+          return;
+        }
+      }
     }
   }
 };
