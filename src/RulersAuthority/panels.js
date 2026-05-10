@@ -29,6 +29,25 @@ function findChannelSidebar() {
   }
   return null;
 }
+
+// True when the current user is connected to a voice / stage channel
+// (the FaceTime-style "in a call" state — independent of whether the
+// VC chat panel is currently visible). Returns false when stores
+// aren't reachable so the icon errs on the side of being shown.
+function _userIsInVoice() {
+  try {
+    const Webpack = BdApi?.Webpack;
+    if (!Webpack) return false;
+    const VoiceStateStore = Webpack.getStore?.("VoiceStateStore");
+    const UserStore = Webpack.getStore?.("UserStore");
+    const userId = UserStore?.getCurrentUser?.()?.id;
+    if (!userId || !VoiceStateStore?.getVoiceStateForUser) return false;
+    const voiceState = VoiceStateStore.getVoiceStateForUser(userId);
+    return Boolean(voiceState?.channelId);
+  } catch (_) {
+    return false;
+  }
+}
 export function togglePanel(ctx, panelName) {
   const def = PANEL_DEFS[panelName];
   if (!def) return;
@@ -750,6 +769,18 @@ export function injectToolbarIcon(ctx) {
 
   updateToolbarIcon(ctx);
 
+  // Hide while user is connected to a voice / stage channel. Park the
+  // icon off-DOM (body) with the existing `.ra-toolbar-icon--hidden`
+  // class so the eventual VOICE_STATE_UPDATES dispatcher reattach
+  // path can reuse the same element.
+  if (_userIsInVoice()) {
+    if (icon.parentElement && icon.parentElement.id !== "ra-icon-park") {
+      icon.parentElement.removeChild(icon);
+    }
+    icon.classList.add("ra-toolbar-icon--hidden");
+    return;
+  }
+
   const anchored = attachToolbarIcon(ctx, icon);
   if (!anchored) {
     if (!icon.parentElement) document.body.appendChild(icon);
@@ -783,11 +814,32 @@ export function setupToolbarObserver(ctx) {
     ctx._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('RulersAuthority', () => {
       const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
       const toolbar = getChannelHeaderToolbar(ctx);
+      // Skip layout-driven reinject while user is in voice — injectToolbarIcon
+      // already handles the hide path; we don't want a stale layout tick to
+      // pull the icon back to the toolbar between dispatcher events.
+      if (_userIsInVoice()) return;
       if (!icon || !toolbar || icon.parentElement !== toolbar) {
         scheduleIconReinject(ctx);
       }
     }, 250);
   }
+
+  // VOICE_STATE_UPDATES dispatcher subscription — instant reaction to
+  // join/leave a voice channel. Without this we'd wait up to 250ms for
+  // the layout bus to notice, which is tolerable but feels laggy.
+  try {
+    const Webpack = BdApi?.Webpack;
+    const dispatcher =
+      Webpack?.Stores?.UserStore?._dispatcher ||
+      Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
+    if (dispatcher && typeof dispatcher.subscribe === "function") {
+      const handler = () => scheduleIconReinject(ctx, 0);
+      dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
+      ctx._voiceStateUnsub = () => {
+        try { dispatcher.unsubscribe("VOICE_STATE_UPDATES", handler); } catch (_) {}
+      };
+    }
+  } catch (_) {}
 
   if (ctx._controller) {
     window.addEventListener("resize", () => scheduleIconReinject(ctx, 80), {
@@ -804,6 +856,10 @@ export function teardownToolbarObserver(ctx) {
   if (ctx._layoutBusUnsub) {
     ctx._layoutBusUnsub();
     ctx._layoutBusUnsub = null;
+  }
+  if (typeof ctx._voiceStateUnsub === "function") {
+    try { ctx._voiceStateUnsub(); } catch (_) {}
+    ctx._voiceStateUnsub = null;
   }
   if (ctx._iconReinjectTimeout) {
     clearTimeout(ctx._iconReinjectTimeout);
