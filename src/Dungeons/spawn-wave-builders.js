@@ -115,7 +115,12 @@ module.exports = {
     for (let i = 0; i < maxSpawn; i++) {
       const beast = this.selectMagicBeastType(safeFamilies, mobRank, rankList);
       const role = this.deriveMonsterRoleFromBeast(beast.type, beast.family);
-      const hpVariance = 0.85 + Math.random() * 0.3;
+      // D1 (audit): align fallback HP variance with the normal spawn path
+      // (line 453). Previously fallback used [0.85, 1.15), making
+      // fallback-path mobs systematically 25%+ tougher than normal-path
+      // mobs of the same rank — invisible to the player but rolling more
+      // damage when fallback triggered (e.g. cache invalid).
+      const hpVariance = 0.7 + Math.random() * 0.3;
       const hp = Math.max(1, Math.floor((220 + baseVitality * 12 + rankIndex * 90) * hpVariance));
 
       fallbackMobs.push({
