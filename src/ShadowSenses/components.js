@@ -65,11 +65,14 @@ function buildComponents(pluginRef) {
       {
         style: {
           color: badge.color,
-          fontSize: badge.fontSize || "0.75em",
-          fontWeight: badge.fontWeight || 700,
-          padding: "1px 4px",
-          borderRadius: "3px",
+          fontSize: badge.fontSize || "10px",
+          fontWeight: badge.fontWeight || 600,
+          padding: "1px 8px",
+          borderRadius: "999px",
           background: badge.background,
+          letterSpacing: "0.02em",
+          whiteSpace: "nowrap",
+          lineHeight: 1.4,
         },
       },
       badge.label
@@ -85,9 +88,95 @@ function buildComponents(pluginRef) {
     };
   }
 
+  // Parse Discord mention syntax inside a message string and return an
+  // array of React nodes (plain strings + colored <span> pills). Handles:
+  //   <@USER_ID> / <@!USER_ID>   → user mention   (purple)
+  //   <@&ROLE_ID>                → role mention   (role color or purple)
+  //   <#CHANNEL_ID>              → channel mention (blue)
+  //   @everyone / @here          → mass mention   (yellow)
+  //   <a?:name:id>               → custom emoji   (kept as :name:)
+  // Unresolvable IDs (left guild, deleted user) fall back to last-4-digit
+  // tag so the message still reads.
+  function parseContent(content, guildId) {
+    if (!content || typeof content !== "string") return [];
+    const Webpack = BdApi?.Webpack;
+    const UserStore = Webpack?.getStore?.("UserStore");
+    const ChannelStore = Webpack?.getStore?.("ChannelStore");
+    const GuildStore = Webpack?.getStore?.("GuildStore");
+
+    // <@!?USER>, <@&ROLE>, <#CHANNEL>, custom emoji <a?:name:id>,
+    // @everyone / @here. Capture groups disambiguate.
+    const RE = /<(@[!&]?|#)(\d+)>|<a?:([a-zA-Z0-9_]+):\d+>|@(everyone|here)\b/g;
+
+    const PILL = (color, bg) => ({
+      color,
+      background: bg,
+      padding: "0 4px",
+      borderRadius: "4px",
+      fontWeight: 500,
+      whiteSpace: "nowrap",
+    });
+
+    const out = [];
+    let lastIndex = 0;
+    let key = 0;
+    for (const match of content.matchAll(RE)) {
+      if (match.index > lastIndex) out.push(content.slice(lastIndex, match.index));
+      const [full, prefix, id, emojiName, special] = match;
+      let node;
+      if (special) {
+        node = ce("span", {
+          key: `m${key++}`,
+          style: PILL("#fbbf24", "rgba(251, 191, 36, 0.15)"),
+        }, `@${special}`);
+      } else if (emojiName) {
+        node = ce("span", {
+          key: `m${key++}`,
+          style: { color: "rgba(196, 181, 253, 0.75)" },
+        }, `:${emojiName}:`);
+      } else if (prefix === "@" || prefix === "@!") {
+        const user = UserStore?.getUser?.(id);
+        const name = user?.globalName || user?.username || `user-${id.slice(-4)}`;
+        node = ce("span", {
+          key: `m${key++}`,
+          style: PILL("#a78bfa", "rgba(167, 139, 250, 0.18)"),
+        }, `@${name}`);
+      } else if (prefix === "@&") {
+        let name = `role-${id.slice(-4)}`;
+        let color = "#a78bfa";
+        try {
+          const guild = GuildStore?.getGuild?.(guildId);
+          const role = guild?.roles?.[id];
+          if (role) {
+            name = role.name || name;
+            if (role.colorString) color = role.colorString;
+          }
+        } catch (_) {}
+        node = ce("span", {
+          key: `m${key++}`,
+          style: PILL(color, "rgba(167, 139, 250, 0.18)"),
+        }, `@${name}`);
+      } else if (prefix === "#") {
+        const channel = ChannelStore?.getChannel?.(id);
+        const name = channel?.name || `channel-${id.slice(-4)}`;
+        node = ce("span", {
+          key: `m${key++}`,
+          style: PILL("#60a5fa", "rgba(96, 165, 250, 0.18)"),
+        }, `#${name}`);
+      } else {
+        node = full;
+      }
+      out.push(node);
+      lastIndex = match.index + full.length;
+    }
+    if (lastIndex < content.length) out.push(content.slice(lastIndex));
+    return out;
+  }
+
   function getContentText(entry, eventType) {
     if (eventType === "message") {
-      return entry.content ? `“${entry.content}”` : "— no text content —";
+      if (!entry.content) return "— no text content —";
+      return ["“", ...parseContent(entry.content, entry.guildId), "”"];
     }
     return entry.content || "— no details —";
   }
@@ -163,7 +252,9 @@ function buildComponents(pluginRef) {
           fontFamily: "'gg sans', system-ui, sans-serif",
         },
       },
-      `First: “${entry.firstContent}”`
+      "First: “",
+      ...parseContent(entry.firstContent, entry.guildId),
+      "”"
     );
   }
 
