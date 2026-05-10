@@ -22,6 +22,27 @@ const STYLE_ID = 'EquipmentManager-styles';
 const HEADER_ICON_ID = 'eq-header-icon';
 const POPUP_ID = 'eq-header-popup';
 
+// Return true when the given toolbar element lives inside Discord's VC
+// chat overlay panel (rather than the regular text-channel header). The
+// distinguishing signal is a "Close" / "Hide chat" button as a sibling
+// or ancestor — it only exists in the VC chat panel header, never in
+// text-channel headers.
+function _toolbarBelongsToVCChat(toolbar) {
+  if (!toolbar) return false;
+  try {
+    // Walk up from the toolbar to the channel-header section, then check
+    // for the close button anywhere within that section.
+    let scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
+    if (!scope) return false;
+    const closeBtn = scope.querySelector(
+      '[aria-label="Close"], [aria-label*="Hide chat"], [aria-label*="Close chat"]'
+    );
+    return Boolean(closeBtn);
+  } catch (_) {
+    return false;
+  }
+}
+
 const HEADER_TOOLBAR_SELECTORS = [
   '[aria-label="Channel header"] [class*="toolbar_"]',
   '[class*="titleWrapper_"] [class*="toolbar_"]',
@@ -142,7 +163,13 @@ module.exports = class EquipmentManager {
   _getToolbar() {
     for (const sel of HEADER_TOOLBAR_SELECTORS) {
       const el = document.querySelector(sel);
-      if (el) return el;
+      if (!el) continue;
+      // The VC chat panel renders the same section[aria-label="Channel header"]
+      // structure as text channels — but it uniquely contains a "Close" /
+      // "Hide chat" button (the X). If this toolbar belongs to that panel,
+      // refuse to inject (returning null is treated as "not found upstream").
+      if (_toolbarBelongsToVCChat(el)) continue;
+      return el;
     }
     return null;
   }

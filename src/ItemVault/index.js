@@ -19,6 +19,23 @@ const STYLE_ID = 'ItemVault-styles';
 const HEADER_ICON_ID = 'itemvault-header-icon';
 const POPUP_ID = 'itemvault-header-popup';
 
+// Return true when the given toolbar element lives inside Discord's VC
+// chat overlay panel. Distinguishing signal: a "Close" / "Hide chat"
+// button — only exists in VC chat panel headers, never in text channels.
+function _toolbarBelongsToVCChat(toolbar) {
+  if (!toolbar) return false;
+  try {
+    let scope = toolbar.closest('[aria-label="Channel header"]') || toolbar.parentElement;
+    if (!scope) return false;
+    const closeBtn = scope.querySelector(
+      '[aria-label="Close"], [aria-label*="Hide chat"], [aria-label*="Close chat"]'
+    );
+    return Boolean(closeBtn);
+  } catch (_) {
+    return false;
+  }
+}
+
 const HEADER_TOOLBAR_SELECTORS = [
   '[aria-label="Channel header"] [class*="toolbar_"]',
   '[class*="titleWrapper_"] [class*="toolbar_"]',
@@ -118,7 +135,11 @@ module.exports = class ItemVault {
   _getToolbar() {
     for (const sel of HEADER_TOOLBAR_SELECTORS) {
       const el = document.querySelector(sel);
-      if (el && el.offsetParent !== null) return el;
+      if (!el || el.offsetParent === null) continue;
+      // Skip VC chat panel toolbars — they have a Close button sibling
+      // that text channel toolbars don't.
+      if (_toolbarBelongsToVCChat(el)) continue;
+      return el;
     }
     return null;
   }
