@@ -337,7 +337,6 @@ const SoloLevelingStats = class SoloLevelingStats {
     };
     this.lastSaveTime = Date.now();
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
-    this.importantSaveInterval = 5000; // Save important changes every 5 seconds
     // Startup persistence guards
     // _startupLoadComplete: blocks any save before loadSettings() resolves
     // _hasRealProgress: tracks whether current in-memory state is meaningful progress
@@ -366,7 +365,6 @@ const SoloLevelingStats = class SoloLevelingStats {
       shadowPowerChanged: [],
     };
     this.shadowPowerObserver = null;
-    this.shadowPowerInterval = null;
   
     // HP/Mana bars
     this.userHPBar = null;
