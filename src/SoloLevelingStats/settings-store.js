@@ -118,7 +118,13 @@ module.exports = {
     try {
       const loaded = await loadFn();
       return this._createProgressProbeMatch(source, loaded);
-    } catch (_) {
+    } catch (err) {
+      // Surface the probe failure: previously bare `catch (_) => null`
+      // meant a startup where every persistence layer transiently errored
+      // produced `probeResult.found === false`, which disabled the save
+      // guard and allowed a save of default state to overwrite real
+      // progress. Logging makes the failure mode visible.
+      this.debugError('PROBE_REAL_PROGRESS', err, { source });
       return null;
     }
   },
