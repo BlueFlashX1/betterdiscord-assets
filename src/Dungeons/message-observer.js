@@ -213,7 +213,19 @@ module.exports = {
       this._messageFlushTimeout = null;
     }
     this._pendingMessageElements?.clear?.();
-    if (this.processedMessageIds) this.processedMessageIds.clear();
+    // processedMessageIds intentionally NOT cleared here. The observer
+    // restarts on every channel switch (Discord remounts the message
+    // container; our SelectedChannelStore listener re-runs
+    // setupMessageObserver). Clearing the dedup set meant every channel
+    // switch re-attributed all currently-visible messages as "new" — they
+    // passed the timestamp gate (observerStartTime is plugin-lifetime,
+    // set in init-state.js) and re-triggered user-attack pipelines and
+    // dungeon spawns from already-processed messages.
+    //
+    // Memory is already bounded by the 1000-entry LRU eviction in
+    // handleMessage. Across a session of channel switching the set
+    // stabilizes around 1000 ids. Full release happens when the plugin
+    // itself stops (the entire `this` is torn down).
   },
 
   async handleMessage(messageElement) {
