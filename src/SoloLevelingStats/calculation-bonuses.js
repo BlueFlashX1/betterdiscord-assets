@@ -79,15 +79,9 @@ module.exports = {
     return result;
   },
 
-  calculateChannelActivityBonus() {
-    // More active channels give slightly more XP (encourages engagement)
-    const channelId = this.getCurrentChannelId();
-    if (!channelId) return 0;
-  
-    // This is a simple implementation - could be enhanced with channel activity tracking
-    // For now, just a small bonus for being active
-    return 2;
-  },
+  // (calculateChannelActivityBonus removed — was a stub that returned 2
+  // unconditionally when a channel id was resolvable, 0 otherwise.
+  // Inlined at the single caller below.)
 
   calculateActivityStreakBonus() {
     const now = Date.now();
@@ -384,9 +378,10 @@ module.exports = {
     const timeBonus = this.calculateTimeBonus();
     baseXP += timeBonus;
   
-    // 5. Channel activity bonus (more active channels = more XP)
-    const channelBonus = this.calculateChannelActivityBonus();
-    baseXP += channelBonus;
+    // 5. Channel activity bonus: flat +2 when a channel is resolvable.
+    //    (Previously calculateChannelActivityBonus(); inlined — the
+    //    function was a stub that always returned 2 or 0.)
+    if (this.getCurrentChannelId()) baseXP += 2;
   
     // 6. Activity streak bonus (reward consistent daily activity)
     // This helps balance progression at high levels by rewarding regular play
