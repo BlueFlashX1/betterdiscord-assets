@@ -11,10 +11,48 @@ const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 
 // Navigate Discord to a channel (or specific message inside it). Used as the
 // onClick handler for typing/sent toast cards so clicking jumps to the chat.
-function navigateToChannel(guildId, channelId, messageId) {
+// Cache the MessageActions module so we don't re-scan Webpack on every click.
+let _MessageActionsCached = null;
+function _resolveMessageActions() {
+  if (_MessageActionsCached) return _MessageActionsCached;
   try {
+    _MessageActionsCached =
+      BdApi.Webpack.getByKeys?.("jumpToMessage") ||
+      BdApi.Webpack.getModule?.((m) => m && typeof m.jumpToMessage === "function") ||
+      null;
+  } catch (_) {
+    _MessageActionsCached = null;
+  }
+  return _MessageActionsCached;
+}
+
+function navigateToChannel(guildId, channelId, messageId) {
+  if (!channelId) return false;
+  try {
+    // Preferred: Discord's MessageActions.jumpToMessage. This is the
+    // canonical "jump to a specific message and flash-highlight it"
+    // action — same one Discord uses for notification clicks and the
+    // search-result "Jump" link. transitionTo navigates to the channel
+    // but doesn't trigger the scroll-to-message + highlight behavior,
+    // which is what the user actually expects when clicking a toast
+    // that references a specific message.
+    if (messageId) {
+      const ma = _resolveMessageActions();
+      if (ma && typeof ma.jumpToMessage === "function") {
+        ma.jumpToMessage({
+          channelId,
+          messageId,
+          flash: true,
+        });
+        return true;
+      }
+    }
+
+    // Fallback: navigate to the channel (or channel+message URL) via
+    // NavigationUtils.transitionTo. Used when MessageActions isn't
+    // available or when there's no messageId to jump to.
     const nav = getNavigationUtils();
-    if (!nav?.transitionTo || !channelId) return false;
+    if (!nav?.transitionTo) return false;
     const guildSeg = guildId && guildId !== "DM" ? guildId : "@me";
     const path = `/channels/${guildSeg}/${channelId}${messageId ? "/" + messageId : ""}`;
     nav.transitionTo(path);
