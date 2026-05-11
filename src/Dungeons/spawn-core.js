@@ -127,6 +127,11 @@ module.exports = {
     // LOCK CHANNEL + GLOBAL COOLDOWN IMMEDIATELY: Prevents race conditions from message spam.
     // Setting _lastGlobalSpawnTime BEFORE the async createDungeon call prevents concurrent
     // messages from all bypassing the gate while createDungeon is in-flight.
+    // Stash the previous timestamp so a failed createDungeon can roll back
+    // the cooldown — without that rollback a single IDB hiccup could
+    // suppress all spawns globally for up to globalSpawnCooldown (60s) with
+    // no visible explanation.
+    const _previousGlobalSpawnTime = this._lastGlobalSpawnTime;
     this.channelLocks.add(channelKey);
     this._lastGlobalSpawnTime = Date.now();
 
@@ -134,9 +139,16 @@ module.exports = {
       const dungeonRank = this.calculateDungeonRank();
       await this.createDungeon(channelKey, channelInfo, dungeonRank);
     } catch (error) {
-      this.errorLog(`Error creating dungeon in ${channelKey}:`, error);
+      // Tagged 'CRITICAL' so it bypasses the errorLog throttle and
+      // surfaces immediately (errorLog throttles non-critical messages
+      // by 30s; spawn failures should always log).
+      this.errorLog('CRITICAL', `Error creating dungeon in ${channelKey}:`, error);
       this.activeDungeons.delete(channelKey);
       this.channelLocks.delete(channelKey);
+      // Restore the previous global spawn timestamp so the next
+      // legitimate spawn opportunity isn't suppressed by a phantom
+      // cooldown from this failed attempt.
+      this._lastGlobalSpawnTime = _previousGlobalSpawnTime;
     }
   },
 
