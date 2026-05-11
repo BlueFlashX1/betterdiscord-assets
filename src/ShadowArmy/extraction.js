@@ -769,6 +769,13 @@ module.exports = {
 
     // STREAMING PIPELINE: Process corpses in bounded chunks
     for (let i = 0; i < total; i += CORPSE_CHUNK_SIZE) {
+      // Honor stop() between chunks. Without this, a stop() landing
+      // mid-loop kept iterating across thousands of corpses, writing
+      // to IDB against a torn-down plugin instance.
+      if (this._isStopped) {
+        this.debugLog('ARISE', `ARISE STREAM aborted: plugin stopped at chunk ${Math.floor(i / CORPSE_CHUNK_SIZE) + 1}`);
+        break;
+      }
       const chunk = corpsePile.slice(i, Math.min(i + CORPSE_CHUNK_SIZE, total));
       const chunkShadows = [];
 
@@ -901,6 +908,11 @@ module.exports = {
       // Yield to event loop
       if (i + CORPSE_CHUNK_SIZE < total) {
         await new Promise(r => setTimeout(r, CHUNK_YIELD_MS));
+        // Recheck after the yield — stop() may have landed during the await
+        if (this._isStopped) {
+          this.debugLog('ARISE', `ARISE STREAM aborted after yield at chunk ${Math.floor(i / CORPSE_CHUNK_SIZE) + 1}`);
+          break;
+        }
       }
     }
 
