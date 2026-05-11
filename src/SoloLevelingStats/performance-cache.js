@@ -68,35 +68,7 @@ module.exports = {
     }
   },
 
-  initDOMCache() {
-    try {
-      // HP/Mana bars
-      this.domCache.hpBar = document.querySelector('.sls-hp-bar');
-      this.domCache.hpBarFill = document.querySelector('.sls-hp-bar-fill');
-      this.domCache.hpText = document.querySelector('.sls-hp-text');
-      this.domCache.manaBar = document.querySelector('.sls-mana-bar');
-      this.domCache.manaBarFill = document.querySelector('.sls-mana-bar-fill');
-      this.domCache.manaText = document.querySelector('.sls-mana-text');
-  
-      // Stats display
-      this.domCache.levelDisplay = document.querySelector('.sls-level-display');
-      this.domCache.xpDisplay = document.querySelector('.sls-xp-display');
-      this.domCache.rankDisplay = document.querySelector('.sls-rank-display');
-  
-      // Shadow power
-      this.domCache.shadowPowerDisplay = document.querySelector('.sls-shadow-power');
-  
-      // Quest panel
-      this.domCache.questPanel = document.querySelector('.sls-quest-panel');
-  
-      // Mark cache as valid
-      this.domCache.valid = true;
-      this.domCache.lastUpdate = Date.now();
-    } catch (error) {
-      this.debugError('DOM_CACHE', 'DOM cache initialization failed:', error);
-      this.domCache.valid = false;
-    }
-  },
+  // (initDOMCache removed — legacy pre-React DOM cache, no longer consumed.)
 
   _clearCurrentLevelCache() {
     this._cache.currentLevel = null;

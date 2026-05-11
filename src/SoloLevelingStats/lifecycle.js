@@ -30,10 +30,6 @@ module.exports = {
 
       this.debugLog('START', 'Plugin start time recorded', { startTime: this.pluginStartTime });
 
-      // PERFORMANCE OPTIMIZATION: Initialize systems
-
-      this.initDOMCache();
-
       // FUNCTIONAL: Safe method binding (NO IF-ELSE!)
       // Only binds methods that exist, returns no-op for missing methods
       const bindIfExists = (methodName, wait, throttleOrDebounce) => {

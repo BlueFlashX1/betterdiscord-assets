@@ -147,7 +147,6 @@
  * NEW HELPER FUNCTIONS:
  * - throttle(func, wait): Limits execution frequency
  * - debounce(func, wait): Delays execution until inactivity
- * - initDOMCache(): Caches all DOM references once
  * - getCachedElement(key): Returns cached DOM reference
  * - getRankColor/XPMultiplier/StatPoints(rank): O(1) lookups
  * - getQuestData(questType): O(1) quest data lookup
@@ -397,40 +396,12 @@ const SoloLevelingStats = class SoloLevelingStats {
     this.messageStorePatch = null; // Track message store patch for cleanup
     this.reactInjectionActive = false; // Track if React injection is active
   
-    // DOM Cache (eliminates 84 querySelector calls per update)
+    // (Legacy domCache + initDOMCache removed — the React UI migration in
+    // v3.0.0 replaced all direct DOM manipulation with React components
+    // and _triggerUIForceUpdates(). The cache was populated but never read.)
+
     // Performance Caches (tiered TTL for expensive calculations)
-  
-    // DOM Cache (eliminates 84 querySelector calls per update!)
-    this.domCache = {
-      // HP/Mana bars
-      hpBar: null,
-      hpBarFill: null,
-      hpText: null,
-      manaBar: null,
-      manaBarFill: null,
-      manaText: null,
-  
-      // Stats display
-      levelDisplay: null,
-      xpDisplay: null,
-      rankDisplay: null,
-  
-      // Shadow power
-      shadowPowerDisplay: null,
-  
-      // Quest UI
-      questPanel: null,
-      questItems: {},
-  
-      // Panels
-      statsPanel: null,
-      achievementsPanel: null,
-  
-      // Cache validity
-      valid: false,
-      lastUpdate: 0,
-    };
-  
+
     // Throttled function cache
     this.throttled = {};
     this.debounced = {};
