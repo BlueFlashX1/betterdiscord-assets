@@ -468,6 +468,10 @@ const ShadowArmy = class ShadowArmy {
       clearInterval(this._memberListHealthCheck);
       this._memberListHealthCheck = null;
     }
+    if (this._memberListDebounceTimer) {
+      clearTimeout(this._memberListDebounceTimer);
+      this._memberListDebounceTimer = null;
+    }
 
     // Unsubscribe NavigationBus
     if (typeof this._navBusUnsub === 'function') {

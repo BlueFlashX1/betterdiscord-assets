@@ -390,8 +390,14 @@ module.exports = {
       );
     };
 
-    // PERF: Debounce member list mutations — Discord fires many during scroll/online status changes
-    let _memberListDebounceTimer = null;
+    // PERF: Debounce member list mutations — Discord fires many during scroll/online status changes.
+    // Hoist the timer to `this` so _deactivateWidgetResources / stop() can clear it; otherwise
+    // a stop() that lands inside the 80ms debounce window leaks the orphan timer, which fires
+    // against a teardown'd plugin instance on the next event-loop tick.
+    if (this._memberListDebounceTimer) {
+      clearTimeout(this._memberListDebounceTimer);
+      this._memberListDebounceTimer = null;
+    }
     let _memberListPendingMutations = [];
 
     // Cheap synchronous filter for the observer hot path — must stay branch-light
@@ -432,9 +438,10 @@ module.exports = {
         _memberListPendingMutations.push(mutations[i]);
       }
 
-      if (_memberListDebounceTimer) return;
-      _memberListDebounceTimer = setTimeout(() => {
-        _memberListDebounceTimer = null;
+      if (this._memberListDebounceTimer) return;
+      this._memberListDebounceTimer = setTimeout(() => {
+        this._memberListDebounceTimer = null;
+        if (this._isStopped) return;
         const drained = _memberListPendingMutations;
         _memberListPendingMutations = [];
         onMemberListMutated(drained);
