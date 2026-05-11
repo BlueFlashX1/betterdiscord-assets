@@ -27,6 +27,12 @@ module.exports = {
             path,
           };
         } catch (e) {
+          // Surface per-file load failures (existSync race, JSON parse on
+          // partial writes, stat errors). Previously a corrupted .bakN
+          // file silently disappeared from the candidate list, so a user
+          // couldn't tell why a recovery tier was empty when load fell
+          // through to a lower tier.
+          this.debugError?.('READ_FILE_BACKUP_CANDIDATE', e, { path, source });
           return null;
         }
       };
