@@ -714,11 +714,11 @@ module.exports = class SoloLevelingToasts {
     if (this._isStopped) return;
 
     const { avatarUrl, accentColor, header, body } = opts;
-    if (!avatarUrl || !accentColor || !header || !body) {
+    // `header` is optional — callers can omit it for body-only toasts.
+    if (!avatarUrl || !accentColor || !body) {
       this.debugLog("CARD_TOAST", "Missing required fields", {
         avatarUrl: !!avatarUrl,
         accentColor: !!accentColor,
-        header: !!header,
         body: !!body,
       });
       return;
@@ -839,10 +839,12 @@ module.exports = class SoloLevelingToasts {
     const content = document.createElement("div");
     content.className = "sl-toast-card-content";
 
-    const headerEl = document.createElement("div");
-    headerEl.className = "sl-toast-card-header";
-    headerEl.textContent = header;
-    content.appendChild(headerEl);
+    if (header) {
+      const headerEl = document.createElement("div");
+      headerEl.className = "sl-toast-card-header";
+      headerEl.textContent = header;
+      content.appendChild(headerEl);
+    }
 
     const bodyEl = document.createElement("div");
     bodyEl.className = "sl-toast-card-body";

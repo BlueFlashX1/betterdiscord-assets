@@ -874,7 +874,9 @@ function onTypingStart(payload) {
         this._toastEngine.showCardToast({
           avatarUrl,
           accentColor: "#9333ea",
-          header: `[${deployment.shadowRank}] ${deployment.shadowName} senses`,
+          // Header dropped: the "[shadow] senses" framing felt redundant
+          // alongside the body line. Avatar + purple accent still identify
+          // the toast as ShadowSenses intel.
           body: `${userName} typing in ${locationLabel}`,
           // Persistent-ish: Discord re-fires TYPING_START every ~10s while
           // the user is typing; each fire refreshes via replaceKey. Auto-
