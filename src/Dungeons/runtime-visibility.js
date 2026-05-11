@@ -150,8 +150,14 @@ module.exports = {
   },
 
   isWindowVisible() {
-    // Always check current state in case event handler missed something
-    this._isWindowVisible = !document.hidden;
+    // PERF: return the cached value maintained by the visibilitychange
+    // handler. The previous implementation re-read `document.hidden` on
+    // every call — `document.hidden` is a live DOM property that can
+    // trigger layout-adjacent work, and this method is hit from inside
+    // combat tick, mob spawn tick, regen tick, HP-bar restore tick, and
+    // header widget tick (5-10 calls per clock cycle in active combat).
+    // The cached value is initialized in startVisibilityTracking and
+    // kept current by _visibilityChangeHandler.
     return this._isWindowVisible;
   },
 
