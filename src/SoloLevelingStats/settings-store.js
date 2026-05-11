@@ -992,7 +992,21 @@ module.exports = {
   },
 
   async _saveCleanSettingsToStores(cleanSettings) {
-    this.writeFileBackup(cleanSettings);
+    // writeFileBackup returns false on failure (logs via debugError
+    // internally). Capture the result so we can surface a toast when
+    // the file tier is persistently failing — the other tiers (IDB,
+    // BdApi.Data) still proceed so the user keeps saving, but the
+    // highest-quality recovery tier is silently absent.
+    const fileWriteOk = this.writeFileBackup(cleanSettings);
+    if (!fileWriteOk && !this._fileBackupFailureToastShown) {
+      this._fileBackupFailureToastShown = true;
+      try {
+        BdApi.UI?.showToast?.(
+          'SoloLevelingStats: file backup write failed — see console. IDB save will still proceed.',
+          { type: 'warning', timeout: 8000 }
+        );
+      } catch (_) {}
+    }
 
     if (this.saveManager) {
       try {
