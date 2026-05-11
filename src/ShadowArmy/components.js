@@ -123,7 +123,12 @@ function buildWidgetComponents(pluginInstance) {
               } else {
                 gradeCounts = tallyGrades(pluginInstance.settings.shadows || []);
               }
-            } catch (_) {
+            } catch (err) {
+              // Post-migration, settings.shadows is wiped — IDB is the only source of truth.
+              // Without this log, an IDB stream failure produces an empty widget that's
+              // indistinguishable from a genuinely empty army. Surface the error so the
+              // failure mode is at least visible in the console.
+              pluginInstance.debugError?.('WIDGET', 'IDB shadow stream failed — falling back to settings.shadows (likely empty post-migration)', err);
               const shadows = pluginInstance.settings.shadows || [];
               totalCount = shadows.length;
               const map = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
