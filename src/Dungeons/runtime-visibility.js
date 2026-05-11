@@ -111,8 +111,14 @@ module.exports = {
         this.debugLog('PERF', 'Discord window hidden - pausing dungeon processing');
         this.pauseAllDungeonProcessing();
       } else {
-        // Visible → debounce resume by 500ms to avoid rapid hidden→visible→hidden churn
-        this._visibilityDebounceTimer = setTimeout(() => {
+        // Visible → debounce resume by 500ms to avoid rapid hidden→visible→hidden churn.
+        // Use _setTrackedTimeout so the handle is swept by
+        // _cleanupTrackedResourcesOnStop. Previously this used raw
+        // setTimeout, so if the plugin was stopped during the 500ms
+        // window the resume handler fired against a torn-down plugin
+        // (resumeDungeonProcessingWithSimulation → simulateDungeonCombat
+        // → state mutation after teardown).
+        this._visibilityDebounceTimer = this._setTrackedTimeout(() => {
           this._visibilityDebounceTimer = null;
           if (!document.hidden) {
             if (this._windowHiddenTime && this._pausedIntervals.size > 0) {
