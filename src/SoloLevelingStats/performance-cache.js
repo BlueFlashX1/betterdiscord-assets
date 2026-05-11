@@ -77,12 +77,8 @@ module.exports = {
     this._cache.milestoneMultiplierLevel = null;
   },
 
-  _clearPerceptionCaches() {
-    this._cache.totalPerceptionBuff = null;
-    this._cache.totalPerceptionBuffTime = 0;
-    this._cache.perceptionBuffsByStat = null;
-    this._cache.perceptionBuffsByStatTime = 0;
-  },
+  // (_clearPerceptionCaches removed — the cache slots it cleared were
+  // never read; both writer and reader were dead.)
 
   _clearTitleCaches() {
     this._cache.activeTitleBonus = null;
@@ -104,7 +100,6 @@ module.exports = {
   invalidatePerformanceCache(cacheKeys = null) {
     if (!cacheKeys) {
       this._clearCurrentLevelCache();
-      this._clearPerceptionCaches();
       this._clearTitleCaches();
       this._clearShadowCaches();
       this._clearTotalEffectiveStatsCache();
@@ -112,10 +107,9 @@ module.exports = {
       this._cache.manaCache.clear();
       return;
     }
-  
+
     const keySet = new Set(cacheKeys);
     keySet.has('currentLevel') && this._clearCurrentLevelCache();
-    keySet.has('perception') && this._clearPerceptionCaches();
     keySet.has('title') && this._clearTitleCaches();
     keySet.has('shadow') && this._clearShadowCaches();
     if (keySet.has('title') || keySet.has('stats') || keySet.has('shadow')) {

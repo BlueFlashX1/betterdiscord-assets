@@ -411,12 +411,9 @@ const SoloLevelingStats = class SoloLevelingStats {
       currentLevel: null,
       currentLevelTime: 0,
       currentLevelTTL: 100, // 100ms - level changes frequently
-      totalPerceptionBuff: null,
-      totalPerceptionBuffTime: 0,
-      totalPerceptionBuffTTL: 500, // 500ms - perception buffs don't change often
-      perceptionBuffsByStat: null,
-      perceptionBuffsByStatTime: 0,
-      perceptionBuffsByStatTTL: 500, // 500ms
+      // (Legacy perception buff caches removed — populated + cleared but
+      // never read; perception system was redesigned to drive burst size
+      // rather than per-stat buffs.)
       timeBonus: null,
       timeBonusTime: 0,
       timeBonusTTL: 60000, // 1 minute - time changes every minute
