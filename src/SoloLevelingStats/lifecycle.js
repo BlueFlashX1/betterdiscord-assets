@@ -368,18 +368,12 @@ module.exports = {
       this.activityTracker = null;
     }
 
-    // Stop periodic save
-    if (this.periodicSaveInterval) {
-      clearInterval(this.periodicSaveInterval);
-      this.periodicSaveInterval = null;
-      this.debugLog('STOP', 'Periodic save stopped');
-    }
-
-    // Stop legacy auto-save interval (if present)
-    if (this.autoSaveInterval) {
-      clearInterval(this.autoSaveInterval);
-      this.autoSaveInterval = null;
-    }
+    // periodicSaveInterval and autoSaveInterval cleanup removed:
+    // periodicSaveInterval is registered via this._timers.setInterval
+    // so this._timers.clearAll() above already clears it; autoSaveInterval
+    // has no producer anywhere in the codebase (zombie guard for an
+    // interval that was never started).
+    this.periodicSaveInterval = null;
 
     // Quest progress intervals are now owned per-celebration. The
     // _questCelebrations iteration further below clears each
