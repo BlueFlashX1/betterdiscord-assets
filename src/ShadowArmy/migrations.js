@@ -152,6 +152,20 @@ module.exports = {
         this.debugLog('MIGRATION', `Migration v${migration.version} complete`);
       } catch (error) {
         this.debugError('MIGRATION', `Migration v${migration.version} failed: ${migration.key}`, error);
+        // Surface to the user: previously, a failing migration would silently
+        // retry on every plugin load, producing a forever-loop with no signal.
+        // Throttle the toast per migration version so the user isn't spammed
+        // when the failure is deterministic.
+        const toastKey = `_migrationToastShown_v${migration.version}`;
+        if (!this[toastKey]) {
+          this[toastKey] = true;
+          try {
+            BdApi.UI?.showToast?.(
+              `ShadowArmy: migration v${migration.version} failed — see console for details. Will retry next load.`,
+              { type: 'error', timeout: 10000 }
+            );
+          } catch (_) {}
+        }
       }
     }
   },
