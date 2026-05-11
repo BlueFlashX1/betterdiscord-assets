@@ -137,19 +137,31 @@ module.exports = {
       }
     }
 
-    // Mob ailment summary counts (aggregated across all mobs)
+    // Mob ailment summary counts (aggregated across all mobs).
+    // PERF: with up to ~600 tracked mob buckets × ~5 effect keys, the
+    // tally was ~3000 property reads per boss-bar render. The bar
+    // re-renders ~4×/second per the 250ms throttle, totalling ~12k
+    // property reads/sec while in combat. Cache the tally on the
+    // statusState with a 500ms TTL — ailments don't change fast enough
+    // that half-second staleness affects the badge display.
     if (statusState?.mobs && statusState.mobs.size > 0) {
-      // Tally: { effectName: count }
-      const mobAilmentCounts = {};
-      for (const [, mobBucket] of statusState.mobs) {
-        if (!mobBucket || typeof mobBucket !== 'object') continue;
-        for (const [effectName, effect] of Object.entries(mobBucket)) {
-          if (!effect || typeof effect !== 'object') continue;
-          const isActive = effect.expiresAt === Infinity ||
-            (Number.isFinite(effect.expiresAt) && effect.expiresAt > now);
-          if (!isActive) continue;
-          mobAilmentCounts[effectName] = (mobAilmentCounts[effectName] || 0) + 1;
+      const cache = statusState._mobAilmentTallyCache;
+      let mobAilmentCounts;
+      if (cache && cache.computedAt && now - cache.computedAt < 500) {
+        mobAilmentCounts = cache.counts;
+      } else {
+        mobAilmentCounts = {};
+        for (const [, mobBucket] of statusState.mobs) {
+          if (!mobBucket || typeof mobBucket !== 'object') continue;
+          for (const [effectName, effect] of Object.entries(mobBucket)) {
+            if (!effect || typeof effect !== 'object') continue;
+            const isActive = effect.expiresAt === Infinity ||
+              (Number.isFinite(effect.expiresAt) && effect.expiresAt > now);
+            if (!isActive) continue;
+            mobAilmentCounts[effectName] = (mobAilmentCounts[effectName] || 0) + 1;
+          }
         }
+        statusState._mobAilmentTallyCache = { counts: mobAilmentCounts, computedAt: now };
       }
       for (const [effectName, count] of Object.entries(mobAilmentCounts)) {
         const display = this._STATUS_AILMENT_DISPLAY[effectName];
