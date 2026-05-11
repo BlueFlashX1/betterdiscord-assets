@@ -223,7 +223,9 @@ function buildChatUIComponents(pluginInstance) {
     const baseValue = s.stats[statKey];
     const totalValue = effectiveStats[statKey];
     const canAllocate = s.unallocatedStatPoints > 0;
-    const tooltip = pluginInstance.buildStatTooltip(statKey, baseValue, totalValue, effectiveTitleBonus, effectiveShadowBuffs);
+    const baseTooltip = pluginInstance.buildStatTooltip(statKey, baseValue, totalValue, effectiveTitleBonus, effectiveShadowBuffs);
+    // Append bulk-allocation hint so the modifier-key shortcuts are discoverable.
+    const tooltip = `${baseTooltip}\n\nClick: +1  ·  Shift+Click: +10  ·  Ctrl/Cmd+Click: +50  ·  Alt+Click: +ALL remaining`;
     const valueText = pluginInstance.getStatValueWithBuffsHTML(totalValue, statKey, effectiveTitleBonus, effectiveShadowBuffs);
 
     return ce('button', {
@@ -234,7 +236,14 @@ function buildChatUIComponents(pluginInstance) {
       onClick: (e) => {
         e.stopPropagation();
         e.preventDefault();
-        if (canAllocate) onAllocate(statKey);
+        if (!canAllocate) return;
+        // Resolve modifier-key bulk allocation. Alt takes priority (ALL),
+        // then Ctrl/Cmd (+50), then Shift (+10), else +1.
+        let amount = 1;
+        if (e.altKey) amount = s.unallocatedStatPoints;
+        else if (e.ctrlKey || e.metaKey) amount = 50;
+        else if (e.shiftKey) amount = 10;
+        onAllocate(statKey, amount);
       }
     },
       ce('div', { className: 'sls-chat-stat-btn-name' }, statName),
@@ -386,8 +395,8 @@ function buildChatUIComponents(pluginInstance) {
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const renderContext = buildStatsRenderContext();
 
-    const handleAllocate = React.useCallback((statKey) => {
-      if (pluginInstance.allocateStatPoint(statKey)) forceUpdate();
+    const handleAllocate = React.useCallback((statKey, amount = 1) => {
+      if (pluginInstance.allocateStatPoints(statKey, amount)) forceUpdate();
     }, []);
 
     React.useEffect(() => {

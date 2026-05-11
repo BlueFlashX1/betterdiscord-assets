@@ -1,12 +1,14 @@
 module.exports = {
-  _queueStatAllocation(statName, oldValue, newValue, effectText, perceptionBuff = null) {
-    // Add to queue
+  _queueStatAllocation(statName, oldValue, newValue, effectText, perceptionBuff = null, delta = 1) {
+    // Add to queue. delta lets a single bulk allocation (e.g. shift-click +10)
+    // count as N in the aggregated notification instead of 1.
     this._statAllocationQueue.push({
       statName,
       oldValue,
       newValue,
       effectText,
       perceptionBuff,
+      delta: Math.max(1, Math.floor(Number(delta) || 1)),
       timestamp: Date.now(),
     });
   
@@ -36,7 +38,7 @@ module.exports = {
           effectText: allocation.effectText,
         };
       }
-      statGroups[statName].count++;
+      statGroups[statName].count += allocation.delta || 1;
       statGroups[statName].newValue = allocation.newValue; // Update to latest value
     });
   
@@ -111,20 +113,25 @@ module.exports = {
   },
 
   allocateStatPoint(statName) {
+    // Back-compat single-point shim. New callers should use
+    // allocateStatPoints(statName, amount) directly for bulk allocation.
+    return this.allocateStatPoints(statName, 1);
+  },
+
+  allocateStatPoints(statName, amount = 1) {
     // Normalize stat name (handle case variations)
     if (!statName) {
       this.debugError('ALLOCATE_STAT', new Error('No stat name provided'), {
         statName,
         type: typeof statName,
       });
-      this.debugError('INVALID_STAT', new Error('Invalid stat name!'));
       this.showNotification('Invalid stat name!', 'error', 2000);
       return false;
     }
-  
+
     // Convert to string and normalize
     statName = String(statName).toLowerCase().trim();
-  
+
     // Map common variations
     const statMap = {
       str: 'strength',
@@ -135,40 +142,45 @@ module.exports = {
       luck: 'perception', // Migration: map old 'luck' to 'perception'
       per: 'perception',
     };
-  
+
     if (statMap[statName]) {
       statName = statMap[statName];
     }
-  
+
+    // Normalize amount: integer >= 1, clamped to available unallocated points.
+    const available = Number(this.settings.unallocatedStatPoints) || 0;
+    const requested = Math.max(1, Math.floor(Number(amount) || 1));
+    const toAllocate = Math.min(requested, available);
+
     this.debugLog('ALLOCATE_STAT', 'Attempting allocation', {
-      originalStatName: statName,
       normalizedStatName: statName,
-      unallocatedPoints: this.settings.unallocatedStatPoints,
-      availableStats: Object.keys(this.settings.stats),
-      statExists: statName in this.settings.stats,
-      statValue: this.settings.stats[statName],
-      statsObject: this.settings.stats,
+      requested,
+      toAllocate,
+      unallocatedPoints: available,
+      statExists: statName in (this.settings.stats || {}),
     });
-  
-    if (this.settings.unallocatedStatPoints <= 0) {
+
+    if (available <= 0) {
       this.showNotification('No stat points available!', 'error', 2000);
       return false;
     }
-  
+
     if (!(statName in this.settings.stats)) {
       this.debugError('ALLOCATE_STAT', new Error(`Invalid stat name: ${statName}`), {
         providedName: statName,
         availableStats: Object.keys(this.settings.stats),
-        statsObject: this.settings.stats,
       });
-      this.debugError('INVALID_STAT', new Error('Invalid stat name!'));
       this.showNotification(`Invalid stat name: ${statName}!`, 'error', 2000);
       return false;
     }
-  
+
+    if (toAllocate < requested) {
+      this.debugLog('ALLOCATE_STAT', 'Clamped to available unallocated points', { requested, toAllocate });
+    }
+
     const oldValue = Number(this.settings.stats[statName]) || 0;
-    this.settings.stats[statName] = oldValue + 1;
-    this.settings.unallocatedStatPoints--;
+    this.settings.stats[statName] = oldValue + toAllocate;
+    this.settings.unallocatedStatPoints = available - toAllocate;
     const newValue = this.settings.stats[statName];
   
     // Special handling for Perception (PER): controls crit burst-hit profile
@@ -185,7 +197,7 @@ module.exports = {
       const perEffect = `Crit burst chance ${(profile.burstChance * 100).toFixed(
         0
       )}%, max x${profile.maxHits}`;
-      this._queueStatAllocation(statName, oldValue, this.settings.stats[statName], perEffect, null);
+      this._queueStatAllocation(statName, oldValue, this.settings.stats[statName], perEffect, null, toAllocate);
   
       this.applyStatMutationEffects({
         emitPayload: {
@@ -228,7 +240,8 @@ module.exports = {
       oldValue,
       this.settings.stats[statName],
       effectText,
-      null // No perception buff for non-perception stats
+      null, // No perception buff for non-perception stats
+      toAllocate
     );
   
     this.applyStatMutationEffects({
