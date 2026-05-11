@@ -187,8 +187,6 @@ module.exports = {
         // LEVEL UP!
         const levelsGained = newLevel - oldLevel;
   
-        // #region agent log
-        // #endregion
   
         this.settings.level = newLevel;
         this.settings.xp = levelInfo.xp;
@@ -201,8 +199,6 @@ module.exports = {
         }
         this.settings.unallocatedStatPoints = (this.settings.unallocatedStatPoints || 0) + totalStatPoints;
   
-        // #region agent log
-        // #endregion
   
         this.debugLog('CHECK_LEVEL_UP', 'Level up detected!', {
           oldLevel,
@@ -218,8 +214,6 @@ module.exports = {
             this.processNaturalStatGrowth();
           });
   
-          // #region agent log
-          // #endregion
   
           this.debugLog('CHECK_LEVEL_UP', 'Natural stat growth processed for skipped levels', {
             levelsGained,
@@ -247,8 +241,6 @@ module.exports = {
           this.pendingLevelUp.newLevel = Math.max(this.pendingLevelUp.newLevel, newLevel);
           this.pendingLevelUp.levelsGained =
             this.pendingLevelUp.newLevel - this.pendingLevelUp.oldLevel;
-          // #region agent log
-          // #endregion
         } else {
           // Create new pending notification
           this.pendingLevelUp = {
@@ -256,8 +248,6 @@ module.exports = {
             newLevel,
             levelsGained,
           };
-          // #region agent log
-          // #endregion
         }
   
         // Debounce without starvation: once scheduled, don't keep resetting the timer.
@@ -269,8 +259,6 @@ module.exports = {
                 oldLevel: finalOldLevel,
                 newLevel: finalNewLevel,
               } = this.pendingLevelUp;
-              // #region agent log
-              // #endregion
   
               // Calculate actual stat points gained using per-level loop to respect tier boundaries
               let actualStatPointsGained = 0;
