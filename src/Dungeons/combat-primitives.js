@@ -370,9 +370,13 @@ module.exports = {
       this._manaRegenActive = false;
     }
 
-    // BATCHED SAVE: Single save for both HP and Mana changes (was 2 saves per tick)
+    // BATCHED SAVE: Single save for both HP and Mana changes (was 2 saves per tick).
+    // Route through markCombatSettingsDirty so the combat-tick flush coalesces
+    // regen ticks with combat damage/heal ticks on the 1500ms combat flush
+    // interval, instead of racing the 3000ms saveSettings debounce timer.
+    // Outside combat, markCombatSettingsDirty falls back to saveSettings().
     if (hpChanged || manaChanged) {
-      this.saveSettings();
+      this.markCombatSettingsDirty('regen');
     }
 
     // Periodic Stats plugin save — every 30 ticks (~30s) instead of every tick
