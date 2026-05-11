@@ -20,12 +20,20 @@ module.exports = {
     if (hasEmojis && messageLength > 50) bonus += 3; // Emojis in longer messages
     if (hasMentions) bonus += 2;
   
-    // Word diversity bonus (more unique words = better quality)
+    // Word diversity bonus (more unique words = better quality).
+    // PERF: pool the Set across calls so per-message word-diversity
+    // checks don't allocate a new Set + backing storage every time.
+    // Also short-circuit: skip the pool entirely for short messages.
     this.RE_WORDS.lastIndex = 0; // Reset stateful regex
     const words = messageText.toLowerCase().match(this.RE_WORDS) || [];
-    const uniqueWords = new Set(words);
-    if (uniqueWords.size > 10 && messageLength > 100) {
-      bonus += Math.min(uniqueWords.size * 0.5, 15);
+    if (words.length > 10 && messageLength > 100) {
+      if (!this._uniqueWordsPool) this._uniqueWordsPool = new Set();
+      const pool = this._uniqueWordsPool;
+      pool.clear();
+      for (let i = 0; i < words.length; i++) pool.add(words[i]);
+      if (pool.size > 10) {
+        bonus += Math.min(pool.size * 0.5, 15);
+      }
     }
   
     // Question/answer bonus (engagement indicators)
