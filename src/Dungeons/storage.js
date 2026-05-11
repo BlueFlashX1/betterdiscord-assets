@@ -90,7 +90,17 @@ class DungeonStorageManager {
         }
       },
       onBlocked: () => {
-        // Database upgrade blocked by other tabs — user needs to close other Discord tabs
+        // Database upgrade blocked by other tabs holding an old DB version.
+        // Surface a toast so the user actually knows to close their other
+        // Discord tabs — previously this was a silent no-op and the
+        // dungeon DB never upgraded, breaking all persistence on the
+        // affected tab.
+        try {
+          BdApi.UI?.showToast?.(
+            'Dungeons: close other Discord tabs/windows to upgrade dungeon data.',
+            { type: 'warning', timeout: 8000 }
+          );
+        } catch (_) {}
       },
     });
 
@@ -381,6 +391,15 @@ class MobBossStorageManager {
 
           // V2 upgrade complete
         }
+      },
+      onBlocked: () => {
+        // See DungeonStorageManager.init above for rationale.
+        try {
+          BdApi.UI?.showToast?.(
+            'Dungeons: close other Discord tabs/windows to upgrade mob/boss data.',
+            { type: 'warning', timeout: 8000 }
+          );
+        } catch (_) {}
       },
     });
 

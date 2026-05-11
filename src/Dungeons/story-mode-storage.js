@@ -27,6 +27,16 @@ class StoryModeStorage {
           db.createObjectStore('permits', { keyPath: 'id' });
         }
       },
+      onBlocked: () => {
+        // See DungeonStorageManager.init in storage.js for rationale —
+        // multi-tab IDB upgrades silently fail without user notification.
+        try {
+          BdApi.UI?.showToast?.(
+            'Dungeons: close other Discord tabs/windows to upgrade story-mode data.',
+            { type: 'warning', timeout: 8000 }
+          );
+        } catch (_) {}
+      },
     });
 
     return this.db;
