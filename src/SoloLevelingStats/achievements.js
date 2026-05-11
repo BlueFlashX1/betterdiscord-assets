@@ -134,7 +134,7 @@ module.exports = {
     if (this.settings.achievements?.unlocked) {
       const achievements = this.getAchievementDefinitions();
       const unwantedIds = achievements
-        .filter((a) => unwantedTitles.includes(a.title))
+        .filter((a) => unwantedTitles.has(a.title))
         .map((a) => a.id);
       if (unwantedIds.length > 0) {
         const beforeCount = this.settings.achievements.unlocked.length;
