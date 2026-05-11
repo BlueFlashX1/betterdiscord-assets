@@ -505,7 +505,10 @@ const ShadowArmy = class ShadowArmy {
 
     // Auto-promote shadow grades using accumulated essence.
     // Runs every 30s, promotes up to 50 shadows per cycle (highest-level first).
-    const gradePromoteInterval = this.settings?.shadowEssence?.autoPromoteIntervalMs || 30000;
+    if (this._gradePromoteInterval) {
+      clearInterval(this._gradePromoteInterval);
+    }
+    const gradePromoteInterval = this.settings?.shadowEssence?.autoPromoteIntervalMs ?? 30000;
     this._gradePromoteInterval = setInterval(() => {
       if (this._isStopped) return;
       this.autoPromoteGrades().catch((error) => {
