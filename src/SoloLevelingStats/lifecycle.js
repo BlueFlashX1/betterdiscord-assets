@@ -296,6 +296,11 @@ module.exports = {
     this._isRunning = false;
     this._shadowBuffsRefreshPromise = null;
     this._shadowBuffsRefreshAt = 0;
+    // Reset toast-once flags so re-enable starts fresh: a transient file
+    // backup failure earlier in the session shouldn't suppress a toast
+    // on a new failure after the user disables+re-enables the plugin.
+    this._fileBackupFailureToastShown = false;
+    this._totalPowerFailureToastShown = false;
 
     // Bulk-clear all tracked timers registered in start()
     this._timers?.clearAll();
