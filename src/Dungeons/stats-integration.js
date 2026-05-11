@@ -76,7 +76,14 @@ module.exports = {
       this._shadowCountCache = { count, timestamp: now };
       return count;
     } catch (error) {
-      this.debugLog('GET_SHADOW_COUNT', 'Failed to get shadow count from IndexedDB', error);
+      // Surface via errorLog('CRITICAL') instead of debugLog (which
+      // gates on settings.debug, silent in production). Fall back to
+      // the cached count if available — IDB hiccups shouldn't collapse
+      // userMaxHP to its no-shadow baseline. Only return 0 when there
+      // is truly no cached snapshot yet (first-load failure).
+      this.errorLog('CRITICAL', 'Failed to get shadow count from IndexedDB', error);
+      const cached = this._shadowCountCache?.count;
+      if (typeof cached === 'number' && cached >= 0) return cached;
     }
     return 0;
   },
