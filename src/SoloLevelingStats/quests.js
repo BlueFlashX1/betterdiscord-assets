@@ -197,13 +197,9 @@ module.exports = {
         if (el) questElements.set(qid, el);
       });
 
-      // Update progress in real-time — targeted DOM updates instead of full innerHTML rebuild.
-      // BUG-FIX: previously stored on this._questProgressInterval (a single
-      // shared field). When multiple quests completed from the same message
-      // (e.g. messageMaster + characterChampion + perfectStreak), the second
-      // call overwrote the first's interval ID and the first leaked.
-      // Each celebration now owns its own interval via celebration._progressInterval
-      // (set below) — stop() iterates _questCelebrations and clears each one.
+      // Targeted DOM updates instead of full innerHTML rebuild.
+      // Each celebration owns its own interval so concurrent completions
+      // don't cross-cancel; stop() iterates _questCelebrations to clean up.
       const progressInterval = setInterval(() => {
         if (!celebration.parentNode) {
           clearInterval(progressInterval);

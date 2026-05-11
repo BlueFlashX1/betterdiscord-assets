@@ -155,12 +155,8 @@ module.exports = {
       // safety-net coverage; removed as part of the polling →
       // event-driven refactor.
 
-      // PERIODIC BACKUP SAVE (Every 30 seconds)
+      // PERIODIC BACKUP SAVE (every 30 seconds)
       // Safety net — only saves if settings actually changed since last save.
-      // Previously wrapped in a bare setTimeout(..., 0), which escaped the
-      // tracked-timer system and could fire saveSettings() against a
-      // torn-down instance if stop() landed mid-callback. saveSettings()
-      // is already async internally, so the macrotask hop is unnecessary.
       this.periodicSaveInterval = this._timers.setInterval(() => {
         if (this._settingsDirty) {
           this.debugLog('PERIODIC_SAVE', 'Backup auto-save triggered');
@@ -331,8 +327,8 @@ module.exports = {
       this.processedMessageIds = null;
     }
     if (this.recentMessages) {
-      // recentMessages may be Map or Set depending on version
-      this.recentMessages.clear?.();
+      // recentMessages is always a Map (see _ensureRecentMessagesMap in xp-processing.js)
+      this.recentMessages.clear();
       this.recentMessages = null;
     }
     if (this._startObservingRetryTimeout) {
@@ -375,10 +371,8 @@ module.exports = {
     // interval that was never started).
     this.periodicSaveInterval = null;
 
-    // Quest progress intervals are now owned per-celebration. The
-    // _questCelebrations iteration further below clears each
-    // celebration._progressInterval explicitly, so no shared-field
-    // cleanup is needed here.
+    // Quest progress intervals are owned per-celebration; see the
+    // _questCelebrations cleanup further below.
 
     // Remove auto-save listeners
     if (this._autoSaveHandlers) {

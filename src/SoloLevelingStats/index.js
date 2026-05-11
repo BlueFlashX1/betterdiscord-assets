@@ -15,18 +15,22 @@
  * This plugin integrates with the CriticalHit plugin for enhanced functionality:
  *
  * - Uses CriticalHit's message history to track critical hits for quests
- * - Reads agility bonus data from CriticalHit for stat calculations
- * - Shares perception/luck bonus data with CriticalHit (backward compatibility)
- * - Loads fonts from CriticalHit's font directory if available
+ * - Writes agility, perception, and luck bonus data to BdApi.Data for
+ *   CriticalHit to consume (SLS is the producer, CriticalHit reads)
+ * - Reads live combo state from the running CriticalHit plugin instance
+ * - Reads CriticalHit's lastCritBurst data for burst-aware XP bonuses
+ * - Loads fonts via loadLocalFont() (primary) with getFontsFolderPath() as fallback
  *
- * The integration is optional - SoloLevelingStats will function without CriticalHit,
+ * The integration is optional — SoloLevelingStats will function without CriticalHit,
  * but some features (like critical hit tracking for quests) will be unavailable.
  *
  * Integration Points:
- * - BdApi.Plugins.get('CriticalHit') - Access CriticalHit plugin instance
- * - BdApi.Data.load('CriticalHitAnimation', 'userCombo') - Read combo data
- * - BdApi.Data.save('SoloLevelingStats', ...) - Share stat bonus data
- * - getFontsFolderPath() - Load fonts from CriticalHit's font directory
+ * - BdApi.Plugins.get('CriticalHit').instance.getUserCombo(userId) - Read live combo
+ * - BdApi.Data.load('CriticalHit', 'lastCritBurst') - Read recent crit burst data
+ * - BdApi.Data.save('SoloLevelingStats', 'agilityBonus', ...) - Share AGI crit data
+ * - BdApi.Data.save('SoloLevelingStats', 'perceptionBurst', ...) - Share PER burst data
+ * - BdApi.Data.save('SoloLevelingStats', 'luckBonus', ...) - Legacy luck data shim
+ * - loadLocalFont() / getFontsFolderPath() - Font loading
  *
  * ============================================================================
  * VERSION HISTORY
@@ -446,7 +450,7 @@ const SoloLevelingStats = class SoloLevelingStats {
       achievementDefinitions: null, // Static definitions - cache permanently
       hpCache: new Map(), // Cache HP calculations: key = `${vitality}_${rank}`
       manaCache: new Map(), // Cache Mana calculations: key = intelligence
-      criticalHitComboData: null, // Cache CriticalHitAnimation combo info (short TTL)
+      criticalHitComboData: null, // Cache CriticalHit combo info (short TTL)
       criticalHitComboDataTime: 0,
       criticalHitComboDataTTL: 500, // 500ms - reduces repeated reads during message bursts
       lastAppliedCritBurst: null, // Last validated PER burst used for XP bonus calculation

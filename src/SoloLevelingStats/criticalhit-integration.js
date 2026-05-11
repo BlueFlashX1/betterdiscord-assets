@@ -229,13 +229,15 @@ module.exports = {
       cappedCritBonus = totalCritChance; // Alias for clarity
       enhancedAgilityBonus = baseAgilityBonus; // Agility-only crit chance
   
-      // Prepare data object (ensure all values are serializable numbers)
+      // Prepare data object (ensure all values are serializable numbers).
+      // perceptionEnhanced was removed: PER no longer modifies AGI crit
+      // chance (PER now drives burst size instead). The field was
+      // permanently hardcoded false and no consumer reads it.
       const agilityData = {
         bonus: isNaN(cappedCritBonus) ? 0 : Number(cappedCritBonus.toFixed(6)),
         baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
         titleCritBonus: isNaN(titleCritBonus) ? 0 : Number(titleCritBonus.toFixed(6)),
         agility: agilityStat,
-        perceptionEnhanced: false,
         capped: totalCritChance >= 0.5, // Indicate if it was capped at 50%
       };
   
