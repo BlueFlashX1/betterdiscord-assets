@@ -240,7 +240,14 @@ module.exports = {
       }
   
       this.ensureHeaderStatsButton();
-      this.queueHeaderStatsPopupPosition();
+      // PERF: only reposition the popup if it's actually mounted. The
+      // previous code scheduled a requestAnimationFrame + ran the no-op
+      // null guard inside on every 2s tick regardless of popup state,
+      // adding layout pressure (rAF schedule + cancel-on-next-frame)
+      // for nothing when the popup was closed.
+      if (this._headerStatsPopup?.isConnected) {
+        this.queueHeaderStatsPopupPosition();
+      }
 
       if (onlyWhenDirty && !this._chatUIDirty) return;
       this._chatUIDirty = false;
