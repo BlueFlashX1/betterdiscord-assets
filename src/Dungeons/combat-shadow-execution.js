@@ -794,7 +794,18 @@ module.exports = {
       this._shadowsCache = { shadows: decompressed, timestamp: Date.now() };
       return decompressed;
     } catch (error) {
-      this.errorLog('Error getting all shadows', error);
+      // Tag CRITICAL so the log bypasses the 30s throttle (per Tier 1A
+      // semantics). Then return the cached shadows if we have one — a
+      // transient IDB hiccup (transaction abort, brief lock) shouldn't
+      // wipe out the entire shadow army for one combat tick. Empty
+      // array only when there's literally no cached snapshot available
+      // (first-load failure), preserving the original behaviour for
+      // that one case.
+      this.errorLog('CRITICAL', 'Error getting all shadows', error);
+      const cached = this._shadowsCache?.shadows;
+      if (Array.isArray(cached) && cached.length > 0) {
+        return cached;
+      }
       return [];
     }
   },
