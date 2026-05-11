@@ -22,7 +22,17 @@ module.exports = {
       !isNaN(this.soloLevelingStats.settings.userMana)
     ) {
       this.settings.userMana = this.soloLevelingStats.settings.userMana;
-      this.settings.userMaxMana = this.soloLevelingStats.settings.userMaxMana;
+      // Validate userMaxMana separately — syncHPFromStats validates HP
+      // before copying; this method previously copied userMaxMana
+      // unconditionally. If SLStats was mid-reset or cold-loaded,
+      // userMaxMana could be NaN/undefined/null, and the mana regen
+      // formula (combat-primitives.js dividing by userMaxMana) would
+      // silently collapse mana regen to NaN. Only overwrite when the
+      // incoming value is a finite positive number.
+      const incomingMaxMana = this.soloLevelingStats.settings.userMaxMana;
+      if (typeof incomingMaxMana === 'number' && Number.isFinite(incomingMaxMana) && incomingMaxMana > 0) {
+        this.settings.userMaxMana = incomingMaxMana;
+      }
       return true;
     }
     return false;
