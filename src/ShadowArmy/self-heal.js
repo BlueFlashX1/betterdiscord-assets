@@ -73,7 +73,8 @@ module.exports = {
         this.debugLog('SELF-HEAL', `Aborted (${this._isStopped ? 'plugin stopped' : 'deployment requested IDB'})`);
         // Flush any pending saves before aborting
         if (saveBatch.length > 0) {
-          await this._flushHealBatch(saveBatch);
+          const { failed } = await this._flushHealBatch(saveBatch);
+          if (failed > 0) result.healed = Math.max(0, result.healed - failed);
           saveBatch.length = 0;
         }
         return result;
@@ -209,7 +210,8 @@ module.exports = {
 
       // Flush batch to IDB periodically
       if (saveBatch.length >= batchSize) {
-        await this._flushHealBatch(saveBatch);
+        const { failed } = await this._flushHealBatch(saveBatch);
+        if (failed > 0) result.healed = Math.max(0, result.healed - failed);
         saveBatch.length = 0;
         // Yield to event loop between batches — prevents IDB write storms from
         // starving concurrent reads (e.g., Dungeons deployment shadow lookups)
@@ -229,7 +231,8 @@ module.exports = {
 
     // Flush remaining
     if (saveBatch.length > 0) {
-      await this._flushHealBatch(saveBatch);
+      const { failed } = await this._flushHealBatch(saveBatch);
+      if (failed > 0) result.healed = Math.max(0, result.healed - failed);
     }
 
     // Invalidate caches if anything changed
@@ -270,14 +273,27 @@ module.exports = {
   },
 
   async _flushHealBatch(batch) {
-    if (!batch || batch.length === 0) return;
+    if (!batch || batch.length === 0) return { saved: 0, failed: 0 };
     try {
       await this.storageManager.saveShadowsBatch(batch);
+      return { saved: batch.length, failed: 0 };
     } catch (error) {
-      this.debugError('SELF-HEAL', `Batch save failed (${batch.length} shadows), falling back to individual saves`);
+      this.debugError('SELF-HEAL', `Batch save failed (${batch.length} shadows), falling back to individual saves`, error);
+      let saved = 0;
+      let failed = 0;
       for (const s of batch) {
-        try { await this.storageManager.saveShadow(s); } catch (_) { /* skip */ }
+        try {
+          await this.storageManager.saveShadow(s);
+          saved += 1;
+        } catch (err) {
+          failed += 1;
+          this.debugError('SELF-HEAL', 'Individual fallback save failed', { id: s?.id || s?.i, error: err });
+        }
       }
+      if (failed > 0) {
+        this.debugError('SELF-HEAL', `Fallback saves: ${saved} saved, ${failed} failed`);
+      }
+      return { saved, failed };
     }
   },
 };
