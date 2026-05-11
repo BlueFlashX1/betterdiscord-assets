@@ -521,9 +521,21 @@ module.exports = {
         .replace(/[\s_-]+/g, ' ')
         .trim();
 
-    const canonicalByNormalized = new Map(
-      list.map((entry) => [normalizeKey(entry), String(entry)])
-    );
+    // PERF: this function is called per-shadow, per-mob, per-tick from
+    // getRankIndexValue / getRankPowerValue / getShadowCombatScore. At a
+    // 250-shadow sample budget the previous code rebuilt a 13-entry
+    // Map ~500-1000 times per combat tick. The rank list is stable
+    // across ticks, so cache the Map keyed on list identity + length.
+    // Same pattern as the existing _rankPowerCache /
+    // _rankDamageMultiplierCache caches.
+    const cacheKey = `${list.length}|${list.join(',')}`;
+    if (this._normalizeRankCacheKey !== cacheKey) {
+      this._normalizeRankCacheKey = cacheKey;
+      this._normalizeRankCache = new Map(
+        list.map((entry) => [normalizeKey(entry), String(entry)])
+      );
+    }
+    const canonicalByNormalized = this._normalizeRankCache;
     const tryResolve = (candidate) => {
       const value = String(candidate || '').trim();
       if (!value) return null;
