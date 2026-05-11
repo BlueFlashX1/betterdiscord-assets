@@ -326,12 +326,17 @@ module.exports = {
       return this._cache.totalEffectiveStats;
     }
   
-    // CRITICAL: Ensure stats object exists and has all required properties
-    // If stats are missing or reset, initialize with defaults to prevent all-zero stats
+    // CRITICAL: Ensure stats object exists and has all required properties.
+    // If stats are missing or reset, initialize with defaults to prevent
+    // all-zero stats. Previously called this.saveSettings() directly from
+    // this read path, which is fragile: it can race the startup save guard
+    // and trigger an IDB write during a hot getter. Mark settings dirty
+    // instead so the 30s periodic save persists the initialization on its
+    // next tick — the in-memory state is correct immediately.
     if (!this.settings.stats || typeof this.settings.stats !== 'object') {
       this.settings.stats = this.createEmptyStatBlock();
-      this.saveSettings(); // Save initialized stats
-      this.debugLog('STATS', 'Stats object was missing, initialized with defaults');
+      this._settingsDirty = true;
+      this.debugLog('STATS', 'Stats object was missing, initialized with defaults (deferred save)');
     }
   
     // Ensure all stat properties exist (migration safety)
