@@ -1123,10 +1123,45 @@ function buildComponents(pluginRef) {
 
     const handleNavigate = useCallback((entry) => {
       if (!entry.guildId || !entry.channelId) { onClose(); return; }
+      onClose();
+
+      // BUG FIX: teleportToPath → ShadowPortalCore._navigate → NavigationUtils
+      // .transitionTo updates the URL to /channels/<g>/<c>/<m> but does NOT
+      // trigger Discord's scroll-to-message + flash-highlight behavior.
+      // That UI animation is exclusively gated behind
+      // MessageActions.jumpToMessage. Same fix as 09a3b78 applied to the
+      // toast click path.
+      //
+      // When a messageId is present we call jumpToMessage directly so the
+      // scroll + flash fires. The shared teleport visual transition is
+      // deliberately skipped here — the user's primary intent on a feed
+      // card click is "jump to that exact message", not "see the cool
+      // animation". For channel-only navigation (no messageId), the
+      // teleportToPath path is preserved so the transition still plays.
+      if (entry.messageId) {
+        try {
+          const MessageActions =
+            BdApi.Webpack.getByKeys?.("jumpToMessage") ||
+            BdApi.Webpack.getModule?.((m) => m && typeof m.jumpToMessage === "function") ||
+            null;
+          if (MessageActions && typeof MessageActions.jumpToMessage === "function") {
+            MessageActions.jumpToMessage({
+              channelId: entry.channelId,
+              messageId: entry.messageId,
+              flash: true,
+            });
+            return;
+          }
+        } catch (_) {
+          // Fall through to teleport fallback below.
+        }
+      }
+
+      // Fallback: channel-only navigation (no messageId) or
+      // MessageActions unavailable. Use the original teleport path.
       const path = entry.messageId
         ? `/channels/${entry.guildId}/${entry.channelId}/${entry.messageId}`
         : `/channels/${entry.guildId}/${entry.channelId}`;
-      onClose();
       pluginRef.teleportToPath(path, {
         guildId: entry.guildId,
         channelId: entry.channelId,
