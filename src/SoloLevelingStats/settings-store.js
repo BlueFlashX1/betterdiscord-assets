@@ -782,24 +782,33 @@ module.exports = {
     }
   
     if (immediate) {
-      // Flush any pending debounce and save now
+      // Flush any pending debounce and save now. Clear dirty AFTER the
+      // save resolves so a failure leaves the flag set for the 30s
+      // periodic safety net (lifecycle.js periodicSaveInterval) to retry.
       if (this._saveSettingsTimer) {
         clearTimeout(this._saveSettingsTimer);
         this._saveSettingsTimer = null;
       }
-      this._settingsDirty = false;
-      return this._saveSettingsImmediate();
+      return Promise.resolve(this._saveSettingsImmediate())
+        .then(() => { this._settingsDirty = false; })
+        .catch((err) => {
+          this.debugError?.('SAVE_SETTINGS_IMMEDIATE', err);
+          // Leave _settingsDirty truthy so periodicSaveInterval retries.
+        });
     }
-  
+
     // Debounced path — coalesce rapid calls
     this._settingsDirty = true;
     if (this._saveSettingsTimer) return;
     this._saveSettingsTimer = setTimeout(() => {
       this._saveSettingsTimer = null;
-      if (this._settingsDirty) {
-        this._settingsDirty = false;
-        this._saveSettingsImmediate();
-      }
+      if (!this._settingsDirty) return;
+      // Same flag-after-success pattern as the immediate path.
+      Promise.resolve(this._saveSettingsImmediate())
+        .then(() => { this._settingsDirty = false; })
+        .catch((err) => {
+          this.debugError?.('SAVE_SETTINGS_DEBOUNCED', err);
+        });
     }, 2000);
   },
 
