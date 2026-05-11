@@ -345,10 +345,6 @@ module.exports = {
     return best;
   },
 
-  _selectBestSettingsCandidate(candidates) {
-    return this._pickBestSettingsCandidate(candidates, true);
-  },
-
   _estimateTotalXPForState(data) {
     const directTotalXp = Number(data?.totalXP);
     if (Number.isFinite(directTotalXp) && directTotalXp >= 0) {
@@ -645,7 +641,7 @@ module.exports = {
         this._collectSettingsCandidate(rescueCandidates, 'legacy-file', legacyData);
       }
 
-      const best = this._selectBestSettingsCandidate(rescueCandidates);
+      const best = this._pickBestSettingsCandidate(rescueCandidates, true);
       const selected = best?.data;
       if (!selected || !this._isRealProgressState(selected)) return false;
 
@@ -691,7 +687,7 @@ module.exports = {
     try {
       this.debugLog('LOAD_SETTINGS', 'Attempting to load settings...');
       const candidates = await this._collectSettingsLoadCandidates();
-      const best = this._selectBestSettingsCandidate(candidates);
+      const best = this._pickBestSettingsCandidate(candidates, true);
       const loadedFromFile = best.source === 'file';
 
       let saved = best.data;
