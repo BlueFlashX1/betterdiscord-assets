@@ -136,7 +136,22 @@ module.exports = {
         return totals.totalPower;
       } catch (error) {
         this.debugError('POWER', 'Failed to calculate total power', error);
-        return this.settings.cachedTotalPower || 0;
+        // Use ?? so a legitimately cached 0 is preserved; only fall back to 0
+        // if the cache itself is missing. Surface a toast when BOTH the
+        // calculation failed AND we have no cache to fall back on, since
+        // returning 0 to downstream buff calculations is silently dramatic
+        // (Solo Leveling buffs collapse to 0 with no user signal).
+        const cached = this.settings.cachedTotalPower ?? 0;
+        if (cached === 0 && !this._totalPowerFailureToastShown) {
+          this._totalPowerFailureToastShown = true;
+          try {
+            BdApi.UI?.showToast?.(
+              'ShadowArmy: failed to compute total power and no cache available. Army buffs may be wrong.',
+              { type: 'error', timeout: 8000 }
+            );
+          } catch (_) {}
+        }
+        return cached;
       }
     }
 
