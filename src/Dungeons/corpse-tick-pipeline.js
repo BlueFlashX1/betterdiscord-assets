@@ -619,13 +619,22 @@ module.exports = {
     const first = args[0];
     const isBooleanForce = typeof first === 'boolean';
     const tag = !isBooleanForce && typeof first === 'string' && args.length > 1 ? first : null;
+    // `force` retained for back-compat (callers that pass boolean true or
+    // tag 'CRITICAL' bypass the throttle below). It no longer gates
+    // whether errors print to console — errors are by definition
+    // important and rare, so they ALWAYS log. Previously this method
+    // gated on `settings.debug`, which defaults to false and resets on
+    // every loadSettings(); ~30 errorLog call sites across the plugin
+    // (IDB write failures, cross-plugin wiring breakage, save retries)
+    // were silently inert in production. Same architectural bug as
+    // CriticalHit's debugError fixed in that audit's Wave B. Throttling
+    // below still protects against log floods; the debug-mode gate was
+    // the wrong layer for spam control.
     const force = isBooleanForce ? first : tag === 'CRITICAL';
     const payload = isBooleanForce ? args.slice(1) : tag ? args.slice(1) : args;
 
-    // Only log when forced or in debug mode (prevents console/Sentry spam).
-    if (!force && !this.settings?.debug) return;
-
-    // Throttle repeated errors.
+    // Throttle repeated errors — `force` bypasses throttle so critical
+    // errors always surface even when fired in rapid succession.
     const now = Date.now();
     const throttleMs = 30000;
     this._errorLogLastAt || (this._errorLogLastAt = new Map());
