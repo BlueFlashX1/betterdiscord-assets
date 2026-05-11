@@ -20,7 +20,18 @@ module.exports = {
       for (let l = 1; l <= currentLevel; l++) {
         levelGrants += this.getStatPointsForLevel(l);
       }
-      const QUEST_GRANT_BUFFER = 500;
+      // Quest grant buffer: max 3 stat points/day from daily quests
+      // (messageMaster + channelExplorer + perfectStreak). Players at
+      // high levels have been around long enough to legitimately accumulate
+      // hundreds-to-thousands of quest grants over their play history,
+      // so scale the buffer with level instead of using a flat 500.
+      //   level 1   → buffer 500   (floor for new players)
+      //   level 50  → buffer 500   (floor)
+      //   level 250 → buffer 500   (floor)
+      //   level 500 → buffer 1000  (≈ 333 days of perfect dailies)
+      //   level 1178 → buffer 2356 (≈ 786 days of perfect dailies)
+      //   level 2000 → buffer 4000 (≈ 1333 days of perfect dailies)
+      const QUEST_GRANT_BUFFER = Math.max(500, currentLevel * 2);
       const cap = levelGrants + QUEST_GRANT_BUFFER;
       const current = Number(this.settings.unallocatedStatPoints) || 0;
       if (current <= cap) return;
