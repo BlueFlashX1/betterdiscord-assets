@@ -326,7 +326,20 @@ module.exports = {
     }
   },
 
-  checkRankPromotion() {
+  checkRankPromotion(depth = 0) {
+    // Bound recursion: 12 ranks means 12 is the natural ceiling; 16 is a
+    // safety buffer. Previously the tail-recursive consecutive-promotion
+    // check at the end of this method could nest arbitrarily deep on a
+    // high-level import — each frame independently called saveSettings(true),
+    // producing a synchronous burst of IDB writes scaling with rank count.
+    if (depth >= 16) {
+      this.debugError(
+        'CHECK_RANK_PROMOTION',
+        new Error(`Consecutive promotion depth exceeded (${depth}); bailing out`),
+        { currentRank: this.settings.rank, level: this.settings.level }
+      );
+      return;
+    }
     try {
       this.debugLog('CHECK_RANK_PROMOTION', 'Checking for rank promotion', {
         currentRank: this.settings.rank,
@@ -445,9 +458,11 @@ module.exports = {
         }
 
         // Check if the newly promoted rank also qualifies for another promotion
-        // (handles multi-rank skips when XP/achievement thresholds are crossed at once)
+        // (handles multi-rank skips when XP/achievement thresholds are crossed at once).
+        // Pass depth+1 so the consecutive-promotion check is bounded by the
+        // guard at the top of this method.
         try {
-          this.checkRankPromotion();
+          this.checkRankPromotion(depth + 1);
         } catch (error) {
           this.debugError('CHECK_RANK_PROMOTION', error, { phase: 'consecutive_promotion_check' });
         }
