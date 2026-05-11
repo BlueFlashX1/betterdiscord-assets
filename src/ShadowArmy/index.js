@@ -684,6 +684,15 @@ const ShadowArmy = class ShadowArmy {
       this._gradePromoteInterval = null;
     }
 
+    // Self-heal resume timer: scheduled by resumeSelfHeal() with a 30s delay,
+    // not tracked in _retryTimeouts. The _isStopped guard inside its callback
+    // partially protects it, but on stop+restart inside the window the old
+    // timer's callback would race the new instance's startup self-heal.
+    if (this._selfHealResumeTimer) {
+      clearTimeout(this._selfHealResumeTimer);
+      this._selfHealResumeTimer = null;
+    }
+
     // Unsubscribe from shared NavigationBus
     if (this._navBusUnsub) {
       this._navBusUnsub();
