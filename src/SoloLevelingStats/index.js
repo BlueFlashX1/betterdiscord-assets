@@ -548,6 +548,9 @@ const SoloLevelingStats = class SoloLevelingStats {
       'Monarch of Beast',
       'Monarch of Beasts',
     ];
+    // PERF: O(1) lookup variant — getActiveTitleBonus runs on every XP
+    // award and the previous Array.includes scan was O(n) per call.
+    this.UNWANTED_TITLES_SET = new Set(this.UNWANTED_TITLES);
   
     // Pre-compiled regex patterns (avoids allocation per message in hot path)
     this.RE_LINKS = /https?:\/\//;

@@ -107,24 +107,24 @@ module.exports = {
   },
 
   cleanupUnwantedTitles() {
-    const unwantedTitles = this.UNWANTED_TITLES;
-  
+    const unwantedTitles = this.UNWANTED_TITLES_SET;
+
     let cleaned = false;
-  
+
     // Remove from unlocked titles
     if (this.settings.achievements?.titles) {
       const beforeCount = this.settings.achievements.titles.length;
       this.settings.achievements.titles = this.settings.achievements.titles.filter(
-        (t) => !unwantedTitles.includes(t)
+        (t) => !unwantedTitles.has(t)
       );
       if (this.settings.achievements.titles.length !== beforeCount) {
         cleaned = true;
       }
     }
-  
+
     if (
       this.settings.achievements?.activeTitle &&
-      unwantedTitles.includes(this.settings.achievements.activeTitle)
+      unwantedTitles.has(this.settings.achievements.activeTitle)
     ) {
       this.settings.achievements.activeTitle = null;
       cleaned = true;
@@ -206,8 +206,8 @@ module.exports = {
   },
 
   setActiveTitle(title) {
-    // Filter out unwanted titles
-    const unwantedTitles = this.UNWANTED_TITLES;
+    // Filter out unwanted titles (O(1) Set lookup)
+    const unwantedTitles = this.UNWANTED_TITLES_SET;
   
     // Allow null to unequip title
     if (title === null || title === '') {
@@ -220,13 +220,13 @@ module.exports = {
     }
   
     // Block unwanted titles
-    if (unwantedTitles.includes(title)) {
+    if (unwantedTitles.has(title)) {
       return false;
     }
-  
+
     // Also remove unwanted titles from unlocked titles list
     this.settings.achievements.titles = this.settings.achievements.titles.filter(
-      (t) => !unwantedTitles.includes(t)
+      (t) => !unwantedTitles.has(t)
     );
   
     if (this.settings.achievements.titles.includes(title)) {
@@ -256,16 +256,16 @@ module.exports = {
       return this._cache.activeTitleBonus;
     }
   
-    // Filter out unwanted titles
-    const unwantedTitles = this.UNWANTED_TITLES;
+    // Filter out unwanted titles (O(1) Set lookup; fires on every XP award)
+    const unwantedTitles = this.UNWANTED_TITLES_SET;
     if (
       !this.settings.achievements.activeTitle ||
-      unwantedTitles.includes(this.settings.achievements.activeTitle)
+      unwantedTitles.has(this.settings.achievements.activeTitle)
     ) {
       // If active title is unwanted, unequip it
       if (
         this.settings.achievements.activeTitle &&
-        unwantedTitles.includes(this.settings.achievements.activeTitle)
+        unwantedTitles.has(this.settings.achievements.activeTitle)
       ) {
         this.settings.achievements.activeTitle = null;
         this.saveSettings(true);
