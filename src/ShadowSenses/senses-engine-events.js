@@ -11,74 +11,24 @@ const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 
 // Navigate Discord to a channel (or specific message inside it). Used as the
 // onClick handler for typing/sent toast cards so clicking jumps to the chat.
-// Cache the MessageActions module so we don't re-scan Webpack on every click.
-// Discord's chat MessageActions module exposes jumpToMessage alongside
-// sendMessage / receiveMessage / editMessage — the multi-key filter is
-// more reliable than a single-key match because other modules can
-// expose a jumpToMessage stub.
-let _MessageActionsCached = null;
-function _resolveMessageActions() {
-  if (_MessageActionsCached) return _MessageActionsCached;
-  try {
-    const W = BdApi.Webpack;
-    _MessageActionsCached =
-      // Prefer the chat actions module (the one with sendMessage etc)
-      W.getModule?.((m) =>
-        m &&
-        typeof m.jumpToMessage === "function" &&
-        typeof m.sendMessage === "function"
-      ) ||
-      W.getByKeys?.("jumpToMessage", "sendMessage") ||
-      // Last-resort: any module with the function
-      W.getModule?.((m) => m && typeof m.jumpToMessage === "function") ||
-      W.getByKeys?.("jumpToMessage") ||
-      null;
-  } catch (_) {
-    _MessageActionsCached = null;
-  }
-  return _MessageActionsCached;
-}
-
 function navigateToChannel(guildId, channelId, messageId) {
-  if (!channelId) return false;
-  const guildSeg = guildId && guildId !== "DM" ? guildId : "@me";
-
-  // Two-step navigation that mimics Discord's own notification-click
-  // flow: (1) transitionTo the channel/message URL so the channel
-  // switch happens; (2) call MessageActions.jumpToMessage with
-  // flash:true so the scroll-to-message + highlight animation fires.
-  // jumpToMessage alone is unreliable when the user isn't already in
-  // the channel — it can no-op silently. Doing both guarantees the
-  // user lands in the channel even if jumpToMessage's animation
-  // doesn't trigger.
-
-  // Step 1: URL navigation via NavigationUtils.transitionTo.
+  // Channel-only navigation via NavigationUtils.transitionTo. The
+  // previous experiment with MessageActions.jumpToMessage to trigger
+  // Discord's scroll-to-message + flash-highlight animation was
+  // unreliable across Discord builds and was removed per user request.
+  // This helper now just lands the user in the target channel — the
+  // URL includes the messageId segment so Discord shows the message
+  // hash in the path, but no scroll/flash animation is attempted.
   try {
     const nav = getNavigationUtils();
-    if (nav?.transitionTo) {
-      const path = `/channels/${guildSeg}/${channelId}${messageId ? "/" + messageId : ""}`;
-      nav.transitionTo(path);
-    }
-  } catch (_) {}
-
-  // Step 2: trigger Discord's native scroll/flash if we have a target
-  // message. Brief setTimeout lets the channel switch settle so the
-  // message-list renderer has the right channel mounted when
-  // jumpToMessage fires. Tries the object-arg shape first, falls back
-  // to positional in case the API surface changed.
-  if (messageId) {
-    const ma = _resolveMessageActions();
-    if (ma && typeof ma.jumpToMessage === "function") {
-      setTimeout(() => {
-        try {
-          ma.jumpToMessage({ channelId, messageId, flash: true });
-        } catch (_) {
-          try { ma.jumpToMessage(channelId, messageId, true); } catch (__) {}
-        }
-      }, 80);
-    }
+    if (!nav?.transitionTo || !channelId) return false;
+    const guildSeg = guildId && guildId !== "DM" ? guildId : "@me";
+    const path = `/channels/${guildSeg}/${channelId}${messageId ? "/" + messageId : ""}`;
+    nav.transitionTo(path);
+    return true;
+  } catch (_) {
+    return false;
   }
-  return true;
 }
 const MAX_ACTIVITY_SEED_SCAN_ENTRIES = 6000;
 const LAST_SEEN_FALLBACK_MS = 24 * 60 * 60 * 1000;
