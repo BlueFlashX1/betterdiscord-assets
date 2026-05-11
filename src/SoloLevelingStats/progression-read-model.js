@@ -311,11 +311,21 @@ module.exports = {
   },
 
   getTotalEffectiveStats() {
-    // Check cache first
+    // Check cache first.
+    // PERF: build the cache key by reading stat values directly from
+    // this.settings.stats with a `|| 0` default. The previous
+    // normalizeStatBlock(...) + map(...).join(...) approach allocated a
+    // defaulted stat object on every call (cache hit OR miss) just to
+    // produce a comparable string. Direct read + string concat eliminates
+    // that allocation; cache hits become substantially cheaper.
     const now = Date.now();
     const statKeys = this.getStatKeys();
-    const normalizedStatsForKey = this.normalizeStatBlock(this.settings.stats, 0);
-    const cacheKey = `${statKeys.map((key) => normalizedStatsForKey[key]).join('_')}_${this.settings.achievements?.activeTitle || ''}`;
+    const stats = this.settings.stats || null;
+    let cacheKey = '';
+    for (let i = 0; i < statKeys.length; i++) {
+      cacheKey += (stats?.[statKeys[i]] || 0) + '_';
+    }
+    cacheKey += this.settings.achievements?.activeTitle || '';
   
     if (
       this._cache.totalEffectiveStats &&
