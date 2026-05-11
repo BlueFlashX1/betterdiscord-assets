@@ -285,9 +285,10 @@ module.exports = {
         acc.totalShadows++;
         acc.totalPower += power;
         acc.totalLevel += decompressed.level || 1;
-        statKeys.forEach((stat) => {
-          acc.totalStats[stat] += Math.floor(power / 5);
-        });
+        const fallbackShare = Math.floor(power / 5);
+        for (let k = 0; k < statKeys.length; k++) {
+          acc.totalStats[statKeys[k]] += fallbackShare;
+        }
       } else {
         this.debugLog('COMBAT', 'Skipping shadow with no valid stats or strength', {
           shadowId: this.getCacheKey(decompressed),
@@ -319,9 +320,10 @@ module.exports = {
     acc.totalShadows++;
     acc.totalPower += power;
     acc.totalLevel += decompressed.level || 1;
-    statKeys.forEach((stat) => {
+    for (let k = 0; k < statKeys.length; k++) {
+      const stat = statKeys[k];
       acc.totalStats[stat] += effective[stat] || 0;
-    });
+    }
 
     const rank = decompressed.rank || 'E';
     if (!acc.byRank[rank]) {
@@ -329,9 +331,11 @@ module.exports = {
     }
     acc.byRank[rank].count++;
     acc.byRank[rank].totalPower += power;
-    statKeys.forEach((stat) => {
-      acc.byRank[rank].totalStats[stat] += effective[stat] || 0;
-    });
+    const rankStats = acc.byRank[rank].totalStats;
+    for (let k = 0; k < statKeys.length; k++) {
+      const stat = statKeys[k];
+      rankStats[stat] += effective[stat] || 0;
+    }
 
     const role = decompressed.role || decompressed.roleName || 'Unknown';
     if (!acc.byRole[role]) {
@@ -339,9 +343,11 @@ module.exports = {
     }
     acc.byRole[role].count++;
     acc.byRole[role].totalPower += power;
-    statKeys.forEach((stat) => {
-      acc.byRole[role].totalStats[stat] += effective[stat] || 0;
-    });
+    const roleStats = acc.byRole[role].totalStats;
+    for (let k = 0; k < statKeys.length; k++) {
+      const stat = statKeys[k];
+      roleStats[stat] += effective[stat] || 0;
+    }
   },
 
   aggregateShadowsForArmyStats(allShadows) {
