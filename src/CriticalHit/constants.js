@@ -121,7 +121,7 @@ const MAX_BASE_CRIT_CHANCE = 30;
 const DEFAULT_CRIT_CHANCE = 10;
 const BONUS_TO_PERCENT = 100;
 
-const DEFAULT_GRADIENT_COLORS = 'linear-gradient(120deg, #8a2be2 0%, #b878e5 25%, #ffffff 50%, #b878e5 75%, #8a2be2 100%)';
+const DEFAULT_GRADIENT_COLORS = 'linear-gradient(120deg, #ff3b00 0%, #ff7a00 25%, #ffb347 50%, #ffd24d 75%, #ffe066 100%)';
 
 const CSS_STYLE_IDS = {
   static: 'cha-static-styles',
