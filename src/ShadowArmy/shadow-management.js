@@ -149,25 +149,32 @@ module.exports = {
   // BUFF MODEL
 
   getShadowBuffModelConfig() {
-    return {
-      generalDuplicateDiminishStep: 0.22,
-      roleMixPowerExponent: 0.5,
-      roleMixBaseWeight: 0.08,
-      aggregatedBuffScale: 0.01,
-      aggregatedBuffPowerDivisor: 10000,
-      aggregatedBaseBuffMax: 0.42,
-      diversityCountThreshold: 10,
-      diversityPerRoleBonus: 0.03,
-      diversityMaxBonus: 0.18,
-      statSoftCaps: {
-        strength: { soft: 0.5, hard: 0.72 },
-        agility: { soft: 0.5, hard: 0.72 },
-        intelligence: { soft: 0.54, hard: 0.76 },
-        vitality: { soft: 0.56, hard: 0.8 },
-        perception: { soft: 0.48, hard: 0.68 },
-      },
-      minBuff: -0.15,
-    };
+    // PERF: lazy-init once. The config is pure constants — no setting modifies
+    // it. Previously called 4× per buff recalculation, each call allocated
+    // 1 outer object + 5 nested statSoftCaps objects. Freezing prevents
+    // accidental mutation by callers (verified: no current caller mutates).
+    if (!this._buffModelConfig) {
+      this._buffModelConfig = Object.freeze({
+        generalDuplicateDiminishStep: 0.22,
+        roleMixPowerExponent: 0.5,
+        roleMixBaseWeight: 0.08,
+        aggregatedBuffScale: 0.01,
+        aggregatedBuffPowerDivisor: 10000,
+        aggregatedBaseBuffMax: 0.42,
+        diversityCountThreshold: 10,
+        diversityPerRoleBonus: 0.03,
+        diversityMaxBonus: 0.18,
+        statSoftCaps: Object.freeze({
+          strength: Object.freeze({ soft: 0.5, hard: 0.72 }),
+          agility: Object.freeze({ soft: 0.5, hard: 0.72 }),
+          intelligence: Object.freeze({ soft: 0.54, hard: 0.76 }),
+          vitality: Object.freeze({ soft: 0.56, hard: 0.8 }),
+          perception: Object.freeze({ soft: 0.48, hard: 0.68 }),
+        }),
+        minBuff: -0.15,
+      });
+    }
+    return this._buffModelConfig;
   },
 
   getRoleBuffWeightVector(roleKey) {
