@@ -6,6 +6,13 @@
 const C = require('./constants');
 const { SHADOW_GRADES } = C;
 
+// PERF: O(1) grade-index lookup for RoleCard sort. SHADOW_GRADES.indexOf
+// was called twice per sort comparison, inside Array.prototype.sort, for
+// every RoleCard render. Hoist to a frozen map keyed by grade name.
+const _GRADE_INDEX = Object.freeze(
+  SHADOW_GRADES.reduce((m, g, i) => { m[g] = i; return m; }, {})
+);
+
 module.exports = {
   // UI HELPERS
 
@@ -180,8 +187,8 @@ module.exports = {
       const gradeEntries = Object.entries(data.gradeCounts || {})
         .filter(([, c]) => c > 0)
         .sort((a, b) => {
-          const ai = SHADOW_GRADES.indexOf(a[0]);
-          const bi = SHADOW_GRADES.indexOf(b[0]);
+          const ai = _GRADE_INDEX[a[0]] ?? -1;
+          const bi = _GRADE_INDEX[b[0]] ?? -1;
           return bi - ai; // highest grade first
         });
       const highestRankColor = RANK_COLORS_SA[data.highestRank] || '#999';
