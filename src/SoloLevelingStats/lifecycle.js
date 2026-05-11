@@ -380,11 +380,10 @@ module.exports = {
       this.autoSaveInterval = null;
     }
 
-    // Stop quest progress update interval (if present)
-    if (this._questProgressInterval) {
-      clearInterval(this._questProgressInterval);
-      this._questProgressInterval = null;
-    }
+    // Quest progress intervals are now owned per-celebration. The
+    // _questCelebrations iteration further below clears each
+    // celebration._progressInterval explicitly, so no shared-field
+    // cleanup is needed here.
 
     // Remove auto-save listeners
     if (this._autoSaveHandlers) {
