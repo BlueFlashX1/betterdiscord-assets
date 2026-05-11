@@ -54,7 +54,14 @@ module.exports = {
               this.updateChatUI();
               return buffs;
             })
-            .catch(() => null)
+            .catch((err) => {
+              // Surface the buff-refresh failure so silent zero-buff XP
+              // grants are diagnosable. _cachedShadowBuffs stays at its
+              // prior value (or null on first failure) — callers handle
+              // null via the existing fallback path.
+              this.debugError?.('SHADOW_BUFFS_REFRESH', err);
+              return null;
+            })
             .finally(() => {
               this._shadowBuffsRefreshPromise = null;
             });
