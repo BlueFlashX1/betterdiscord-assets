@@ -701,7 +701,13 @@ class ShadowStorageManager {
             request.result && found.push(request.result);
             finalize();
           };
-          request.onerror = () => finalize();
+          request.onerror = () => {
+            // Surface the per-key read failure: previously counted down as if
+            // the id were absent, which silently produced short result lists
+            // (e.g. grantShadowXP would grant 0 XP to the missing shadows).
+            this.debugError?.('IDB', 'getShadowsByIds: request error', { id, error: request.error });
+            finalize();
+          };
         });
       });
       chunkResults.length > 0 && results.push(...chunkResults);
