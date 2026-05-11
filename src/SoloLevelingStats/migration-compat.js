@@ -65,13 +65,33 @@ module.exports = {
       }
     } catch (error) {
       this.debugError('MIGRATE_DATA', error);
-      // Fallback to defaults if migration fails
-      // CRITICAL: Use deep copy to prevent defaultSettings corruption
-      this.settings.stats = structuredClone(this.defaultSettings.stats);
-      this.settings.activity = structuredClone(this.defaultSettings.activity);
-      this.settings.activity.channelsVisited = new Set();
-      this.settings.perceptionBuffs = [];
-      this.settings.unallocatedStatPoints = 0;
+      // Don't wipe real progress on a migration error. If the user has
+      // any meaningful state (level > 1, totalXP > 0, any allocated
+      // stat > 0), preserve it in-memory and surface a toast — the
+      // existing state may be partially-correct but is preferable to
+      // a silent reset. Only fall back to defaults if state looks
+      // genuinely fresh.
+      const looksFresh =
+        (this.settings.level || 0) <= 1 &&
+        (this.settings.totalXP || 0) <= 0 &&
+        Object.values(this.settings.stats || {}).every((v) => !v || v <= 0);
+      try {
+        BdApi.UI?.showToast?.(
+          looksFresh
+            ? 'SoloLevelingStats: migration failed — reset to defaults.'
+            : 'SoloLevelingStats: migration failed — keeping current progress. See console.',
+          { type: 'error', timeout: 10000 }
+        );
+      } catch (_) {}
+      if (looksFresh) {
+        // CRITICAL: Use deep copy to prevent defaultSettings corruption
+        this.settings.stats = structuredClone(this.defaultSettings.stats);
+        this.settings.activity = structuredClone(this.defaultSettings.activity);
+        this.settings.activity.channelsVisited = new Set();
+        this.settings.perceptionBuffs = [];
+        this.settings.unallocatedStatPoints = 0;
+      }
+      // Non-fresh state: leave settings alone. The user keeps what they had.
     }
   }
 };
