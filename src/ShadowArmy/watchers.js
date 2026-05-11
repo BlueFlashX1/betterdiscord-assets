@@ -6,6 +6,18 @@
 
 const dc = require('../shared/discord-classes');
 
+// PERF: hoist the channel-type allowlist Set. canInjectWidgetInCurrentView
+// runs on every member-list MutationObserver callback (~5-10×/sec during
+// scroll/typing), and previously allocated a fresh Set + backing array
+// each call.
+//   0  = GUILD_TEXT
+//   5  = GUILD_ANNOUNCEMENT
+//   10 = ANNOUNCEMENT_THREAD
+//   11 = PUBLIC_THREAD
+//   12 = PRIVATE_THREAD
+//   15 = GUILD_FORUM
+const _ALLOWED_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12, 15]);
+
 module.exports = {
   // CHANNEL & MEMBER LIST WATCHERS
 
@@ -212,8 +224,7 @@ module.exports = {
       // The /threads/ URL early-bail above this block was also removed
       // since thread routes are now legitimate widget mount surfaces.
       const channelType = Number(channel.type);
-      const ALLOWED_TYPES = new Set([0, 5, 10, 11, 12, 15]);
-      if (!ALLOWED_TYPES.has(channelType)) return false;
+      if (!_ALLOWED_CHANNEL_TYPES.has(channelType)) return false;
       return this.hasViewAndSendPermissions(channel);
     }
 
