@@ -161,12 +161,14 @@ module.exports = {
 
       // PERIODIC BACKUP SAVE (Every 30 seconds)
       // Safety net — only saves if settings actually changed since last save.
-      // setTimeout(..., 0) yields to the event loop so the save does not block
-      // keystroke processing when the interval fires mid-typing.
+      // Previously wrapped in a bare setTimeout(..., 0), which escaped the
+      // tracked-timer system and could fire saveSettings() against a
+      // torn-down instance if stop() landed mid-callback. saveSettings()
+      // is already async internally, so the macrotask hop is unnecessary.
       this.periodicSaveInterval = this._timers.setInterval(() => {
         if (this._settingsDirty) {
           this.debugLog('PERIODIC_SAVE', 'Backup auto-save triggered');
-          setTimeout(() => { this.saveSettings(); }, 0);
+          this.saveSettings();
         }
       }, this.saveInterval); // 30 seconds (defined in constructor)
 
