@@ -10,7 +10,8 @@ module.exports = {
 
       const ChannelStore =
         BdApi.Webpack?.getStore?.('ChannelStore') ||
-        BdApi.Webpack?.getModule?.((m) => m?.getChannel);
+        // Optional chaining INSIDE filters is banned (AGENTS.md).
+        BdApi.Webpack?.getModule?.((m) => m && m.getChannel);
 
       if (ChannelStore) {
         // Try multiple methods to get channels
@@ -79,7 +80,8 @@ module.exports = {
       try {
         this._UserGuildSettingsStore =
           BdApi.Webpack?.getStore?.('UserGuildSettingsStore') ||
-          BdApi.Webpack?.getModule?.((m) => m?.isChannelMuted && m?.isMuted) ||
+          // Optional chaining INSIDE filters is banned (AGENTS.md).
+          BdApi.Webpack?.getModule?.((m) => m && m.isChannelMuted && m.isMuted) ||
           null;
       } catch (_) {
         this._UserGuildSettingsStore = null;
@@ -161,7 +163,8 @@ module.exports = {
       try {
         const ChannelStore =
           BdApi.Webpack?.getStore?.('ChannelStore') ||
-          BdApi.Webpack?.getModule?.((m) => m?.getChannel);
+          // Optional chaining INSIDE filters is banned (AGENTS.md).
+          BdApi.Webpack?.getModule?.((m) => m && m.getChannel);
         if (ChannelStore) {
           const selectedChannelId = ChannelStore.getChannelId?.();
           const selectedChannel = ChannelStore.getChannel?.(selectedChannelId);
@@ -174,7 +177,9 @@ module.exports = {
         }
 
         const GuildStore =
-          BdApi.Webpack?.getStore?.('GuildStore') || BdApi.Webpack?.getModule?.((m) => m?.getGuild);
+          BdApi.Webpack?.getStore?.('GuildStore') ||
+          // Optional chaining INSIDE filters is banned (AGENTS.md).
+          BdApi.Webpack?.getModule?.((m) => m && m.getGuild);
         if (GuildStore && ChannelStore) {
           const selectedChannelId = ChannelStore.getChannelId?.();
           const selectedChannel = ChannelStore.getChannel?.(selectedChannelId);

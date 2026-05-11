@@ -22,7 +22,8 @@ module.exports = {
     try {
       const ChannelStore =
         BdApi.Webpack?.getStore?.('ChannelStore') ||
-        BdApi.Webpack?.getModule?.((m) => m?.getGuildChannels);
+        // Optional chaining INSIDE filters is banned (AGENTS.md).
+        BdApi.Webpack?.getModule?.((m) => m && m.getGuildChannels);
 
       if (ChannelStore) {
         // Method 1: getGuildChannels

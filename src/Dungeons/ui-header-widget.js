@@ -494,7 +494,8 @@ module.exports = {
       const { Webpack } = BdApi;
       const nav =
         Webpack?.getByKeys?.('transitionTo', 'back', 'forward') ||
-        Webpack?.getModule?.((m) => m?.transitionTo && m?.back && m?.forward);
+        // Optional chaining INSIDE filters is banned (AGENTS.md).
+        Webpack?.getModule?.((m) => m && m.transitionTo && m.back && m.forward);
       if (nav?.transitionTo) {
         this._navigationUtils = nav;
         nav.transitionTo(path);

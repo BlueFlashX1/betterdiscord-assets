@@ -31,7 +31,9 @@ module.exports = {
       }
       const UserStore =
         BdApi.Webpack?.getStore?.('UserStore') ||
-        BdApi.Webpack?.getModule?.((m) => m?.getCurrentUser);
+        // Optional chaining INSIDE the filter is banned (AGENTS.md) —
+        // BdApi's matcher silently returns null. Use `m && m.foo`.
+        BdApi.Webpack?.getModule?.((m) => m && m.getCurrentUser);
       if (UserStore && UserStore.getCurrentUser) {
         const user = UserStore.getCurrentUser();
         if (user && user.id) return user.id;
