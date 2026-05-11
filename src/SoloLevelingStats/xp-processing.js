@@ -7,6 +7,27 @@ const INT_TIER_BONUSES = Object.freeze([
   Object.freeze({ threshold: 100, bonus: 3 }),
 ]);
 
+// PERF: pre-sorted descending [level, multiplier] tuples for the
+// milestone multiplier lookup. Hoisted to avoid the per-cache-miss
+// object literal + Object.entries + reduce that the previous
+// implementation allocated. Descending order lets the lookup early-exit
+// on the first level threshold met.
+const MILESTONE_MULTIPLIERS = Object.freeze([
+  Object.freeze([2000, 1.68]),
+  Object.freeze([1500, 1.60]),
+  Object.freeze([1000, 1.54]),
+  Object.freeze([700, 1.48]),
+  Object.freeze([500, 1.43]),
+  Object.freeze([400, 1.38]),
+  Object.freeze([300, 1.33]),
+  Object.freeze([200, 1.27]),
+  Object.freeze([150, 1.22]),
+  Object.freeze([100, 1.18]),
+  Object.freeze([75, 1.14]),
+  Object.freeze([50, 1.10]),
+  Object.freeze([25, 1.06]),
+]);
+
 module.exports = {
   runMessageProcessingStage(stageFn) {
     try {
@@ -397,22 +418,6 @@ module.exports = {
   },
 
   _getMilestoneMultiplier(currentLevel) {
-    const milestoneMultipliers = {
-      25: 1.06,
-      50: 1.1,
-      75: 1.14,
-      100: 1.18,
-      150: 1.22,
-      200: 1.27,
-      300: 1.33,
-      400: 1.38,
-      500: 1.43,
-      700: 1.48,
-      1000: 1.54,
-      1500: 1.6,
-      2000: 1.68,
-    };
-
     if (
       this._cache.milestoneMultiplierLevel === currentLevel &&
       this._cache.milestoneMultiplier !== null
@@ -420,13 +425,18 @@ module.exports = {
       return this._cache.milestoneMultiplier;
     }
 
-    const milestoneMultiplier = Object.entries(milestoneMultipliers).reduce(
-      (highest, [milestone, multiplier]) => (currentLevel >= parseInt(milestone, 10) ? multiplier : highest),
-      1.0
-    );
-    this._cache.milestoneMultiplier = milestoneMultiplier;
+    // Descending scan with early exit: MILESTONE_MULTIPLIERS is pre-sorted
+    // high-to-low, so the first threshold met is the correct answer.
+    let multiplier = 1.0;
+    for (let i = 0; i < MILESTONE_MULTIPLIERS.length; i++) {
+      if (currentLevel >= MILESTONE_MULTIPLIERS[i][0]) {
+        multiplier = MILESTONE_MULTIPLIERS[i][1];
+        break;
+      }
+    }
+    this._cache.milestoneMultiplier = multiplier;
     this._cache.milestoneMultiplierLevel = currentLevel;
-    return milestoneMultiplier;
+    return multiplier;
   },
 
   _applyNonCritXpLayers(baseXP, totalPercentageBonus, currentLevel, activeBuffs) {
