@@ -168,7 +168,15 @@ module.exports = {
   getShadowEffectiveStats(shadow) {
     if (!shadow) return this.createZeroStatBlock();
 
-    shadow = this.getShadowData(shadow);
+    // PERF: skip the re-decompress when caller already passed a decompressed
+    // shadow (the streaming aggregation in army-stats.js does this for every
+    // shadow). getShadowData returns the input unchanged when shadow._c is
+    // not 1 or 2 (compression.js:639-648), so checking the marker here lets
+    // us bypass one function call + decompressor lookup per call. For a
+    // 1000-shadow aggregation this removes 1000 redundant calls.
+    if (shadow._c === 1 || shadow._c === 2) {
+      shadow = this.getShadowData(shadow);
+    }
     if (!shadow) return this.createZeroStatBlock?.() || { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
     const base = shadow.baseStats || {};
     const growth = shadow.growthStats || {};
