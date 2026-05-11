@@ -1,3 +1,12 @@
+// PERF: hoist the intelligence-tier bonus table once at module load.
+// Previously allocated 1 array + 3 object literals on every message via
+// _getIntelligenceTierBonus → _collectXpBonusState → awardXP → processMessageSent.
+const INT_TIER_BONUSES = Object.freeze([
+  Object.freeze({ threshold: 400, bonus: 12 }),
+  Object.freeze({ threshold: 200, bonus: 7 }),
+  Object.freeze({ threshold: 100, bonus: 3 }),
+]);
+
 module.exports = {
   runMessageProcessingStage(stageFn) {
     try {
@@ -308,13 +317,8 @@ module.exports = {
   },
 
   _getIntelligenceTierBonus(messageLength) {
-    const intTierBonuses = [
-      { threshold: 400, bonus: 12 },
-      { threshold: 200, bonus: 7 },
-      { threshold: 100, bonus: 3 },
-    ];
-    for (let i = 0; i < intTierBonuses.length; i++) {
-      const tier = intTierBonuses[i];
+    for (let i = 0; i < INT_TIER_BONUSES.length; i++) {
+      const tier = INT_TIER_BONUSES[i];
       if (messageLength >= tier.threshold) return tier;
     }
     return null;
