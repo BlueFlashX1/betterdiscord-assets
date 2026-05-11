@@ -312,39 +312,65 @@ module.exports = {
         const rolePressure = this.buildRolePressureBucket();
         const domainMultiplier = this._getDomainShadowMultiplier(dungeon);
 
-        // Rank-stratified mob targets: group by rank for accurate per-rank damage calc instead of a single averaged entity
-        const mobRankGroups = new Map(); // rank -> { count, representative, mobsInGroup }
+        // Rank-stratified mob targets: group by rank for accurate per-rank damage calc instead of a single averaged entity.
+        // PERF: pooled across ticks. Previously a fresh Map + fresh
+        // mobsInGroup arrays were allocated every tick — with 5000 mobs
+        // in 1-2 rank groups that's 2× ~5000-element arrays created and
+        // GC'd every 2s, triggering minor GC and adding 3-8ms latency
+        // at high mob counts. Now the Map + group objects + inner
+        // arrays persist on `dungeon._pooledMobRankGroups` and get
+        // reset in place at the start of each tick (count→0, sums→0,
+        // mobsInGroup.length=0). Mirrors the existing
+        // `dungeon._pooledMobDamageMap` pattern a few lines below.
+        if (!(dungeon._pooledMobRankGroups instanceof Map)) dungeon._pooledMobRankGroups = new Map();
+        const mobRankGroups = dungeon._pooledMobRankGroups;
+        // Reset all existing group buckets (keep object identity so the
+        // inner arrays can be reused; this is the GC-saving lever).
+        for (const group of mobRankGroups.values()) {
+          group.count = 0;
+          group._sumStr = 0;
+          group._sumAgi = 0;
+          group._sumInt = 0;
+          group._sumVit = 0;
+          group._sumPer = 0;
+          group.representative = null;
+          group.fraction = 0;
+          if (Array.isArray(group.mobsInGroup)) group.mobsInGroup.length = 0;
+          else group.mobsInGroup = [];
+        }
         if (hasMobs) {
           for (let m = 0; m < aliveMobs.length; m++) {
             const mob = aliveMobs[m];
             if (!mob || mob.hp <= 0) continue;
             const rank = mob.rank || dungeon.rank || 'E';
-            const existing = mobRankGroups.get(rank);
-            if (existing) {
-              existing.count++;
-              // Running average: accumulate then divide at the end
-              existing._sumStr += (Number.isFinite(mob.strength) ? mob.strength : 0);
-              existing._sumAgi += (Number.isFinite(mob.agility) ? mob.agility : 0);
-              existing._sumInt += (Number.isFinite(mob.intelligence) ? mob.intelligence : 0);
-              existing._sumVit += (Number.isFinite(mob.vitality) ? mob.vitality : 0);
-              existing._sumPer += (Number.isFinite(mob.perception) ? mob.perception : 0);
-              existing.mobsInGroup.push(mob);
-            } else {
-              mobRankGroups.set(rank, {
-                count: 1,
-                _sumStr: Number.isFinite(mob.strength) ? mob.strength : 0,
-                _sumAgi: Number.isFinite(mob.agility) ? mob.agility : 0,
-                _sumInt: Number.isFinite(mob.intelligence) ? mob.intelligence : 0,
-                _sumVit: Number.isFinite(mob.vitality) ? mob.vitality : 0,
-                _sumPer: Number.isFinite(mob.perception) ? mob.perception : 0,
-                representative: null, // computed below
-                mobsInGroup: [mob],
-              });
+            let group = mobRankGroups.get(rank);
+            if (!group) {
+              group = {
+                count: 0,
+                _sumStr: 0,
+                _sumAgi: 0,
+                _sumInt: 0,
+                _sumVit: 0,
+                _sumPer: 0,
+                representative: null,
+                fraction: 0,
+                mobsInGroup: [],
+              };
+              mobRankGroups.set(rank, group);
             }
+            group.count++;
+            group._sumStr += (Number.isFinite(mob.strength) ? mob.strength : 0);
+            group._sumAgi += (Number.isFinite(mob.agility) ? mob.agility : 0);
+            group._sumInt += (Number.isFinite(mob.intelligence) ? mob.intelligence : 0);
+            group._sumVit += (Number.isFinite(mob.vitality) ? mob.vitality : 0);
+            group._sumPer += (Number.isFinite(mob.perception) ? mob.perception : 0);
+            group.mobsInGroup.push(mob);
           }
-          // Finalize: compute average stats per rank group → representative mob target
+          // Finalize: compute average stats per rank group → representative mob target.
+          // Skip groups with count===0 (rank disappeared between ticks).
           let totalMobCount = 0;
           for (const [rank, group] of mobRankGroups) {
+            if (group.count === 0) continue;
             const n = group.count;
             totalMobCount += n;
             group.representative = {
@@ -356,11 +382,10 @@ module.exports = {
               vitality: Math.max(0, Math.floor(group._sumVit / n)),
               perception: Math.max(0, Math.floor(group._sumPer / n)),
             };
-            // Fraction of total mobs this rank group represents (for proportional attack split)
-            group.fraction = 0; // assigned after totalMobCount is known
           }
-          // Second pass: assign fractions
+          // Second pass: assign fractions (also skipping count===0).
           for (const [, group] of mobRankGroups) {
+            if (group.count === 0) continue;
             group.fraction = totalMobCount > 0 ? group.count / totalMobCount : 0;
           }
         }
