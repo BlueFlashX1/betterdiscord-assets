@@ -181,6 +181,113 @@ function buildComponents(pluginRef) {
     return entry.content || "— no details —";
   }
 
+  /**
+   * Build an inline thumbnail row for any media references on a feed
+   * entry (image/video attachments + Tenor-style embed thumbnails).
+   * Returns null when the entry has no renderable media so the card
+   * stays compact. Clicks bubble up to the parent card's jump handler
+   * — no per-thumbnail click handlers needed.
+   *
+   * Performance notes:
+   *   - `loading="lazy"` — browser defers loading until the thumbnail
+   *     scrolls into view. Keeps initial render cheap when the feed
+   *     is dense.
+   *   - `decoding="async"` — image decode happens off the main thread.
+   *   - 240px max width (default) — small enough to not dominate the
+   *     card layout, large enough that GIFs/photos are recognizable.
+   *   - Static images / still frames only — animated MP4 playback was
+   *     deliberately not enabled per user's "no lag" preference.
+   *   - `onError` swaps the broken `<img>` for a `[Image]` text
+   *     placeholder. Discord CDN URLs can 404 if attachments are
+   *     purged or messages deleted — silent fallback keeps the card
+   *     readable.
+   */
+  function buildMediaPreviews(entry) {
+    const attachments = Array.isArray(entry.attachments) ? entry.attachments : [];
+    const embeds = Array.isArray(entry.embeds) ? entry.embeds : [];
+    if (attachments.length === 0 && embeds.length === 0) return null;
+
+    const thumbStyle = {
+      maxWidth: "240px",
+      maxHeight: "180px",
+      width: "auto",
+      height: "auto",
+      borderRadius: "6px",
+      border: "1px solid rgba(167, 139, 250, 0.2)",
+      background: "rgba(0, 0, 0, 0.25)",
+      display: "block",
+      objectFit: "contain",
+    };
+
+    const items = [];
+    let key = 0;
+
+    for (const a of attachments) {
+      if (!a?.url) continue;
+      items.push(
+        ce("img", {
+          key: `att${key++}`,
+          src: a.url,
+          alt: a.filename || "attachment",
+          loading: "lazy",
+          decoding: "async",
+          style: thumbStyle,
+          onError: (e) => {
+            const node = e?.currentTarget || e?.target;
+            if (node && node.parentNode) {
+              const ph = document.createElement("span");
+              ph.textContent = "[Image]";
+              ph.style.cssText = "color: rgba(232, 227, 245, 0.5); font-size: 12px; font-style: italic;";
+              node.parentNode.replaceChild(ph, node);
+            }
+          },
+        })
+      );
+    }
+
+    for (const em of embeds) {
+      if (!em?.thumbnailUrl) continue;
+      items.push(
+        ce("img", {
+          key: `em${key++}`,
+          src: em.thumbnailUrl,
+          alt: em.title || em.type || "embed",
+          loading: "lazy",
+          decoding: "async",
+          style: thumbStyle,
+          // Show "GIF" badge corner-mark via title attribute (tooltip)
+          // since we're using static thumbnails for no-lag rendering.
+          title: em.type === "gifv" ? "GIF — click card to view animated" : undefined,
+          onError: (e) => {
+            const node = e?.currentTarget || e?.target;
+            if (node && node.parentNode) {
+              const ph = document.createElement("span");
+              ph.textContent = em.type === "gifv" ? "[GIF]" : "[Embed]";
+              ph.style.cssText = "color: rgba(232, 227, 245, 0.5); font-size: 12px; font-style: italic;";
+              node.parentNode.replaceChild(ph, node);
+            }
+          },
+        })
+      );
+    }
+
+    if (items.length === 0) return null;
+
+    return ce(
+      "div",
+      {
+        className: "shadow-senses-feed-media",
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "8px",
+          marginTop: "8px",
+        },
+      },
+      ...items
+    );
+  }
+
   function parseKeywordInput(rawValue) {
     if (typeof rawValue !== "string") return [];
     const terms = rawValue.split(",").map((value) => value.trim()).filter(Boolean);
@@ -337,6 +444,7 @@ function buildComponents(pluginRef) {
     const burstBadge = getBurstBadge(msgCount);
     const contentText = getContentText(entry, eventType);
     const firstContent = getFirstContentBlock(entry, msgCount);
+    const mediaPreviews = buildMediaPreviews(entry);
     const headerNodes = buildFeedCardHeaderNodes(entry, {
       rankColor,
       badge,
@@ -391,6 +499,7 @@ function buildComponents(pluginRef) {
         el.style.setProperty("color", "#e8e3f5", "important");
       },
     }, contentText),
+    mediaPreviews,
     firstContent
     );
   }

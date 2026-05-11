@@ -421,6 +421,67 @@ function buildMessageContent(message) {
   return contentParts.join(" ") || "";
 }
 
+/**
+ * Extract a lean set of media references (image / video attachments +
+ * embed thumbnails) for inline rendering in the FeedTab. Returns
+ * { attachments, embeds } — both arrays may be empty. URLs prefer
+ * proxy_url (Discord's CDN-cached version) over raw url so we benefit
+ * from Discord's image optimization pipeline.
+ *
+ * Filters aggressively: only images & videos (no PDFs / archives), only
+ * embeds with a renderable still image (no plain link embeds). Tenor
+ * GIFs land in `embeds` as type "gifv" with a still thumbnail — we
+ * intentionally keep the STILL (thumbnail) URL not the animated MP4
+ * URL because the user opted for no-lag previews.
+ */
+function buildMessageMedia(message) {
+  const attachments = [];
+  const embeds = [];
+
+  if (Array.isArray(message.attachments)) {
+    for (const a of message.attachments) {
+      if (!a) continue;
+      const ct = a.content_type || "";
+      if (!ct.startsWith("image/") && !ct.startsWith("video/")) continue;
+      const url = a.proxy_url || a.url;
+      if (!url) continue;
+      attachments.push({
+        url,
+        contentType: ct,
+        width: Number(a.width) || undefined,
+        height: Number(a.height) || undefined,
+        filename: a.filename ? String(a.filename).slice(0, 80) : undefined,
+      });
+    }
+  }
+
+  if (Array.isArray(message.embeds)) {
+    for (const e of message.embeds) {
+      if (!e) continue;
+      // Renderable: gifv (Tenor), image, video, or any embed with a
+      // thumbnail. Skip plain link embeds (no preview to show).
+      const thumb = e.thumbnail;
+      const renderable =
+        e.type === "gifv" ||
+        e.type === "image" ||
+        e.type === "video" ||
+        (thumb && (thumb.proxy_url || thumb.url));
+      if (!renderable) continue;
+      const thumbnailUrl = thumb?.proxy_url || thumb?.url || null;
+      if (!thumbnailUrl) continue;
+      embeds.push({
+        type: String(e.type || "embed"),
+        thumbnailUrl,
+        width: Number(thumb?.width) || undefined,
+        height: Number(thumb?.height) || undefined,
+        title: e.title ? String(e.title).slice(0, 80) : undefined,
+      });
+    }
+  }
+
+  return { attachments, embeds };
+}
+
 function showMatchReasonToast(ctx, params) {
   const {
     entry,
@@ -940,6 +1001,10 @@ function onMessageCreate(payload) {
       now: startupState.now,
     });
 
+    // Media extraction for inline FeedTab previews (Tenor GIF stills +
+    // image attachments). Both arrays may be empty for plain text msgs.
+    const { attachments: mediaAttachments, embeds: mediaEmbeds } = buildMessageMedia(message);
+
     const entry = {
       eventType: "message",
       messageId: message.id,
@@ -950,6 +1015,8 @@ function onMessageCreate(payload) {
       guildId,
       guildName,
       content: buildMessageContent(message),
+      attachments: mediaAttachments.length > 0 ? mediaAttachments : undefined,
+      embeds: mediaEmbeds.length > 0 ? mediaEmbeds : undefined,
       timestamp: startupState.now,
       shadowName: deployment.shadowName,
       shadowRank: deployment.shadowRank,

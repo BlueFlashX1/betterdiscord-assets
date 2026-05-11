@@ -420,6 +420,11 @@ function tryBurstGroup(guildId, entry) {
   target.timestamp = entry.timestamp;
   target.messageCount = (target.messageCount || 1) + 1;
   if ((entry.priority || 1) > (target.priority || 1)) target.priority = entry.priority;
+  // Carry over media references from the newest message in the burst
+  // so the FeedTab thumbnail reflects the latest msg's image/gif.
+  // Falls back to the previous target media when the new entry has none.
+  if (entry.attachments) target.attachments = entry.attachments;
+  if (entry.embeds) target.embeds = entry.embeds;
 
   updateBurstAfterMerge(burst, targetIndex, target, entry);
   markFeedDirty(this, guildId);
