@@ -74,6 +74,7 @@ module.exports = {
       const looksFresh =
         (this.settings.level || 0) <= 1 &&
         (this.settings.totalXP || 0) <= 0 &&
+        (this.settings.unallocatedStatPoints || 0) <= 0 &&
         Object.values(this.settings.stats || {}).every((v) => !v || v <= 0);
       try {
         BdApi.UI?.showToast?.(
