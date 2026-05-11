@@ -174,9 +174,13 @@ module.exports = {
           });
         }
       } catch (error) {
-        // Burst data not available or error accessing
+        // Burst data unavailable. Most common cause: CriticalHit plugin
+        // not running or its BdApi.Data store not yet initialized — both
+        // benign. Log so genuine read errors (corrupted store, BdApi
+        // bug) are visible; debugError is unconditional in this plugin.
+        this.debugError?.('CHECK_CRIT_BONUS_BURST', error);
       }
-  
+
       // Hard cap total crit multiplier to avoid runaway XP spikes.
       critMultiplier = Math.min(1.35, critMultiplier);
   
