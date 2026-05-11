@@ -29,6 +29,15 @@ module.exports = {
   },
 
   computeShadowArmyUiData(shadows) {
+    // PERF: this method is called synchronously from ShadowArmyModal's render
+    // body, which re-renders on every _widgetBus 'dirty' event. The full
+    // sort + reduce against the army runs even when `shadows` reference is
+    // unchanged. Cache by reference identity so React reconciles that don't
+    // change `shadows` reuse the prior result. refresh() always produces a
+    // new array reference, so a real change invalidates correctly.
+    if (this._uiDataCacheShadows === shadows && this._uiDataCacheResult) {
+      return this._uiDataCacheResult;
+    }
     const safeShadows = Array.isArray(shadows) ? shadows : [];
 
     const withPower = safeShadows.map((shadow) => {
@@ -96,7 +105,10 @@ module.exports = {
       (a, b) => (b?.[1]?.count || 0) - (a?.[1]?.count || 0)
     );
 
-    return { generals, totalArmyPower, sortedRoles };
+    const result = { generals, totalArmyPower, sortedRoles };
+    this._uiDataCacheShadows = shadows;
+    this._uiDataCacheResult = result;
+    return result;
   },
 
   escapeHtml(value) {
