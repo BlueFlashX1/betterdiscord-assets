@@ -1,4 +1,61 @@
 module.exports = {
+  /**
+   * Trim impossible-high unallocated stat points without ever touching
+   * already-allocated stats. Guards against legacy save-spam bugs that
+   * inflated unallocatedStatPoints far beyond what level-ups + quests
+   * could plausibly have granted.
+   *
+   * Cap = sum of getStatPointsForLevel(l) for l in [1..currentLevel]
+   *     + 500 (quest grant buffer; max 5/day × ~100 days)
+   *
+   * NEVER mutates the 5 base stat values (strength/agility/intelligence/
+   * vitality/perception) or any allocated state. Only clamps
+   * unallocatedStatPoints downward when it exceeds the cap.
+   */
+  _reconcileUnallocatedStatPoints() {
+    try {
+      if (!this.settings) return;
+      const currentLevel = Math.max(1, Math.floor(Number(this.settings.level) || 1));
+      let levelGrants = 0;
+      for (let l = 1; l <= currentLevel; l++) {
+        levelGrants += this.getStatPointsForLevel(l);
+      }
+      const QUEST_GRANT_BUFFER = 500;
+      const cap = levelGrants + QUEST_GRANT_BUFFER;
+      const current = Number(this.settings.unallocatedStatPoints) || 0;
+      if (current <= cap) return;
+
+      const trimmed = current - cap;
+      this.settings.unallocatedStatPoints = cap;
+      this._settingsDirty = true;
+
+      this.debugError(
+        'RECONCILE_UNALLOCATED',
+        new Error(`Trimmed ${trimmed} excess unallocated stat points`),
+        {
+          currentLevel,
+          levelGrants,
+          questBuffer: QUEST_GRANT_BUFFER,
+          cap,
+          before: current,
+          after: cap,
+        }
+      );
+
+      if (!this._reconcileUnallocatedToastShown) {
+        this._reconcileUnallocatedToastShown = true;
+        try {
+          BdApi.UI?.showToast?.(
+            `SoloLevelingStats: trimmed ${trimmed} excess unallocated stat points (cap: ${cap} at level ${currentLevel}). Allocated stats unchanged.`,
+            { type: 'warning', timeout: 10000 }
+          );
+        } catch (_) {}
+      }
+    } catch (err) {
+      this.debugError('RECONCILE_UNALLOCATED', err);
+    }
+  },
+
   migrateData() {
     // Migration logic for future updates
     try {

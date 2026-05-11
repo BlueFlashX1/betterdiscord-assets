@@ -76,6 +76,11 @@ module.exports = {
         totalXP: this.settings.totalXP,
       });
 
+      // Trim impossible-high unallocated stat points caused by legacy save-spam.
+      // Caps unallocated at (level-grant total + 500 quest buffer). Allocated
+      // stats are never touched. See migration-compat._reconcileUnallocatedStatPoints.
+      this._reconcileUnallocatedStatPoints();
+
       if (!this.settings.activity.lastActiveTime) {
         this.settings.activity.lastActiveTime = Date.now();
         bootstrapSettingsChanged = true;
