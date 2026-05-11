@@ -826,8 +826,13 @@ module.exports = {
     );
     try {
       await this.loadSettings();
-    } catch (_) {
-      // best effort
+    } catch (err) {
+      // Surface remedial-load failures. The save guard already blocked the
+      // current save (returning false below) — but if the remedial reload
+      // also failed, the plugin operates with whatever in-memory state
+      // triggered the guard (possibly default/fresh), and the user can't
+      // tell why subsequent operations might fail.
+      this.debugError?.('SAVE_GUARD_REMEDIAL_LOAD', err);
     }
     return false;
   },
