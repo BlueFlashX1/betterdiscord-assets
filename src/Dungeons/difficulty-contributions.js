@@ -95,20 +95,25 @@ module.exports = {
     // without emitting on every single kill (which could be 50+ per tick).
     if (dungeon._pendingEssence >= 10) {
       const essenceAmount = dungeon._pendingEssence;
+      const resolvedMobRank = mobRank || dungeon.rank || 'E';
+      const perKill = this.shadowArmy?.settings?.shadowEssence?.essencePerMobKill?.[resolvedMobRank]
+        || this.shadowArmy?.defaultSettings?.shadowEssence?.essencePerMobKill?.[resolvedMobRank]
+        || 1;
+      const itemVaultEssenceAmount = essenceAmount * perKill;
       dungeon._pendingEssence = 0;
       try {
         if (SLEvents) {
           SLEvents.emit('Dungeons:awardEssence', {
             amount: essenceAmount,
-            mobRank: mobRank || dungeon.rank || 'E',
+            mobRank: resolvedMobRank,
             source: 'mob_kill',
           });
           // Mirror to ItemVault
           SLEvents.emit('ItemVault:add', {
             itemId: 'shadow_essence',
-            amount: essenceAmount,
+            amount: itemVaultEssenceAmount,
             source: 'Dungeons',
-            meta: { mobRank: mobRank || dungeon.rank || 'E', trigger: 'mob_kill' },
+            meta: { mobRank: resolvedMobRank, trigger: 'mob_kill' },
           });
         }
       } catch (_) {}

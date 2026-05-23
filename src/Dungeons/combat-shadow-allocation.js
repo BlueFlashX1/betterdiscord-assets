@@ -475,12 +475,15 @@ module.exports = {
     const aRankIndex = getRankIndex('A');
     const allHighRank = activeDungeonsList.every(d => getRankIndex(d.rank) >= aRankIndex);
     const reservePercent = allHighRank ? 0.05 : 0.10;
-    const reserveCount = Math.max(1, Math.floor(shadowsSorted.length * reservePercent));
+    const reserveCount = shadowsSorted.length <= 1
+      ? 0
+      : Math.min(shadowsSorted.length - 1, Math.max(1, Math.floor(shadowsSorted.length * reservePercent)));
 
     // Reserve = weakest shadows (end of the sorted array, since sorted strongest-first)
     // Normalize reserve shadows so ShadowSenses can match by .id (compressed shadows only have .i)
-    const reserveShadows = shadowsSorted.slice(-reserveCount)
-      .map(s => this.normalizeShadowId(s) || s);
+    const reserveShadows = reserveCount > 0
+      ? shadowsSorted.slice(-reserveCount).map(s => this.normalizeShadowId(s) || s)
+      : [];
     const reserveIds = new Set(
       reserveShadows
         .map((s) => getShadowId(s))

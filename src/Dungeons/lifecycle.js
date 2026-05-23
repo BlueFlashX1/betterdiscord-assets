@@ -330,7 +330,11 @@ module.exports = {
     // Flush active dungeons to IDB before closing storage
     if (this.storageManager && this.activeDungeons) {
       for (const [key, dungeon] of this.activeDungeons) {
-        try { await this.storageManager.saveDungeon(dungeon); } catch (_) {}
+        try {
+          await this.storageManager.saveDungeon(dungeon);
+        } catch (error) {
+          this.errorLog('STOP', 'Failed to flush active dungeon before storage close', { key, error });
+        }
       }
     }
 

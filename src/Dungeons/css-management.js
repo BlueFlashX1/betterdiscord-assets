@@ -66,7 +66,17 @@ module.exports = {
         document.head.appendChild(style);
       }
     } catch (error) {
-      this.debugLog('CSS', `Failed to inject CSS: ${styleId}`, error);
+      this.errorLog?.('CSS', `Failed to inject CSS: ${styleId}`, error);
+      if (!document.getElementById(styleId)) {
+        try {
+          const style = document.createElement('style');
+          style.id = styleId;
+          style.textContent = cssContent;
+          document.head.appendChild(style);
+        } catch (fallbackError) {
+          this.errorLog?.('CSS', `Fallback CSS injection also failed: ${styleId}`, fallbackError);
+        }
+      }
     }
 
     if (!this._injectedStyles) {

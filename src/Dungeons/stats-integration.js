@@ -204,7 +204,9 @@ module.exports = {
       .filter((snapshot) => snapshot?.def && snapshot.unlocked)
       .map((snapshot) => {
         const def = snapshot.def;
-        const hasMana = Number(snapshot.mana?.current || 0) >= Number(def.manaCost || 0);
+        const effectiveManaCost = Math.max(0, Number(snapshot.effectiveManaCost ?? def.manaCost) || 0);
+        const currentMana = Math.max(0, Number(snapshot.mana?.current) || 0);
+        const hasMana = currentMana >= effectiveManaCost;
         const isOnCooldown = snapshot.cooldownRemaining > 0;
         const needsDeploy = !dungeon.shadowsDeployed;
         const bossAlive = Number(dungeon?.boss?.hp || 0) > 0;
@@ -219,7 +221,7 @@ module.exports = {
           noEnemies;
 
         let stateClass = 'is-ready';
-        const manaPart = Number(def.manaCost) > 0 ? `${def.manaCost} Mana • ` : 'No Mana Cost • ';
+        const manaPart = effectiveManaCost > 0 ? `${effectiveManaCost} Mana • ` : 'No Mana Cost • ';
         let titleText = `${def.name} • ${manaPart}${Math.ceil(snapshot.effectiveCooldownMs / 1000)}s cooldown`;
 
         if (isOnCooldown) {
@@ -227,7 +229,7 @@ module.exports = {
           titleText = `${def.name} ready in ${Math.ceil(snapshot.cooldownRemaining / 1000)}s`;
         } else if (!hasMana) {
           stateClass = 'is-starved';
-          titleText = `${def.name} requires ${def.manaCost} Mana`;
+          titleText = `${def.name} requires ${effectiveManaCost} Mana`;
         } else if (needsDeploy) {
           stateClass = 'is-blocked';
           titleText = `Deploy shadows before using ${def.name}.`;
@@ -305,6 +307,15 @@ module.exports = {
 
   async loadPluginReferences() {
     try {
+      const detachShadowExtractedListener = () => {
+        if (!this._shadowExtractedListener) return;
+        SLEvents?.off('ShadowArmy:shadowExtracted', this._shadowExtractedListener);
+        if (typeof document.removeEventListener === 'function') {
+          document.removeEventListener('shadowExtracted', this._shadowExtractedListener);
+        }
+        this._shadowExtractedListener = null;
+      };
+
       // Load SoloLevelingStats plugin with validation
       const soloPlugin = this.validatePluginReference('SoloLevelingStats', 'settings');
       if (soloPlugin) {
@@ -344,6 +355,7 @@ module.exports = {
 
         // Listen for shadow extraction events (event-based sync)
         // Consolidated: also handles extraction verification (previously in setupExtractionEventListener)
+        detachShadowExtractedListener();
         this._shadowExtractedListener = (data) => {
           // Dedup: both SLEvents and DOM channels fire for the same extraction.
           // Ignore duplicate firings within 50ms.
@@ -392,6 +404,8 @@ module.exports = {
         document.addEventListener('shadowExtracted', this._shadowExtractedListener);
         this.debugLog('Subscribed to ShadowArmy:shadowExtracted and shadowExtracted DOM events');
       } else {
+        detachShadowExtractedListener();
+        this.shadowArmy = null;
         this.debugLogOnce('PLUGIN_REF_MISSING:ShadowArmy', 'ShadowArmy plugin not available');
       }
 
@@ -411,7 +425,7 @@ module.exports = {
         );
       }
     } catch (error) {
-      this.debugLog('Error loading plugin references', error);
+      this.errorLog('PLUGIN_REF', 'Error loading plugin references', error);
     }
   }
 };

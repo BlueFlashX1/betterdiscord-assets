@@ -12,6 +12,7 @@ const { SHADOW_GRADES } = C;
 const _GRADE_INDEX = Object.freeze(
   SHADOW_GRADES.reduce((m, g, i) => { m[g] = i; return m; }, {})
 );
+const SHADOW_ARMY_MODAL_LOAD_LIMIT = 2500;
 
 module.exports = {
   // UI HELPERS
@@ -348,7 +349,7 @@ module.exports = {
               const totalCount = (await pluginRef.storageManager.getTotalCount()) || 0;
               if (totalCount <= 0) {
                 setShadows([]);
-              } else if (totalCount > 2500) {
+              } else if (totalCount > SHADOW_ARMY_MODAL_LOAD_LIMIT) {
                 pluginRef.debugLog('UI', 'Modal auto-refresh skipped for large army', {
                   totalCount,
                 });
@@ -546,12 +547,30 @@ module.exports = {
       return;
     }
     this._armyModalOpen = true;
+    const openToken = (this._armyModalToken || 0) + 1;
+    this._armyModalToken = openToken;
+    const isStaleOpen = () =>
+      this._isStopped || !this._armyModalOpen || this._armyModalToken !== openToken;
 
+    let container = null;
+    let root = null;
     try {
       let shadows = [];
       if (this.storageManager?.getShadows) {
         try {
-          shadows = await this.storageManager.getShadows({}, 0, Infinity);
+          const totalCount = typeof this.storageManager.getTotalCount === 'function'
+            ? (await this.storageManager.getTotalCount()) || 0
+            : SHADOW_ARMY_MODAL_LOAD_LIMIT;
+          const loadCount = totalCount > 0
+            ? Math.min(totalCount, SHADOW_ARMY_MODAL_LOAD_LIMIT)
+            : SHADOW_ARMY_MODAL_LOAD_LIMIT;
+          if (totalCount > SHADOW_ARMY_MODAL_LOAD_LIMIT) {
+            this.debugLog('UI', 'Modal initial load capped for large army', {
+              totalCount,
+              loaded: loadCount,
+            });
+          }
+          shadows = await this.storageManager.getShadows({}, 0, loadCount);
         } catch (err) {
           this.debugError('UI', 'Could not get shadows from IndexedDB', err);
           shadows = this.settings.shadows || [];
@@ -559,10 +578,12 @@ module.exports = {
       } else {
         shadows = this.settings.shadows || [];
       }
+      if (isStaleOpen()) return;
 
       shadows = shadows.map((s) => this.getShadowData(s));
+      if (isStaleOpen()) return;
 
-      const container = document.createElement('div');
+      container = document.createElement('div');
       container.id = 'shadow-army-modal-root';
       container.style.display = 'contents';
       document.body.appendChild(container);
@@ -578,7 +599,19 @@ module.exports = {
         return;
       }
 
-      const root = createRoot(container);
+      if (isStaleOpen()) {
+        container.remove();
+        this.shadowArmyModal = null;
+        return;
+      }
+
+      root = createRoot(container);
+      if (isStaleOpen()) {
+        try { root.unmount(); } catch (_) {}
+        container.remove();
+        this.shadowArmyModal = null;
+        return;
+      }
       this._armyModalRoot = root;
 
       const React = BdApi.React;
@@ -588,12 +621,25 @@ module.exports = {
         onClose: () => this.closeShadowArmyModal(),
       }));
     } catch (error) {
+      if (root && this._armyModalRoot === root) {
+        try { root.unmount(); } catch (_) {}
+        this._armyModalRoot = null;
+      }
+      if (container?.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+      if (this.shadowArmyModal === container) {
+        this.shadowArmyModal = null;
+      }
       this.debugError('UI', 'Failed to open UI', error);
-      this._armyModalOpen = false;
+      if (this._armyModalToken === openToken) {
+        this._armyModalOpen = false;
+      }
     }
   },
 
   closeShadowArmyModal() {
+    this._armyModalToken = (this._armyModalToken || 0) + 1;
     this._armyModalOpen = false;
 
     if (this._armyModalRoot) {

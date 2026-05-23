@@ -358,12 +358,19 @@ const ShadowArmy = class ShadowArmy {
     // Phase 2 self-heal: deferred background integrity check (non-blocking)
     // Runs after 5s delay so plugin startup, snapshot cache, and deployment are
     // fully operational before heavy IDB writes begin.
-    setTimeout(() => {
-      if (this._isStopped) return;
+    const startupSelfHealToken = sessionToken;
+    const startupSelfHealTimer = setTimeout(() => {
+      this._retryTimeouts.delete(startupSelfHealTimer);
+      if (this._startupSelfHealTimer === startupSelfHealTimer) {
+        this._startupSelfHealTimer = null;
+      }
+      if (this._isStopped || this._sessionToken !== startupSelfHealToken) return;
       this.selfHealOnStart().catch((error) => {
         this.debugError('SELF-HEAL', 'Phase 2 self-heal failed', error);
       });
     }, 5000);
+    this._startupSelfHealTimer = startupSelfHealTimer;
+    this._retryTimeouts.add(startupSelfHealTimer);
   }
 
   /**
@@ -536,7 +543,7 @@ const ShadowArmy = class ShadowArmy {
         if (rawAmount <= 0) return;
 
         let essenceGain = 0;
-        if (source === 'mob_kill') {
+        if (source === 'mob_kill' || source === 'mob_kill_flush') {
           // Scale by mob rank: each kill awards essencePerMobKill[rank]
           const mobRank = data?.mobRank || 'E';
           const perKill = essenceConfig.essencePerMobKill?.[mobRank]
@@ -667,6 +674,7 @@ const ShadowArmy = class ShadowArmy {
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this._retryTimeouts.clear();
+    this._startupSelfHealTimer = null;
     this._messageExtractionQueueTimeout = null;
     this._ariseDrainTimeout = null;
     this._pendingMessageExtractionCount = 0;

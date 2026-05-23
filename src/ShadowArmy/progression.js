@@ -8,6 +8,20 @@ const C = require('./constants');
 module.exports = {
   // SHADOW GROWTH & LEVELING SYSTEM
 
+  shareShadowXP(xpAmount, source = 'message') {
+    const amount = Math.max(0, Math.floor(Number(xpAmount) || 0));
+    if (amount <= 0) return { updatedShadows: [] };
+
+    const result = this.grantShadowXP(amount, source);
+    if (result && typeof result.catch === 'function') {
+      return result.catch((error) => {
+        this.debugError('SHADOW_XP_SHARE', 'Failed to share XP with ShadowArmy', error);
+        return { updatedShadows: [] };
+      });
+    }
+    return result;
+  },
+
   async grantShadowXP(baseAmount, reason = 'message', shadowIds = null, options = {}) {
     const perShadowAmounts =
       options && typeof options === 'object' && options.perShadowAmounts && typeof options.perShadowAmounts === 'object'

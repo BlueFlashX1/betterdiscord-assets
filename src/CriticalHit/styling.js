@@ -441,11 +441,19 @@ ${childSel} {
       }
 
       if (!fontSrc) {
-        this.debugError('FONT_LOADER', 'Could not get embedded font data', {
-          fontName,
-          fontFileName,
-          availableFonts: Object.keys(fontDataMap),
-        });
+        const isMappedFont = Object.prototype.hasOwnProperty.call(fontDataMap, fontFileName);
+        if (isMappedFont) {
+          this.debugError('FONT_LOADER', 'Embedded font data missing for a mapped font', {
+            fontName,
+            fontFileName,
+            availableFonts: Object.keys(fontDataMap),
+          });
+        } else {
+          this.debugLog('FONT_LOADER', 'Font is not bundled; caller will fall back to Google Fonts', {
+            fontName,
+            fontFileName,
+          });
+        }
         return false;
       }
 

@@ -274,36 +274,20 @@ module.exports = {
   },
 
   async _persistShadowToSettingsFallback(shadow, attemptNum, reasonLabel) {
-    this.settings.shadows || (this.settings.shadows = []);
-    this.settings.shadows.push(shadow);
-    try {
-      this.saveSettings();
-    } catch (e) {
-      if (e?.name === 'QuotaExceededError' || (e?.message && e.message.includes('quota'))) {
-        this.debugError('STORAGE', 'localStorage quota exceeded — shadow data may be lost on reload', e);
-        BdApi.UI.showToast('ShadowArmy: Storage full — shadow data may be lost!', { type: 'error' });
-      } else {
-        throw e;
-      }
-    }
-
-    const now = Date.now();
-    this.settings.totalShadowsExtracted++;
-    this.settings.lastExtractionTime = now;
-    const extractedShadowId = shadow?.id || shadow?.i;
-    await this.grantShadowXP(2, 'extraction', extractedShadowId ? [String(extractedShadowId)] : null, {
-      skipPowerRecalc: true,
-    });
-    this.updateUI();
-
-    this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - ${reasonLabel}`, {
+    const shadowId = shadow ? this.getCacheKey?.(shadow) || shadow.id || shadow.i : null;
+    this.debugError('STORAGE', 'Shadow extraction cannot persist without Shadow Preservation storage', {
       attemptNum,
-      shadowId: this.getCacheKey(shadow),
-      shadowRank: shadow.rank,
-      shadowRole: shadow.role,
+      reasonLabel,
+      shadowId,
+      shadowRank: shadow?.rank,
+      shadowRole: shadow?.role,
     });
 
-    return shadow;
+    try {
+      this._toast?.('Shadow extraction failed: Shadow Preservation storage unavailable.', 'error');
+    } catch (_) {}
+
+    return null;
   },
 
   /**
@@ -602,14 +586,13 @@ module.exports = {
             return shadow; // SUCCESS
           } catch (error) {
             this.debugError('EXTRACTION_RETRIES', `Attempt ${attemptNum} - Failed to save shadow to IndexedDB`, error);
-            return this._persistShadowToSettingsFallback(shadow, attemptNum, 'Fallback to localStorage succeeded');
+            return this._persistShadowToSettingsFallback(shadow, attemptNum, 'IndexedDB save failed');
           }
         } else {
-          // No storageManager — localStorage fallback
-          this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - No storageManager, using localStorage fallback`, {
+          this.debugError('EXTRACTION_RETRIES', 'Shadow extraction blocked because durable storage is unavailable', {
             attemptNum, shadowId: this.getCacheKey(shadow),
           });
-          return this._persistShadowToSettingsFallback(shadow, attemptNum, 'localStorage fallback succeeded');
+          return this._persistShadowToSettingsFallback(shadow, attemptNum, 'Storage manager or Shadow Preservation unavailable');
         }
       }
     }
@@ -867,11 +850,6 @@ module.exports = {
         // Prepare + track
         const shadowToSave = this.prepareShadowForSave(shadow);
         chunkShadows.push(shadowToSave);
-        totalPowerDelta += (shadowToSave.strength || shadowToSave.s || 0);
-        const r = shadowToSave.rank || shadowToSave.r || '?';
-        rankCounts[r] = (rankCounts[r] || 0) + 1;
-        const extractedShadowId = shadowToSave?.id || shadowToSave?.i;
-        extractedShadowId && extractedShadowIds.push(String(extractedShadowId));
 
         if (isBoss) this.recordBossExtractionAttempt(corpse.id, true);
       }
@@ -890,6 +868,14 @@ module.exports = {
 
           const effectiveSavedCount = Number.isFinite(savedCount) ? savedCount : chunkShadows.length;
           totalExtracted += effectiveSavedCount;
+          const savedShadows = chunkShadows.slice(0, effectiveSavedCount);
+          for (const savedShadow of savedShadows) {
+            totalPowerDelta += (savedShadow.strength || savedShadow.s || 0);
+            const r = savedShadow.rank || savedShadow.r || '?';
+            rankCounts[r] = (rankCounts[r] || 0) + 1;
+            const extractedShadowId = savedShadow?.id || savedShadow?.i;
+            if (extractedShadowId) extractedShadowIds.push(String(extractedShadowId));
+          }
         } catch (e) {
           this.debugError(
             'BULK_EXTRACTION',
@@ -898,11 +884,14 @@ module.exports = {
           );
         }
       } else if (chunkShadows.length > 0) {
-        // Fallback: persist to settings (localStorage) when IDB skill not available
-        for (const shadow of chunkShadows) {
-          this._persistShadowToSettingsFallback?.(shadow);
-        }
-        totalExtracted += chunkShadows.length;
+        this.debugError('BULK_EXTRACTION', 'Bulk extraction skipped because durable storage is unavailable', {
+          attemptedChunkSize: chunkShadows.length,
+          hasStorageManager: Boolean(this.storageManager),
+          hasShadowPreservation: this._isSkillTreeSkillUnlocked('shadow_preservation'),
+        });
+        try {
+          this._toast?.('ARISE failed: Shadow Preservation storage unavailable.', 'error');
+        } catch (_) {}
       }
 
       // Yield to event loop

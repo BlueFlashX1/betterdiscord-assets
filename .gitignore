@@ -83,3 +83,7 @@ config.local.*
 *.swo
 *~
 .#*
+
+# AI agent state dirs — never track (per forked-oss-backup-workflow memory)
+.ocx/
+.opencode/

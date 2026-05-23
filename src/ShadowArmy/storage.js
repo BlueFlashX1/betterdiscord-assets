@@ -362,23 +362,21 @@ class ShadowStorageManager {
             return;
           }
 
-          if (localScanned >= safeBatchSize) {
-            nextKey = cursor.key;
-            return;
-          }
-
           localScanned++;
           const shadow = cursor.value;
           const { shadow: normalizedShadow, changed } = this.ensurePersonalityKey(shadow);
+          const shouldContinue = localScanned < safeBatchSize;
+          nextKey = cursor.key;
+
           if (!changed) {
-            cursor.continue();
+            if (shouldContinue) cursor.continue();
             return;
           }
 
           const updateRequest = cursor.update(normalizedShadow);
           updateRequest.onsuccess = () => { localUpdated++; };
           updateRequest.onerror = () => { localErrors++; };
-          cursor.continue();
+          if (shouldContinue) cursor.continue();
         };
         request.onerror = () => reject(request.error);
 

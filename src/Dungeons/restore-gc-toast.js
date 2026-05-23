@@ -1,3 +1,5 @@
+const C = require('./constants');
+
 module.exports = {
   async restoreActiveDungeons() {
     if (!this.storageManager) return;
@@ -36,10 +38,21 @@ module.exports = {
       }
 
       savedDungeons.forEach((dungeon) => {
+        try {
         const elapsed = Date.now() - dungeon.startTime;
         if (elapsed < this.settings.dungeonDuration && !dungeon.completed && !dungeon.failed) {
           // Ensure activeMobs array exists
-          if (!dungeon.mobs?.activeMobs) {
+          if (!dungeon.mobs || typeof dungeon.mobs !== 'object') {
+            dungeon.mobs = {
+              total: 0,
+              remaining: 0,
+              killed: 0,
+              targetCount: 0,
+              spawnRate: 1,
+              activeMobs: [],
+              mobCapacity: 200,
+            };
+          } else if (!Array.isArray(dungeon.mobs.activeMobs)) {
             dungeon.mobs.activeMobs = [];
           }
           // Ensure shadowHP exists as a Map (convert from plain object if loaded from JSON)
@@ -330,6 +343,13 @@ module.exports = {
 
         // Clear from memory if somehow still present
         this.activeDungeons.delete(dungeon.channelKey);
+        } catch (error) {
+          this.errorLog('RESTORE', 'Failed to restore dungeon record', {
+            channelKey: dungeon?.channelKey,
+            dungeonName: dungeon?.name,
+            error,
+          });
+        }
       });
 
       // GUARD: If plugin was stopped during the forEach, don't start combat loops.
