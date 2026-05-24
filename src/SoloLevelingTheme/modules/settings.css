@@ -74,12 +74,12 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] svg[class
 /* Default/unselected state: channel-unread SVG (organic purple stroke frame)
    Excludes items that have the active_ class */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]) {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
 }
 
 /* Hover state: channel-hover SVG (enhanced purple + dark fills) + glow */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]):hover {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
 }
@@ -87,7 +87,7 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([clas
 /* Selected/active state: Selected_channel SVG (organic dark strokes + purple edges) + glow
    active_ class is on the ITEM (div[role=listitem]) itself, confirmed via CSS Picker. */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="active_"] {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
 }

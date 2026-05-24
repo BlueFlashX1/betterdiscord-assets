@@ -1,6 +1,6 @@
 # BetterDiscord Plugin Workspace
 
-- **Repo**: `betterdiscord-assets` (`https://github.com/BlueFlashX1/betterdiscord-assets.git`)
+- **Repo**: `betterdiscord-assets` (`https://github.com/matthewqilanthompson/betterdiscord-assets.git`)
 - **BD plugins folder**: `~/Library/Application Support/BetterDiscord/plugins/`
 - **Symlink script**: `scripts/link-all-plugins.sh` (symlinks `plugins/*.plugin.js` to BD folder)
 

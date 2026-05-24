@@ -84,7 +84,7 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
    ClearVision sets its own discord.svg background on this SVG — we override it.
    The SVG path (Discord logo) is already display:none from ClearVision. */
 div[class^="tutorialContainer_"] div[class^="childWrapper_"] > svg[role="img"] {
-  background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
+  background: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
   opacity: 1 !important;
 }
 div[class^="tutorialContainer_"] div[class^="childWrapper_"] {

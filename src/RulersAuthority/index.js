@@ -2,8 +2,8 @@
  * @name RulersAuthority
  * @description Telekinetic control over Discord's UI — push, pull, grip, and crush panels and channels. Solo Leveling themed.
  * @version 2.1.2
- * @author BlueFlashX1
- * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ * @author matthewqilanthompson
+ * @source https://github.com/matthewqilanthompson/betterdiscord-assets
  *
  * ============================================================================
  * RULER'S AUTHORITY — Sung Jin-Woo's Telekinesis (v2)

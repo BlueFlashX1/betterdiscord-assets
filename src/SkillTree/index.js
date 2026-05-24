@@ -1,9 +1,9 @@
 /**
  * @name SkillTree
- * @author BlueFlashX1
+ * @author matthewqilanthompson
  * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
  * @version 3.0.0
- * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ * @source https://github.com/matthewqilanthompson/betterdiscord-assets
  *
  * ============================================================================
  * ATTRIBUTION & LICENSE
@@ -19,7 +19,7 @@
  *
  * This attribution does not imply the entire plugin is derived from AutoIdleOnAFK.
  * The window focus detection is a small, reusable pattern and this plugin
- * remains primarily original work by BlueFlashX1.
+ * remains primarily original work by matthewqilanthompson.
  *
  * ============================================================================
  * VERSION HISTORY

@@ -14,5 +14,5 @@ This repo intentionally contains **only** the public-facing assets. Plugin sourc
 There is no install guide here — this is just a static asset host. If you want to use one of these images in your own BD theme or CSS snippet, link to the raw GitHub URL of the file directly:
 
 ```
-https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/<path-to-file>
+https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/<path-to-file>
 ```

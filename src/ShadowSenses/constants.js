@@ -59,7 +59,7 @@ const STATUS_ACCENT_COLORS = {
 };
 const STATUS_TOAST_TIMEOUT_MS = 5000;
 const STARTUP_REPORT_ARTWORK_FALLBACK_URL =
-  "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/assets/igris/Igris.svg";
+  "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/assets/igris/Igris.svg";
 const DEFAULT_SETTINGS = {
   animationEnabled: true,
   respectReducedMotion: false,

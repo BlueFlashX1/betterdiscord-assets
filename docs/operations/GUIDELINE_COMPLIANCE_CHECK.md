@@ -166,7 +166,7 @@ Both **SoloLevelingStats** and **CriticalHit** plugins have been reviewed agains
 
 ### 1. ✅ Verify Public GitHub Repository
 
-- **COMPLETED**: Repository URL added to both plugins: `https://github.com/BlueFlashX1/betterdiscord-assets`
+- **COMPLETED**: Repository URL added to both plugins: `https://github.com/matthewqilanthompson/betterdiscord-assets`
 - **Status**: Repository link added to `@source` metadata in both plugin headers
 - **Note**: Repository accessibility should be verified by user (ensure repo is public)
 
@@ -186,7 +186,7 @@ Both **SoloLevelingStats** and **CriticalHit** plugins have been reviewed agains
 
 ### 3. ✅ Add Source Links
 
-- **COMPLETED**: Added `@source https://github.com/BlueFlashX1/betterdiscord-assets` to both plugin headers
+- **COMPLETED**: Added `@source https://github.com/matthewqilanthompson/betterdiscord-assets` to both plugin headers
 - **SoloLevelingStats**: Source link added at line 9
 - **CriticalHit**: Source link added at line 6
 

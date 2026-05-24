@@ -3,7 +3,7 @@
  * @description Signed local bridge between BetterDiscord and shadow-away-bot for away state and return detection.
  * @version 1.0.0
  * @author Solo Leveling Theme Dev
- * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ * @source https://github.com/matthewqilanthompson/betterdiscord-assets
  */
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {

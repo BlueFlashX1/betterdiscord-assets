@@ -71,7 +71,7 @@
   --font-code: 'Consolas', 'Courier New', monospace;
 
   /* Animated wallpaper controls */
-  --sl-bg-gif: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-gif: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/SLEndingBest.gif');
   /* --sl-bg-overlay defined above at 0.75 — adjust there to control wallpaper dimming */
   --sl-bg-opacity: 1.0;
   --background-position: center 0%;

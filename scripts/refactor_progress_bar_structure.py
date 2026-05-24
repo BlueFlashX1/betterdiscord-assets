@@ -17,7 +17,7 @@ header = header_match.group(1) if header_match else ''
 # Update header to include section documentation
 updated_header = """/**
  * @name LevelProgressBar
- * @author BlueFlashX1
+ * @author matthewqilanthompson
  * @description Always-visible level progress bar for Solo Leveling Stats with Shadow Army total power display
  * @version 1.3.0
  *

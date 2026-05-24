@@ -13,7 +13,7 @@
  *
  * This attribution does not imply the entire plugin is derived from AutoIdleOnAFK.
  * The window focus detection is a small, reusable pattern and this plugin
- * remains primarily original work by BlueFlashX1.
+ * remains primarily original work by matthewqilanthompson.
  *
  * ============================================================================
  * FILE STRUCTURE & NAVIGATION

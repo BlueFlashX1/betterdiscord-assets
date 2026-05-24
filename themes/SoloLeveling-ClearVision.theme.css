@@ -216,7 +216,7 @@ AI MAINTENANCE RULES
   --font-code: 'Consolas', 'Courier New', monospace;
 
   /* Animated wallpaper controls */
-  --sl-bg-gif: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-gif: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/SLEndingBest.gif');
   --sl-bg-overlay: rgba(0, 0, 0, 0);
   --sl-bg-opacity: 1.0;
   --background-position: center 0%;
@@ -1124,7 +1124,7 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
    ClearVision sets its own discord.svg background on this SVG — we override it.
    The SVG path (Discord logo) is already display:none from ClearVision. */
 div[class^="tutorialContainer_"] div[class^="childWrapper_"] > svg[role="img"] {
-  background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
+  background: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
   opacity: 1 !important;
 }
 div[class^="tutorialContainer_"] div[class^="childWrapper_"] {
@@ -1394,7 +1394,7 @@ ul[aria-label="Channels"] li[class*="containerDefault_"] {
    so background-size:100% 100% stretches the banner to fill each channel row. */
 ul[aria-label="Channels"] [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Shadowbannerv1.1.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/Shadowbannerv1.1.svg') !important;
   background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
@@ -1421,7 +1421,7 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
 ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover,
 ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/shadow_bannerv2.1hover.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/shadow_bannerv2.1hover.svg') !important;
   background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
@@ -1450,7 +1450,7 @@ ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"]::before {
 }
 ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"],
 ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"] {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
 }
@@ -2258,12 +2258,12 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] svg[class
 /* Default/unselected state: channel-unread SVG (organic purple stroke frame)
    Excludes items that have the active_ class */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]) {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
 }
 
 /* Hover state: channel-hover SVG (enhanced purple + dark fills) + glow */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]):hover {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
 }
@@ -2271,7 +2271,7 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([clas
 /* Selected/active state: Selected_channel SVG (organic dark strokes + purple edges) + glow
    active_ class is on the ITEM (div[role=listitem]) itself, confirmed via CSS Picker. */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="active_"] {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
 }
