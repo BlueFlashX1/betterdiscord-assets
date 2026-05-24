@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "BetterDiscord plugin and theme development environment",
   "scripts": {
-    "build": "node scripts/build-plugin.js",
+    "build": "node scripts/build-plugin.js --all",
+    "build:plugin": "node scripts/build-plugin.js",
     "watch": "node scripts/build-plugin.js --watch",
     "build:all": "node scripts/build-plugin.js --all",
     "watch:all": "node scripts/build-plugin.js --all --watch",
