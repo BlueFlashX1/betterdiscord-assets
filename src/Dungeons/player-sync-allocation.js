@@ -326,14 +326,23 @@ module.exports = {
   },
 
   _buildDeployStarterAllocation(channelKey, dungeon) {
-    const starterCapSetting = Number(this.settings?.deployStarterShadowCap);
-    const starterCap = this.clampNumber(
-      Number.isFinite(starterCapSetting) && starterCapSetting > 0
-        ? Math.floor(starterCapSetting)
-        : this._deployStarterShadowCap,
-      24,
-      2000
-    );
+    // Deploy target scales with the dungeon's MOB CAPACITY (set by rank), so a
+    // high-capacity dungeon (Monarch ~250K mobs) deploys a real force — not a flat
+    // 240. We deploy ~10% of mob capacity; shadows are strong (each clears many
+    // mobs), so a fraction handles the attrition. Bounded by an army reserve and a
+    // perf ceiling (combat tracks each deployed shadow individually).
+    const MOB_CAP_BY_RANK = {
+      E: 50, D: 150, C: 400, B: 1200, A: 4000, S: 10000, SS: 25000,
+      SSS: 50000, 'SSS+': 75000, NH: 100000, Monarch: 250000,
+      'Monarch+': 500000, 'Shadow Monarch': 1000000,
+    };
+    const DEPLOY_MOB_FRACTION = 0.10; // deploy ~10% of the dungeon's mob capacity
+    const PERF_CEIL = 10000;          // default cap on deployed combat entities
+    const userCap = Number(this.settings?.deployStarterShadowCap);
+    const hasUserCap = Number.isFinite(userCap) && userCap > 0;
+    // Honor an explicit deployStarterShadowCap as a hard ceiling (up to 50K for
+    // those who want huge deploys and accept the combat-perf cost); else PERF_CEIL.
+    const deployCeiling = hasUserCap ? this.clampNumber(Math.floor(userCap), 24, 50000) : PERF_CEIL;
 
     const deployedDungeonCount = Math.max(
       1,
@@ -345,15 +354,34 @@ module.exports = {
       ? Math.max(0, Math.floor(this.allocationCache.count))
       : 0;
 
+    // Reserve lever ("shadows remaining"): deploy at most ~half the known army,
+    // split across active dungeons — big armies deploy big (up to the ceiling) but
+    // always keep a reserve; small armies never over-commit.
+    const armyReserveCap = knownShadowCount > 0
+      ? Math.max(24, Math.floor((knownShadowCount * 0.5) / deployedDungeonCount))
+      : deployCeiling;
+
     let targetCount;
-    // Demon Castle: deploy a fraction of the army, reserve the rest for regular dungeons
     if (dungeon._isDemonCastle && knownShadowCount > 0) {
+      // Demon Castle: deploy a floor-scaled fraction, still reserve + perf-bounded.
       const DC = require('./story-constants');
       const fraction = DC.getDeployFraction(dungeon._dcFloor || 1);
-      targetCount = this.clampNumber(Math.floor(knownShadowCount * fraction), 24, starterCap);
+      targetCount = this.clampNumber(
+        Math.min(Math.floor(knownShadowCount * fraction), armyReserveCap),
+        24,
+        deployCeiling
+      );
     } else {
-      const fairShare = knownShadowCount > 0 ? Math.ceil(knownShadowCount / deployedDungeonCount) : starterCap;
-      targetCount = this.clampNumber(fairShare || starterCap, 24, starterCap);
+      // ~10% of the dungeon's mob capacity (A~400, S~1000, SSS~5000, SSS+~7500,
+      // NH+ → capped). Bounded by army reserve + the deploy ceiling.
+      const rankIdx = Math.max(0, this.getRankIndexValue(dungeon.rank));
+      const mobCap = MOB_CAP_BY_RANK[dungeon.rank] || Math.round(50 * Math.pow(2.5, rankIdx));
+      const mobDemand = Math.ceil(mobCap * DEPLOY_MOB_FRACTION);
+      targetCount = this.clampNumber(
+        Math.min(mobDemand, armyReserveCap),
+        24,
+        deployCeiling
+      );
     }
 
     const usedIds = new Set();

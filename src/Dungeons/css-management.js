@@ -115,6 +115,7 @@ module.exports = {
 
     const SettingsPanel = () => {
       const [isDebugEnabled, setIsDebugEnabled] = React.useState(Boolean(self.settings?.debug));
+      const [isAutoDeploy, setIsAutoDeploy] = React.useState(self.settings?.autoDeploy !== false);
 
       return React.createElement(
         'div',
@@ -188,6 +189,57 @@ module.exports = {
                 },
               },
               'Enables verbose console logging'
+            )
+          )
+        ),
+        React.createElement(
+          'label',
+          {
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              cursor: 'pointer',
+              padding: '12px 16px',
+              marginTop: '12px',
+              background: '#181825',
+              borderRadius: '2px',
+              border: '1px solid #45475a',
+              color: '#cdd6f4',
+              fontSize: '14px',
+            },
+          },
+          React.createElement('input', {
+            type: 'checkbox',
+            checked: isAutoDeploy,
+            onChange: (e) => {
+              const next = Boolean(e.target.checked);
+              setIsAutoDeploy(next);
+              self.settings.autoDeploy = next;
+              self.saveSettings();
+            },
+            style: {
+              accentColor: '#b4befe',
+              width: '18px',
+              height: '18px',
+              cursor: 'pointer',
+            },
+          }),
+          React.createElement(
+            'span',
+            null,
+            'Auto-Deploy Shadows',
+            React.createElement(
+              'span',
+              {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  color: '#a6adc8',
+                  marginTop: '2px',
+                },
+              },
+              'Automatically deploy your army when a dungeon spawns (no manual join)'
             )
           )
         )

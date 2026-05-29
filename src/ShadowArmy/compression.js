@@ -496,18 +496,32 @@ module.exports = {
     const gradeOrder = C.SHADOW_GRADES;
     const promotionCosts = essenceConfig?.gradePromotionCost
       || this.defaultSettings.shadowEssence.gradePromotionCost;
-    const batchSize = essenceConfig?.autoPromoteBatchSize || 50;
+    // Scale the per-cycle batch to army size — a flat 50/cycle can never
+    // distribute a 300K-shadow army. Capped so each 30s tick stays bounded.
+    let totalCount = 0;
+    try { totalCount = (await this.storageManager?.getTotalCount?.()) || 0; } catch (_) {}
+    const configuredBatch = essenceConfig?.autoPromoteBatchSize || 50;
+    const batchSize = Math.min(500, Math.max(configuredBatch, Math.ceil(totalCount / 600)));
+    const windowSize = batchSize * 4;
 
-    // Load a sample of shadows to promote (prioritize highest-level first)
+    // ROTATING SCAN OFFSET — the distribution fix. Previously this always loaded
+    // offset 0 (the newest ~1000 shadows by extractedAt), so 99%+ of a large army
+    // was NEVER considered for promotion and stayed Common forever. Rotate the
+    // offset across cycles so every shadow gets promotion chances; wrap to 0 on a
+    // short read (end of the army reached).
+    if (!Number.isFinite(this._gradePromoteOffset)) this._gradePromoteOffset = 0;
+    const offset = this._gradePromoteOffset;
+
     let shadows = [];
     if (this.storageManager?.getShadows) {
       try {
-        shadows = await this.storageManager.getShadows({}, 0, batchSize * 20);
+        shadows = await this.storageManager.getShadows({}, offset, windowSize);
       } catch (error) {
         this.debugError('GRADE', 'Failed to load shadows for grade promotion', error);
         return { promoted: 0 };
       }
     }
+    this._gradePromoteOffset = shadows.length < windowSize ? 0 : offset + windowSize;
     if (shadows.length === 0) return { promoted: 0 };
 
     // Sort by LOWEST grade first (ensure even progression through grade tiers),
@@ -515,15 +529,20 @@ module.exports = {
     // This prevents the same top-200 shadows from monopolizing all promotions
     // while 280K+ shadows stay at Common.
     const rankOrder = this.shadowRanks || C.SHADOW_RANKS || [];
+    // Read grade/rank/level from the raw (possibly compressed) fields directly —
+    // do NOT getShadowData() the whole window. Decompressing every sampled shadow
+    // each cycle was the heavy synchronous cost; we only need these few fields to
+    // sort, and the promotion loop below updates the raw grade field in place.
+    // (s.gr/s.r/s.l = compressed fields; s.grade/s.rank/s.level = uncompressed.)
     const withLevel = shadows.map((s) => {
-      const data = this.getShadowData(s);
-      const rank = data?.rank || s?.r || s?.rank || 'E';
+      const grade = s?.grade || s?.gr || 'Common';
+      const rank = s?.r || s?.rank || 'E';
       return {
-        raw: s, data,
-        level: data?.level || s?.l || 1,
+        raw: s,
+        level: s?.l || s?.level || 1,
         rankIndex: rankOrder.indexOf(rank),
-        grade: data?.grade || s?.gr || 'Common',
-        gradeIndex: gradeOrder.indexOf(data?.grade || s?.gr || 'Common'),
+        grade,
+        gradeIndex: gradeOrder.indexOf(grade),
       };
     });
     // Filter out max-grade shadows (nothing to promote)
@@ -559,8 +578,7 @@ module.exports = {
       essenceSpent += cost;
       promoted++;
 
-      // Update shadow grade in both decompressed and raw form
-      if (entry.data) entry.data.grade = nextGrade;
+      // Update the shadow's grade on the raw record (saved below).
       const rawShadow = entry.raw;
       if (rawShadow._c) {
         // Compressed: update gr field directly

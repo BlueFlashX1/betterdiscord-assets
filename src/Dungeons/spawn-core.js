@@ -481,10 +481,28 @@ module.exports = {
     // so deploy click does not need to cold-read IDB.
     this._scheduleSpawnRankStarterWarm(channelKey, rank);
 
-    // MANUAL DEPLOY: No mob spawning, no shadow allocation, no combat until user deploys.
-    // Prevents idle mob accumulation (7k+ mobs with nothing killing them = UI thread starvation).
-    // Mob spawning + combat all start together when deployShadows() is called.
+    // MANUAL DEPLOY (default behavior): No mob spawning, no shadow allocation, no
+    // combat until deployShadows() runs. Prevents idle mob accumulation (7k+ mobs
+    // with nothing killing them = UI thread starvation). Mob spawning + combat all
+    // start together when deployShadows() is called.
     this.startMobKillNotifications(channelKey);
+
+    // AUTO-DEPLOY (settings.autoDeploy, default on): deploy shadows automatically
+    // when the dungeon spawns, so you don't have to join each one manually.
+    // deployShadows is autonomous and fully guarded (won't double-deploy, recovers
+    // from cold caches), so this is safe to fire-and-forget. Deferred briefly so the
+    // spawn-time starter-pool warmup (_scheduleSpawnRankStarterWarm above) can begin
+    // first. The guard re-checks the dungeon is still spawnable at fire time.
+    if (this.settings.autoDeploy !== false) {
+      this._setTrackedTimeout(() => {
+        if (this._isStopped) return;
+        const d = this.activeDungeons.get(channelKey);
+        if (!d || d.completed || d.failed || d._completing || d.shadowsDeployed || d._deploying) return;
+        Promise.resolve(this.deployShadows(channelKey)).catch((err) =>
+          this.errorLog('AUTO_DEPLOY', `Auto-deploy failed for ${channelKey}`, err)
+        );
+      }, 600);
+    }
 
     // Automatic completion is handled by the global cleanup loop (`cleanupExpiredDungeons`)
     // This avoids per-dungeon long-lived timers that can accumulate.

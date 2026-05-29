@@ -6,6 +6,7 @@ module.exports = {
     this.defaultSettings = {
       enabled: true,
       debug: false,
+      autoDeploy: true, // auto-deploy shadows when a dungeon spawns (no manual join)
       spawnChance: 12,
       dungeonDuration: 600000,
       maxDungeonsPercentage: 0.15,
