@@ -921,29 +921,9 @@ module.exports = {
         }
       }
 
-      // SHADOW MONARCH PERK (Dragon's Roar): the roar also deals TRUE damage = 10% of
-      // each affected enemy's max HP (mobs + boss).
-      if (isShadowMonarch) {
-        const rawMobs = dungeon.mobs?.activeMobs || [];
-        let slain = 0;
-        for (const mob of rawMobs) {
-          if (!mob || mob.hp <= 0) continue;
-          const trueDmg = Math.max(1, Math.floor((mob.maxHp || mob.hp) * 0.10));
-          mob.hp = Math.max(0, mob.hp - trueDmg);
-          if (mob.hp <= 0) {
-            this._onMobKilled(channelKey, dungeon, mob.rank);
-            this._addToCorpsePile(channelKey, mob, false);
-            slain++;
-          }
-        }
-        if (slain > 0 && dungeon.mobs?.activeMobs) {
-          dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter((m) => m && m.hp > 0);
-        }
-        if (bossTargetable && dungeon.boss && dungeon.boss.hp > 0) {
-          const bossTrue = Math.max(1, Math.floor((dungeon.boss.maxHp || dungeon.boss.hp) * 0.10));
-          await this.applyDamageToBoss(channelKey, bossTrue, 'user', null, false);
-        }
-      }
+      // SHADOW MONARCH PERK (Dragon's Roar): canon-faithful — the roar is pure terror.
+      // At SM it terrifies ALL ranks at full duration (handled above via bossDuration);
+      // no damage rider (Dragon's Fear deals no HP damage in canon, only paralysis).
 
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
