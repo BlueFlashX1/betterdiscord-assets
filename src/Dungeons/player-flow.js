@@ -744,6 +744,8 @@ module.exports = {
     // Hard caps: boss resist 80% max, player penetration 60% max.
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
     const userRankIdx = this.getRankIndexValue(userRank);
+    // Shared Shadow-Monarch flag for the combat-skill SM upgrades (pass 2). Inert below SM.
+    const isShadowMonarch = userRank === 'Shadow Monarch';
     const bossRankIdx = bossTargetable ? this.getRankIndexValue(dungeon.boss?.rank || 'E') : 0;
     const bossRankDiff = Math.max(0, bossRankIdx - userRankIdx);
 
@@ -780,12 +782,22 @@ module.exports = {
         ? baseDuration * Math.pow(2, passiveLevel - 1)
         : baseDuration;
       const fullResistReduction = (db.damageResistReduction || 0) + (db.resistReductionPerLevel || 0) * (passiveLevel - 1);
-      const mobPercent = Math.min(1, (db.mobTargetPercent || 0) + (db.mobTargetPercentPerLevel || 0) * (passiveLevel - 1));
+      let mobPercent = Math.min(1, (db.mobTargetPercent || 0) + (db.mobTargetPercentPerLevel || 0) * (passiveLevel - 1));
+
+      // SHADOW MONARCH PERK (Ruler's Authority -> Absolute Authority / Crushing Will):
+      // debuffs become un-resistable by any rank, and 100% of mobs are immobilized.
+      let bossDurMult = bossDebuffResist.durationMult;
+      let bossEffMult = bossDebuffResist.effectMult;
+      if (isShadowMonarch) {
+        mobPercent = 1;
+        bossDurMult = 1;
+        bossEffMult = 1;
+      }
 
       // Mobs get full duration; boss gets resistance-reduced duration + effect
       const mobDuration = fullDuration;
-      const bossDuration = Math.floor(fullDuration * bossDebuffResist.durationMult);
-      const bossResistReduction = fullResistReduction * bossDebuffResist.effectMult;
+      const bossDuration = Math.floor(fullDuration * bossDurMult);
+      const bossResistReduction = fullResistReduction * bossEffMult;
 
       if (!dungeon.activeDebuffs) dungeon.activeDebuffs = {};
       dungeon.activeDebuffs.rulers_force = {
@@ -891,9 +903,11 @@ module.exports = {
       // Boss fear: base multiplier (0.4x) THEN boss rank resistance on top
       const bossToastParts = [];
       if (bossTargetable) {
-        const bossDuration = Math.floor(
-          mobDuration * (fr.bossDurationMultiplier || 0.4) * bossDebuffResist.durationMult
-        );
+        // SHADOW MONARCH PERK (Dragon's Fear -> Kamish's Wrath / Antares' Terror): the
+        // roar terrifies ALL ranks at full duration with no resistance.
+        const bossDuration = isShadowMonarch
+          ? mobDuration
+          : Math.floor(mobDuration * (fr.bossDurationMultiplier || 0.4) * bossDebuffResist.durationMult);
 
         if (bossDuration > 500) {
           dungeon.activeDebuffs.dragons_fear_boss = {
@@ -904,6 +918,30 @@ module.exports = {
           bossToastParts.push(msg);
         } else {
           bossToastParts.push('Boss resisted');
+        }
+      }
+
+      // SHADOW MONARCH PERK (Kamish's Wrath): the roar also deals TRUE damage = 10% of
+      // each affected enemy's max HP (mobs + boss).
+      if (isShadowMonarch) {
+        const rawMobs = dungeon.mobs?.activeMobs || [];
+        let slain = 0;
+        for (const mob of rawMobs) {
+          if (!mob || mob.hp <= 0) continue;
+          const trueDmg = Math.max(1, Math.floor((mob.maxHp || mob.hp) * 0.10));
+          mob.hp = Math.max(0, mob.hp - trueDmg);
+          if (mob.hp <= 0) {
+            this._onMobKilled(channelKey, dungeon, mob.rank);
+            this._addToCorpsePile(channelKey, mob, false);
+            slain++;
+          }
+        }
+        if (slain > 0 && dungeon.mobs?.activeMobs) {
+          dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter((m) => m && m.hp > 0);
+        }
+        if (bossTargetable && dungeon.boss && dungeon.boss.hp > 0) {
+          const bossTrue = Math.max(1, Math.floor((dungeon.boss.maxHp || dungeon.boss.hp) * 0.10));
+          await this.applyDamageToBoss(channelKey, bossTrue, 'user', null, false);
         }
       }
 
@@ -937,7 +975,8 @@ module.exports = {
         const fullParalysisDuration = Math.floor(mobDuration * (bl.bossDurationMultiplier || 0.5));
         const bossParalysisDuration = Math.floor(fullParalysisDuration * bossDebuffResist.durationMult);
         const fullReduction = Math.min(0.80, (bl.bossStatReduction || 0.50) + (bl.bossStatReductionPerLevel || 0) * (passiveLevel - 1));
-        const bossReduction = fullReduction * bossDebuffResist.effectMult;
+        // SHADOW MONARCH PERK (Bloodlust -> Sovereign's Killing Intent): un-resisted -80%.
+        const bossReduction = isShadowMonarch ? 0.80 : fullReduction * bossDebuffResist.effectMult;
 
         dungeon.activeDebuffs.bloodlust_boss = {
           expiresAt: Date.now() + bossParalysisDuration,
@@ -954,6 +993,21 @@ module.exports = {
         toastParts.push(bossMsg);
       }
 
+      // SHADOW MONARCH PERK (Sovereign's Killing Intent): severely lower ALL stats of
+      // ALL enemies in the dungeon (mobs too, not just the boss). One-time -80% per mob,
+      // guarded so recasts don't re-stack.
+      if (isShadowMonarch) {
+        const rawMobs = dungeon.mobs?.activeMobs || [];
+        for (const mob of rawMobs) {
+          if (!mob || mob.hp <= 0 || mob._sovereignDebuffed) continue;
+          mob.strength = Math.floor((mob.strength || 0) * 0.2);
+          mob.agility = Math.floor((mob.agility || 0) * 0.2);
+          mob.intelligence = Math.floor((mob.intelligence || 0) * 0.2);
+          mob.vitality = Math.floor((mob.vitality || 0) * 0.2);
+          mob._sovereignDebuffed = true;
+        }
+      }
+
       this.syncManaFromStats?.();
       this.queueHPBarUpdate(channelKey);
       this.showToast(`${def.name}: ${toastParts.join('! ')}!`, 'success');
@@ -968,10 +1022,14 @@ module.exports = {
       const rulersLevel = Math.max(0, this.getSkillTreeInstance?.()?.getSkillLevel?.('rulers_authority') || 0);
       const rulersBonus = rulersLevel * (dt.rulersAuthorityBonusPerLevel || 0.12);
 
-      const baseDuration = (dt.durationMs || 12000) + (dt.durationPerLevel || 0) * (passiveLevel - 1);
+      // SHADOW MONARCH PERK (Dagger Rush -> Blade Tempest): hits ALL mobs (cap removed),
+      // 2x duration, 2x bleed (bleed doubled in the dot state below).
+      const baseDuration = ((dt.durationMs || 12000) + (dt.durationPerLevel || 0) * (passiveLevel - 1)) * (isShadowMonarch ? 2 : 1);
       const baseDmgMult = (dt.damageMultiplier || 0.65) + (dt.damagePerLevel || 0) * (passiveLevel - 1);
       const dmgMultiplier = baseDmgMult * (1 + rulersBonus);
-      const maxTargets = Math.min(500, (dt.maxMobTargets || 150) + (dt.maxMobTargetsPerLevel || 0) * (passiveLevel - 1));
+      const maxTargets = isShadowMonarch
+        ? Math.max(500, (dungeon.mobs?.activeMobs || []).length)
+        : Math.min(500, (dt.maxMobTargets || 150) + (dt.maxMobTargetsPerLevel || 0) * (passiveLevel - 1));
       const tickInterval = dt.tickIntervalMs || 2000;
 
       // IMMEDIATE BURST: Initial blade storm wave kills mobs on activation
@@ -1022,7 +1080,9 @@ module.exports = {
         rulersLevel,
         hasDaggerThrowBonus: true,
         canCrit: true,
-        statusEffect: def.statusEffect || null,
+        statusEffect: (isShadowMonarch && def.statusEffect)
+          ? { ...def.statusEffect, stacks: (def.statusEffect.stacks || 1) * 2, stacksPerTick: (def.statusEffect.stacksPerTick || 1) * 2 }
+          : (def.statusEffect || null),
       };
 
       this.syncManaFromStats?.();
@@ -1040,13 +1100,14 @@ module.exports = {
     if (combatEffect === 'speed_boost' && def.speedBoost) {
       const sb = def.speedBoost;
       const duration = (sb.durationMs || 180000) + (sb.durationPerLevel || 0) * (passiveLevel - 1);
-      const reduction = Math.min(0.50,
-        (sb.attackCooldownReduction || 0.20) + (sb.attackCooldownReductionPerLevel || 0) * (passiveLevel - 1)
-      );
+      // SHADOW MONARCH PERK (Sprint -> Quicksilver Step): permanent uptime + -75% CDR.
+      const reduction = isShadowMonarch
+        ? 0.75
+        : Math.min(0.50, (sb.attackCooldownReduction || 0.20) + (sb.attackCooldownReductionPerLevel || 0) * (passiveLevel - 1));
 
       if (!dungeon.activeBuffs) dungeon.activeBuffs = {};
       dungeon.activeBuffs.sprint = {
-        expiresAt: Date.now() + duration,
+        expiresAt: isShadowMonarch ? Infinity : Date.now() + duration,
         cooldownReduction: reduction,
       };
 
@@ -1114,7 +1175,8 @@ module.exports = {
     // Mob targeting: skill hits live mobs when boss isn't targetable
     // PERF: Don't .filter() the entire array — collect alive mobs up to the targeting cap.
     const isPiercing = def.targeting === 'piercing';
-    const isSingleTarget = def.targeting === 'single';
+    // SHADOW MONARCH PERK (Mutilation -> Thousand Cuts): single-target becomes full AOE.
+    const isSingleTarget = def.targeting === 'single' && !(isShadowMonarch && def.id === 'mutilation');
 
     // Piercing cap: scales with agility + level. Base 50, +2 per agility, +3 per level.
     // Soft cap at 500, but agility above 200 can push beyond (up to activeMobs size).
@@ -1166,6 +1228,7 @@ module.exports = {
     let mobsHit = 0;
     let mobsKilled = 0;
     let anyCrit = false;
+    let firstHit = true; // Shadow Edge (SM): first hit of the cast is a guaranteed crit
 
     for (const mob of aliveMobs) {
       // Rank-based targeting: mobs at or below player rank take full damage,
@@ -1189,6 +1252,9 @@ module.exports = {
       let damage = Math.max(0, Number(breakdown.damage) || 0);
       // forceCritical: lore-accurate — Mutilation's every hit is a critical strike
       let isCritical = forceCrit || Boolean(breakdown.wasCrit);
+      // SHADOW MONARCH PERK (Shadow Edge): first hit of every combat is a guaranteed crit.
+      if (isShadowMonarch && firstHit) isCritical = true;
+      firstHit = false;
 
       if (isCritical) {
         const critDmgBonus = this.getUserCritDamageBonus?.() || 0;
@@ -1227,8 +1293,11 @@ module.exports = {
         }
       }
 
-      // Execute threshold works on mobs too (based on mob HP %)
-      const threshold = Math.max(0, Number(def.executeThreshold) || 0);
+      // Execute threshold works on mobs too (based on mob HP %).
+      // SHADOW MONARCH PERK (Thousand Cuts): Mutilation's execute threshold rises to 60%.
+      const threshold = (isShadowMonarch && def.id === 'mutilation')
+        ? Math.max(0.60, Number(def.executeThreshold) || 0)
+        : Math.max(0, Number(def.executeThreshold) || 0);
       const finMult = Math.max(1, Number(def.executeMultiplier) || 1);
       if (threshold > 0 && finMult > 1 && mob.maxHp > 0 && (mob.hp / mob.maxHp) <= threshold) {
         damage = Math.max(1, Math.floor(damage * finMult));
@@ -1236,6 +1305,12 @@ module.exports = {
 
       // Rank penalty for mobs above player
       if (rankPenalty > 0) damage = Math.max(1, Math.floor(damage * (1 - rankPenalty)));
+
+      // SHADOW MONARCH PERK (Vital Points -> Death's Eye): a crit on an at/below-rank mob
+      // is an instant execute (lethal damage regardless of remaining HP).
+      if (isShadowMonarch && isCritical && mobRankIdx <= userRankIdx && mob.hp > 0) {
+        damage = Math.max(damage, mob.hp);
+      }
 
       // Apply status-adjusted damage
       const mobId = this.getEnemyKey(mob, 'mob');

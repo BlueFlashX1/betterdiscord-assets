@@ -175,6 +175,8 @@ module.exports = class SkillTree {
       hiddenBlessingBonuses: null,
       hiddenBlessingBonusesTime: 0,
       hiddenBlessingBonusesTTL: 500,
+      isShadowMonarchValue: undefined, // Cached SM rank check (5s TTL)
+      isShadowMonarchTime: 0,
     };
   }
 
@@ -478,6 +480,8 @@ module.exports = class SkillTree {
     this._cache.soloPluginInstanceTime = 0;
     this._cache.skillBonuses = null;
     this._cache.skillBonusesTime = 0;
+    this._cache.isShadowMonarchValue = undefined;
+    this._cache.isShadowMonarchTime = 0;
 
     // No toolbar observer or composer observer to clean up — React patcher
     // handles button lifecycle via SLUtils.unregisterToolbarButton().
@@ -1108,6 +1112,28 @@ module.exports = class SkillTree {
   }
 
   /**
+   * Return true when the player's rank is exactly 'Shadow Monarch'.
+   * Result is cached for 5 s (same TTL as the plugin-instance cache) to keep this
+   * safe to call in hot loops (mana-cost checks on every skill use).
+   * @returns {boolean}
+   */
+  _isShadowMonarch() {
+    const now = Date.now();
+    if (
+      this._cache.isShadowMonarchValue !== undefined &&
+      this._cache.isShadowMonarchTime &&
+      now - this._cache.isShadowMonarchTime < 5000
+    ) {
+      return this._cache.isShadowMonarchValue;
+    }
+    const rank = BdApi.Plugins.get('SoloLevelingStats')?.instance?.settings?.rank;
+    const result = rank === 'Shadow Monarch';
+    this._cache.isShadowMonarchValue = result;
+    this._cache.isShadowMonarchTime = now;
+    return result;
+  }
+
+  /**
    * Calculate total bonuses from all unlocked and upgraded skills.
    * Includes both general progression buffs and Detoxification's anti-debuff profile.
    * @returns {Object} Passive bonus bundle shared across plugins.
@@ -1162,6 +1188,20 @@ module.exports = class SkillTree {
       });
     }
 
+    // Upgrade: "Successor's Resolve" (Ashborn's Will SM tier) — at Shadow Monarch,
+    // ashborns_will's passive bonus contribution is doubled (add a second copy of its effect).
+    if (this._isShadowMonarch() && this.getSkillLevel('ashborns_will') >= 1) {
+      const awResult = this.findSkillAndTier('ashborns_will');
+      if (awResult) {
+        const awEffect = this.getSkillEffect(awResult.skill, awResult.tier);
+        if (awEffect) {
+          PASSIVE_BONUS_KEYS.forEach((statKey) => {
+            if (awEffect[statKey]) rawBonuses[statKey] += awEffect[statKey];
+          });
+        }
+      }
+    }
+
     PASSIVE_BONUS_KEYS.forEach((statKey) => {
       bonuses[statKey] = this._applyPassiveBonusCurve(statKey, rawBonuses[statKey]);
     });
@@ -1184,6 +1224,14 @@ module.exports = class SkillTree {
       const skillVal = Number(skillStaticValues[statKey] || 0);
       bonuses[statKey] = Math.max(innateVal, skillVal);
     });
+
+    // Upgrade: "Successor's Resolve" — shadow growth rate +100% at Shadow Monarch.
+    // eternal_shadow_monarch already sets shadowGrowthMultiplier: 3.0 via the static-keys
+    // max path above. Add +1.0 on top to reach 4.0 (doubling the ashborns_will-derived
+    // growth contribution, coherent with the doubled passive bonuses above).
+    if (this._isShadowMonarch()) {
+      bonuses.shadowGrowthMultiplier = (bonuses.shadowGrowthMultiplier || 0) + 1.0;
+    }
 
     // Cache the result
     this._cache.skillBonuses = bonuses;

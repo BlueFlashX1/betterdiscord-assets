@@ -17,6 +17,10 @@ const SkillTreeUpgradeMethods = {
     // Skill upgrades immediately affect computed bonuses.
     this._cache.skillBonuses = null;
     this._cache.skillBonusesTime = 0;
+    // SM rank cache: invalidate so any rank-gated upgrades (e.g. Limitless, Successor's Resolve)
+    // are re-evaluated immediately after a skill upgrade that might change SM eligibility.
+    this._cache.isShadowMonarchValue = undefined;
+    this._cache.isShadowMonarchTime = 0;
 
     this.saveSettings();
     this.updateButtonText();

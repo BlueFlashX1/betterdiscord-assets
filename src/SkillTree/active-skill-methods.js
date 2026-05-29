@@ -24,6 +24,8 @@ const ActiveSkillMethods = {
   _getEffectiveManaCost(baseManaCost) {
     const baseCost = Math.max(0, Number(baseManaCost) || 0);
     if (baseCost <= 0) return 0;
+    // Upgrade: "Limitless" (Black Heart SM tier) — all skill mana costs are 0 at Shadow Monarch.
+    if (this._isShadowMonarch()) return 0;
     const reduction = this.calculateSkillBonuses?.()?.manaCostReduction || 0;
     return Math.max(1, Math.ceil(baseCost * (1 - reduction)));
   },

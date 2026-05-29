@@ -516,6 +516,12 @@ module.exports = {
     let adjustedDamage = Math.max(1, Math.floor(baseDamage * multiplier));
 
     if (targetType === 'user') {
+      // SHADOW MONARCH PERK (Stealth -> Umbral Form): permanent invisibility. Enemies can
+      // barely track the Monarch — ~90% of incoming attacks simply miss (the surviving
+      // 10% still runs through Undying Will's 99% DR + immortality below).
+      if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch' && Math.random() < 0.9) {
+        return 0;
+      }
       const bonuses = this.getSkillTreeBonuses?.() || {};
       let threshold = this.clampNumber(Number(bonuses.tenacityThreshold || 0), 0, 1);
       let damageReduction = this.clampNumber(Number(bonuses.tenacityDamageReduction || 0), 0, 0.99);
