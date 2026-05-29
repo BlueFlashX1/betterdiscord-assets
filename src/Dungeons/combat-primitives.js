@@ -253,8 +253,9 @@ module.exports = {
       this.settings.userMaxMana = 100;
     }
 
-    // HP regeneration: 1% of max HP per second per 100 vitality
-    // Formula: (vitality / 100) * 0.01 * maxHP per second
+    // HP regeneration runs on a 3-second tick (see startRegeneration: setInterval 3000ms).
+    // Per TICK: base 0.5% + (vitality/100)·1% + (level/10)·0.2% of max HP, ×skill multiplier.
+    // So 100 vitality ≈ 1% of max HP PER 3s TICK (≈0.33%/sec) — not per second.
     let hpChanged = false;
     let manaChanged = false;
     const skillBonuses = this.getSkillTreeBonuses?.() || {};
@@ -298,7 +299,7 @@ module.exports = {
       if (!this._hpRegenCount) this._hpRegenCount = 0;
       if (this._hpRegenCount < 3 && this.settings.userHP !== oldHP) {
         this.debugLog(
-          `HP Regen: +${hpRegen}/sec (${(totalRate * 100).toFixed(2)}% rate) | ${oldHP} -> ${
+          `HP Regen: +${hpRegen}/3s tick (${(totalRate * 100).toFixed(2)}% rate) | ${oldHP} -> ${
             this.settings.userHP
           } / ${this.settings.userMaxHP}`
         );
@@ -348,7 +349,7 @@ module.exports = {
       if (!this._manaRegenCount) this._manaRegenCount = 0;
       if (this._manaRegenCount < 3 && this.settings.userMana !== oldMana) {
         this.debugLog(
-          `Mana Regen: +${manaRegen}/sec (${(totalRate * 100).toFixed(2)}% rate) | ${oldMana} -> ${
+          `Mana Regen: +${manaRegen}/3s tick (${(totalRate * 100).toFixed(2)}% rate) | ${oldMana} -> ${
             this.settings.userMana
           } / ${this.settings.userMaxMana}`
         );

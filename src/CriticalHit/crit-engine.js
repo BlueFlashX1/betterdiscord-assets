@@ -91,11 +91,15 @@ module.exports = {
       const saved = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
       const perception = Math.max(0, Number(saved.effectivePerception ?? saved.perception ?? 0) || 0);
       // Use SLS-provided values when available, otherwise match SLS formula exactly:
-      // 5% base + 0.35%/PER, capped at 45% (from SoloLevelingStats/calculation-bonuses.js)
+      // 5% base + 0.35%/PER, capped at 92% (from SoloLevelingStats/calculation-bonuses.js)
       const extraHitChance = Number.isFinite(saved.burstChance)
-        ? Math.max(0, Math.min(0.45, Number(saved.burstChance)))
-        : Math.min(0.45, 0.05 + perception * 0.0035);
-      const maxHits = Math.min(40, Math.max(1, Number(saved.maxHits) || (1 + Math.floor(perception * 0.5))));
+        ? Math.max(0, Math.min(0.92, Number(saved.burstChance)))
+        : Math.min(0.92, 0.05 + perception * 0.0035);
+      // No hard cap — combo ceiling scales purely with perception (matches
+      // SoloLevelingStats getPerceptionBurstProfile). The chain self-limits via
+      // the 0.88^hits decay in calculateBurstHitCount, so this is the ceiling,
+      // not the typical length.
+      const maxHits = Math.max(1, Number(saved.maxHits) || (1 + Math.floor(perception * 0.5)));
       const jackpotChance =
         Number.isFinite(saved.jackpotChance)
           ? Math.max(0, Math.min(0.02, Number(saved.jackpotChance)))
@@ -133,30 +137,32 @@ module.exports = {
     const channelId = this.currentChannelId || this._getCurrentChannelId() || 'unknown';
     const seed = `${messageId || 'noid'}:${channelId}:${authorId}:burst`;
 
-    let hits = 1;
-    let step = 1;
-    while (hits < profile.maxHits) {
-      const decay = Math.pow(0.88, hits - 1);
-      const chance = profile.extraHitChance * decay;
-      const roll = this._seededUnitRoll(seed, `chain-${step}`);
-      if (roll <= chance) {
-        hits += 1;
-        step += 1;
-        continue;
-      }
-      break;
-    }
+    // Burst length scales DIRECTLY with perception. maxHits = 1 + ⌊PER/2⌋, so a
+    // thousands-PER build lands combos in the high hundreds. extraHitChance gates
+    // whether a multi-hit burst procs this crit; when it does, the length is a
+    // perception-scaled fraction of maxHits (sqrt-biased toward the top for
+    // satisfying numbers). The old geometric-decay chain capped everyone at ~tens
+    // regardless of perception — replaced here.
+    const burstRoll = this._seededUnitRoll(seed, 'burst-proc');
+    if (burstRoll > profile.extraHitChance) return 1; // no burst this crit
 
-    // Rare jackpot chain for high PER builds (10x-99x)
+    const sizeRoll = this._seededUnitRoll(seed, 'burst-size');
+    const fraction = 0.2 + Math.sqrt(sizeRoll) * 0.6; // 0.2–0.8 of maxHits
+    let hits = Math.max(2, Math.round(profile.maxHits * fraction));
+
+    // Rare jackpot pushes the combo to near-max (85–100% of maxHits).
     if (profile.jackpotChance > 0) {
       const jackpotRoll = this._seededUnitRoll(seed, 'jackpot-roll');
       if (jackpotRoll <= profile.jackpotChance) {
-        const jackpotSize = 10 + Math.floor(this._seededUnitRoll(seed, 'jackpot-size') * 90);
-        hits = Math.max(hits, Math.min(99, jackpotSize));
+        const jpFraction = 0.85 + this._seededUnitRoll(seed, 'jackpot-size') * 0.15;
+        hits = Math.max(hits, Math.round(profile.maxHits * jpFraction));
       }
     }
 
-    return Math.max(1, Math.min(99, hits));
+    // No 99-hit cap on the combo — it scales with perception. The chain is
+    // already self-limited by the 0.88^hits decay above, so in practice it stays
+    // small; only an extraordinary high-PER streak approaches the maxHits ceiling.
+    return Math.max(1, hits);
   },
 
   _markComboUpdated(messageId, contentHash = null) {
@@ -195,7 +201,7 @@ module.exports = {
     const payload = {
       messageId: messageId || null,
       userId: userId || null,
-      burstHits: Math.max(1, Math.min(99, Number(burstHits) || 1)),
+      burstHits: Math.max(1, Number(burstHits) || 1),
       perception: profile?.perception ?? 0,
       extraHitChance: profile?.extraHitChance ?? 0,
       maxHits: profile?.maxHits ?? 1,
