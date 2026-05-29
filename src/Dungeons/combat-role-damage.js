@@ -534,7 +534,7 @@ module.exports = {
     const defense = Math.sqrt(rawDefense) * 6;
 
     // Defense reduces damage by a percentage (not flat reduction).
-    // SHADOW MONARCH PERK (Mutilation -> Rend Reality): the player's crits ignore 100% of
+    // SHADOW MONARCH PERK (Mutilation -> Fatal Strike): the player's crits ignore 100% of
     // enemy defense. Opt-in via ignoreDefenseOnCrit — ONLY the player wrapper passes it
     // (at SM), so shadow damage and enemy-vs-player paths are unaffected.
     const defenseReduction = (ignoreDefenseOnCrit && wasCrit)
@@ -580,7 +580,7 @@ module.exports = {
       {};
     const userRank = this.soloLevelingStats.settings.rank || 'E';
 
-    // Rend Reality: at Shadow Monarch, the player's crits ignore 100% of enemy defense.
+    // Fatal Strike: at Shadow Monarch, the player's crits ignore 100% of enemy defense.
     return this.calculateDamageBreakdown(
       userStats,
       enemyStats,

@@ -141,7 +141,7 @@ module.exports = {
   getUserCritDamageBonus() {
     const bonuses = this.getSkillTreeBonuses() || null;
     const raw = Math.max(0, Number(bonuses?.critDamageBonus || 0));
-    // SHADOW MONARCH PERK (Mutilation -> Rend Reality): crit-damage bonus x2. (The
+    // SHADOW MONARCH PERK (Mutilation -> Fatal Strike): crit-damage bonus x2. (The
     // "crits ignore 100% defense" rider is combat-path, deferred.)
     if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
       return raw * 2;

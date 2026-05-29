@@ -903,7 +903,7 @@ module.exports = {
       // Boss fear: base multiplier (0.4x) THEN boss rank resistance on top
       const bossToastParts = [];
       if (bossTargetable) {
-        // SHADOW MONARCH PERK (Dragon's Fear -> Kamish's Wrath / Antares' Terror): the
+        // SHADOW MONARCH PERK (Dragon's Fear -> Dragon's Roar): the
         // roar terrifies ALL ranks at full duration with no resistance.
         const bossDuration = isShadowMonarch
           ? mobDuration
@@ -921,7 +921,7 @@ module.exports = {
         }
       }
 
-      // SHADOW MONARCH PERK (Kamish's Wrath): the roar also deals TRUE damage = 10% of
+      // SHADOW MONARCH PERK (Dragon's Roar): the roar also deals TRUE damage = 10% of
       // each affected enemy's max HP (mobs + boss).
       if (isShadowMonarch) {
         const rawMobs = dungeon.mobs?.activeMobs || [];
@@ -1022,7 +1022,7 @@ module.exports = {
       const rulersLevel = Math.max(0, this.getSkillTreeInstance?.()?.getSkillLevel?.('rulers_authority') || 0);
       const rulersBonus = rulersLevel * (dt.rulersAuthorityBonusPerLevel || 0.12);
 
-      // SHADOW MONARCH PERK (Dagger Rush -> Blade Tempest): hits ALL mobs (cap removed),
+      // SHADOW MONARCH PERK (Dagger Rush -> Storm of Blades): hits ALL mobs (cap removed),
       // 2x duration, 2x bleed (bleed doubled in the dot state below).
       const baseDuration = ((dt.durationMs || 12000) + (dt.durationPerLevel || 0) * (passiveLevel - 1)) * (isShadowMonarch ? 2 : 1);
       const baseDmgMult = (dt.damageMultiplier || 0.65) + (dt.damagePerLevel || 0) * (passiveLevel - 1);
@@ -1191,7 +1191,7 @@ module.exports = {
       : Infinity;
     let targetCap = isSingleTarget ? 1 : piercingCap;
 
-    // INFINITE QUIVER (Dagger Throw): the number of daggers per throw (= targets hit) is
+    // SHADOW VOLLEY (Dagger Throw): the number of daggers per throw (= targets hit) is
     // capped by RANK pre-Shadow-Monarch, and UNLIMITED at SM. Shadow-envelopment damage
     // is applied in the damage loop below. (Equipped dagger's stats already feed base
     // damage via getUserEffectiveStats -> calculateUserDamageBreakdown.)
@@ -1282,7 +1282,7 @@ module.exports = {
         const throwBonus = this.getUserDaggerThrowDamageBonus?.() || 0;
         if (throwBonus > 0) damage = Math.max(1, Math.floor(damage * (1 + throwBonus)));
 
-        // INFINITE QUIVER — shadow envelopment: daggers wrapped in shadow grow stronger,
+        // SHADOW VOLLEY — shadow envelopment: daggers wrapped in shadow grow stronger,
         // scaling with the shadow army. +1% per 100 shadows, capped +150% pre-SM and
         // +500% at Shadow Monarch (full envelopment). Uses the sync shadow-count cache.
         const armyCount = Number(this._shadowCountCache?.count) || 0;

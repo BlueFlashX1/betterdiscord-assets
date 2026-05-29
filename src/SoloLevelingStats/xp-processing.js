@@ -228,7 +228,7 @@ module.exports = {
     };
   },
 
-  // SHADOW MONARCH PERK (Blessing of Kandiaru -> Architect's Favor, player-exclusive):
+  // SHADOW MONARCH PERK (Blessing of Kandiaru -> Kandiaru's Favor, player-exclusive):
   // at SM the player is level/rank capped, so XP no longer levels. All XP is routed
   // here and converted into base stat points (default 1 point per 1,000,000 XP, tunable
   // via settings.architectFavorRate). Returns true if the XP was consumed — the caller
@@ -278,7 +278,7 @@ module.exports = {
     const oldLevel = this.settings.level || 1;
     const oldTotalXP = this.settings.totalXP || 0;
 
-    // Architect's Favor: at Shadow Monarch, divert XP into base-stat conversion.
+    // Kandiaru's Favor: at Shadow Monarch, divert XP into base-stat conversion.
     if (this._routeShadowMonarchXp(xpAmount)) {
       return { oldLevel, oldTotalXP };
     }
@@ -664,7 +664,7 @@ module.exports = {
     const oldLevel = this.settings.level;
     const oldTotalXP = this.settings.totalXP;
 
-    // Architect's Favor: at Shadow Monarch, divert message XP into base-stat conversion.
+    // Kandiaru's Favor: at Shadow Monarch, divert message XP into base-stat conversion.
     if (this._routeShadowMonarchXp(xp)) {
       return { oldLevel, oldTotalXP, newLevelInfo: this.getCurrentLevel() };
     }

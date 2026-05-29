@@ -250,7 +250,7 @@ module.exports = {
     if (!this._isCombatStatusEffectsEnabled()) return null;
     if (!channelKey || targetType !== 'user') return null;
 
-    // SHADOW MONARCH PERK (Detoxification -> Aegis of the System, player-exclusive):
+    // SHADOW MONARCH PERK (Detoxification -> Perfect Body, player-exclusive):
     // total immunity to EVERY status ailment (magical AND physical — poison, burn,
     // frostbite, necrotic, bleed, armorBreak, stun, fear). No enemy effect can ever
     // land on the Shadow Monarch. This is the single chokepoint for enemy->user status.
@@ -516,7 +516,7 @@ module.exports = {
     let adjustedDamage = Math.max(1, Math.floor(baseDamage * multiplier));
 
     if (targetType === 'user') {
-      // SHADOW MONARCH PERK (Stealth -> Umbral Form): permanent invisibility. Enemies can
+      // SHADOW MONARCH PERK (Stealth -> Shadow Veil): permanent invisibility. Enemies can
       // barely track the Monarch — ~90% of incoming attacks simply miss (the surviving
       // 10% still runs through Undying Will's 99% DR + immortality below).
       if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch' && Math.random() < 0.9) {

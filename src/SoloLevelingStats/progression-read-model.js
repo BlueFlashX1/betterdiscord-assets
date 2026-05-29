@@ -364,7 +364,7 @@ module.exports = {
 
     // SHADOW MONARCH PERK (H1 — Shadow Monarch's Regalia): the SM gear has NO fixed bonus.
     // Its power scales with the player's OWN base stats and grows over time as those grow
-    // (mob defeats -> Architect's Favor). Each equipped regalia piece contributes; the
+    // (mob defeats -> Kandiaru's Favor). Each equipped regalia piece contributes; the
     // full 10-piece set scales hardest. Computed here (not the cached equipment path) so
     // it stays fresh as base stats climb. Treated as a flat base-stat addition, like other
     // equipment, so it then benefits from title/shadow multipliers below.
