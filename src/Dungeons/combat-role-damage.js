@@ -481,7 +481,7 @@ module.exports = {
       : 1;
   },
 
-  calculateDamageBreakdown(attackerStats, defenderStats, attackerRank, defenderRank) {
+  calculateDamageBreakdown(attackerStats, defenderStats, attackerRank, defenderRank, ignoreDefenseOnCrit = false) {
     // Perception dodge: defender's perception grants dodge chance (max 30%)
     const defenderPerception = defenderStats.perception || 0;
     const dodgeChance = Math.min(30, defenderPerception * 0.15); // 0.15% per perception, cap 30%
@@ -533,8 +533,13 @@ module.exports = {
     // keeping defense reduction in the 40-55% range instead of 70% cap.
     const defense = Math.sqrt(rawDefense) * 6;
 
-    // Defense reduces damage by a percentage (not flat reduction)
-    const defenseReduction = Math.min(0.7, defense / (defense + 100)); // Max 70% reduction
+    // Defense reduces damage by a percentage (not flat reduction).
+    // SHADOW MONARCH PERK (Mutilation -> Rend Reality): the player's crits ignore 100% of
+    // enemy defense. Opt-in via ignoreDefenseOnCrit — ONLY the player wrapper passes it
+    // (at SM), so shadow damage and enemy-vs-player paths are unaffected.
+    const defenseReduction = (ignoreDefenseOnCrit && wasCrit)
+      ? 0
+      : Math.min(0.7, defense / (defense + 100)); // Max 70% reduction
     damage = damage * (1 - defenseReduction);
 
     return {
@@ -575,7 +580,14 @@ module.exports = {
       {};
     const userRank = this.soloLevelingStats.settings.rank || 'E';
 
-    return this.calculateDamageBreakdown(userStats, enemyStats, userRank, enemyRank);
+    // Rend Reality: at Shadow Monarch, the player's crits ignore 100% of enemy defense.
+    return this.calculateDamageBreakdown(
+      userStats,
+      enemyStats,
+      userRank,
+      enemyRank,
+      userRank === 'Shadow Monarch'
+    );
   },
 
   _getMobStatReferenceForRank(rankIndex) {
