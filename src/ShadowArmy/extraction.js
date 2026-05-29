@@ -187,6 +187,10 @@ module.exports = {
     const now = Date.now();
     const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
     const maxPerMinute = cfg.maxExtractionsPerMinute || 3;
+    // SHADOW MONARCH PERK (player-exclusive): guaranteed Arise — no per-minute cap
+    // (the Monarch raises any fallen at will). Chance is forced to 100% in
+    // calculateExtractionChance.
+    const isShadowMonarch = this.getSoloLevelingData()?.rank === 'Shadow Monarch';
 
     if (!this._extractionTimestamps) {
       this._extractionTimestamps = [];
@@ -194,7 +198,7 @@ module.exports = {
     this._extractionTimestamps = this._extractionTimestamps.filter(
       (timestamp) => now - timestamp < 60000
     );
-    if (this._extractionTimestamps.length >= maxPerMinute) {
+    if (!isShadowMonarch && this._extractionTimestamps.length >= maxPerMinute) {
       return null;
     }
 

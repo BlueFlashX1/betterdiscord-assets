@@ -23,10 +23,14 @@ module.exports = {
     if (!shadow || !this.soloLevelingStats) return false;
 
     const shadowRank = shadow.rank || 'E';
-    const manaCost = this.getResurrectionCost(shadowRank);
+    // SHADOW MONARCH PERK (player-exclusive): resurrection is FREE — the Monarch's
+    // command to rise transcends mana. Cost 0 makes the budget check pass and every
+    // mana deduction below a no-op, so shadows revive endlessly off the Monarch.
+    const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
+    const manaCost = isShadowMonarch ? 0 : this.getResurrectionCost(shadowRank);
 
-    // Validate mana cost calculation
-    if (!manaCost || manaCost <= 0) {
+    // Validate mana cost calculation (free Monarch resurrection legitimately is 0)
+    if (!isShadowMonarch && (!manaCost || manaCost <= 0)) {
       this.errorLog(`Invalid resurrection cost for rank ${shadowRank}: ${manaCost}`);
       return false;
     }

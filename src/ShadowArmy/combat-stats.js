@@ -69,6 +69,10 @@ module.exports = {
     userRank, userStats, targetRank, targetStrength,
     intelligence, perception, strength, skipCap = false
   ) {
+    // SHADOW MONARCH PERK (player-exclusive): guaranteed Arise — extraction always
+    // succeeds, the Monarch raises any fallen. Bypasses all chance math below.
+    if (this.getSoloLevelingData?.()?.rank === 'Shadow Monarch') return 1;
+
     const usingLegacySignature =
       typeof userRank === 'number' &&
       typeof userStats === 'number' &&

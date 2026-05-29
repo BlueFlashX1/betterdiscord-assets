@@ -494,6 +494,12 @@ module.exports = {
     if (currentEssence <= 0) return { promoted: 0 };
 
     const gradeOrder = C.SHADOW_GRADES;
+    // SHADOW MONARCH PERK (player-exclusive): the top grade (Grand Marshal) is only
+    // reachable while you are the Shadow Monarch. Otherwise shadows cap at the
+    // second-to-top grade (Marshal). maxGradeIndex = the highest grade a shadow may
+    // be promoted TO; a shadow at index >= maxGradeIndex won't promote further.
+    const isShadowMonarch = this.getSoloLevelingData?.()?.rank === 'Shadow Monarch';
+    const maxGradeIndex = isShadowMonarch ? gradeOrder.length - 1 : gradeOrder.length - 2;
     const promotionCosts = essenceConfig?.gradePromotionCost
       || this.defaultSettings.shadowEssence.gradePromotionCost;
     // Scale the per-cycle batch to army size — a flat 50/cycle can never
@@ -546,7 +552,7 @@ module.exports = {
       };
     });
     // Filter out max-grade shadows (nothing to promote)
-    const promotable = withLevel.filter(e => e.gradeIndex >= 0 && e.gradeIndex < gradeOrder.length - 1);
+    const promotable = withLevel.filter(e => e.gradeIndex >= 0 && e.gradeIndex < maxGradeIndex);
     if (promotable.length === 0) return { promoted: 0 };
 
     // Primary sort: lowest grade first (Common before Elite before Knight...)
@@ -567,7 +573,7 @@ module.exports = {
       const entry = promotable[i];
       const currentGrade = entry.grade;
       const gradeIndex = gradeOrder.indexOf(currentGrade);
-      if (gradeIndex < 0 || gradeIndex >= gradeOrder.length - 1) continue;
+      if (gradeIndex < 0 || gradeIndex >= maxGradeIndex) continue;
 
       const nextGrade = gradeOrder[gradeIndex + 1];
       const cost = promotionCosts?.[nextGrade] || 0;
