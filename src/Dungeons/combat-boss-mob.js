@@ -140,10 +140,15 @@ module.exports = {
 
       if (attacksInSpan <= 0) return;
       const roleCombatContext = this.getRoleCombatTickContext(channelKey);
-      const incomingDamageMultiplier = this.getRoleCombatIncomingDamageMultiplier(
-        channelKey,
-        roleCombatContext
-      );
+      // SHADOW MONARCH PERK (G — Domain, player-exclusive): while you are the Shadow
+      // Monarch your army fights inside your domain — incoming damage to shadows is
+      // reduced 30%. Folded into the role-combat multiplier so the SM check runs once
+      // per tick and every downstream damage application inherits it.
+      const _domainMitigation =
+        this.soloLevelingStats?.settings?.rank === 'Shadow Monarch' ? 0.7 : 1;
+      const incomingDamageMultiplier =
+        this.getRoleCombatIncomingDamageMultiplier(channelKey, roleCombatContext) *
+        _domainMitigation;
 
       // Bloodlust debuff: reduce all boss stats while active
       const bloodlustReduction = this._getBloodlustStatReduction(dungeon);
@@ -386,10 +391,13 @@ module.exports = {
       const userStats = dungeon.userParticipating ? this.getUserEffectiveStats() : null;
       const userRank = dungeon.userParticipating ? (this.soloLevelingStats?.settings?.rank || 'E') : 'E';
       const roleCombatContext = this.getRoleCombatTickContext(channelKey);
-      const incomingDamageMultiplier = this.getRoleCombatIncomingDamageMultiplier(
-        channelKey,
-        roleCombatContext
-      );
+      // SHADOW MONARCH PERK (G — Domain, player-exclusive): mirrors the boss path —
+      // 30% incoming-damage reduction to shadows while you are the Shadow Monarch.
+      const _domainMitigation =
+        this.soloLevelingStats?.settings?.rank === 'Shadow Monarch' ? 0.7 : 1;
+      const incomingDamageMultiplier =
+        this.getRoleCombatIncomingDamageMultiplier(channelKey, roleCombatContext) *
+        _domainMitigation;
 
       // NUMPY-STYLE MOB SAMPLING: Instead of iterating ALL 10,000+ mobs, sample a representative
       // subset and scale damage proportionally — same pattern as shadow sampling in processShadowAttacks.

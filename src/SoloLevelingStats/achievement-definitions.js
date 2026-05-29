@@ -431,6 +431,30 @@ module.exports = {
           vitalityPercent: 0.5,
         }, // +300% XP, +30% Crit, +50% All Stats
       },
+      {
+        // SHADOW MONARCH PERK (E — player-exclusive crown). Gated on the FULL Shadow
+        // Monarch requirement (level 2000 + 35 achievements = the SM rank def), so it
+        // unlocks precisely on ascension. The strongest title in the game.
+        id: 'shadow_sovereign',
+        name: 'Shadow Sovereign',
+        description: 'Ascend to Shadow Monarch (Level 2000 + 35 achievements)',
+        condition: {
+          type: 'compound',
+          conditions: [
+            { type: 'level', value: 2000 },
+            { type: 'achievements', value: 35 },
+          ],
+        },
+        title: 'Shadow Sovereign',
+        titleBonus: {
+          xp: 4.0,
+          critChance: 0.35,
+          strengthPercent: 0.75,
+          agilityPercent: 0.75,
+          intelligencePercent: 0.75,
+          vitalityPercent: 0.75,
+        }, // +400% XP, +35% Crit, +75% All Stats — the Shadow Monarch's own crown
+      },
       // Activity/Time Milestones
       {
         id: 'dungeon_grinder',

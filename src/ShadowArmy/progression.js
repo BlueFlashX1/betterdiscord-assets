@@ -227,6 +227,16 @@ module.exports = {
       });
     }
 
+    // SHADOW MONARCH PERK (D — Monarch's Aura, player-exclusive): while you are the
+    // Shadow Monarch, your whole army is empowered — +25% to all shadow effective
+    // stats. (getSoloLevelingData is cached, so the per-shadow check is cheap.)
+    if (this.getSoloLevelingData?.()?.rank === 'Shadow Monarch') {
+      const MONARCH_AURA = 1.25;
+      statKeys.forEach((stat) => {
+        effective[stat] = Math.floor(effective[stat] * MONARCH_AURA);
+      });
+    }
+
     return effective;
   },
 
