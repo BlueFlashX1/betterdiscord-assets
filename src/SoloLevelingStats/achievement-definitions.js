@@ -417,27 +417,17 @@ module.exports = {
         }, // +275% XP, +27% Crit, +50% STR/AGI, +45% INT/VIT
       },
       {
-        id: 'shadow_monarch_final',
-        name: 'Shadow Monarch (Final)',
-        description: 'Reach Level 2000',
-        condition: { type: 'level', value: 2000 },
-        title: 'Shadow Monarch (Final)',
-        titleBonus: {
-          xp: 3.0,
-          critChance: 0.3,
-          strengthPercent: 0.5,
-          agilityPercent: 0.5,
-          intelligencePercent: 0.5,
-          vitalityPercent: 0.5,
-        }, // +300% XP, +30% Crit, +50% All Stats
-      },
-      {
-        // SHADOW MONARCH PERK (E — player-exclusive crown). Gated on the FULL Shadow
-        // Monarch requirement (level 2000 + 35 achievements = the SM rank def), so it
-        // unlocks precisely on ascension. The strongest title in the game.
+        // SHADOW MONARCH PERK (E — the single player-exclusive crown). This is the
+        // ONLY Shadow-Monarch-tier title (the old level-2000 "Shadow Monarch (Final)"
+        // was removed so there is exactly one). Gated on the FULL Shadow Monarch
+        // requirement (level 2000 + 35 achievements = the SM rank def), so it unlocks
+        // precisely on ascension. By far the most dominating title in the game.
+        // NOTE: the Monarch's true powers (immortality, arise-anywhere, Domain, Aura)
+        // are gated on the SM *rank* directly, not on equipping this title — the title
+        // is the stat crown that sits on top of them.
         id: 'shadow_sovereign',
         name: 'Shadow Sovereign',
-        description: 'Ascend to Shadow Monarch (Level 2000 + 35 achievements)',
+        description: 'Ascend to Shadow Monarch — sovereign of the dead (Level 2000 + 35 achievements)',
         condition: {
           type: 'compound',
           conditions: [
@@ -447,13 +437,13 @@ module.exports = {
         },
         title: 'Shadow Sovereign',
         titleBonus: {
-          xp: 4.0,
-          critChance: 0.35,
-          strengthPercent: 0.75,
-          agilityPercent: 0.75,
-          intelligencePercent: 0.75,
-          vitalityPercent: 0.75,
-        }, // +400% XP, +35% Crit, +75% All Stats — the Shadow Monarch's own crown
+          xp: 5.0,
+          critChance: 0.5,
+          strengthPercent: 1.0,
+          agilityPercent: 1.0,
+          intelligencePercent: 1.0,
+          vitalityPercent: 1.0,
+        }, // +500% XP, +50% Crit, +100% (DOUBLE) all stats — the Shadow Monarch's crown
       },
       // Activity/Time Milestones
       {

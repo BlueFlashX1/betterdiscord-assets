@@ -452,7 +452,7 @@ module.exports = {
         Date.now()
       );
       this.syncHPFromStats();
-      this.settings.userHP = Math.max(0, this.settings.userHP - adjustedUserDamage);
+      this.settings.userHP = this._applyUserHpFloor(this.settings.userHP - adjustedUserDamage);
       this.pushHPToStats(true);
       this.startRegeneration(); // PERF: restart regen if it was paused
       if (Number(this.settings.userHP) > 0) {
@@ -588,7 +588,7 @@ module.exports = {
         Date.now()
       );
       this.syncHPFromStats();
-      this.settings.userHP = Math.max(0, this.settings.userHP - adjustedUserDamage);
+      this.settings.userHP = this._applyUserHpFloor(this.settings.userHP - adjustedUserDamage);
       this.pushHPToStats(true);
       this.startRegeneration(); // PERF: restart regen if it was paused
       const representativeMob = sampleMobs[0] || null;

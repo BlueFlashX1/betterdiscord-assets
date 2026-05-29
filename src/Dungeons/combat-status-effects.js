@@ -827,7 +827,7 @@ module.exports = {
           now
         );
         this.syncHPFromStats();
-        this.settings.userHP = Math.max(0, this.settings.userHP - dotDamage);
+        this.settings.userHP = this._applyUserHpFloor(this.settings.userHP - dotDamage);
         this.pushHPToStats(true);
         this.startRegeneration();
         this._advanceDotTick(effect, effectName, now);

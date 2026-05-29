@@ -89,6 +89,17 @@ module.exports = {
     this.updateStatsUI();
   },
 
+  // SHADOW MONARCH PERK (immortality, player-exclusive): the Shadow Monarch cannot
+  // die. No damage source may drive HP below 1 — it never hits zero, so the
+  // `userHP <= 0` defeat checks never fire. Every other rank keeps a floor of 0 and
+  // normal death rules apply. All user-damage sinks (boss hits, mob hits, DoT) route
+  // their post-damage HP through this instead of a hard `Math.max(0, ...)`.
+  _applyUserHpFloor(proposedHp) {
+    const floor =
+      this.soloLevelingStats?.settings?.rank === 'Shadow Monarch' ? 1 : 0;
+    return Math.max(floor, proposedHp);
+  },
+
   async recalculateUserMana() {
     if (!this.soloLevelingStats) return;
 

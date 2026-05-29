@@ -479,15 +479,48 @@ module.exports = {
     // ARISE Extraction (mob corpses)
     phaseStartAt = Date.now();
     let extractionResults = { extracted: 0, attempted: 0 };
-    const pileSize = corpsePileSnapshot.length;
+    // SHADOW MONARCH PERK (arise-anywhere, player-exclusive): the Monarch raises the
+    // dead even from dungeons he never entered. When he didn't join, his deployed
+    // shadows' kills are still arisen automatically, and the boss — which would
+    // otherwise require the manual arise button he can't reach while absent — is folded
+    // into the same extraction pass. Every other rank must still be physically present
+    // to arise (the deploy != join invariant holds for everyone below Shadow Monarch).
+    const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
+    let arisePile = corpsePileSnapshot;
     if (
-      snap.userParticipating &&
+      isShadowMonarch &&
+      !snap.userParticipating &&
+      snap.boss &&
+      (reason === 'boss' || reason === 'complete') &&
+      !arisePile.some((c) => c && c.isBoss)
+    ) {
+      const b = snap.boss;
+      const bs = b.baseStats || {};
+      arisePile = arisePile.concat([
+        {
+          id: b.id,
+          rank: b.rank,
+          baseStats: {
+            strength: Number(bs.strength) || 0,
+            agility: Number(bs.agility) || 0,
+            intelligence: Number(bs.intelligence) || 0,
+            vitality: Number(bs.vitality) || 0,
+            perception: Number(bs.perception) || 0,
+          },
+          strength: Number(b.strength) || 0,
+          isBoss: true,
+        },
+      ]);
+    }
+    const pileSize = arisePile.length;
+    if (
+      (snap.userParticipating || isShadowMonarch) &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
       pileSize > 0
     ) {
-      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction${snap.userParticipating ? '' : ' (Monarch arise-anywhere)'}`);
       try {
-        extractionResults = await this._processCorpsePile(channelKey, snap, corpsePileSnapshot);
+        extractionResults = await this._processCorpsePile(channelKey, snap, arisePile);
         if (extractionResults.attempted > 0) {
           this.showToast(
             `ARISE: ${extractionResults.extracted} shadows from ${extractionResults.attempted} fallen enemies`,
