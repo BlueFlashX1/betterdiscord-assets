@@ -250,6 +250,12 @@ module.exports = {
     if (!this._isCombatStatusEffectsEnabled()) return null;
     if (!channelKey || targetType !== 'user') return null;
 
+    // SHADOW MONARCH PERK (Detoxification -> Aegis of the System, player-exclusive):
+    // total immunity to EVERY status ailment (magical AND physical — poison, burn,
+    // frostbite, necrotic, bleed, armorBreak, stun, fear). No enemy effect can ever
+    // land on the Shadow Monarch. This is the single chokepoint for enemy->user status.
+    if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') return null;
+
     const effectProfile = this._resolveEnemyStatusEffectProfile(attacker, attackerType);
     if (!effectProfile) return null;
 
@@ -511,8 +517,16 @@ module.exports = {
 
     if (targetType === 'user') {
       const bonuses = this.getSkillTreeBonuses?.() || {};
-      const threshold = this.clampNumber(Number(bonuses.tenacityThreshold || 0), 0, 1);
-      const damageReduction = this.clampNumber(Number(bonuses.tenacityDamageReduction || 0), 0, 0.95);
+      let threshold = this.clampNumber(Number(bonuses.tenacityThreshold || 0), 0, 1);
+      let damageReduction = this.clampNumber(Number(bonuses.tenacityDamageReduction || 0), 0, 0.99);
+      // SHADOW MONARCH PERK (Tenacity -> Undying Will, player-exclusive): always-on 99%
+      // damage reduction, innate at SM regardless of skill investment. Pairs with the
+      // HP-floor immortality (_applyUserHpFloor) — you take 1% of incoming AND can never
+      // die. This is the home of the Monarch's survival power.
+      if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+        threshold = 1;
+        damageReduction = Math.max(damageReduction, 0.99);
+      }
       const currentHp = Number(this.settings?.userHP) || 0;
       const maxHp = Number(this.settings?.userMaxHP) || 0;
 

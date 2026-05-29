@@ -228,11 +228,61 @@ module.exports = {
     };
   },
 
+  // SHADOW MONARCH PERK (Blessing of Kandiaru -> Architect's Favor, player-exclusive):
+  // at SM the player is level/rank capped, so XP no longer levels. All XP is routed
+  // here and converted into base stat points (default 1 point per 1,000,000 XP, tunable
+  // via settings.architectFavorRate). Returns true if the XP was consumed — the caller
+  // must then SKIP the normal level/totalXP mutation. Deliberately does NOT touch
+  // settings.xp or settings.totalXP: getCurrentLevel() derives level from totalXP, so
+  // adding to it would keep leveling past the cap.
+  _routeShadowMonarchXp(xpAmount) {
+    if (this.settings?.rank !== 'Shadow Monarch') return false;
+    const amt = Math.max(0, Math.floor(Number(xpAmount) || 0));
+    if (amt <= 0) return true;
+    const rate = Math.max(1, Math.floor(Number(this.settings.architectFavorRate) || 1000000));
+    const pool = (Number(this.settings.architectFavorPool) || 0) + amt;
+    const minted = Math.floor(pool / rate);
+    this.settings.architectFavorPool = pool - minted * rate;
+    this.settings.architectFavorConvertedXP =
+      (Number(this.settings.architectFavorConvertedXP) || 0) + amt;
+    if (minted > 0) this._allocateBalancedBaseStats(minted);
+    return true;
+  },
+
+  // Auto-balance: feed each minted point to the current lowest BASE stat, re-evaluating
+  // after every point so the stats converge then climb together as a block. Ties resolve
+  // in the fixed order STR > AGI > INT > VIT > PER. Reuses allocateStatPoints so HP/mana/
+  // crit recompute, caches invalidate, and the UI/save run through the proven path.
+  _allocateBalancedBaseStats(points) {
+    const stats = this.settings?.stats;
+    const n = Math.max(0, Math.floor(Number(points) || 0));
+    if (!stats || n <= 0) return;
+    const keys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    // Grant exactly the minted points, then auto-spend exactly that many into the lowest
+    // base stat (any pre-existing manually-saved points stay untouched).
+    this.settings.unallocatedStatPoints =
+      (Number(this.settings.unallocatedStatPoints) || 0) + n;
+    for (let i = 0; i < n; i++) {
+      if ((Number(this.settings.unallocatedStatPoints) || 0) <= 0) break;
+      let lowest = keys[0];
+      for (const k of keys) {
+        if ((Number(stats[k]) || 0) < (Number(stats[lowest]) || 0)) lowest = k;
+      }
+      this.allocateStatPoints(lowest, 1);
+    }
+  },
+
   _applyExternalXpToState(xpAmount, source) {
     this.ensureValidTotalXP(`ADD_XP:${source}`);
 
     const oldLevel = this.settings.level || 1;
     const oldTotalXP = this.settings.totalXP || 0;
+
+    // Architect's Favor: at Shadow Monarch, divert XP into base-stat conversion.
+    if (this._routeShadowMonarchXp(xpAmount)) {
+      return { oldLevel, oldTotalXP };
+    }
+
     this.settings.xp = (this.settings.xp || 0) + xpAmount;
     this.settings.totalXP = oldTotalXP + xpAmount;
 
@@ -613,6 +663,12 @@ module.exports = {
 
     const oldLevel = this.settings.level;
     const oldTotalXP = this.settings.totalXP;
+
+    // Architect's Favor: at Shadow Monarch, divert message XP into base-stat conversion.
+    if (this._routeShadowMonarchXp(xp)) {
+      return { oldLevel, oldTotalXP, newLevelInfo: this.getCurrentLevel() };
+    }
+
     this.settings.xp = (this.settings.xp || 0) + xp;
     this.settings.totalXP = (this.settings.totalXP || 0) + xp;
 

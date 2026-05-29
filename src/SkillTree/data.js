@@ -280,7 +280,7 @@ const SKILL_TREE = {
       {
         id: "eternal_shadow_monarch",
         name: "True Shadow Monarch",
-        desc: "The final ascension. +300% all stats, 100% arise chance, 90% damage reduction (always active via Tenacity override), -75% mana costs, +100% HP/mana regen, 3x shadow growth rate. Requires Black Heart, Ashborn's Will, and Dragon's Fear.",
+        desc: "The final ascension. +300% all stats, 100% arise chance, 99% damage reduction (always active via Tenacity / Undying Will), immortality (HP can never reach zero), -75% mana costs, +100% HP/mana regen, 3x shadow growth rate. Requires Black Heart, Ashborn's Will, and Dragon's Fear.",
         lore: "No longer successor — you are the eternal Shadow Monarch. Every shadow bows, every stat surges, every enemy kneels.",
         requirement: { level: 2000, skills: ["black_heart_awakened", "ashborns_will", "dragons_fear"] },
         unlockOnly: true,
@@ -290,7 +290,7 @@ const SKILL_TREE = {
           manaRegenBonus: 1.0,
           manaCostReduction: 0.75,
           tenacityThreshold: 1.0,
-          tenacityDamageReduction: 0.9,
+          tenacityDamageReduction: 0.99,
           ariseChanceOverride: 1.0,
           shadowGrowthMultiplier: 3.0,
         },
