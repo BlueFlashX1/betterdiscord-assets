@@ -159,10 +159,10 @@ module.exports = {
             className: "crit-font-credit",
             style: {
               marginTop: "32px", padding: "16px",
-              background: "rgba(138, 43, 226, 0.05)", borderRadius: "8px",
+              background: "rgba(138, 43, 226, 0.05)", borderRadius: "2px",
               borderTop: "1px solid rgba(138, 43, 226, 0.2)",
               textAlign: "center", fontSize: "12px",
-              color: "rgba(255, 255, 255, 0.6)"
+              color: "#b5bac1"
             }
           },
             ce("div", null,

@@ -273,14 +273,13 @@ module.exports = class EquipmentManager {
       position: fixed; z-index: 10001;
       width: ${POPUP_WIDTH}px; max-height: calc(100vh - 80px);
       overflow-y: auto;
-      background: #0a0a0f;
-      border: 1px solid rgba(138,43,226,0.4);
-      border-radius: 0;
-      box-shadow: 0 12px 48px rgba(0,0,0,0.85), 0 0 30px rgba(138,43,226,0.12);
+      background: linear-gradient(165deg, rgba(22,18,32,0.97) 0%, rgba(13,12,20,0.97) 55%, rgba(10,10,16,0.98) 100%);
+      border: 1px solid rgba(138,43,226,0.32);
+      border-radius: 2px;
+      box-shadow: 0 20px 52px rgba(0,0,0,0.85), 0 0 30px rgba(138,43,226,0.18), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 0 0 1px rgba(138,43,226,0.06);
       padding: 0;
-      font-family: 'Friend or Foe BB', var(--font-primary), sans-serif;
       scrollbar-width: thin;
-      scrollbar-color: rgba(138,43,226,0.3) transparent;
+      scrollbar-color: rgba(138,43,226,0.85) rgba(8,8,13,0.55);
     `;
 
     document.body.appendChild(popup);
@@ -434,7 +433,7 @@ module.exports = class EquipmentManager {
           transition: background 0.12s;
         " onmouseenter="this.style.background='${bgHover}'" onmouseleave="this.style.background='${isEmpty ? bgEmpty : bgFilled}'">
           <div style="font-size: 22px; margin-bottom: 2px;">${def?.icon || slotDef?.icon || '◻️'}</div>
-          <div style="font-size: 9px; color: ${def ? rarityColor : '#4a3a6a'}; font-weight: 700; text-align: center; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          <div style="font-size: 9px; color: ${def ? rarityColor : '#b5bac1'}; font-weight: 700; text-align: center; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
             ${def ? escapeHtml(def.name) : escapeHtml(slotDef?.label || slotKey)}
           </div>
           ${def ? `<div style="font-size: 8px; color: ${rarityColor}; font-weight: 800; margin-top: 1px;">${def.rarity}-Rank</div>` : ''}
@@ -451,7 +450,7 @@ module.exports = class EquipmentManager {
           .map(([k, v]) => `+${v} ${k.toUpperCase().slice(0, 3)}`)
           .join(', ') || 'Bonus';
         return `
-          <div style="padding: 8px 20px; border-bottom: 1px solid rgba(138,43,226,0.1); font-size: 12px; color: #b380e0;">
+          <div style="padding: 8px 20px; border-bottom: 1px solid rgba(138,43,226,0.1); font-size: 12px; color: #8a2be2;">
             &#9656; ${escapeHtml(s.name)} (${s.equipped}/${s.total}) — ${bonusStr}
           </div>
         `;
@@ -464,7 +463,7 @@ module.exports = class EquipmentManager {
 
     let inventoryHtml = '';
     if (unequipped.length === 0) {
-      inventoryHtml = `<div style="text-align: center; color: #4a3a6a; padding: 20px; font-size: 11px;">
+      inventoryHtml = `<div style="text-align: center; color: #b5bac1; padding: 20px; font-size: 11px;">
         No items in inventory. Defeat dungeon bosses for equipment drops!
       </div>`;
     } else {
@@ -481,7 +480,7 @@ module.exports = class EquipmentManager {
         const btnBg = canEquipResult.canEquip
           ? 'rgba(138,43,226,0.2)'
           : 'rgba(255,255,255,0.03)';
-        const btnColor = canEquipResult.canEquip ? '#b380e0' : '#3a2a5a';
+        const btnColor = canEquipResult.canEquip ? '#8a2be2' : '#b5bac1';
         const btnBorder = canEquipResult.canEquip
           ? 'rgba(138,43,226,0.3)'
           : 'rgba(255,255,255,0.05)';
@@ -491,12 +490,12 @@ module.exports = class EquipmentManager {
           <div style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid rgba(138,43,226,0.06); border-left: 3px solid ${rc};">
             <div style="font-size: 20px; width: 36px; text-align: center;">${def.icon}</div>
             <div style="flex: 1; min-width: 0;">
-              <div style="font-size: 13px; font-weight: 700; color: #e0d0f0;">
+              <div style="font-size: 13px; font-weight: 700; color: #dcddde;">
                 ${escapeHtml(def.name)}
                 <span style="font-size: 9px; font-weight: 800; color: ${rc}; margin-left: 6px;">${def.rarity}-Rank</span>
               </div>
-              <div style="font-size: 10px; color: #6a5a8a; margin-top: 2px;">${mainStat}</div>
-              <div style="font-size: 9px; color: #3a2a5a; margin-top: 1px;">Lv.${levelReq} req &middot; ${escapeHtml(def.slot)}</div>
+              <div style="font-size: 10px; color: #b5bac1; margin-top: 2px;">${mainStat}</div>
+              <div style="font-size: 9px; color: #b5bac1; margin-top: 1px;">Lv.${levelReq} req &middot; ${escapeHtml(def.slot)}</div>
             </div>
             <button data-eq-action="equip" data-eq-instance="${inst.instanceId}" style="
               padding: 4px 12px; font-size: 10px; font-weight: 800;
@@ -519,38 +518,38 @@ module.exports = class EquipmentManager {
       <div style="display: flex; align-items: center; gap: 10px; padding: 16px 20px; background: linear-gradient(90deg, rgba(138,43,226,0.15) 0%, rgba(10,10,15,0) 100%); border-bottom: 1px solid rgba(138,43,226,0.3);">
         <span style="font-size: 22px;">&#9876;&#65039;</span>
         <div style="flex: 1;">
-          <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #d4b0ff; letter-spacing: 0.04em; text-transform: uppercase;">Equipment</h3>
-          <div style="font-size: 10px; color: #4a3a6a; letter-spacing: 0.03em;">Solo Leveling Armory</div>
+          <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #dcddde; letter-spacing: 0.04em; text-transform: uppercase;">Equipment</h3>
+          <div style="font-size: 10px; color: #b5bac1; letter-spacing: 0.03em;">Solo Leveling Armory</div>
         </div>
-        <span style="font-size: 10px; color: #3a2a5a; font-weight: 600;">${PLUGIN_VERSION}</span>
+        <span style="font-size: 10px; color: #b5bac1; font-weight: 600;">${PLUGIN_VERSION}</span>
       </div>
 
       <!-- Stats summary row -->
       <div style="display: flex; padding: 10px 20px; background: rgba(138,43,226,0.04); border-bottom: 1px solid rgba(138,43,226,0.15);">
         <div style="flex: 1; text-align: center;">
           <div style="font-size: 18px; font-weight: 800; color: #ef4444; font-variant-numeric: tabular-nums;">${bonuses.attack || 0}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">ATK</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">ATK</div>
         </div>
         <div style="width: 1px; background: rgba(138,43,226,0.2); margin: 4px 0;"></div>
         <div style="flex: 1; text-align: center;">
           <div style="font-size: 18px; font-weight: 800; color: #60a5fa; font-variant-numeric: tabular-nums;">${bonuses.defense || 0}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">DEF</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">DEF</div>
         </div>
         <div style="width: 1px; background: rgba(138,43,226,0.2); margin: 4px 0;"></div>
         <div style="flex: 1; text-align: center;">
-          <div style="font-size: 18px; font-weight: 800; color: #a78bfa; font-variant-numeric: tabular-nums;">${sets.length}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Sets</div>
+          <div style="font-size: 18px; font-weight: 800; color: #8a2be2; font-variant-numeric: tabular-nums;">${sets.length}</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Sets</div>
         </div>
         <div style="width: 1px; background: rgba(138,43,226,0.2); margin: 4px 0;"></div>
         <div style="flex: 1; text-align: center;">
           <div style="font-size: 18px; font-weight: 800; color: #34d399; font-variant-numeric: tabular-nums;">${inventory.length}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Items</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Items</div>
         </div>
       </div>
 
       <!-- Equipment slot grid -->
       <div style="padding: 12px 16px;">
-        <div style="font-size: 10px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 8px; padding-left: 4px;">Equipped</div>
+        <div style="font-size: 10px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 8px; padding-left: 4px;">Equipped</div>
         <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;">
           ${slotsHtml}
         </div>
@@ -561,7 +560,7 @@ module.exports = class EquipmentManager {
 
       <!-- Inventory -->
       <div style="padding: 8px 0 0 0;">
-        <div style="font-size: 10px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 6px; padding: 0 20px;">Inventory (${unequipped.length})</div>
+        <div style="font-size: 10px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 6px; padding: 0 20px;">Inventory (${unequipped.length})</div>
         ${inventoryHtml}
       </div>
     `;
@@ -571,10 +570,10 @@ module.exports = class EquipmentManager {
 
   getSettingsPanel() {
     const panel = document.createElement('div');
-    panel.style.cssText = 'padding: 16px; background: rgba(10, 10, 16, 0.98); color: #cdd6f4;';
+    panel.style.cssText = 'padding: 16px; background: rgba(10, 10, 16, 0.98); color: #dcddde;';
     panel.innerHTML = `
-      <div style="font-size: 14px; font-weight: 700; color: #d4b0ff; margin-bottom: 8px;">EquipmentManager v${PLUGIN_VERSION}</div>
-      <div style="font-size: 12px; color: #6c7086; line-height: 1.5;">
+      <div style="font-size: 14px; font-weight: 700; color: #dcddde; margin-bottom: 8px;">EquipmentManager v${PLUGIN_VERSION}</div>
+      <div style="font-size: 12px; color: #b5bac1; line-height: 1.5;">
         Equipment drops from dungeon boss kills. Open the armory from the channel header icon (&#11088;).
       </div>
     `;

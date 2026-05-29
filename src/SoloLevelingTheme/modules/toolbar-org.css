@@ -40,6 +40,12 @@ section[aria-label="Channel header"] [class*="toolbar_"] {
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
+  /* Pack the icon cluster to the RIGHT edge (Discord's native placement).
+     The toolbar is given a wide width by Discord's layout (~720px), so the
+     default flex-start left-packs the icons and leaves a large empty space on
+     the right. flex-end flushes the whole ordered cluster to the right, where
+     these header icons normally live. `order:` still controls the sequence. */
+  justify-content: flex-end !important;
 }
 
 /* Default position for any unrecognized direct child + force vertical
@@ -49,6 +55,39 @@ section[aria-label="Channel header"] [class*="toolbar_"] {
 section[aria-label="Channel header"] [class*="toolbar_"] > * {
   order: 60;
   align-self: center !important;
+  /* Don't let any toolbar child grow into the free space. Discord's search
+     component (div[class^="search_"]) is flex:1 and expands to fill the whole
+     right side of the toolbar — that expansion IS the large empty area on the
+     right. Pinning every child to its content width leaves real free space for
+     justify-content:flex-end to collapse, so the icon cluster + search pack
+     tight to the right edge (Discord's native placement). */
+  flex: 0 0 auto !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Collapse the channel-header SEARCH box to its icon by default.
+
+   Discord's search component (div[class^="search_"]) reserves a fixed
+   ~244px input box in the toolbar at ALL times — that is the large empty
+   void to the right of the icon cluster. Collapse it to icon width so the
+   void only opens up WHILE the search is in use (on hover, or while the
+   input is focused via :focus-within), then springs back when you leave.
+   Matches both the outer toolbar-child wrapper and the inner searchBar. */
+section[aria-label="Channel header"] [class*="toolbar_"] [class*="search_"] {
+  width: 32px !important;
+  min-width: 32px !important;
+  flex: 0 0 32px !important;
+  overflow: hidden !important;
+  transition: width 0.18s ease, min-width 0.18s ease, flex-basis 0.18s ease !important;
+}
+/* Expand ONLY when the search is actually clicked/focused (:focus-within),
+   not on hover. overflow:visible so the expanded input + results aren't
+   clipped — it becomes a real, usable search box. */
+section[aria-label="Channel header"] [class*="toolbar_"] [class*="search_"]:focus-within {
+  width: 240px !important;
+  min-width: 240px !important;
+  flex: 0 0 240px !important;
+  overflow: visible !important;
 }
 
 /* Center the SVG/IMG content inside each toolbar button. A plain
@@ -151,10 +190,14 @@ section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="earch" 
   order: 44 !important;
 }
 
-/* Group 5: Layout */
+/* Group 3b: RulersAuthority — clustered with the SL inventory/economy group.
+   Previously order 50 ("Layout" group at the far RIGHT, after every Discord-
+   native icon), which left a large visible gap between RA's hand and the rest
+   of the SL icons. Order 33 places it right after ShadowExchange (32), as the
+   last SL icon before the Discord natives (40+), so it reads as one cluster. */
 section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
 section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
-  order: 50 !important;
+  order: 33 !important;
 }
 
 /* Visual `|` separators between groups.
@@ -168,9 +211,7 @@ section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-h
 section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
 section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon),
 section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="hread" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" i],
-section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" i] {
   border-left: 1px solid rgba(167, 139, 250, 0.3) !important;
   padding-left: 6px !important;
   margin-left: 6px !important;

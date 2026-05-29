@@ -1,12 +1,3 @@
-/* Font override — all text in this plugin uses Friend or Foe BB
-   Excludes: arise animation selectors (sa-arise-*, arise-*) */
-[class^="dungeon"],
-[class^="dungeon"] *,
-[class^="dungeons"],
-[class^="dungeons"] * {
-  font-family: 'Friend or Foe BB', sans-serif !important;
-}
-
 @keyframes dungeonPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(1.1); }
@@ -15,10 +6,10 @@
 /* ARISE Animation Keyframes */
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
   }
   50% {
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.8);
+    box-shadow: 0 6px 20px rgba(138, 43, 226, 0.8);
   }
 }
 
@@ -45,10 +36,10 @@
 
 @keyframes arise-glow {
   0%, 100% {
-    text-shadow: 0 0 20px #8b5cf6, 0 0 40px #8b5cf6;
+    text-shadow: 0 0 20px #8a2be2, 0 0 40px #8a2be2;
   }
   50% {
-    text-shadow: 0 0 30px #a78bfa, 0 0 60px #a78bfa;
+    text-shadow: 0 0 30px #8a2be2, 0 0 60px #8a2be2;
   }
 }
 
@@ -80,7 +71,7 @@
   width: 14px;
   height: 14px;
   /* SVG dungeon gate icon — two pillars with arch, no emoji */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Crect x='1' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Crect x='12' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Cpath d='M2.5 4 C2.5 1.5 8 0 8 0 C8 0 13.5 1.5 13.5 4' stroke='%238b5cf6' stroke-width='1.5' fill='none'/%3E%3Crect x='6' y='8' width='4' height='7' rx='0.5' fill='%237c3aed' opacity='0.7'/%3E%3Ccircle cx='8' cy='3' r='1.2' fill='%23a78bfa' opacity='0.9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Crect x='1' y='4' width='3' height='11' rx='0.5' fill='%238a2be2'/%3E%3Crect x='12' y='4' width='3' height='11' rx='0.5' fill='%238a2be2'/%3E%3Cpath d='M2.5 4 C2.5 1.5 8 0 8 0 C8 0 13.5 1.5 13.5 4' stroke='%238a2be2' stroke-width='1.5' fill='none'/%3E%3Crect x='6' y='8' width='4' height='7' rx='0.5' fill='%238a2be2' opacity='0.7'/%3E%3Ccircle cx='8' cy='3' r='1.2' fill='%238a2be2' opacity='0.9'/%3E%3C/svg%3E");
   background-size: contain;
   background-repeat: no-repeat;
   margin-right: 6px;
@@ -126,20 +117,24 @@
   appearance: none;
   width: 24px;
   height: 24px;
-  margin: 0 6px 0 0;
+  margin: 0 2px;
   padding: 0;
   border: none;
   background: transparent;
+  border-radius: 2px;
   color: var(--interactive-normal, #b5bac1);
+  opacity: 0.85;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   position: relative;
-  transition: color 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .dungeons-header-widget:hover {
+  opacity: 1;
+  background: rgba(138, 43, 226, 0.15);
   color: var(--interactive-hover, #dcddde);
 }
 
@@ -174,7 +169,7 @@
   padding: 0 3px;
   border-radius: 999px;
   background: #ed4245;
-  color: #fff;
+  color: #dcddde;
   font-size: 10px;
   font-weight: 700;
   line-height: 14px;
@@ -197,8 +192,8 @@
 }
 
 .dungeons-header-popup-surface {
-  background: linear-gradient(160deg, rgba(22, 22, 32, 0.99) 0%, rgba(18, 18, 26, 0.98) 100%);
-  border: 1px solid rgba(138,43,226,0.3);
+  background: rgba(10, 10, 16, 0.97);
+  border: 1px solid rgba(138, 43, 226, 0.4);
   border-radius: 2px;
   box-shadow: 0 20px 56px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 107, 53, 0.06);
   overflow: hidden;
@@ -216,7 +211,7 @@
 .dungeons-header-popup-title {
   font-size: 13px;
   font-weight: 700;
-  color: #f2f3f5;
+  color: #dcddde;
 }
 
 .dungeon-widget-close-btn {
@@ -234,7 +229,7 @@
 
 .dungeon-widget-close-btn:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  color: #dcddde;
 }
 
 .dungeons-header-popup-content {
@@ -268,7 +263,7 @@
 .dungeons-header-popup-row-name {
   font-size: 13px;
   font-weight: 700;
-  color: #f2f3f5;
+  color: #dcddde;
 }
 
 .dungeons-header-popup-row-rank {
@@ -339,7 +334,7 @@
   border: 1px solid rgba(138,43,226,0.35);
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.04);
-  color: #f2f3f5;
+  color: #dcddde;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
@@ -374,8 +369,8 @@
   padding: 12px 16px !important;
   margin: 0 !important;
   background: linear-gradient(180deg, rgba(20, 20, 30, 0.95) 0%, rgba(15, 15, 25, 0.98) 100%) !important;
-  border-bottom: 2px solid rgba(139, 92, 246, 0.4) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.1) !important;
+  border-bottom: 1px solid rgba(138, 43, 226, 0.4) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(138, 43, 226, 0.1) !important;
   z-index: 100 !important;
   /* backdrop-filter removed — conflicts with theme's GIF wallpaper compositor */
   visibility: visible !important;
@@ -421,19 +416,19 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   margin: 0 auto !important;
   font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   background: rgba(30, 30, 45, 0.85) !important;
-  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  border: 1px solid rgba(138, 43, 226, 0.4) !important;
   border-radius: 2px !important;
   /* backdrop-filter removed — conflicts with theme's GIF wallpaper compositor */
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.15) !important;
+  box-shadow: 0 2px 8px rgba(138, 43, 226, 0.15) !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
 }
 
 .dungeon-boss-hp-bar .boss-info {
-  color: #a78bfa !important;
+  color: #8a2be2 !important;
   font-weight: 700 !important;
   font-size: 12px !important;
-  text-shadow: 0 0 8px rgba(139, 92, 246, 0.8), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+  text-shadow: 0 0 8px rgba(138, 43, 226, 0.8), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
   line-height: 1.4 !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -442,16 +437,16 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 /* Dungeon HP Bar Buttons */
 .dungeon-deploy-btn {
   padding: 4px 12px !important;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
-  color: white !important;
+  background: linear-gradient(135deg, #8a2be2 0%, #8a2be2 100%) !important;
+  color: #dcddde !important;
   border: none !important;
   border-radius: 2px !important;
   font-size: 11px !important;
   font-weight: 700 !important;
   cursor: pointer !important;
   transition: all 0.2s !important;
-  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.5) !important;
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.8) !important;
+  box-shadow: 0 2px 6px rgba(138, 43, 226, 0.5) !important;
+  text-shadow: 0 0 6px rgba(138, 43, 226, 0.8) !important;
   pointer-events: auto !important;
   display: inline-block !important;
   visibility: visible !important;
@@ -459,14 +454,14 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 }
 .dungeon-deploy-btn:hover {
   transform: scale(1.05) !important;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.7) !important;
-  text-shadow: 0 0 10px rgba(139, 92, 246, 1) !important;
+  box-shadow: 0 4px 12px rgba(138, 43, 226, 0.7) !important;
+  text-shadow: 0 0 10px rgba(138, 43, 226, 1) !important;
 }
 
 .dungeon-join-btn {
   padding: 4px 12px !important;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-  color: white !important;
+  color: #dcddde !important;
   border: none !important;
   border-radius: 2px !important;
   font-size: 11px !important;
@@ -487,7 +482,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 .dungeon-leave-btn {
   padding: 4px 12px !important;
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
-  color: white !important;
+  color: #dcddde !important;
   border: none !important;
   border-radius: 2px !important;
   font-size: 11px !important;
@@ -508,7 +503,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 .dungeon-recall-btn {
   padding: 4px 12px !important;
   background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
-  color: white !important;
+  color: #dcddde !important;
   border: none !important;
   border-radius: 2px !important;
   font-size: 11px !important;
@@ -530,7 +525,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 .dungeon-arise-button:hover {
   transform: scale(1.05) !important;
-  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6) !important;
+  box-shadow: 0 6px 16px rgba(138, 43, 226, 0.6) !important;
 }
 
 /* Boss Bar Layout — structural classes extracted from inline styles */
@@ -558,15 +553,15 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 }
 
 .boss-bar-name {
-  color: #a78bfa !important;
+  color: #8a2be2 !important;
   font-weight: 700 !important;
   font-size: 13px !important;
-  text-shadow: 0 0 8px rgba(139, 92, 246, 0.8) !important;
+  text-shadow: 0 0 8px rgba(138, 43, 226, 0.8) !important;
   white-space: nowrap !important;
 }
 
 .boss-bar-type {
-  color: #d4a5ff !important;
+  color: #8a2be2 !important;
   font-size: 11px !important;
   font-weight: 600 !important;
   flex-shrink: 0 !important;
@@ -577,7 +572,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   grid-template-columns: 1fr 1fr !important;
   gap: 8px !important;
   font-size: 11px !important;
-  color: #c4b5fd !important;
+  color: #8a2be2 !important;
 }
 
 .boss-bar-combat-row {
@@ -604,7 +599,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 .dungeon-combat-skill-btn {
   padding: 5px 11px !important;
-  border-radius: 4px !important;
+  border-radius: 2px !important;
   border: 1px solid rgba(138, 43, 226, 0.45) !important;
   background: linear-gradient(135deg, rgba(34, 12, 58, 0.96) 0%, rgba(67, 24, 116, 0.92) 100%) !important;
   color: #f5ebff !important;
@@ -630,8 +625,8 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 .dungeon-combat-skill-btn.is-cooldown {
   background: linear-gradient(135deg, rgba(33, 16, 58, 0.95) 0%, rgba(52, 28, 92, 0.92) 100%) !important;
-  color: #c4b5fd !important;
-  border-color: rgba(124, 58, 237, 0.34) !important;
+  color: #8a2be2 !important;
+  border-color: rgba(138, 43, 226, 0.34) !important;
 }
 
 .dungeon-combat-skill-btn.is-starved {
@@ -682,7 +677,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 /* Participation badge states */
 .boss-bar-badge-waiting {
-  color: #8b5cf6 !important;
+  color: #8a2be2 !important;
   font-weight: 700 !important;
 }
 
@@ -706,7 +701,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   border-radius: 2px !important;
   overflow: hidden !important;
   position: relative !important;
-  border: 1px solid rgba(139, 92, 246, 0.5) !important;
+  border: 1px solid rgba(138, 43, 226, 0.5) !important;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
   box-sizing: border-box !important;
   margin-top: 4px !important;
@@ -716,7 +711,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 .hp-bar-fill {
   width: var(--boss-hp-percent, 0%) !important;
   height: 100% !important;
-  background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 40%, #ec4899 80%, #f97316 100%) !important;
+  background: linear-gradient(90deg, #8a2be2 0%, #7c3aed 40%, #ec4899 80%, #f97316 100%) !important;
   border-radius: 2px !important;
   transition: width 0.5s ease !important;
   box-shadow:
@@ -727,8 +722,8 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 }
 
 @keyframes bossHpPulse {
-  0%, 100% { box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), inset 0 0 20px rgba(236, 72, 153, 0.4); }
-  50% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.8), inset 0 0 25px rgba(236, 72, 153, 0.6); }
+  0%, 100% { box-shadow: 0 0 12px rgba(138, 43, 226, 0.6), inset 0 0 20px rgba(236, 72, 153, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(138, 43, 226, 0.8), inset 0 0 25px rgba(236, 72, 153, 0.6); }
 }
 
 .dungeon-boss-hp-bar .hp-bar-text,
@@ -741,13 +736,13 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  color: white !important;
+  color: #dcddde !important;
   font-size: 10px !important;
   font-weight: 800 !important;
   text-shadow:
     0 0 6px rgba(0, 0, 0, 1),
     0 2px 4px rgba(0, 0, 0, 0.9),
-    0 0 3px rgba(139, 92, 246, 0.5) !important;
+    0 0 3px rgba(138, 43, 226, 0.5) !important;
   pointer-events: none !important;
   letter-spacing: 0.8px !important;
 }
@@ -793,7 +788,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 .dungeons-tab-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
-  color: #f2f3f5;
+  color: #dcddde;
 }
 
 .dungeons-tab-btn.is-active {
@@ -838,7 +833,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 /* Story detail card */
 .story-mode-card {
-  background: rgba(18, 18, 26, 0.98);
+  background: rgba(10, 10, 16, 0.97);
   padding: 16px;
 }
 
@@ -896,7 +891,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-left: 3px solid #ff6b35;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 2px 2px 0;
   padding: 10px 12px;
   margin-top: 8px;
   font-size: 12px;
@@ -934,7 +929,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 .dc-boss-name {
   font-size: 12px;
   font-weight: 700;
-  color: #f2f3f5;
+  color: #dcddde;
   margin-bottom: 1px;
 }
 
@@ -960,7 +955,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.07);
   color: rgba(255, 255, 255, 0.7);
 }
@@ -1026,7 +1021,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
   background: linear-gradient(135deg, #dc3545 0%, #ff6b35 100%);
   border: none;
   border-radius: 2px;
-  color: #fff;
+  color: #dcddde;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1086,7 +1081,7 @@ body:has([class*='standardSidebarView']) .dungeon-boss-hp-container {
 
 .dc-back-btn:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  color: #dcddde;
 }
 
 /* Story tab content wrapper */

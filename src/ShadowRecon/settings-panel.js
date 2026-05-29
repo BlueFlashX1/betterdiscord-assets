@@ -1,6 +1,6 @@
 const PANEL_STYLE = {
   padding: "16px",
-  background: "rgba(8, 10, 20, 0.96)",
+  background: "rgba(10, 10, 16, 0.98)",
   color: "#d1d5db",
   borderRadius: "2px",
   border: "1px solid rgba(138, 43, 226, 0.45)",
@@ -11,11 +11,11 @@ const ROW_STYLE = {
   alignItems: "center",
   gap: "12px",
   padding: "10px 0",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.2)",
+  borderBottom: "1px solid rgba(138, 43, 226, 0.2)",
 };
-const LABEL_STYLE = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
-const NOTE_STYLE = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
-const STAT_STYLE = { color: "#c4b5fd", fontWeight: "700" };
+const LABEL_STYLE = { color: "#dcddde", fontSize: "13px", fontWeight: "600" };
+const NOTE_STYLE = { color: "#b5bac1", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
+const STAT_STYLE = { color: "#8a2be2", fontWeight: "700" };
 
 function buildSettingsPanel(BdApi, plugin) {
   const React = BdApi.React;
@@ -52,7 +52,7 @@ function buildSettingsPanel(BdApi, plugin) {
   return ce("div", { style: PANEL_STYLE },
     ce("h3", { style: { marginTop: 0, color: "#8a2be2" } }, "Shadow Recon Control"),
 
-    ce("div", { style: { marginBottom: "12px", color: "#9ca3af", fontSize: "12px" } },
+    ce("div", { style: { marginBottom: "12px", color: "#b5bac1", fontSize: "12px" } },
       ce("span", null, "Guilds: "),
       ce("span", { style: STAT_STYLE }, plugin._formatNumber(plugin.getServerCount())),
       ce("span", null, " | Marked Guilds: "),

@@ -18,15 +18,15 @@ ${portalTransitionCss}
         align-items: center;
         justify-content: center;
         flex: 0 0 auto;
-        margin-left: 4px;
+        margin: 0 2px;
         width: 24px;
         height: 24px;
         border-radius: 2px;
         border: none;
         background: transparent;
         cursor: pointer;
-        opacity: 0.8;
-        transition: opacity 0.15s ease, background 0.15s ease;
+        opacity: 0.85;
+        transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
         pointer-events: auto;
       }
       .se-swirl-icon--hidden {
@@ -34,6 +34,7 @@ ${portalTransitionCss}
       }
       .se-swirl-icon:hover {
         opacity: 1;
+        background: rgba(138, 43, 226, 0.15);
       }
       .se-swirl-icon:hover svg {
         filter: drop-shadow(0 0 4px rgba(200, 170, 255, 0.7));
@@ -61,7 +62,7 @@ ${portalTransitionCss}
         width: 650px;
         max-height: 82vh;
         background: rgba(10, 10, 16, 0.98);
-        border: 2px solid rgba(138, 43, 226, 0.5);
+        border: 1px solid rgba(138, 43, 226, 0.4);
         border-radius: 2px;
         box-shadow: 0 0 40px rgba(138, 43, 226, 0.2), 0 8px 32px rgba(0, 0, 0, 0.6);
         display: flex;
@@ -86,7 +87,7 @@ ${portalTransitionCss}
       .se-panel-title {
         font-size: 16px;
         font-weight: 700;
-        color: #a78bfa;
+        color: #8a2be2;
         margin: 0;
         letter-spacing: 0.5px;
       }
@@ -135,7 +136,7 @@ ${portalTransitionCss}
         background: rgba(0, 0, 0, 0.3);
         border: 1px solid rgba(138, 43, 226, 0.2);
         border-radius: 2px;
-        color: #ddd;
+        color: #dcddde;
         padding: 6px 10px;
         font-size: 12px;
         outline: none;
@@ -152,7 +153,7 @@ ${portalTransitionCss}
       }
       .se-sort-select option {
         background: rgba(10, 10, 16, 0.98);
-        color: #ddd;
+        color: #dcddde;
       }
 
       /* ── Waypoint List ─────────────────────────────────────────────── */
@@ -188,7 +189,7 @@ ${portalTransitionCss}
         align-items: center;
         justify-content: center;
         padding: 40px 20px;
-        color: #888;
+        color: #b5bac1;
       }
       .se-empty-icon {
         font-size: 32px;
@@ -198,12 +199,12 @@ ${portalTransitionCss}
       .se-empty-text {
         font-size: 14px;
         font-weight: 600;
-        color: #aaa;
+        color: #b5bac1;
       }
       .se-empty-hint {
         font-size: 12px;
         margin-top: 4px;
-        color: #666;
+        color: #b5bac1;
       }
 
       /* ── Waypoint Card ─────────────────────────────────────────────── */
@@ -240,7 +241,7 @@ ${portalTransitionCss}
       .se-shadow-name {
         font-size: 13px;
         font-weight: 600;
-        color: #a78bfa;
+        color: #8a2be2;
         flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -249,7 +250,7 @@ ${portalTransitionCss}
       .se-card-remove {
         background: none;
         border: none;
-        color: #666;
+        color: #b5bac1;
         font-size: 12px;
         cursor: pointer;
         padding: 2px 4px;
@@ -267,7 +268,7 @@ ${portalTransitionCss}
       }
       .se-location-label {
         font-size: 13px;
-        color: #ddd;
+        color: #dcddde;
         margin-bottom: 4px;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -280,7 +281,7 @@ ${portalTransitionCss}
       }
       .se-type-badge {
         background: rgba(138, 43, 226, 0.15);
-        color: #a78bfa;
+        color: #8a2be2;
         padding: 1px 6px;
         border-radius: 2px;
         font-size: 10px;
@@ -289,11 +290,11 @@ ${portalTransitionCss}
       }
       .se-visit-count {
         font-size: 11px;
-        color: #777;
+        color: #b5bac1;
       }
       .se-created-time {
         font-size: 10px;
-        color: #666;
+        color: #b5bac1;
         margin-left: auto;
       }
 
@@ -305,7 +306,7 @@ ${portalTransitionCss}
         padding: 5px 8px;
         margin: 4px 0 6px 0;
         font-size: 12px;
-        color: #aaa;
+        color: #b5bac1;
         max-height: 48px;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -315,12 +316,12 @@ ${portalTransitionCss}
         line-height: 1.4;
       }
       .se-msg-author {
-        color: #a78bfa;
+        color: #8a2be2;
         font-weight: 600;
         margin-right: 4px;
       }
       .se-msg-text {
-        color: #999;
+        color: #b5bac1;
       }
 
       .se-card-footer {
@@ -351,7 +352,7 @@ ${portalTransitionCss}
         padding: 10px 18px;
         border-top: 1px solid rgba(138, 43, 226, 0.12);
         font-size: 11px;
-        color: #777;
+        color: #b5bac1;
       }
     `;
 }

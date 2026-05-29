@@ -1,7 +1,7 @@
 function buildSoloLevelingToastsSettingsPanel(BdApi, plugin) {
   plugin.detachSoloLevelingToastsSettingsPanelHandlers();
   const panel = document.createElement("div");
-  panel.style.cssText = "padding: 20px; background: rgba(10, 10, 16, 0.98); border-radius: 0;";
+  panel.style.cssText = "padding: 20px; background: rgba(10, 10, 16, 0.98); border-radius: 2px;";
   panel.innerHTML = `
       <div>
         <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Engine Settings</h3>

@@ -93,18 +93,18 @@ module.exports = class PluginGuardian {
     panel.style.padding = "16px";
     panel.style.color = "#dcddde";
     panel.style.fontFamily = "Whitney, sans-serif";
-    panel.style.background = "#1e1e2e";
+    panel.style.background = "rgba(10, 10, 16, 0.98)";
 
     const title = document.createElement("h3");
     title.style.margin = "0 0 12px 0";
-    title.style.color = "#fff";
+    title.style.color = "#8a2be2";
     title.textContent = "PluginGuardian";
     panel.appendChild(title);
 
     const explainer = document.createElement("p");
     explainer.style.margin = "0 0 12px 0";
     explainer.style.lineHeight = "1.5";
-    explainer.style.color = "#a0a0b0";
+    explainer.style.color = "#b5bac1";
     explainer.style.fontSize = "12px";
     explainer.textContent =
       "On Discord launch, every installed plugin is auto-enabled unless it's denylisted. " +
@@ -129,7 +129,7 @@ module.exports = class PluginGuardian {
     recheckBtn.style.background = "#5865f2";
     recheckBtn.style.color = "#fff";
     recheckBtn.style.border = "0";
-    recheckBtn.style.borderRadius = "4px";
+    recheckBtn.style.borderRadius = "2px";
     recheckBtn.style.cursor = "pointer";
     recheckBtn.style.fontSize = "12px";
     recheckBtn.style.fontWeight = "600";
@@ -151,8 +151,8 @@ module.exports = class PluginGuardian {
     list.style.overflowY = "auto";
     list.style.padding = "8px 12px";
     list.style.background = "rgba(0,0,0,0.25)";
-    list.style.border = "1px solid rgba(255,255,255,0.08)";
-    list.style.borderRadius = "4px";
+    list.style.border = "1px solid rgba(138,43,226,0.4)";
+    list.style.borderRadius = "2px";
 
     const sortedIds = all
       .map((p) => p.id || p.name)
@@ -179,7 +179,7 @@ module.exports = class PluginGuardian {
       const tag = document.createElement("span");
       tag.style.marginLeft = "auto";
       tag.style.fontSize = "11px";
-      tag.style.color = cb.checked ? "#f87171" : "#9b32ff";
+      tag.style.color = cb.checked ? "#f87171" : "#8a2be2";
       tag.textContent = cb.checked ? "denylisted" : "auto-enabled";
 
       cb.addEventListener("change", () => {
@@ -194,7 +194,7 @@ module.exports = class PluginGuardian {
         // fire a synchronous cascade of BdApi.Plugins.isEnabled/enable calls.
         setTimeout(() => { this._snapshotEnabled(); this._reconcile(); }, 0);
         name.style.color = cb.checked ? "#a0a0b0" : "#dcddde";
-        tag.style.color = cb.checked ? "#f87171" : "#9b32ff";
+        tag.style.color = cb.checked ? "#f87171" : "#8a2be2";
         tag.textContent = cb.checked ? "denylisted" : "auto-enabled";
         renderStatus();
       });

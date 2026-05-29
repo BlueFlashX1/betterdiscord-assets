@@ -83,6 +83,29 @@ div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button:hover {
   border-color: var(--sl-color-accent-light) !important;
 }
 
+/* §9b (continued) — TitleManager toolbar button: it's a custom .tm-title-button (not a
+   native emojiButton_/buttonContainer_ node), so the rule above misses it. Mirror the
+   native purple border + bg here. Skip padding:4px — its button is a fixed 24px box with
+   a centered 20px svg and would crowd. */
+div[class^="buttons_"] .tm-title-button,
+div[class^="channelTextArea_"] .tm-title-button {
+  background: rgba(8, 10, 20, 0.96) !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 2px !important;
+  /* Match the native GIF/sticker/emoji buttons exactly (measured 32x32, padding 4px,
+     border 1px, border-box). TitleManager's own CSS sizes it 24x24/padding 0, so the
+     bordered box came out smaller than its neighbors — override to the native box here. */
+  width: 32px !important;
+  height: 32px !important;
+  padding: 4px !important;
+  box-sizing: border-box !important;
+}
+div[class^="buttons_"] .tm-title-button:hover,
+div[class^="channelTextArea_"] .tm-title-button:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+  border-color: var(--sl-color-accent-light) !important;
+}
+
 /* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): purple border
    All three pickers (Emoji/GIF/Sticker) share div.contentWrapper__08434 as outer shell
    containing nav.nav__08434 (tab bar) + the active tab panel.
@@ -628,7 +651,7 @@ div[class^="channelChatWrapper_"] div[class^="notice_"] div[class*="card_"] {
 div[class^="tooltip_"] {
   background: rgb(10, 10, 15) !important;
   border: 1px solid rgba(138, 43, 226, 0.4) !important;
-  border-radius: 4px !important;
+  border-radius: 2px !important;
   box-shadow: 0 2px 12px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.08) !important;
   color: #fff !important;
   font-weight: 600 !important;

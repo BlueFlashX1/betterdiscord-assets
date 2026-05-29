@@ -1,15 +1,23 @@
 /* ItemVault — Inventory UI Styles */
 
-/* Font override — all text in this plugin uses Friend or Foe BB */
-[class^="iv-"],
-[class^="iv-"] * {
-  font-family: 'Friend or Foe BB', sans-serif !important;
+/* ─── SL-themed scrollbar for the header popup (overrides macOS default) ─── */
+#itemvault-header-popup::-webkit-scrollbar {
+  width: 9px;
 }
-
+#itemvault-header-popup::-webkit-scrollbar-track {
+  background: rgba(8, 8, 13, 0.6);
+}
+#itemvault-header-popup::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.38) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.35);
+  border-radius: 2px;
+}
+#itemvault-header-popup::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(186, 85, 211, 0.75) 0%, rgba(138, 43, 226, 0.5) 100%);
+}
 
 /* ─── Toast notification override for vault events ─── */
 .iv-toast {
-  font-family: var(--font-primary), 'gg sans', sans-serif;
   font-size: 14px;
 }
 
@@ -18,7 +26,7 @@
 }
 
 .iv-toast-spend {
-  color: #c4b5fd;
+  color: #8a2be2;
 }
 
 /* ─── Balance widget (inline display for other plugin UIs) ─── */
@@ -31,7 +39,7 @@
   background: rgba(138,43,226,0.12);
   font-size: 12px;
   font-weight: 600;
-  color: #c4b5fd;
+  color: #8a2be2;
   white-space: nowrap;
 }
 

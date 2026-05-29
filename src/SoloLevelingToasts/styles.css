@@ -50,7 +50,7 @@
   min-height: 50px;
   max-height: fit-content;
   padding: 14px 18px 14px 22px;
-  background: rgb(10, 10, 15);
+  background: rgba(10, 10, 16, 0.97);
   border: 1px solid color-mix(in srgb, var(--sl-card-accent, #8a2be2) 30%, transparent);
   border-radius: 0;
   box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),
@@ -148,7 +148,7 @@
 }
 
 .sl-toast-message {
-  color: rgba(255, 255, 255, 0.9);
+  color: #dcddde;
   font-size: 13px;
   line-height: 1.5;
   white-space: normal;
@@ -317,7 +317,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid rgb(10, 10, 15);
+  border: 2px solid rgba(10, 10, 16, 0.97);
   background: var(--sl-card-accent, #8a2be2);
 }
 
@@ -331,7 +331,7 @@
   font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;
   font-size: 12px;
   font-weight: bold;
-  color: #fff;
+  color: #dcddde;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -342,7 +342,7 @@
 
 .sl-toast-card-body {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: #dcddde;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -351,7 +351,7 @@
 
 .sl-toast-card-detail {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #b5bac1;
   margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;

@@ -2,12 +2,6 @@ const STYLE_ID = "skilltree-css";
 
 const SKILL_TREE_CSS = `
       /* ── Font Override ───────────────────────────────────────────── */
-      .skilltree-modal,
-      .skilltree-modal *,
-      .st-confirm-dialog,
-      .st-confirm-dialog * {
-        font-family: 'Friend or Foe BB', sans-serif !important;
-      }
 
       /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
       .st-skill-tree-button-wrapper {
@@ -69,7 +63,7 @@ const SKILL_TREE_CSS = `
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
                     0 0 100px rgba(138, 43, 226, 0.3),
                     inset 0 0 100px rgba(75, 0, 130, 0.1);
-        border: 2px solid rgba(138, 43, 226, 0.3);
+        border: 1px solid rgba(138, 43, 226, 0.4);
         animation: modalFadeIn 0.3s ease-out;
       }
       @keyframes modalFadeIn {
@@ -97,7 +91,7 @@ const SKILL_TREE_CSS = `
       .skilltree-header {
         background: linear-gradient(135deg, #1a0e2e 0%, #140a24 100%);
         padding: 25px 30px;
-        border-bottom: 2px solid rgba(138, 43, 226, 0.3);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.3);
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         position: relative;
         overflow: visible;
@@ -122,7 +116,7 @@ const SKILL_TREE_CSS = `
       }
       .skilltree-header h2 {
         margin: 0 0 12px 0;
-        color: #fff;
+        color: #dcddde;
         font-size: 28px;
         font-weight: 800;
         text-shadow: 0 2px 10px rgba(138, 43, 226, 0.8),
@@ -144,7 +138,7 @@ const SKILL_TREE_CSS = `
         align-items: center;
         gap: 8px;
         padding: 8px 16px;
-        background: #1a0e2e;
+        background: rgba(10, 10, 16, 0.98);
         border: 1px solid rgba(138, 43, 226, 0.4);
         border-radius: 2px;
         color: #e8dcff;
@@ -155,7 +149,7 @@ const SKILL_TREE_CSS = `
       .skilltree-reset-btn {
         padding: 10px 20px;
         background: linear-gradient(135deg, #6b21a8 0%, #4c1d95 100%);
-        border: 2px solid rgba(168, 85, 247, 0.85);
+        border: 1px solid rgba(138, 43, 226, 0.85);
         border-radius: 2px;
         color: #f5f3ff;
         font-size: 14px;
@@ -169,7 +163,7 @@ const SKILL_TREE_CSS = `
       }
 
       .skilltree-reset-btn:hover {
-        background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #8a2be2 100%);
         border-color: rgba(196, 181, 253, 0.95);
         box-shadow: 0 0 25px rgba(138, 43, 226, 0.6);
         transform: translateY(-2px);
@@ -198,7 +192,7 @@ const SKILL_TREE_CSS = `
 
       .st-confirm-dialog {
         background: linear-gradient(135deg, #0a0a10 0%, #08080d 100%);
-        border: 2px solid rgba(138, 43, 226, 0.5);
+        border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 2px;
         width: 90%;
         max-width: 500px;
@@ -208,12 +202,12 @@ const SKILL_TREE_CSS = `
 
       .st-confirm-header {
         padding: 20px;
-        border-bottom: 2px solid rgba(138, 43, 226, 0.35);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.35);
       }
 
       .st-confirm-header h3 {
         margin: 0;
-        color: #a855f7;
+        color: #8a2be2;
         font-size: 22px;
         font-weight: bold;
         text-align: center;
@@ -221,7 +215,7 @@ const SKILL_TREE_CSS = `
 
       .st-confirm-body {
         padding: 25px;
-        color: rgba(236, 233, 255, 0.92);
+        color: #dcddde;
         font-size: 15px;
         line-height: 1.6;
       }
@@ -237,14 +231,14 @@ const SKILL_TREE_CSS = `
 
       .st-confirm-body li {
         margin: 8px 0;
-        color: rgba(236, 233, 255, 0.8);
+        color: #dcddde;
       }
 
       .st-confirm-actions {
         display: flex;
         gap: 12px;
         padding: 20px;
-        border-top: 2px solid rgba(138, 43, 226, 0.25);
+        border-top: 1px solid rgba(138, 43, 226, 0.25);
       }
 
       .st-confirm-btn {
@@ -262,29 +256,29 @@ const SKILL_TREE_CSS = `
 
       .st-confirm-cancel {
         background: linear-gradient(135deg, #0d0d14 0%, #0d0d14 100%);
-        border: 2px solid rgba(138, 43, 226, 0.35);
-        color: rgba(236, 233, 255, 0.9);
+        border: 1px solid rgba(138, 43, 226, 0.35);
+        color: #dcddde;
       }
 
       .st-confirm-cancel:hover {
         background: linear-gradient(135deg, #111118 0%, #111118 100%);
-        border-color: rgba(168, 85, 247, 0.7);
+        border-color: rgba(138, 43, 226, 0.7);
         transform: translateY(-2px);
         box-shadow: 0 0 20px rgba(138, 43, 226, 0.35);
       }
 
       .st-confirm-yes {
         background: linear-gradient(135deg, #7a26cc 0%, #4b0082 100%);
-        border: 2px solid rgba(168, 85, 247, 0.9);
+        border: 1px solid rgba(138, 43, 226, 0.9);
         color: white;
         box-shadow: 0 0 20px rgba(138, 43, 226, 0.4);
       }
 
       .st-confirm-yes:hover {
-        background: linear-gradient(135deg, rgba(168, 85, 247, 1) 0%, rgba(138, 43, 226, 1) 100%);
-        border-color: rgba(168, 85, 247, 1);
+        background: linear-gradient(135deg, rgba(138, 43, 226, 1) 0%, rgba(138, 43, 226, 1) 100%);
+        border-color: rgba(138, 43, 226, 1);
         transform: translateY(-2px);
-        box-shadow: 0 0 25px rgba(168, 85, 247, 0.55);
+        box-shadow: 0 0 25px rgba(138, 43, 226, 0.55);
       }
 
       .st-confirm-btn:active {
@@ -301,7 +295,7 @@ const SKILL_TREE_CSS = `
         position: absolute;
         top: 15px;
         right: 15px;
-        background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #5b21b6 100%);
         color: #f5f3ff;
         border: 1px solid rgba(196, 181, 253, 0.75);
         border-radius: 2px;
@@ -315,7 +309,7 @@ const SKILL_TREE_CSS = `
       }
       .skilltree-close-btn:hover {
         transform: none;
-        background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #8a2be2 100%);
         border-color: rgba(221, 214, 254, 0.95);
         box-shadow: 0 6px 20px rgba(138, 43, 226, 0.6);
       }
@@ -327,7 +321,7 @@ const SKILL_TREE_CSS = `
         gap: 8px;
         padding: 16px 20px;
         background: linear-gradient(135deg, #12091e 0%, #0e0716 100%);
-        border-bottom: 2px solid rgba(138, 43, 226, 0.2);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.2);
         overflow-x: auto;
         flex-shrink: 0;
         scrollbar-width: none !important;
@@ -355,9 +349,9 @@ const SKILL_TREE_CSS = `
         text-align: center;
         flex-shrink: 0;
         background: linear-gradient(135deg, #0d0d14 0%, #08080d 100%);
-        border: 2px solid rgba(138, 43, 226, 0.5);
+        border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 2px;
-        color: rgba(255, 255, 255, 0.9);
+        color: #dcddde;
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
@@ -416,12 +410,12 @@ const SKILL_TREE_CSS = `
         animation: gradientShift 3s ease infinite;
       }
       .skilltree-tier-header {
-        color: #fff;
+        color: #dcddde;
         margin: 0 0 20px 0;
         font-size: 22px;
         font-weight: 700;
         padding-bottom: 12px;
-        border-bottom: 2px solid rgba(138, 43, 226, 0.4);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.4);
         text-shadow: 0 2px 8px rgba(138, 43, 226, 0.6);
         display: flex;
         align-items: center;
@@ -485,7 +479,7 @@ const SKILL_TREE_CSS = `
       }
       .skilltree-skill-name {
         font-weight: 700;
-        color: #fff;
+        color: #dcddde;
         margin-bottom: 6px;
         font-size: 16px;
         text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
@@ -498,12 +492,12 @@ const SKILL_TREE_CSS = `
         line-height: 1.5;
       }
       .skilltree-skill-lore {
-        color: #a855f7;
+        color: #8a2be2;
         font-size: 11px;
         font-style: italic;
         margin-top: 6px;
         padding-left: 12px;
-        border-left: 2px solid rgba(168, 85, 247, 0.3);
+        border-left: 2px solid rgba(138, 43, 226, 0.3);
       }
       .skilltree-skill-level {
         color: #00ff88;
@@ -619,12 +613,12 @@ const SKILL_TREE_CSS = `
       .skilltree-active-section {
         margin-top: 20px;
         padding-top: 16px;
-        border-top: 2px solid rgba(138, 43, 226, 0.3);
+        border-top: 1px solid rgba(138, 43, 226, 0.3);
       }
       .skilltree-active-section-header {
         font-size: 16px;
         font-weight: 700;
-        color: rgba(255, 255, 255, 0.95);
+        color: #dcddde;
         margin-bottom: 12px;
         display: flex;
         align-items: center;
@@ -701,7 +695,7 @@ const SKILL_TREE_CSS = `
       .skilltree-active-skill-name {
         font-size: 14px;
         font-weight: 700;
-        color: rgba(255, 255, 255, 0.95);
+        color: #dcddde;
       }
       .skilltree-active-skill-cost {
         font-size: 12px;
@@ -710,7 +704,7 @@ const SKILL_TREE_CSS = `
       }
       .skilltree-active-skill-desc {
         font-size: 12px;
-        color: rgba(255, 255, 255, 0.6);
+        color: #b5bac1;
         margin-bottom: 6px;
         line-height: 1.3;
       }
@@ -724,7 +718,7 @@ const SKILL_TREE_CSS = `
         display: flex;
         gap: 12px;
         font-size: 11px;
-        color: rgba(255, 255, 255, 0.5);
+        color: #b5bac1;
         margin-bottom: 8px;
       }
       .skilltree-active-skill-info span {
@@ -752,7 +746,7 @@ const SKILL_TREE_CSS = `
         font-size: 13px;
         font-weight: 700;
         cursor: pointer;
-        border: 2px solid rgba(138, 43, 226, 0.6);
+        border: 1px solid rgba(138, 43, 226, 0.6);
         background: linear-gradient(135deg, #6a1fb3 0%, #4b0082 100%);
         color: white;
         transition: all 0.3s ease;
@@ -761,7 +755,7 @@ const SKILL_TREE_CSS = `
       }
       .skilltree-activate-btn:hover:not(:disabled) {
         background: linear-gradient(135deg, #9a4de6 0%, #7a26cc 100%);
-        border-color: rgba(168, 85, 247, 0.9);
+        border-color: rgba(138, 43, 226, 0.9);
         box-shadow: 0 0 15px rgba(138, 43, 226, 0.4);
         transform: translateY(-1px);
       }
@@ -786,8 +780,8 @@ const SKILL_TREE_CSS = `
         --st-primary: rgb(var(--st-primary-rgb));
         --st-surface: rgba(8, 10, 20, 0.98);
         --st-surface-soft: rgba(12, 15, 30, 0.95);
-        --st-text: rgba(236, 233, 255, 0.95);
-        --st-text-muted: rgba(236, 233, 255, 0.72);
+        --st-text: #dcddde;
+        --st-text-muted: #b5bac1;
       }
 
       .skilltree-modal,

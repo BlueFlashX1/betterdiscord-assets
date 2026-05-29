@@ -61,7 +61,7 @@ span[class*="wrapper_f61d60"],
 span.channelMention,
 span[class*="roleMention"] {
   padding: 2px 6px !important;
-  border-radius: 4px !important;
+  border-radius: 2px !important;
 }
 
 /* §11d — Reply context bar: purple spine connector

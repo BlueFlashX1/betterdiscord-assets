@@ -139,7 +139,7 @@ function buildStealthSettingsPanel(BdApi, plugin) {
       style: {
         padding: "16px",
         borderRadius: "2px",
-        background: "rgba(8, 8, 14, 0.92)",
+        background: "rgba(10, 10, 16, 0.98)",
         border: "1px solid rgba(138,43,226,0.35)",
         boxShadow: "0 0 24px rgba(138,43,226,0.18)",
         color: "#d4d4dc",

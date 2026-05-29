@@ -769,7 +769,14 @@ export function attachToolbarIcon(ctx, icon) {
   const toolbar = getChannelHeaderToolbar(ctx);
   if (!toolbar) return false;
   if (icon.parentElement !== toolbar) {
-    toolbar.appendChild(icon);
+    // Prepend to the icon cluster (matches every other SL plugin's
+    // insertBefore(firstChild) pattern). appendChild put this icon at the far
+    // end of the full-width flex toolbar, leaving a large gap before it.
+    if (toolbar.firstChild) {
+      toolbar.insertBefore(icon, toolbar.firstChild);
+    } else {
+      toolbar.appendChild(icon);
+    }
   }
   icon.classList.remove("ra-toolbar-icon--hidden");
   return true;

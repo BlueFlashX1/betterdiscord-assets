@@ -691,8 +691,9 @@ var require_ShadowAwayBridge_plugin = __commonJS({
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  margin-left: 8px;
-  transition: color 140ms ease, opacity 140ms ease;
+  margin: 0 2px;
+  opacity: 0.85;
+  transition: color 140ms ease, opacity 140ms ease, background 140ms ease;
   position: relative;
   padding: 0;
   outline: none !important;
@@ -700,8 +701,9 @@ var require_ShadowAwayBridge_plugin = __commonJS({
   appearance: none;
 }
 #${HEADER_WIDGET_ID}:hover {
-  background: transparent !important;
-  color: var(--interactive-hover, #ffffff);
+  opacity: 1;
+  background: rgba(138, 43, 226, 0.15) !important;
+  color: var(--interactive-normal, #b5bac1);
 }
 #${HEADER_WIDGET_ID}.sab-toolbar-widget--busy {
   opacity: 0.6;
@@ -733,7 +735,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
   right: -7px;
   min-width: 15px;
   height: 15px;
-  border-radius: 999px;
+  border-radius: 2px;
   padding: 0 4px;
   background: #d2485f;
   color: #fff;
@@ -770,18 +772,18 @@ var require_ShadowAwayBridge_plugin = __commonJS({
   padding-right: 4px;
 }
 .sab-shadow-report-row {
-  background: rgba(8, 10, 20, 0.92);
+  background: rgba(10, 10, 16, 0.97);
   border: 1px solid rgba(138, 43, 226, 0.25);
   border-radius: 2px;
   padding: 10px;
 }
 .sab-shadow-report-head {
-  color: #e8ecf3;
+  color: #dcddde;
   font-weight: 700;
   margin-bottom: 6px;
 }
 .sab-shadow-report-text {
-  color: rgba(228, 228, 255, 0.8);
+  color: #b5bac1;
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -1228,13 +1230,13 @@ Open plugin debug logs if you need full raw details.`;
         row.style.cssText = "margin-bottom:12px;";
         const label = document.createElement("label");
         label.textContent = labelText;
-        label.style.cssText = "display:block;margin-bottom:6px;font-weight:600;color:#e5e7eb;";
+        label.style.cssText = "display:block;margin-bottom:6px;font-weight:600;color:#dcddde;";
         row.appendChild(label);
         return { row, label };
       }
       _createCheckbox(labelText, key) {
         const row = document.createElement("label");
-        row.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#e5e7eb;cursor:pointer;";
+        row.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#dcddde;cursor:pointer;";
         const input = document.createElement("input");
         input.type = "checkbox";
         input.checked = !!this.settings[key];
@@ -1252,7 +1254,7 @@ Open plugin debug logs if you need full raw details.`;
         input.type = type;
         input.value = String(this.settings[key] || "");
         input.placeholder = placeholder;
-        input.style.cssText = "width:100%;padding:8px;border-radius:2px;border:1px solid rgba(138, 43, 226, 0.4);background:rgba(8, 10, 20, 0.95);color:#f3f4f6;";
+        input.style.cssText = "width:100%;padding:8px;border-radius:2px;border:1px solid rgba(138, 43, 226, 0.4);background:rgba(0,0,0,0.3);color:#dcddde;";
         input.addEventListener("change", () => {
           this.settings[key] = input.value;
           this._persistSettings();
@@ -1268,7 +1270,7 @@ Open plugin debug logs if you need full raw details.`;
         input.max = String(max);
         input.step = String(step);
         input.value = String(this.settings[key]);
-        input.style.cssText = "width:100%;padding:8px;border-radius:2px;border:1px solid rgba(138, 43, 226, 0.4);background:rgba(8, 10, 20, 0.95);color:#f3f4f6;";
+        input.style.cssText = "width:100%;padding:8px;border-radius:2px;border:1px solid rgba(138, 43, 226, 0.4);background:rgba(0,0,0,0.3);color:#dcddde;";
         input.addEventListener("change", () => {
           this.settings[key] = Number(input.value);
           this._persistSettings();
@@ -1280,7 +1282,7 @@ Open plugin debug logs if you need full raw details.`;
       _createActionButton(text, onClick) {
         const btn = document.createElement("button");
         btn.textContent = text;
-        btn.style.cssText = "padding:8px 10px;border-radius:2px;border:1px solid rgba(138, 43, 226, 0.4);background:rgba(12, 12, 24, 0.95);color:#f3f4f6;cursor:pointer;";
+        btn.style.cssText = "padding:8px 10px;border-radius:2px;border:1px solid rgba(138, 43, 226, 0.4);background:rgba(138, 43, 226, 0.2);color:#dcddde;cursor:pointer;";
         btn.addEventListener("click", (event) => {
           event.preventDefault();
           Promise.resolve(onClick()).catch((error) => {
@@ -1291,7 +1293,7 @@ Open plugin debug logs if you need full raw details.`;
       }
       getSettingsPanel() {
         const panel = document.createElement("div");
-        panel.style.cssText = "padding:12px;background:rgba(8, 10, 20, 0.96);border:1px solid rgba(12, 12, 24, 0.95);border-radius:2px;color:#e5e7eb;";
+        panel.style.cssText = "padding:12px;background:rgba(10, 10, 16, 0.98);border:1px solid rgba(138, 43, 226, 0.4);border-radius:2px;color:#dcddde;";
         panel.appendChild(this._createCheckbox("Enable bridge client", "enabled"));
         panel.appendChild(this._createCheckbox("Auto-send return signal on first outbound text message", "autoReturnOnOutboundMessage"));
         panel.appendChild(this._createCheckbox("Show warning toasts when bridge fails", "toastOnBridgeError"));
@@ -1323,7 +1325,7 @@ Open plugin debug logs if you need full raw details.`;
         actions.appendChild(this._createActionButton("Send Return Signal", () => this._sendManualReturnSignal()));
         panel.appendChild(actions);
         const note = document.createElement("div");
-        note.style.cssText = "margin-top:12px;font-size:12px;line-height:1.4;color:#9ca3af;";
+        note.style.cssText = "margin-top:12px;font-size:12px;line-height:1.4;color:#b5bac1;";
         note.textContent = "Bridge events are signed with HMAC-SHA256 and sent only to the configured local bridge URL.";
         panel.appendChild(note);
         return panel;

@@ -30,18 +30,18 @@ function buildChatUIComponents(pluginInstance) {
     },
       ce('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: containerFlex, minWidth: containerMinWidth } },
         ce('div', { style: { color: '#ec4899', fontSize: '11px', fontWeight: '600', minWidth: '30px', flexShrink: '0' } }, 'HP'),
-        ce('div', { style: { flex: '1', height: barHeight, minHeight: barHeight, background: 'rgba(20, 20, 30, 0.8)', borderRadius: '6px', overflow: 'hidden', position: 'relative', minWidth: barMinWidth } },
-          ce('div', { id: 'sls-hp-bar-fill', style: { height: '100%', width: `${hpPercent}%`, background: 'linear-gradient(90deg, #8a2be2 0%, #7b27cc 50%, #6c22b6 100%)', borderRadius: '6px', transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' } })
+        ce('div', { style: { flex: '1', height: barHeight, minHeight: barHeight, background: 'rgba(10, 10, 16, 0.98)', borderRadius: '2px', overflow: 'hidden', position: 'relative', minWidth: barMinWidth } },
+          ce('div', { id: 'sls-hp-bar-fill', style: { height: '100%', width: `${hpPercent}%`, background: 'linear-gradient(90deg, #8a2be2 0%, #7b27cc 50%, #6c22b6 100%)', borderRadius: '2px', transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' } })
         ),
-        ce('div', { id: 'sls-hp-text', style: { color: 'rgba(255, 255, 255, 0.7)', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: '0', display: textDisplay } },
+        ce('div', { id: 'sls-hp-text', style: { color: '#b5bac1', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: '0', display: textDisplay } },
           `${Math.floor(s.userHP)}/${s.userMaxHP}`)
       ),
       ce('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: containerFlex, minWidth: containerMinWidth } },
         ce('div', { style: { color: '#3b82f6', fontSize: '11px', fontWeight: '600', minWidth: '30px', flexShrink: '0' } }, 'MP'),
-        ce('div', { id: 'sls-mp-bar-container', style: { flex: '1', height: barHeight, minHeight: barHeight, background: 'rgba(20, 20, 30, 0.8)', borderRadius: '6px', overflow: 'hidden', position: 'relative', minWidth: barMinWidth } },
-          ce('div', { id: 'sls-mp-bar-fill', style: { height: '100%', width: `${manaPercent}%`, background: 'linear-gradient(90deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%)', borderRadius: '6px', transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' } })
+        ce('div', { id: 'sls-mp-bar-container', style: { flex: '1', height: barHeight, minHeight: barHeight, background: 'rgba(10, 10, 16, 0.98)', borderRadius: '2px', overflow: 'hidden', position: 'relative', minWidth: barMinWidth } },
+          ce('div', { id: 'sls-mp-bar-fill', style: { height: '100%', width: `${manaPercent}%`, background: 'linear-gradient(90deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%)', borderRadius: '2px', transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)' } })
         ),
-        ce('div', { id: 'sls-mp-text', style: { color: 'rgba(255, 255, 255, 0.7)', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: '0', display: textDisplay } },
+        ce('div', { id: 'sls-mp-text', style: { color: '#b5bac1', fontSize: '10px', minWidth: '50px', textAlign: 'right', flexShrink: '0', display: textDisplay } },
           `${Math.floor(s.userMana)}/${s.userMaxMana}`)
       )
     );

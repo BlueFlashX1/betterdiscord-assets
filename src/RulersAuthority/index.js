@@ -592,8 +592,14 @@ module.exports = class RulersAuthority {
         ? [`.${m.search.searchResultsWrap}`]
         : SEARCH_FALLBACKS,
 
+      // toolbar: always use the substring fallbacks FIRST. The Webpack-resolved
+      // single class (m.icons.toolbar) points at a DIFFERENT toolbar element
+      // than the channel-header icon cluster, which parked RA's icon at the far
+      // right of the header. `[aria-label="Channel header"] [class*="toolbar_"]`
+      // is exactly what every other SL plugin uses and clusters correctly, so
+      // prefer it; keep the resolved class only as a last-resort fallback.
       toolbar: m.icons?.toolbar
-        ? [`.${m.icons.toolbar}`]
+        ? [...TOOLBAR_FALLBACKS, `.${m.icons.toolbar}`]
         : TOOLBAR_FALLBACKS,
 
       dmList: DM_LIST_FALLBACKS, // DM list doesn't change often, keep fallbacks

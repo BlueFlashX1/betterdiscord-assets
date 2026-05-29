@@ -481,8 +481,10 @@ const ShadowSensesUiMethods = {
       height: 24px;
       cursor: pointer;
       color: #b5bac1;
-      margin: 0 4px;
-      transition: color 0.15s ease;
+      opacity: 0.85;
+      border-radius: 2px;
+      margin: 0 2px;
+      transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
     `;
     wrapper.innerHTML = this._getSensesHeaderSVG();
     ensureTooltipCSS();
@@ -497,7 +499,7 @@ const ShadowSensesUiMethods = {
       min-width: 16px;
       height: 16px;
       padding: 0 4px;
-      border-radius: 8px;
+      border-radius: 2px;
       background: #ed4245;
       color: #fff;
       font-size: 10px;
@@ -516,10 +518,14 @@ const ShadowSensesUiMethods = {
     // Hover effects
     wrapper.addEventListener('mouseenter', () => {
       wrapper.style.color = '#dcddde';
+      wrapper.style.opacity = '1';
+      wrapper.style.background = 'rgba(138,43,226,0.15)';
       showToolbarTooltip(wrapper, 'sl-toolbar-tip-ss', 'Shadow Senses');
     });
     wrapper.addEventListener('mouseleave', () => {
       wrapper.style.color = '#b5bac1';
+      wrapper.style.opacity = '0.85';
+      wrapper.style.background = '';
       hideToolbarTooltip('sl-toolbar-tip-ss');
     });
 
@@ -589,12 +595,12 @@ const ShadowSensesUiMethods = {
       width: 480px;
       max-height: calc(100vh - 80px);
       overflow-y: auto;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16162a 100%);
-      border: 1px solid rgba(138, 43, 226, 0.35);
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(138, 43, 226, 0.15);
+      background: linear-gradient(165deg, rgba(22, 18, 32, 0.97) 0%, rgba(13, 12, 20, 0.97) 55%, rgba(10, 10, 16, 0.98) 100%);
+      border: 1px solid rgba(138, 43, 226, 0.32);
+      border-radius: 2px;
+      box-shadow: 0 20px 52px rgba(0, 0, 0, 0.66), 0 0 24px rgba(138, 43, 226, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(138, 43, 226, 0.06);
       scrollbar-width: thin;
-      scrollbar-color: rgba(138,43,226,0.3) transparent;
+      scrollbar-color: rgba(138,43,226,0.85) rgba(8,8,13,0.55);
       font-family: 'gg sans', 'Helvetica Neue', system-ui, sans-serif;
     `;
 
@@ -685,7 +691,7 @@ const ShadowSensesUiMethods = {
     const statCardStyle = {
       background: "rgba(138, 43, 226, 0.1)",
       border: "1px solid rgba(138, 43, 226, 0.3)",
-      borderRadius: "8px",
+      borderRadius: "2px",
       padding: "12px",
       textAlign: "center",
     };
@@ -708,7 +714,7 @@ const ShadowSensesUiMethods = {
       if (typeof this._widgetForceUpdate === "function") this._widgetForceUpdate();
     };
 
-    return ce("div", { style: { padding: "16px", background: "rgba(10, 10, 16, 0.98)", borderRadius: "8px", color: "#ccc" } },
+    return ce("div", { style: { padding: "16px", background: "rgba(10, 10, 16, 0.98)", borderRadius: "2px", color: "#dcddde" } },
       // Statistics header
       ce("h3", { style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px" } }, "Shadow Senses Statistics"),
 
@@ -719,7 +725,7 @@ const ShadowSensesUiMethods = {
           gap: "12px",
           marginBottom: "14px",
           padding: "10px 12px",
-          borderRadius: "10px",
+          borderRadius: "2px",
           border: "1px solid rgba(138, 43, 226, 0.35)",
           background: "linear-gradient(120deg, rgba(138, 43, 226, 0.16), rgba(10, 10, 18, 0.92))",
         },
@@ -731,7 +737,7 @@ const ShadowSensesUiMethods = {
           width: "52px",
           height: "52px",
           objectFit: "cover",
-          borderRadius: "10px",
+          borderRadius: "2px",
           border: "1px solid rgba(138, 43, 226, 0.5)",
           boxShadow: "0 0 14px rgba(138, 43, 226, 0.28)",
         },
@@ -740,8 +746,8 @@ const ShadowSensesUiMethods = {
         },
       }),
       ce("div", null,
-        ce("div", { style: { color: "#d6bcff", fontSize: "13px", fontWeight: "700", letterSpacing: "0.03em" } }, "Startup Shadow Report Art"),
-        ce("div", { style: { color: "#9ca3af", fontSize: "11px", marginTop: "3px", lineHeight: 1.35 } },
+        ce("div", { style: { color: "#dcddde", fontSize: "13px", fontWeight: "700", letterSpacing: "0.03em" } }, "Startup Shadow Report Art"),
+        ce("div", { style: { color: "#b5bac1", fontSize: "11px", marginTop: "3px", lineHeight: 1.35 } },
           "Used for overview decoration and startup report popup dialogs."
         )
       )),
@@ -750,26 +756,26 @@ const ShadowSensesUiMethods = {
       ce("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" } },
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, deployCount),
-          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Deployed")
+          ce("div", { style: { color: "#b5bac1", fontSize: "11px" } }, "Deployed")
         ),
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, onlineMarkedCount),
-          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Marked Online")
+          ce("div", { style: { color: "#b5bac1", fontSize: "11px" } }, "Marked Online")
         ),
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, sessionCount),
-          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Detections (since restart)")
+          ce("div", { style: { color: "#b5bac1", fontSize: "11px" } }, "Detections (since restart)")
         ),
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, totalDetections.toLocaleString()),
-          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Total Detections")
+          ce("div", { style: { color: "#b5bac1", fontSize: "11px" } }, "Total Detections")
         )
       ),
 
       ce("h3", { style: { color: "#8a2be2", marginTop: 0, marginBottom: "8px", fontSize: "14px" } }, "Marked Utility Alerts"),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Status Change Alerts"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Status Change Alerts"),
         ce("input", {
           type: "checkbox",
           defaultChecked: !!this.settings.statusAlerts,
@@ -779,7 +785,7 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Shadow Report"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Startup Shadow Report"),
         ce("input", {
           type: "checkbox",
           defaultChecked: this.settings.startupShadowReport !== false,
@@ -790,7 +796,7 @@ const ShadowSensesUiMethods = {
 
       // #4: window mode — fixed hours OR since last successful report
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Use 'since last report' window"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Use 'since last report' window"),
         ce("input", {
           type: "checkbox",
           defaultChecked: !!this.settings.startupReportSinceLastSession,
@@ -800,7 +806,7 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Report Window (hours, max)"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Startup Report Window (hours, max)"),
         ce("input", {
           type: "number",
           min: 1,
@@ -815,17 +821,17 @@ const ShadowSensesUiMethods = {
           style: {
             width: "80px",
             padding: "4px 6px",
-            borderRadius: "6px",
+            borderRadius: "2px",
             border: "1px solid rgba(138, 43, 226, 0.4)",
-            background: "#111827",
-            color: "#ccc",
+            background: "rgba(0,0,0,0.3)",
+            color: "#dcddde",
           },
         })
       ),
 
       // OpenAI API key + explicit privacy disclosure (audit Wave B / #6 / #8)
       ce("div", { style: { ...rowStyle, alignItems: "flex-start", flexDirection: "column", gap: "6px" } },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "OpenAI API Key (optional)"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "OpenAI API Key (optional)"),
         ce("input", {
           type: "password",
           placeholder: "sk-... (leave empty for local fallback narration)",
@@ -834,10 +840,10 @@ const ShadowSensesUiMethods = {
           style: {
             width: "100%",
             padding: "5px 8px",
-            borderRadius: "6px",
+            borderRadius: "2px",
             border: "1px solid rgba(138, 43, 226, 0.4)",
-            background: "#111827",
-            color: "#ccc",
+            background: "rgba(0,0,0,0.3)",
+            color: "#dcddde",
             fontFamily: "monospace",
             fontSize: "12px",
             boxSizing: "border-box",
@@ -846,7 +852,7 @@ const ShadowSensesUiMethods = {
         ce("div", {
           style: {
             fontSize: "11px",
-            color: "#9090a0",
+            color: "#b5bac1",
             lineHeight: 1.4,
             padding: "4px 0",
           },
@@ -866,7 +872,7 @@ const ShadowSensesUiMethods = {
           gap: "6px",
         },
       },
-      ce("span", { style: { color: "#999", fontSize: "13px" } }, "Startup Report Artwork (PNG/JPG/SVG URL or file path)"),
+      ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Startup Report Artwork (PNG/JPG/SVG URL or file path)"),
       ce("input", {
         type: "text",
         placeholder: "/Downloads/Igris.svg or https://...",
@@ -875,21 +881,21 @@ const ShadowSensesUiMethods = {
         style: {
           width: "100%",
           padding: "8px 10px",
-          borderRadius: "6px",
+          borderRadius: "2px",
           border: "1px solid rgba(138, 43, 226, 0.35)",
-          background: "rgba(30, 30, 46, 0.9)",
-          color: "#e0e0e0",
+          background: "rgba(0,0,0,0.3)",
+          color: "#dcddde",
           fontSize: "13px",
           outline: "none",
           boxSizing: "border-box",
         },
       }),
-      ce("div", { style: { color: "#7f8593", fontSize: "11px", lineHeight: 1.35 } },
+      ce("div", { style: { color: "#b5bac1", fontSize: "11px", lineHeight: 1.35 } },
         "Supports /Downloads/Igris.svg, ~/Downloads/Igris.svg, absolute paths, and URLs."
       )),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Typing Alerts"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Typing Alerts"),
         ce("input", {
           type: "checkbox",
           defaultChecked: !!this.settings.typingAlerts,
@@ -899,7 +905,7 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Removed Friend Alerts"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Removed Friend Alerts"),
         ce("input", {
           type: "checkbox",
           defaultChecked: !!this.settings.removedFriendAlerts,
@@ -909,7 +915,7 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Show Marked Online Count"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Show Marked Online Count"),
         ce("input", {
           type: "checkbox",
           defaultChecked: !!this.settings.showMarkedOnlineCount,
@@ -919,7 +925,7 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Typing Alert Cooldown (seconds)"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Typing Alert Cooldown (seconds)"),
         ce("input", {
           type: "number",
           min: 3,
@@ -934,16 +940,16 @@ const ShadowSensesUiMethods = {
           style: {
             width: "80px",
             padding: "4px 6px",
-            borderRadius: "6px",
+            borderRadius: "2px",
             border: "1px solid rgba(138, 43, 226, 0.4)",
-            background: "#111827",
-            color: "#ccc",
+            background: "rgba(0,0,0,0.3)",
+            color: "#dcddde",
           },
         })
       ),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Group High Priority Bursts (P3/P4)"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Group High Priority Bursts (P3/P4)"),
         ce("input", {
           type: "checkbox",
           defaultChecked: !!this.settings.groupHighPriorityBursts,
@@ -957,10 +963,10 @@ const ShadowSensesUiMethods = {
         style: {
           marginTop: "6px",
           padding: "10px 12px",
-          borderRadius: "8px",
+          borderRadius: "2px",
           border: "1px solid rgba(138, 43, 226, 0.25)",
           background: "rgba(138, 43, 226, 0.08)",
-          color: "#b8b8b8",
+          color: "#dcddde",
           fontSize: "12px",
           lineHeight: 1.45,
         },
@@ -975,10 +981,10 @@ const ShadowSensesUiMethods = {
         style: {
           marginTop: "6px",
           padding: "10px 12px",
-          borderRadius: "8px",
+          borderRadius: "2px",
           border: "1px solid rgba(138, 43, 226, 0.25)",
           background: "rgba(138, 43, 226, 0.08)",
-          color: "#b8b8b8",
+          color: "#dcddde",
           fontSize: "12px",
           lineHeight: 1.45,
           marginBottom: "8px",
@@ -999,10 +1005,10 @@ const ShadowSensesUiMethods = {
         style: {
           width: "100%",
           padding: "8px 10px",
-          borderRadius: "6px",
+          borderRadius: "2px",
           border: "1px solid rgba(138, 43, 226, 0.35)",
-          background: "rgba(30, 30, 46, 0.9)",
-          color: "#e0e0e0",
+          background: "rgba(0,0,0,0.3)",
+          color: "#dcddde",
           fontSize: "13px",
           outline: "none",
           boxSizing: "border-box",
@@ -1014,10 +1020,10 @@ const ShadowSensesUiMethods = {
         style: {
           marginTop: "6px",
           padding: "10px 12px",
-          borderRadius: "8px",
+          borderRadius: "2px",
           border: "1px solid rgba(236, 72, 153, 0.25)",
           background: "rgba(236, 72, 153, 0.08)",
-          color: "#b8b8b8",
+          color: "#dcddde",
           fontSize: "12px",
           lineHeight: 1.45,
           marginBottom: "8px",
@@ -1038,10 +1044,10 @@ const ShadowSensesUiMethods = {
         style: {
           width: "100%",
           padding: "8px 10px",
-          borderRadius: "6px",
+          borderRadius: "2px",
           border: "1px solid rgba(236, 72, 153, 0.35)",
-          background: "rgba(30, 30, 46, 0.9)",
-          color: "#e0e0e0",
+          background: "rgba(0,0,0,0.3)",
+          color: "#dcddde",
           fontSize: "13px",
           outline: "none",
           boxSizing: "border-box",
@@ -1051,7 +1057,7 @@ const ShadowSensesUiMethods = {
       ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Diagnostics"),
 
       ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Debug Mode"),
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Debug Mode"),
         ce("input", {
           type: "checkbox",
           defaultChecked: this._debugMode,

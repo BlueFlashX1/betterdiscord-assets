@@ -283,7 +283,7 @@ module.exports = class CSSPicker {
 
   getSettingsPanel() {
     const panel = document.createElement("div");
-    panel.style.cssText = "padding: 16px;";
+    panel.style.cssText = "padding: 16px; background: rgba(10, 10, 16, 0.98); border-radius: 2px;";
 
     const settings = (this.settings = loadSettings());
     const isChecked = (v) => (v ? "checked" : "");

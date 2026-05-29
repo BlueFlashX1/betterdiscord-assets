@@ -1,11 +1,5 @@
 function getFallbackLevelProgressBarCss() {
   return `
-      /* ── Font Override ───────────────────────────────────────────── */
-      .lpb-progress-bar,
-      .lpb-progress-bar * {
-        font-family: 'Friend or Foe BB', sans-serif !important;
-      }
-
       .lpb-progress-container {
         position: fixed;
         left: 0;
@@ -17,7 +11,7 @@ function getFallbackLevelProgressBarCss() {
       .lpb-progress-container.bottom { bottom: 0; }
       .lpb-progress-bar {
         width: 100%;
-        background: rgba(10, 10, 15, 0.95);
+        background: rgba(10, 10, 16, 0.97);
         padding: 12px 20px 12px 80px;
         display: flex;
         align-items: center;
@@ -27,9 +21,9 @@ function getFallbackLevelProgressBarCss() {
         flex: 1 1 auto;
         min-width: 180px;
         height: 12px;
-        border-radius: 999px;
+        border-radius: 2px;
         overflow: hidden;
-        background: rgba(20, 20, 30, 0.8);
+        background: rgba(10, 10, 16, 0.98);
       }
       .lpb-progress-fill {
         width: 100%;

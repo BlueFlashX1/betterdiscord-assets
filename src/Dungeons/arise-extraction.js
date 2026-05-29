@@ -71,7 +71,7 @@ module.exports = {
       gap: 8px;
       background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
       color: white;
-      border: 2px solid #a78bfa;
+      border: 1px solid rgba(138, 43, 226, 0.4);
       border-radius: 2px;
       padding: 12px 20px;
       font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -364,7 +364,7 @@ module.exports = {
     const failIcon = document.createElement('div');
     failIcon.style.cssText =
       'font-size: 80px; margin-bottom: 20px; filter: grayscale(100%); font-weight: bold;';
-    failIcon.textContent = '✕';
+    failIcon.textContent = '×';
 
     const failTitle = document.createElement('div');
     failTitle.style.cssText =

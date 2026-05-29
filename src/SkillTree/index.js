@@ -1350,7 +1350,7 @@ module.exports = class SkillTree {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.style.background = 'rgba(10, 10, 16, 0.98)';
-    panel.style.borderRadius = '8px';
+    panel.style.borderRadius = '2px';
     panel.innerHTML = `
       <div>
         <h3 style="color: #8a2be2; margin-bottom: 20px;">Skill Tree Settings</h3>
@@ -1360,9 +1360,9 @@ module.exports = class SkillTree {
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
 
-        <div style="margin-top: 15px; padding: 10px; background: #1a0e2e; border-radius: 0; border-left: 3px solid #8a2be2;">
+        <div style="margin-top: 15px; padding: 10px; background: rgba(10, 10, 16, 0.98); border-radius: 2px; border-left: 3px solid #8a2be2;">
           <div style="color: #8a2be2; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
-          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+          <div style="color: #b5bac1; font-size: 13px;">
             Enable Debug Mode to see detailed console logs for:
             <ul style="margin: 5px 0; padding-left: 20px;">
               <li>Level up detection and SP rewards</li>

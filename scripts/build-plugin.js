@@ -4,10 +4,12 @@
  * Usage:
  *   node scripts/build-plugin.js <PluginName> [--watch]
  *   node scripts/build-plugin.js --all [--watch]
+ *   node scripts/build-plugin.js --changed
  *
  * Example: node scripts/build-plugin.js UserPanelDockMover
  *          node scripts/build-plugin.js UserPanelDockMover --watch
  *          node scripts/build-plugin.js --all
+ *          node scripts/build-plugin.js --changed
  */
 
 const esbuild = require("esbuild");
@@ -19,16 +21,23 @@ const SRC_ROOT = path.join(ROOT, "src");
 const args = process.argv.slice(2);
 const watchMode = args.includes("--watch");
 const allMode = args.includes("--all");
+const changedMode = args.includes("--changed");
 const pluginName = args.find(arg => !arg.startsWith("--"));
 
-if (allMode && pluginName) {
-  console.error("Do not pass a plugin name when using --all.");
+if ([allMode, changedMode, !!pluginName].filter(Boolean).length > 1) {
+  console.error("Pick one: <PluginName>, --all, or --changed.");
   process.exit(1);
 }
 
-if (!allMode && !pluginName) {
+if (changedMode && watchMode) {
+  console.error("--changed is a one-shot mode; use --all --watch for continuous rebuilds.");
+  process.exit(1);
+}
+
+if (!allMode && !changedMode && !pluginName) {
   console.error("Usage: node scripts/build-plugin.js <PluginName> [--watch]");
   console.error("   or: node scripts/build-plugin.js --all [--watch]");
+  console.error("   or: node scripts/build-plugin.js --changed");
   process.exit(1);
 }
 
@@ -178,6 +187,77 @@ async function buildAll() {
   }
 }
 
+function getDirMaxMtime(dir) {
+  let max = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const sub = getDirMaxMtime(p);
+      if (sub > max) max = sub;
+    } else {
+      const mtime = fs.statSync(p).mtimeMs;
+      if (mtime > max) max = mtime;
+    }
+  }
+  return max;
+}
+
+function pluginNeedsRebuild(name) {
+  const paths = getPluginPaths(name);
+  if (!fs.existsSync(paths.outFile)) return true;
+  const srcMtime = getDirMaxMtime(paths.srcDir);
+  const outMtime = fs.statSync(paths.outFile).mtimeMs;
+  return srcMtime > outMtime;
+}
+
+async function buildChanged() {
+  const names = getMigratedPluginNames();
+  if (names.length === 0) {
+    console.error("No migrated plugins found in src/.");
+    process.exit(1);
+  }
+
+  // src/shared/ is imported by many plugins; if it's newer than the oldest
+  // plugin output, treat as a global rebuild trigger. Avoids stale plugins
+  // when shared code changes.
+  let rebuildAll = false;
+  const sharedDir = path.join(SRC_ROOT, "shared");
+  if (fs.existsSync(sharedDir)) {
+    const sharedMtime = getDirMaxMtime(sharedDir);
+    let oldestOut = Infinity;
+    for (const name of names) {
+      const outFile = getPluginPaths(name).outFile;
+      if (fs.existsSync(outFile)) {
+        const mt = fs.statSync(outFile).mtimeMs;
+        if (mt < oldestOut) oldestOut = mt;
+      } else {
+        oldestOut = 0;
+        break;
+      }
+    }
+    if (sharedMtime > oldestOut) {
+      rebuildAll = true;
+      console.log("[changed] src/shared/ touched; rebuilding all plugins.");
+    }
+  }
+
+  const toBuild = rebuildAll ? names : names.filter(pluginNeedsRebuild);
+
+  if (toBuild.length === 0) {
+    console.log(`[changed] All ${names.length} plugin(s) up to date.`);
+    return;
+  }
+
+  console.log(`[changed] Rebuilding ${toBuild.length}/${names.length}: ${toBuild.join(", ")}`);
+  let failed = false;
+  for (const name of toBuild) {
+    const ok = await build(name, false);
+    if (!ok) failed = true;
+  }
+  if (failed) process.exit(1);
+}
+
 function installShutdownHandlers(contexts) {
   let shuttingDown = false;
 
@@ -223,6 +303,11 @@ async function watchAll() {
 }
 
 async function main() {
+  if (changedMode) {
+    await buildChanged();
+    return;
+  }
+
   if (allMode) {
     if (watchMode) {
       await watchAll();

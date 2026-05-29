@@ -152,7 +152,7 @@ module.exports = {
     const StatCard = ({ value, label, color }) =>
       ce('div', { style: { textAlign: 'center' } },
         ce('div', { style: { color, fontSize: '20px', fontWeight: 'bold' } }, value),
-        ce('div', { style: { color: '#999', fontSize: '11px' } }, label)
+        ce('div', { style: { color: '#b5bac1', fontSize: '11px' } }, label)
       );
 
     const GRADE_COLORS_SA = {
@@ -164,9 +164,9 @@ module.exports = {
     const RankCell = ({ rank, count, total }) => {
       const color = RANK_COLORS_SA[rank] || '#999';
       const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0';
-      return ce('div', { style: { textAlign: 'center', padding: '6px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '4px', border: `1px solid ${color}40` } },
+      return ce('div', { style: { textAlign: 'center', padding: '6px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '2px', border: `1px solid ${color}40` } },
         ce('div', { style: { color, fontSize: '14px', fontWeight: 'bold' } }, rank),
-        ce('div', { style: { color: '#fff', fontSize: '16px', fontWeight: 'bold', margin: '2px 0' } }, count),
+        ce('div', { style: { color: '#dcddde', fontSize: '16px', fontWeight: 'bold', margin: '2px 0' } }, count),
         ce('div', { style: { color: '#888', fontSize: '9px' } }, `${pct}%`)
       );
     };
@@ -175,9 +175,9 @@ module.exports = {
     const GradeCell = ({ grade, count, total }) => {
       const color = GRADE_COLORS_SA[grade] || '#999';
       const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0';
-      return ce('div', { style: { textAlign: 'center', padding: '6px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '4px', border: `1px solid ${color}40` } },
+      return ce('div', { style: { textAlign: 'center', padding: '6px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '2px', border: `1px solid ${color}40` } },
         ce('div', { style: { color, fontSize: '11px', fontWeight: 'bold' } }, grade),
-        ce('div', { style: { color: '#fff', fontSize: '16px', fontWeight: 'bold', margin: '2px 0' } }, count),
+        ce('div', { style: { color: '#dcddde', fontSize: '16px', fontWeight: 'bold', margin: '2px 0' } }, count),
         ce('div', { style: { color: '#888', fontSize: '9px' } }, `${pct}%`)
       );
     };
@@ -194,7 +194,7 @@ module.exports = {
         });
       const highestRankColor = RANK_COLORS_SA[data.highestRank] || '#999';
 
-      return ce('div', { style: { background: 'rgba(138, 43, 226, 0.1)', borderRadius: '6px', padding: '8px' } },
+      return ce('div', { style: { background: 'rgba(138, 43, 226, 0.1)', borderRadius: '2px', padding: '8px' } },
         ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
           ce('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
             ce('span', { style: { color: data.isMagicBeast ? '#f59e0b' : '#8a2be2', fontSize: '12px', fontWeight: 'bold' } }, role),
@@ -204,7 +204,7 @@ module.exports = {
           ),
           ce('span', { style: { color: '#34d399', fontSize: '11px', fontWeight: 'bold' } }, data.count)
         ),
-        ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', fontSize: '9px', color: '#999', marginBottom: '4px' } },
+        ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', fontSize: '9px', color: '#b5bac1', marginBottom: '4px' } },
           ce('div', null, 'Lvl: ', ce('span', { style: { color: '#34d399' } }, data.avgLevel)),
           ce('div', null, 'Pwr: ', ce('span', { style: { color: '#8a2be2' } }, data.avgPower)),
           ce('div', null, 'STR: ', ce('span', { style: { color: '#ef4444' } }, data.avgStats?.strength ?? 0)),
@@ -267,8 +267,8 @@ module.exports = {
         className: 'sa-general-card',
         'data-shadow-id': shortId,
         style: {
-          background: 'rgba(251, 191, 36, 0.15)', border: '2px solid #fbbf24',
-          borderRadius: '8px', padding: '14px', marginBottom: '12px',
+          background: 'rgba(251, 191, 36, 0.15)', border: '1px solid #fbbf24',
+          borderRadius: '2px', padding: '14px', marginBottom: '12px',
           boxShadow: '0 0 15px rgba(251, 191, 36, 0.3)', overflow: 'hidden',
         },
       },
@@ -276,7 +276,7 @@ module.exports = {
           ce('div', {
             style: {
               background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
-              fontSize: '20px', fontWeight: 'bold', padding: '8px', borderRadius: '8px',
+              fontSize: '20px', fontWeight: 'bold', padding: '8px', borderRadius: '2px',
               width: '48px', height: '48px', display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
@@ -290,20 +290,20 @@ module.exports = {
               ce('span', { style: { color: '#34d399', marginLeft: 'auto', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 } }, Math.floor(totalPower || 0).toLocaleString())
             ),
             ce('div', { style: { marginBottom: '8px' } },
-              ce('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#999', marginBottom: '2px' } },
+              ce('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#b5bac1', marginBottom: '2px' } },
                 ce('span', null, `Level ${level}`),
                 ce('span', null, `${xp.toLocaleString()} / ${xpNeeded.toLocaleString()} XP`)
               ),
-              ce('div', { style: { background: 'rgba(0,0,0,0.3)', height: '6px', borderRadius: '3px', overflow: 'hidden' } },
+              ce('div', { style: { background: 'rgba(0,0,0,0.3)', height: '6px', borderRadius: '2px', overflow: 'hidden' } },
                 ce('div', { style: { background: 'linear-gradient(90deg, #fbbf24, #f59e0b)', width: `${xpProgress}%`, height: '100%', transition: 'width 0.3s' } })
               )
             ),
-            ce('div', { style: { background: 'rgba(0, 0, 0, 0.3)', borderRadius: '6px', padding: '8px', marginBottom: '8px' } },
+            ce('div', { style: { background: 'rgba(0, 0, 0, 0.3)', borderRadius: '2px', padding: '8px', marginBottom: '8px' } },
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' } },
                 statEntries.map((stat) =>
                   ce('div', { key: stat.label, style: { textAlign: 'center' } },
                     ce('div', { style: { color: stat.color, fontSize: '9px', fontWeight: '600', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' } }, stat.label),
-                    ce('div', { style: { color: '#fff', fontSize: '16px', fontWeight: 'bold', lineHeight: '1.2' } }, (stat.value).toLocaleString())
+                    ce('div', { style: { color: '#dcddde', fontSize: '16px', fontWeight: 'bold', lineHeight: '1.2' } }, (stat.value).toLocaleString())
                   )
                 )
               )
@@ -386,12 +386,12 @@ module.exports = {
             backdropFilter: 'blur(5px)',
           },
         },
-          ce('div', { style: { width: '90%', maxWidth: '900px', background: 'rgba(10, 10, 16, 0.98)', border: '2px solid #8a2be2', borderRadius: '12px', padding: '20px' } },
+          ce('div', { style: { width: '90%', maxWidth: '900px', background: 'rgba(10, 10, 16, 0.98)', border: '1px solid rgba(138,43,226,0.4)', borderRadius: '2px', padding: '20px' } },
             ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
               ce('h2', { style: { color: '#8a2be2', margin: 0 } }, 'Shadow Army Command'),
-              ce('button', { onClick: onClose, style: { background: 'transparent', border: 'none', color: '#999', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' } }, '\u00d7')
+              ce('button', { onClick: onClose, style: { background: 'transparent', border: 'none', color: '#b5bac1', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' } }, '\u00d7')
             ),
-            ce('div', { style: { textAlign: 'center', padding: '40px', color: '#999' } }, 'No shadows in army yet. Extract shadows from dungeons!')
+            ce('div', { style: { textAlign: 'center', padding: '40px', color: '#b5bac1' } }, 'No shadows in army yet. Extract shadows from dungeons!')
           )
         );
       }
@@ -467,7 +467,7 @@ module.exports = {
         ce('div', {
           style: {
             width: '90%', maxWidth: '900px', maxHeight: '80vh',
-            background: 'rgba(10, 10, 16, 0.98)', border: '2px solid #8a2be2', borderRadius: '12px',
+            background: 'rgba(10, 10, 16, 0.98)', border: '1px solid rgba(138,43,226,0.4)', borderRadius: '2px',
             padding: '20px', overflowY: 'auto',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
           },
@@ -476,14 +476,14 @@ module.exports = {
             ce('h2', { style: { color: '#8a2be2', margin: 0 } }, 'Shadow Army Command'),
             ce('button', {
               onClick: onClose,
-              style: { background: 'transparent', border: 'none', color: '#999', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' },
+              style: { background: 'transparent', border: 'none', color: '#b5bac1', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' },
             }, '\u00d7')
           ),
 
           ce('div', {
             style: {
-              background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(168, 85, 247, 0.1))',
-              border: '1px solid #8a2be2', borderRadius: '8px', padding: '12px', marginBottom: '16px',
+              background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(138, 43, 226, 0.1))',
+              border: '1px solid rgba(138,43,226,0.4)', borderRadius: '2px', padding: '12px', marginBottom: '16px',
             },
           },
             ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' } },
@@ -499,21 +499,21 @@ module.exports = {
               ce(StatCard, { value: Object.keys(gradeCounts).filter(g => g !== 'Common' && (gradeCounts[g] || 0) > 0).length + ' / ' + (gradeOrder.length - 1), label: 'Grades Unlocked', color: '#ff6b2b' })
             ),
 
-            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' } },
+            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '2px', padding: '12px', marginBottom: '12px' } },
               ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Rank Distribution'),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
                 RANKS_SA.map((rank) => ce(RankCell, { key: rank, rank, count: rankCounts[rank] || 0, total: shadows.length }))
               )
             ),
 
-            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' } },
+            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '2px', padding: '12px', marginBottom: '12px' } },
               ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Grade Distribution'),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
                 SHADOW_GRADES.map((grade) => ce(GradeCell, { key: grade, grade, count: gradeCounts[grade] || 0, total: shadows.length }))
               )
             ),
 
-            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px' } },
+            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '2px', padding: '12px' } },
               ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Army Composition by Role/Class'),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' } },
                 sortedRoles.map(([role, data]) => ce(RoleCard, { key: role, role, data }))
@@ -527,7 +527,7 @@ module.exports = {
 
           ce('div', { style: { maxHeight: '35vh', overflowY: 'auto' } },
             generals.length === 0
-              ? ce('div', { style: { textAlign: 'center', padding: '40px', color: '#999' } }, 'No shadows in army yet. Extract shadows from dungeons!')
+              ? ce('div', { style: { textAlign: 'center', padding: '40px', color: '#b5bac1' } }, 'No shadows in army yet. Extract shadows from dungeons!')
               : generals.map((shadow, i) => ce(GeneralCard, { key: pluginRef.getCacheKey(shadow) || i, shadow, index: i }))
           )
         )

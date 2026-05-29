@@ -8,7 +8,7 @@ function buildTitleManagerSettingsPanel(plugin) {
   panel.style.cssText = `
       padding: 20px;
       background: rgba(10, 10, 16, 0.98);
-      border-radius: 0;
+      border-radius: 2px;
       border: 2px solid rgba(138, 43, 226, 0.3);
       box-shadow: 0 0 30px rgba(138, 43, 226, 0.2);
     `;

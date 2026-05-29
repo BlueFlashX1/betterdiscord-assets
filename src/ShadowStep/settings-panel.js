@@ -6,13 +6,13 @@ const SETTINGS_ROW_STYLE = {
   borderBottom: "1px solid rgba(255,255,255,0.05)",
 };
 
-const SETTINGS_LABEL_STYLE = { color: "#ccc", fontSize: "13px" };
+const SETTINGS_LABEL_STYLE = { color: "#dcddde", fontSize: "13px" };
 
 const SETTINGS_INPUT_STYLE = {
   background: "rgba(0,0,0,0.3)",
   border: "1px solid rgba(138,43,226,0.3)",
-  borderRadius: "6px",
-  color: "#ddd",
+  borderRadius: "2px",
+  color: "#dcddde",
   padding: "4px 8px",
   fontSize: "13px",
   outline: "none",
@@ -39,25 +39,25 @@ function buildShadowStepSettingsPanel(BdApi, plugin, { baseMaxAnchors, agiBonusD
     const anchorCount = (plugin.settings.anchors || []).length;
 
     return React.createElement("div", {
-      style: { padding: "16px", background: "rgba(10, 10, 16, 0.98)", borderRadius: "8px", color: "#ccc" },
+      style: { padding: "16px", background: "rgba(10, 10, 16, 0.98)", borderRadius: "2px", color: "#dcddde" },
     },
     React.createElement("h3", {
-      style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px", fontFamily: "'Orbitron', sans-serif" },
+      style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px" },
     }, "Shadow Step Settings"),
 
     React.createElement("div", {
       style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" },
     },
     React.createElement("div", {
-      style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center" },
+      style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "2px", padding: "10px", textAlign: "center" },
     },
     React.createElement("div", { style: { color: "#8a2be2", fontSize: "18px", fontWeight: "700" } }, anchorCount),
-    React.createElement("div", { style: { color: "#999", fontSize: "11px" } }, "Active Anchors")),
+    React.createElement("div", { style: { color: "#b5bac1", fontSize: "11px" } }, "Active Anchors")),
     React.createElement("div", {
-      style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "8px", padding: "10px", textAlign: "center" },
+      style: { background: "rgba(138,43,226,0.1)", border: "1px solid rgba(138,43,226,0.3)", borderRadius: "2px", padding: "10px", textAlign: "center" },
     },
     React.createElement("div", { style: { color: "#8a2be2", fontSize: "18px", fontWeight: "700" } }, effectiveMax),
-    React.createElement("div", { style: { color: "#999", fontSize: "11px" } },
+    React.createElement("div", { style: { color: "#b5bac1", fontSize: "11px" } },
       `Max Slots${agiStat > 0 ? ` (+${Math.floor(agiStat / agiBonusDivisor)} AGI)` : ""}`))),
 
     React.createElement("div", { style: SETTINGS_ROW_STYLE },

@@ -140,7 +140,7 @@ function createWaypointCard(React, pluginInstance) {
         className: "se-card-remove",
         title: "Recall shadow",
         onClick: (e) => { e.stopPropagation(); onRemove(wp.id); },
-      }, "✖")
+      }, "×")
     ),
     ce("div", { className: "se-card-body" },
       ce("div", { className: "se-location-label" }, fullLocation),
@@ -171,7 +171,6 @@ function buildWaypointListContent(React, options) {
   const ce = React.createElement;
   if (waypoints.length === 0) {
     return ce("div", { className: "se-empty-state" },
-      ce("div", { className: "se-empty-icon" }, "⚓"),
       ce("div", { className: "se-empty-text" },
         searchQuery ? "No waypoints match your search" : "No waypoints yet"
       ),

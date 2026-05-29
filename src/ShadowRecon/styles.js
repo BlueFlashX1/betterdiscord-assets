@@ -6,10 +6,10 @@ function getShadowReconCss(widgetId, modalId) {
   justify-content: center;
   margin: 5px 10px 5px 6px;
   padding: 6px 8px;
-  border: 1px solid rgba(138, 43, 226, 0.45);
+  border: 1px solid rgba(138, 43, 226, 0.4);
   border-radius: 2px;
-  background: linear-gradient(145deg, rgba(8, 10, 20, 0.95), rgba(12, 12, 24, 0.95));
-  color: #c4b5fd;
+  background: linear-gradient(145deg, rgba(10, 10, 16, 0.95), rgba(12, 12, 24, 0.95));
+  color: #8a2be2;
   font-size: 10px;
   line-height: 1.2;
   white-space: nowrap;
@@ -34,7 +34,7 @@ function getShadowReconCss(widgetId, modalId) {
 
 #${widgetId}.shadow-recon-widget:hover {
   border-color: rgba(138, 43, 226, 0.85);
-  color: #e8dcff;
+  color: #dcddde;
 }
 
 #${modalId}.shadow-recon-overlay {
@@ -53,8 +53,8 @@ function getShadowReconCss(widgetId, modalId) {
   max-height: 85vh;
   border-radius: 2px;
   overflow: hidden;
-  border: 1px solid rgba(138, 43, 226, 0.45);
-  background: rgba(8, 10, 20, 1);
+  border: 1px solid rgba(138, 43, 226, 0.4);
+  background: rgba(10, 10, 16, 0.97);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
@@ -70,13 +70,13 @@ function getShadowReconCss(widgetId, modalId) {
 }
 
 #${modalId} .shadow-recon-modal-title-wrap { display: flex; flex-direction: column; gap: 2px; }
-#${modalId} .shadow-recon-modal-title { margin: 0; color: #e8dcff; font-size: 16px; }
-#${modalId} .shadow-recon-modal-subtitle { color: #c4b5fd; font-size: 12px; }
+#${modalId} .shadow-recon-modal-title { margin: 0; color: #dcddde; font-size: 16px; }
+#${modalId} .shadow-recon-modal-subtitle { color: #8a2be2; font-size: 12px; }
 
 #${modalId} .shadow-recon-close {
-  border: 1px solid rgba(148, 163, 184, 0.45);
+  border: 1px solid rgba(138, 43, 226, 0.45);
   background: transparent;
-  color: #e2e8f0;
+  color: #dcddde;
   border-radius: 2px;
   width: 30px;
   height: 30px;
@@ -97,15 +97,15 @@ function getShadowReconCss(widgetId, modalId) {
 }
 
 #${modalId} .shadow-recon-section {
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(138, 43, 226, 0.2);
   border-radius: 2px;
   padding: 10px;
-  background: rgba(8, 10, 20, 0.82);
+  background: rgba(10, 10, 16, 0.82);
 }
 
 #${modalId} .shadow-recon-section-title {
   margin: 0 0 8px;
-  color: #c4b5fd;
+  color: #8a2be2;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -118,12 +118,12 @@ function getShadowReconCss(widgetId, modalId) {
 }
 
 #${modalId} .shadow-recon-key {
-  color: rgba(196, 181, 253, 0.6);
+  color: #b5bac1;
   font-size: 11px;
 }
 
 #${modalId} .shadow-recon-value {
-  color: #e2e8f0;
+  color: #dcddde;
   font-size: 12px;
   word-break: break-word;
 }
@@ -137,7 +137,7 @@ function getShadowReconCss(widgetId, modalId) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(138, 43, 226, 0.22);
   border-radius: 2px;
   padding: 6px 8px;
   font-size: 12px;
@@ -164,10 +164,10 @@ function getShadowReconCss(widgetId, modalId) {
 }
 
 .shadow-recon-button {
-  border: 1px solid rgba(138, 43, 226, 0.45);
+  border: 1px solid rgba(138, 43, 226, 0.4);
   border-radius: 2px;
-  background: rgba(8, 10, 20, 0.85);
-  color: #e8dcff;
+  background: rgba(10, 10, 16, 0.85);
+  color: #dcddde;
   padding: 7px 10px;
   cursor: pointer;
 }
@@ -182,10 +182,10 @@ function getShadowReconCss(widgetId, modalId) {
   position: fixed;
   z-index: 10100;
   padding: 8px 12px;
-  border: 1px solid rgba(168, 85, 247, 0.65);
-  border-radius: 4px;
-  background: rgba(10, 10, 10, 0.96);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 8px rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(138, 43, 226, 0.65);
+  border-radius: 2px;
+  background: rgba(10, 10, 16, 0.96);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 8px rgba(138, 43, 226, 0.15);
   pointer-events: none;
   opacity: 0;
   transform: translateX(-4px);
@@ -219,9 +219,9 @@ function getShadowReconCss(widgetId, modalId) {
 }
 
 .shadow-recon-tooltip-tag--marked {
-  color: #c084fc;
-  background: rgba(168, 85, 247, 0.18);
-  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #8a2be2;
+  background: rgba(138, 43, 226, 0.18);
+  border: 1px solid rgba(138, 43, 226, 0.4);
 }
 
 .shadow-recon-tooltip-tag--unmarked {

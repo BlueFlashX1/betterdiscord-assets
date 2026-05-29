@@ -122,7 +122,7 @@ module.exports = {
           style: {
             padding: '24px',
             background: 'rgba(10, 10, 16, 0.98)',
-            borderRadius: '8px',
+            borderRadius: '2px',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           },
         },
@@ -150,7 +150,7 @@ module.exports = {
               cursor: 'pointer',
               padding: '12px 16px',
               background: '#181825',
-              borderRadius: '6px',
+              borderRadius: '2px',
               border: '1px solid #45475a',
               transition: 'border-color 0.2s',
               color: '#cdd6f4',

@@ -60,9 +60,9 @@ function getUserPanelDockCss() {
         padding: 4px 12px !important;
         margin: 0 !important;
         border-radius: 0 !important;
-        background: rgba(8, 10, 20, 0.96) !important;
+        background: rgba(10, 10, 16, 0.97) !important;
         background-image: none !important;
-        border-left: 1px solid rgba(138, 43, 226, 0.22) !important;
+        border-left: 1px solid rgba(138, 43, 226, 0.4) !important;
         box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3) !important;
         gap: 10px !important;
         min-width: 0 !important;

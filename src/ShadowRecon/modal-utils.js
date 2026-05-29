@@ -24,7 +24,7 @@ function createModal(plugin, modalId, title, subtitle = "") {
 
   const closeBtn = document.createElement("button");
   closeBtn.className = "shadow-recon-close";
-  closeBtn.textContent = "x";
+  closeBtn.textContent = "×";
   closeBtn.addEventListener("click", () => plugin.closeModal());
 
   titleWrap.appendChild(titleEl);

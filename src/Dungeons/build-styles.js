@@ -32,10 +32,10 @@ function buildCSS() {
 /* ARISE Animation Keyframes */
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+    box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
   }
   50% {
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.8);
+    box-shadow: 0 6px 20px rgba(138, 43, 226, 0.8);
   }
 }
 
@@ -62,10 +62,10 @@ function buildCSS() {
 
 @keyframes arise-glow {
   0%, 100% {
-    text-shadow: 0 0 20px #8b5cf6, 0 0 40px #8b5cf6;
+    text-shadow: 0 0 20px #8a2be2, 0 0 40px #8a2be2;
   }
   50% {
-    text-shadow: 0 0 30px #a78bfa, 0 0 60px #a78bfa;
+    text-shadow: 0 0 30px #8a2be2, 0 0 60px #8a2be2;
   }
 }
 
@@ -100,15 +100,15 @@ function buildCSS() {
   width: 14px;
   height: 14px;
   /* SVG dungeon gate icon — two pillars with arch, no emoji */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Crect x='1' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Crect x='12' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Cpath d='M2.5 4 C2.5 1.5 8 0 8 0 C8 0 13.5 1.5 13.5 4' stroke='%238b5cf6' stroke-width='1.5' fill='none'/%3E%3Crect x='6' y='8' width='4' height='7' rx='0.5' fill='%237c3aed' opacity='0.7'/%3E%3Ccircle cx='8' cy='3' r='1.2' fill='%23a78bfa' opacity='0.9'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Crect x='1' y='4' width='3' height='11' rx='0.5' fill='%238a2be2'/%3E%3Crect x='12' y='4' width='3' height='11' rx='0.5' fill='%238a2be2'/%3E%3Cpath d='M2.5 4 C2.5 1.5 8 0 8 0 C8 0 13.5 1.5 13.5 4' stroke='%238a2be2' stroke-width='1.5' fill='none'/%3E%3Crect x='6' y='8' width='4' height='7' rx='0.5' fill='%238a2be2' opacity='0.7'/%3E%3Ccircle cx='8' cy='3' r='1.2' fill='%238a2be2' opacity='0.9'/%3E%3C/svg%3E");
   background-size: contain;
   background-repeat: no-repeat;
   margin-right: 6px;
   animation: dungeonIconPulse 2.5s ease-in-out infinite;
 }
 @keyframes dungeonIconPulse {
-  0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 2px rgba(139, 92, 246, 0.6)); }
-  50% { opacity: 1; filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.9)) drop-shadow(0 0 10px rgba(124, 58, 237, 0.4)); }
+  0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 2px rgba(138, 43, 226, 0.6)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 5px rgba(138, 43, 226, 0.9)) drop-shadow(0 0 10px rgba(138, 43, 226, 0.4)); }
 }
 .dungeons-plugin-button {
   width: 32px;
@@ -146,20 +146,24 @@ function buildCSS() {
   appearance: none;
   width: 24px;
   height: 24px;
-  margin: 0 6px 0 0;
+  margin: 0 2px;
   padding: 0;
   border: none;
   background: transparent;
+  border-radius: 2px;
   color: var(--interactive-normal, #b5bac1);
+  opacity: 0.85;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   position: relative;
-  transition: color 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .dungeons-header-widget:hover {
+  opacity: 1;
+  background: rgba(138, 43, 226, 0.15);
   color: var(--interactive-hover, #dcddde);
 }
 
@@ -170,7 +174,7 @@ function buildCSS() {
 .dungeons-header-widget:focus-visible {
   outline: 2px solid rgba(114, 137, 218, 0.65);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 2px;
 }
 
 .dungeons-header-widget-icon {
@@ -192,7 +196,7 @@ function buildCSS() {
   min-width: 14px;
   height: 14px;
   padding: 0 3px;
-  border-radius: 999px;
+  border-radius: 2px;
   background: #ed4245;
   color: #fff;
   font-size: 10px;
@@ -217,12 +221,13 @@ function buildCSS() {
 }
 
 .dungeons-header-popup-surface {
-  background: rgba(22, 22, 30, 0.97);
-  border: 1px solid rgba(120, 120, 145, 0.35);
-  border-radius: 10px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(165deg, rgba(22, 18, 32, 0.97) 0%, rgba(13, 12, 20, 0.97) 55%, rgba(10, 10, 16, 0.98) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.32);
+  border-radius: 2px;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.6), 0 0 30px rgba(138, 43, 226, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(138, 43, 226, 0.06);
   overflow: hidden;
-  backdrop-filter: blur(8px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(138, 43, 226, 0.85) rgba(8, 8, 13, 0.55);
 }
 
 .dungeons-header-popup-head {
@@ -249,7 +254,7 @@ function buildCSS() {
   line-height: 1;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: 2px;
   cursor: pointer;
 }
 
@@ -261,6 +266,22 @@ function buildCSS() {
 .dungeons-header-popup-content {
   max-height: min(65vh, 540px);
   overflow-y: auto;
+}
+
+/* SL-themed scrollbar — thin, sharp, purple-gradient thumb */
+.dungeons-header-popup-content::-webkit-scrollbar {
+  width: 9px;
+}
+.dungeons-header-popup-content::-webkit-scrollbar-track {
+  background: rgba(8, 8, 13, 0.6);
+}
+.dungeons-header-popup-content::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.38) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.35);
+  border-radius: 2px;
+}
+.dungeons-header-popup-content::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(186, 85, 211, 0.75) 0%, rgba(138, 43, 226, 0.5) 100%);
 }
 
 .dungeons-header-popup-empty {
@@ -320,7 +341,7 @@ function buildCSS() {
   display: inline-flex;
   align-items: center;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 2px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -357,7 +378,7 @@ function buildCSS() {
 .dungeon-widget-action {
   appearance: none;
   border: 1px solid rgba(130, 130, 155, 0.35);
-  border-radius: 6px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.04);
   color: #f2f3f5;
   font-size: 10px;
@@ -394,8 +415,8 @@ function buildCSS() {
   padding: 12px 16px !important;
   margin: 0 !important;
   background: linear-gradient(180deg, rgba(20, 20, 30, 0.95) 0%, rgba(15, 15, 25, 0.98) 100%) !important;
-  border-bottom: 2px solid rgba(139, 92, 246, 0.4) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(139, 92, 246, 0.1) !important;
+  border-bottom: 1px solid rgba(138, 43, 226, 0.4) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(138, 43, 226, 0.1) !important;
   z-index: 100 !important;
   backdrop-filter: blur(8px) !important;
   visibility: visible !important;
@@ -435,19 +456,19 @@ ${sel.settingsContainer} {
   margin: 0 auto !important;
   font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   background: rgba(30, 30, 45, 0.85) !important;
-  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  border: 1px solid rgba(138, 43, 226, 0.4) !important;
   border-radius: 2px !important;
   backdrop-filter: blur(6px) !important;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.15) !important;
+  box-shadow: 0 2px 8px rgba(138, 43, 226, 0.15) !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
 }
 
 .dungeon-boss-hp-bar .boss-info {
-  color: #a78bfa !important;
+  color: #8a2be2 !important;
   font-weight: 700 !important;
   font-size: 12px !important;
-  text-shadow: 0 0 8px rgba(139, 92, 246, 0.8), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
+  text-shadow: 0 0 8px rgba(138, 43, 226, 0.8), 0 2px 4px rgba(0, 0, 0, 0.5) !important;
   line-height: 1.4 !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -455,7 +476,7 @@ ${sel.settingsContainer} {
 
 .dungeon-deploy-btn {
   padding: 4px 12px !important;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  background: linear-gradient(135deg, #8a2be2 0%, #6a0dad 100%) !important;
   color: white !important;
   border: none !important;
   border-radius: 2px !important;
@@ -463,8 +484,8 @@ ${sel.settingsContainer} {
   font-weight: 700 !important;
   cursor: pointer !important;
   transition: all 0.2s !important;
-  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.5) !important;
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.8) !important;
+  box-shadow: 0 2px 6px rgba(138, 43, 226, 0.5) !important;
+  text-shadow: 0 0 6px rgba(138, 43, 226, 0.8) !important;
   pointer-events: auto !important;
   display: inline-block !important;
   visibility: visible !important;
@@ -472,8 +493,8 @@ ${sel.settingsContainer} {
 }
 .dungeon-deploy-btn:hover {
   transform: scale(1.05) !important;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.7) !important;
-  text-shadow: 0 0 10px rgba(139, 92, 246, 1) !important;
+  box-shadow: 0 4px 12px rgba(138, 43, 226, 0.7) !important;
+  text-shadow: 0 0 10px rgba(138, 43, 226, 1) !important;
 }
 
 .dungeon-join-btn {
@@ -543,7 +564,7 @@ ${sel.settingsContainer} {
 
 .dungeon-arise-button:hover {
   transform: scale(1.05) !important;
-  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6) !important;
+  box-shadow: 0 6px 16px rgba(138, 43, 226, 0.6) !important;
 }
 
 /* Boss bar layout (inline styles extracted to classes) */
@@ -571,10 +592,10 @@ ${sel.settingsContainer} {
 }
 
 .boss-bar-name {
-  color: #a78bfa !important;
+  color: #8a2be2 !important;
   font-weight: 700 !important;
   font-size: 13px !important;
-  text-shadow: 0 0 8px rgba(139, 92, 246, 0.8) !important;
+  text-shadow: 0 0 8px rgba(138, 43, 226, 0.8) !important;
   white-space: nowrap !important;
 }
 
@@ -617,7 +638,7 @@ ${sel.settingsContainer} {
 
 .dungeon-combat-skill-btn {
   padding: 5px 11px !important;
-  border-radius: 4px !important;
+  border-radius: 2px !important;
   border: 1px solid rgba(138, 43, 226, 0.45) !important;
   background: linear-gradient(135deg, rgba(34, 12, 58, 0.96) 0%, rgba(67, 24, 116, 0.92) 100%) !important;
   color: #f5ebff !important;
@@ -691,7 +712,7 @@ ${sel.settingsContainer} {
   align-items: center !important;
   gap: 3px !important;
   padding: 1px 6px !important;
-  border-radius: 10px !important;
+  border-radius: 2px !important;
   font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
   font-size: 10px !important;
   font-weight: 700 !important;
@@ -792,7 +813,7 @@ ${sel.settingsContainer} {
   padding: 6px 12px !important;
   background: rgba(8, 4, 16, 0.97) !important;
   border: 1.5px solid rgba(138, 43, 226, 0.75) !important;
-  border-radius: 6px !important;
+  border-radius: 2px !important;
   color: #e2d4f0 !important;
   font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
   font-size: 11px !important;
@@ -851,15 +872,15 @@ ${sel.settingsContainer} {
   padding: 6px 12px !important;
   margin: 4px 0 !important;
   background: linear-gradient(135deg, rgba(88, 28, 135, 0.35) 0%, rgba(30, 27, 75, 0.6) 100%) !important;
-  border: 1px solid rgba(139, 92, 246, 0.4) !important;
-  border-radius: 4px !important;
+  border: 1px solid rgba(138, 43, 226, 0.4) !important;
+  border-radius: 2px !important;
   font-family: 'Orbitron', 'Segoe UI', sans-serif !important;
   animation: gateTimerPulse 2.5s ease-in-out infinite !important;
 }
 
 .boss-gate-icon {
   font-size: 14px !important;
-  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.6)) !important;
+  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.6)) !important;
 }
 
 .boss-gate-label {
@@ -868,7 +889,7 @@ ${sel.settingsContainer} {
   font-weight: 700 !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
-  text-shadow: 0 0 8px rgba(139, 92, 246, 0.5) !important;
+  text-shadow: 0 0 8px rgba(138, 43, 226, 0.5) !important;
 }
 
 .boss-gate-countdown {
@@ -894,12 +915,12 @@ ${sel.settingsContainer} {
 
 @keyframes gateTimerPulse {
   0%, 100% {
-    border-color: rgba(139, 92, 246, 0.4);
-    box-shadow: 0 0 8px rgba(139, 92, 246, 0.15);
+    border-color: rgba(138, 43, 226, 0.4);
+    box-shadow: 0 0 8px rgba(138, 43, 226, 0.15);
   }
   50% {
-    border-color: rgba(139, 92, 246, 0.7);
-    box-shadow: 0 0 16px rgba(139, 92, 246, 0.3);
+    border-color: rgba(138, 43, 226, 0.7);
+    box-shadow: 0 0 16px rgba(138, 43, 226, 0.3);
   }
 }
 
@@ -930,7 +951,7 @@ ${sel.settingsContainer} {
 }
 
 .boss-bar-badge-waiting {
-  color: #8b5cf6 !important;
+  color: #8a2be2 !important;
   font-weight: 700 !important;
 }
 
@@ -954,7 +975,7 @@ ${sel.settingsContainer} {
   border-radius: 2px !important;
   overflow: hidden !important;
   position: relative !important;
-  border: 1px solid rgba(139, 92, 246, 0.5) !important;
+  border: 1px solid rgba(138, 43, 226, 0.5) !important;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
   box-sizing: border-box !important;
   margin-top: 4px !important;
@@ -995,7 +1016,7 @@ ${sel.settingsContainer} {
   text-shadow:
     0 0 6px rgba(0, 0, 0, 1),
     0 2px 4px rgba(0, 0, 0, 0.9),
-    0 0 3px rgba(139, 92, 246, 0.5) !important;
+    0 0 3px rgba(138, 43, 226, 0.5) !important;
   pointer-events: none !important;
   letter-spacing: 0.8px !important;
 }

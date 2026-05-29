@@ -102,14 +102,6 @@ export function buildCSS(ctx) {
   return `
 /* ── Ruler's Authority v${RA_VERSION} — Dynamic CSS ──────────────────── */
 
-/* ── Font Override ───────────────────────────────────────────────────── */
-.ra-toolbar-icon,
-.ra-grip-indicator,
-.sl-toolbar-tip {
-  font-family: 'Friend or Foe BB', sans-serif !important;
-}
-
-
 /* ── Core Panel Push ────────────────────────────────────────────── */
 
 ${buildCollapsedPushRule(sidebarPush)}
@@ -300,7 +292,7 @@ ${sidebarHandleDisable.join(",\n")} {
   right: 4px;
   width: 8px;
   height: 8px;
-  background: radial-gradient(circle, #b49bff 0%, rgba(138, 43, 226, 0.3) 100%);
+  background: radial-gradient(circle, rgba(138, 43, 226, 1) 0%, rgba(138, 43, 226, 0.3) 100%);
   border-radius: 50%;
   pointer-events: none;
   animation: ra-grip-pulse 2s ease-in-out infinite;
@@ -321,13 +313,15 @@ ${sidebarHandleDisable.join(",\n")} {
   height: 24px;
   cursor: pointer;
   border-radius: 2px;
-  transition: opacity 0.15s ease, background 0.15s ease;
-  margin-left: 4px;
-  opacity: 0.8;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  margin: 0 2px;
+  opacity: 0.85;
+  color: #b5bac1;
 }
 
 .ra-toolbar-icon:hover {
   opacity: 1;
+  background: rgba(138, 43, 226, 0.15);
 }
 
 .ra-toolbar-icon:hover svg {

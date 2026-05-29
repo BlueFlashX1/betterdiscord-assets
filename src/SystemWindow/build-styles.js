@@ -32,7 +32,7 @@ function buildCSS() {
 
    Colors:
      BLUE:   59, 130, 246  (#3b82f6) — System (others)
-     PURPLE: 155, 50, 255  (#9b32ff) — Monarch (self)
+     PURPLE: 138, 43, 226  (#8a2be2) — Monarch (self)
      GOLD:   251, 191, 36  (#fbbf24) — Mentioned (you / replies-to-you)
      BG:     rgba(0, 0, 0, 0.55) — Darker codeblock background
      R:      2px — Border radius
@@ -146,18 +146,18 @@ li.sw-group-end {
    ════════════════════════════════════════════ */
 
 li.sw-self {
-  border-left-color: rgba(155, 50, 255, 0.5) !important;
-  border-right-color: rgba(155, 50, 255, 0.2) !important;
+  border-left-color: rgba(138, 43, 226, 0.5) !important;
+  border-right-color: rgba(138, 43, 226, 0.2) !important;
 }
 
 li.sw-self.sw-group-solo,
 li.sw-self.sw-group-start {
-  border-top-color: rgba(155, 50, 255, 0.2) !important;
+  border-top-color: rgba(138, 43, 226, 0.2) !important;
 }
 
 li.sw-self.sw-group-solo,
 li.sw-self.sw-group-end {
-  border-bottom-color: rgba(155, 50, 255, 0.2) !important;
+  border-bottom-color: rgba(138, 43, 226, 0.2) !important;
 }
 
 /* ════════════════════════════════════════════
@@ -178,10 +178,10 @@ li.sw-self.sw-group-solo:hover,
 li.sw-self.sw-group-start:hover,
 li.sw-self.sw-group-middle:hover,
 li.sw-self.sw-group-end:hover {
-  box-shadow: 0 0 20px rgba(155, 50, 255, 0.6),
-              0 0 45px rgba(155, 50, 255, 0.25),
-              inset 0 0 12px rgba(155, 50, 255, 0.1) !important;
-  border-left-color: rgba(155, 50, 255, 1) !important;
+  box-shadow: 0 0 20px rgba(138, 43, 226, 0.6),
+              0 0 45px rgba(138, 43, 226, 0.25),
+              inset 0 0 12px rgba(138, 43, 226, 0.1) !important;
+  border-left-color: rgba(138, 43, 226, 1) !important;
 }
 
 /* ════════════════════════════════════════════
@@ -242,8 +242,8 @@ li.sw-group-start ${repliedMessage} {
 
 li.sw-self.sw-group-solo ${repliedMessage},
 li.sw-self.sw-group-start ${repliedMessage} {
-  border-color: rgba(155, 50, 255, 0.15) !important;
-  border-left-color: rgba(155, 50, 255, 0.3) !important;
+  border-color: rgba(138, 43, 226, 0.15) !important;
+  border-left-color: rgba(138, 43, 226, 0.3) !important;
 }
 
 /* ════════════════════════════════════════════
@@ -261,8 +261,8 @@ li.sw-group-end ${embedWrapper} {
 }
 
 li.sw-self ${embedWrapper} {
-  border-color: rgba(155, 50, 255, 0.15) !important;
-  border-left-color: rgba(155, 50, 255, 0.3) !important;
+  border-color: rgba(138, 43, 226, 0.15) !important;
+  border-left-color: rgba(138, 43, 226, 0.3) !important;
 }
 
 /* ════════════════════════════════════════════

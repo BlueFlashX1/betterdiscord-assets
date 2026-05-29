@@ -1,5 +1,21 @@
 /* EquipmentManager — Black/Purple Sharp Theme */
 
+/* ─── SL-themed scrollbar for the header popup (overrides macOS default) ─── */
+#eq-header-popup::-webkit-scrollbar {
+  width: 9px;
+}
+#eq-header-popup::-webkit-scrollbar-track {
+  background: rgba(8, 8, 13, 0.6);
+}
+#eq-header-popup::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.38) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.35);
+  border-radius: 2px;
+}
+#eq-header-popup::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(186, 85, 211, 0.75) 0%, rgba(138, 43, 226, 0.5) 100%);
+}
+
 .eq-header-btn {
   display: flex;
   align-items: center;
@@ -9,10 +25,12 @@
   padding: 4px;
   margin: 0 2px;
   cursor: pointer;
-  color: #b9bbbe;
+  color: #b5bac1;
   border: none;
   background: none;
-  transition: color 0.15s;
+  border-radius: 2px;
+  opacity: 0.85;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
-.eq-header-btn:hover { color: #b380e0; }
+.eq-header-btn:hover { opacity: 1; background: rgba(138,43,226,0.15); color: #b5bac1; }
 .eq-header-btn svg { width: 20px; height: 20px; }

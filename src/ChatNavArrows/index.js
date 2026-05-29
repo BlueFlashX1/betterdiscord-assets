@@ -29,7 +29,7 @@ module.exports = class ChatNavArrows {
 
   getSettingsPanel() {
     const panel = document.createElement('div');
-    panel.style.cssText = 'padding:12px;background:rgba(10, 10, 16, 0.98);border-radius:8px;color:#cdd6f4;font-family:system-ui,sans-serif';
+    panel.style.cssText = 'padding:12px;background:rgba(10, 10, 16, 0.98);border-radius:2px;color:#dcddde;';
 
     const row = document.createElement('label');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer';

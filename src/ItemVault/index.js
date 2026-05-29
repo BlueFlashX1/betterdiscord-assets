@@ -227,18 +227,22 @@ module.exports = class ItemVault {
       height: 24px;
       cursor: pointer;
       color: #b5bac1;
-      margin: 0 4px;
-      transition: color 0.15s ease;
+      margin: 0 2px;
+      border-radius: 2px;
+      opacity: 0.85;
+      transition: opacity 0.15s, background 0.15s, color 0.15s;
     `;
     btn.innerHTML = this._getIconSVG();
     ensureTooltipCSS();
 
     btn.addEventListener('mouseenter', () => {
-      btn.style.color = '#dcddde';
+      btn.style.opacity = '1';
+      btn.style.background = 'rgba(138,43,226,0.15)';
       showToolbarTooltip(btn, 'sl-toolbar-tip-iv', 'Item Vault');
     });
     btn.addEventListener('mouseleave', () => {
-      btn.style.color = '#b5bac1';
+      btn.style.opacity = '0.85';
+      btn.style.background = '';
       hideToolbarTooltip('sl-toolbar-tip-iv');
     });
     btn.addEventListener('click', (e) => {
@@ -276,14 +280,13 @@ module.exports = class ItemVault {
       width: ${POPUP_WIDTH}px;
       max-height: calc(100vh - 80px);
       overflow-y: auto;
-      background: #0a0a0f;
-      border: 1px solid rgba(138, 43, 226, 0.4);
-      border-radius: 0;
-      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.85), 0 0 30px rgba(138, 43, 226, 0.12);
+      background: linear-gradient(165deg, rgba(22,18,32,0.97) 0%, rgba(13,12,20,0.97) 55%, rgba(10,10,16,0.98) 100%);
+      border: 1px solid rgba(138, 43, 226, 0.32);
+      border-radius: 2px;
+      box-shadow: 0 20px 52px rgba(0, 0, 0, 0.85), 0 0 30px rgba(138, 43, 226, 0.18), inset 0 1px 0 rgba(255,255,255,0.06), inset 0 0 0 1px rgba(138,43,226,0.06);
       padding: 0;
-      font-family: var(--font-primary), 'gg sans', sans-serif;
       scrollbar-width: thin;
-      scrollbar-color: rgba(138,43,226,0.3) transparent;
+      scrollbar-color: rgba(138,43,226,0.85) rgba(8,8,13,0.55);
     `;
     document.body.appendChild(popup);
 
@@ -351,12 +354,11 @@ module.exports = class ItemVault {
         background: linear-gradient(90deg, rgba(138,43,226,0.15) 0%, rgba(10,10,15,0) 100%);
         border-bottom: 1px solid rgba(138,43,226,0.3);
       ">
-        <span style="font-size: 24px;">🏛️</span>
         <div style="flex: 1;">
-          <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #d4b0ff; letter-spacing: 0.04em; text-transform: uppercase;">Item Vault</h3>
-          <div style="font-size: 10px; color: #4a3a6a; margin-top: 1px; letter-spacing: 0.03em;">Solo Leveling Inventory</div>
+          <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #dcddde; letter-spacing: 0.04em; text-transform: uppercase;">Item Vault</h3>
+          <div style="font-size: 10px; color: #b5bac1; margin-top: 1px; letter-spacing: 0.03em;">Solo Leveling Inventory</div>
         </div>
-        <span style="font-size: 10px; color: #3a2a5a; font-weight: 600;">${PLUGIN_VERSION}</span>
+        <span style="font-size: 10px; color: #b5bac1; font-weight: 600;">${PLUGIN_VERSION}</span>
       </div>
 
       <!-- Stats row -->
@@ -367,24 +369,24 @@ module.exports = class ItemVault {
         border-bottom: 1px solid rgba(138,43,226,0.15);
       ">
         <div style="flex: 1; text-align: center;">
-          <div style="font-size: 20px; font-weight: 800; color: #b380e0; font-variant-numeric: tabular-nums;">${totalItems.toLocaleString()}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Total</div>
+          <div style="font-size: 20px; font-weight: 800; color: #8a2be2; font-variant-numeric: tabular-nums;">${totalItems.toLocaleString()}</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Total</div>
         </div>
         <div style="width: 1px; background: rgba(138,43,226,0.2); margin: 4px 0;"></div>
         <div style="flex: 1; text-align: center;">
-          <div style="font-size: 20px; font-weight: 800; color: #7c5cbf; font-variant-numeric: tabular-nums;">${items.filter(i => (balances[i.id] || 0) > 0).length}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Held</div>
+          <div style="font-size: 20px; font-weight: 800; color: #8a2be2; font-variant-numeric: tabular-nums;">${items.filter(i => (balances[i.id] || 0) > 0).length}</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Held</div>
         </div>
         <div style="width: 1px; background: rgba(138,43,226,0.2); margin: 4px 0;"></div>
         <div style="flex: 1; text-align: center;">
-          <div style="font-size: 20px; font-weight: 800; color: #5a3f8a; font-variant-numeric: tabular-nums;">${items.length}</div>
-          <div style="font-size: 9px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Types</div>
+          <div style="font-size: 20px; font-weight: 800; color: #8a2be2; font-variant-numeric: tabular-nums;">${items.length}</div>
+          <div style="font-size: 9px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;">Types</div>
         </div>
       </div>
 
       <!-- Items -->
       <div style="padding: 12px 16px;">
-        <div style="font-size: 10px; color: #4a3a6a; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 10px; padding-left: 4px;">Inventory</div>
+        <div style="font-size: 10px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 10px; padding-left: 4px;">Inventory</div>
         ${items.filter(i => i.stackable).map(item => {
           const amount = balances[item.id] || 0;
           const rarityColor = this._getRarityColor(item.rarity);
@@ -416,7 +418,7 @@ module.exports = class ItemVault {
               <!-- Info -->
               <div style="flex: 1; min-width: 0;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                  <span style="font-size: 14px; font-weight: 700; color: #e0d0f0;">${escapeHtml(item.name)}</span>
+                  <span style="font-size: 14px; font-weight: 700; color: #dcddde;">${escapeHtml(item.name)}</span>
                   <span style="
                     font-size: 9px;
                     font-weight: 800;
@@ -428,8 +430,8 @@ module.exports = class ItemVault {
                     letter-spacing: 0.06em;
                   ">${item.rarity}-Rank</span>
                 </div>
-                <div style="font-size: 11px; color: #6a5a8a; line-height: 1.45;">${escapeHtml(item.description)}</div>
-                <div style="font-size: 9px; color: #3a2a5a; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em;">Source: ${escapeHtml(sourceStr)}</div>
+                <div style="font-size: 11px; color: #b5bac1; line-height: 1.45;">${escapeHtml(item.description)}</div>
+                <div style="font-size: 9px; color: #b5bac1; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em;">Source: ${escapeHtml(sourceStr)}</div>
               </div>
 
               <!-- Amount -->
@@ -441,13 +443,13 @@ module.exports = class ItemVault {
                   font-variant-numeric: tabular-nums;
                   line-height: 1;
                 ">${amount.toLocaleString()}</div>
-                <div style="font-size: 8px; color: #3a2a5a; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; font-weight: 600;">${escapeHtml(item.category)}</div>
+                <div style="font-size: 8px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; font-weight: 600;">${escapeHtml(item.category)}</div>
               </div>
             </div>
           `;
         }).join('')}
         ${items.filter(i => i.stackable).length === 0
-          ? '<div style="text-align: center; color: #4a3a6a; padding: 30px; font-size: 12px;">No items registered. Enter a dungeon!</div>'
+          ? '<div style="text-align: center; color: #b5bac1; padding: 30px; font-size: 12px;">No items registered. Enter a dungeon!</div>'
           : ''}
       </div>
     `;
@@ -468,16 +470,16 @@ module.exports = class ItemVault {
 
   getSettingsPanel() {
     const panel = document.createElement('div');
-    panel.style.cssText = 'padding: 16px; background: rgba(10, 10, 16, 0.98); color: #e2e2e2; font-family: var(--font-primary), sans-serif;';
+    panel.style.cssText = 'padding: 16px; background: rgba(10, 10, 16, 0.98); color: #dcddde;';
 
     const header = document.createElement('h2');
     header.textContent = `ItemVault v${PLUGIN_VERSION}`;
-    header.style.cssText = 'margin: 0 0 16px 0; font-size: 18px; color: #cba6f7;';
+    header.style.cssText = 'margin: 0 0 16px 0; font-size: 18px; color: #dcddde;';
     panel.appendChild(header);
 
     const desc = document.createElement('p');
     desc.textContent = 'Centralized item storage for the Solo Leveling ecosystem. Click the vault icon in the channel header to view your inventory.';
-    desc.style.cssText = 'margin: 0 0 16px 0; font-size: 13px; color: #a6adc8;';
+    desc.style.cssText = 'margin: 0 0 16px 0; font-size: 13px; color: #b5bac1;';
     panel.appendChild(desc);
 
     const debugRow = document.createElement('div');
@@ -491,7 +493,7 @@ module.exports = class ItemVault {
     });
     const debugLabel = document.createElement('span');
     debugLabel.textContent = 'Debug Mode';
-    debugLabel.style.cssText = 'font-size: 13px; color: #a6adc8;';
+    debugLabel.style.cssText = 'font-size: 13px; color: #b5bac1;';
     debugRow.appendChild(debugToggle);
     debugRow.appendChild(debugLabel);
     panel.appendChild(debugRow);

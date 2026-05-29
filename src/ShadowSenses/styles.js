@@ -191,6 +191,22 @@ function buildCSS() {
   return `
 ${buildPortalTransitionCSS()}
 
+/* ── SL-themed scrollbar for the header popup (overrides macOS default) ──── */
+#shadow-senses-header-popup::-webkit-scrollbar {
+  width: 9px;
+}
+#shadow-senses-header-popup::-webkit-scrollbar-track {
+  background: rgba(8, 8, 13, 0.6);
+}
+#shadow-senses-header-popup::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.38) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.35);
+  border-radius: 2px;
+}
+#shadow-senses-header-popup::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(186, 85, 211, 0.75) 0%, rgba(138, 43, 226, 0.5) 100%);
+}
+
 /* ── Font Override ───────────────────────────────────────────────────────── */
 
 /* Brand font: scoped to the panel TITLE only.
@@ -220,7 +236,7 @@ ${buildPortalTransitionCSS()}
 
 .shadow-senses-widget {
   background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(138, 43, 226, 0.05));
-  border: 1px solid #8a2be2;
+  border: 1px solid rgba(138, 43, 226, 0.4);
   border-radius: 2px;
   padding: 8px 10px;
   margin: 4px 8px;
@@ -233,11 +249,11 @@ ${buildPortalTransitionCSS()}
 
 .shadow-senses-widget:hover {
   background: linear-gradient(135deg, rgba(138, 43, 226, 0.25), rgba(138, 43, 226, 0.1));
-  border-color: #a78bfa;
+  border-color: #8a2be2;
 }
 
 .shadow-senses-widget-label {
-  color: #a78bfa;
+  color: #8a2be2;
   font-size: 12px;
   font-weight: 600;
   display: flex;
@@ -276,7 +292,7 @@ ${buildPortalTransitionCSS()}
 
 .shadow-senses-panel {
   background: rgba(10, 10, 16, 0.98);
-  border: 1px solid #8a2be2;
+  border: 1px solid rgba(138, 43, 226, 0.4);
   border-radius: 2px;
   width: 700px;
   max-width: 95vw;
@@ -305,7 +321,7 @@ ${buildPortalTransitionCSS()}
 .shadow-senses-close-btn {
   background: transparent;
   border: none;
-  color: rgba(196, 181, 253, 0.5);
+  color: rgba(181, 186, 193, 0.5);
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
@@ -329,7 +345,7 @@ ${buildPortalTransitionCSS()}
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: rgba(196, 181, 253, 0.5);
+  color: rgba(181, 186, 193, 0.5);
   font-size: 13px;
   font-weight: 600;
   padding: 10px 16px;
@@ -338,7 +354,7 @@ ${buildPortalTransitionCSS()}
 }
 
 .shadow-senses-tab:hover {
-  color: rgba(196, 181, 253, 0.7);
+  color: rgba(181, 186, 193, 0.7);
 }
 
 .shadow-senses-tab.active {
@@ -350,12 +366,12 @@ ${buildPortalTransitionCSS()}
 
 .shadow-senses-feed-card {
   background: rgba(38, 28, 60, 0.85);
-  border: 1px solid rgba(167, 139, 250, 0.32);
-  border-radius: 8px;
+  border: 1px solid rgba(138, 43, 226, 0.32);
+  border-radius: 2px;
   padding: 12px 14px;
   margin: 0 0 10px;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 0 rgba(138, 43, 226, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45);
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
@@ -364,21 +380,21 @@ ${buildPortalTransitionCSS()}
    Specificity (1,1,0) beats (1,0,1). */
 #shadow-senses-header-popup .shadow-senses-feed-card {
   background: rgba(38, 28, 60, 0.85) !important;
-  border: 1px solid rgba(167, 139, 250, 0.32) !important;
-  border-radius: 8px !important;
+  border: 1px solid rgba(138, 43, 226, 0.32) !important;
+  border-radius: 2px !important;
   padding: 12px 14px !important;
   margin: 0 0 10px !important;
-  box-shadow: inset 0 1px 0 rgba(167, 139, 250, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45) !important;
+  box-shadow: inset 0 1px 0 rgba(138, 43, 226, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45) !important;
 }
 
 #shadow-senses-header-popup .shadow-senses-feed-card:hover {
   background: rgba(52, 38, 80, 0.92) !important;
-  border-color: rgba(167, 139, 250, 0.55) !important;
+  border-color: rgba(138, 43, 226, 0.55) !important;
 }
 
 .shadow-senses-feed-card:hover {
   background: rgba(40, 28, 65, 0.7);
-  border-color: rgba(167, 139, 250, 0.4);
+  border-color: rgba(138, 43, 226, 0.4);
   transform: translateX(1px);
 }
 
@@ -470,7 +486,7 @@ ${buildPortalTransitionCSS()}
 }
 
 .shadow-senses-deploy-target {
-  color: #a78bfa;
+  color: #8a2be2;
   font-weight: 600;
 }
 
@@ -492,8 +508,8 @@ ${buildPortalTransitionCSS()}
 
 .shadow-senses-deploy-btn {
   background: rgba(138, 43, 226, 0.15);
-  border: 1px solid #8a2be2;
-  color: #a78bfa;
+  border: 1px solid rgba(138, 43, 226, 0.4);
+  color: #8a2be2;
   font-size: 13px;
   font-weight: 600;
   padding: 8px 16px;
@@ -516,7 +532,7 @@ ${buildPortalTransitionCSS()}
   border-radius: 2px;
   padding: 10px 12px;
   margin: 6px 0;
-  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.06), 0 0 14px rgba(138, 43, 226, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(138, 43, 226, 0.06), 0 0 14px rgba(138, 43, 226, 0.12);
 }
 
 .shadow-senses-keyword-target-head {
@@ -559,7 +575,7 @@ ${buildPortalTransitionCSS()}
   color: #f2e9ff;
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid rgba(167, 139, 250, 0.55);
+  border: 1px solid rgba(138, 43, 226, 0.55);
   border-radius: 2px;
   background: linear-gradient(180deg, rgba(138, 43, 226, 0.34), rgba(80, 28, 146, 0.28));
   padding: 2px 8px;
@@ -645,7 +661,7 @@ ${buildPortalTransitionCSS()}
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(196, 181, 253, 0.55) !important;
+  color: rgba(181, 186, 193, 0.55) !important;
   font-size: 13px !important;
   padding: 36px 24px !important;
   text-align: center !important;
@@ -784,7 +800,7 @@ ${buildPortalTransitionCSS()}
 }
 
 #shadow-senses-header-popup .shadow-senses-close-btn {
-  color: rgba(196, 181, 253, 0.7) !important;
+  color: rgba(181, 186, 193, 0.7) !important;
   font-size: 18px !important;
   padding: 4px 8px !important;
 }
@@ -795,13 +811,13 @@ ${buildPortalTransitionCSS()}
 }
 
 #shadow-senses-header-popup .shadow-senses-tab {
-  color: rgba(196, 181, 253, 0.6) !important;
+  color: rgba(181, 186, 193, 0.6) !important;
   border-bottom: 2px solid transparent !important;
   padding: 10px 16px !important;
 }
 
 #shadow-senses-header-popup .shadow-senses-tab:hover {
-  color: rgba(196, 181, 253, 0.9) !important;
+  color: rgba(181, 186, 193, 0.9) !important;
   background: rgba(138, 43, 226, 0.08) !important;
 }
 
@@ -817,13 +833,13 @@ ${buildPortalTransitionCSS()}
 }
 
 #shadow-senses-header-popup .shadow-senses-empty {
-  color: rgba(196, 181, 253, 0.6) !important;
+  color: rgba(181, 186, 193, 0.6) !important;
   text-align: center !important;
   padding: 32px 20px !important;
 }
 
 #shadow-senses-header-popup .shadow-senses-footer {
-  color: rgba(196, 181, 253, 0.55) !important;
+  color: rgba(181, 186, 193, 0.55) !important;
   border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
   padding: 10px 16px !important;
   display: flex !important;

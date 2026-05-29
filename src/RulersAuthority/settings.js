@@ -37,12 +37,12 @@ export function getSettingsPanel(ctx) {
 
     // Styles
     const containerStyle = {
-      background: "rgba(10, 10, 16, 0.98)", padding: "16px", borderRadius: "8px",
+      background: "rgba(10, 10, 16, 0.98)", padding: "16px", borderRadius: "2px",
       color: "#ccc", fontFamily: "inherit", fontSize: "14px",
     };
     const sectionStyle = {
       marginBottom: "16px", padding: "12px",
-      background: "#252540", borderRadius: "6px",
+      background: "#252540", borderRadius: "2px",
     };
     const headerStyle = { color: "#b49bff", fontSize: "16px", marginBottom: "8px", fontWeight: "600" };
     const subHeaderStyle = { color: "#9b8ec4", fontSize: "13px", marginBottom: "6px", fontWeight: "500" };
@@ -50,7 +50,7 @@ export function getSettingsPanel(ctx) {
     const dimStyle = { fontSize: "11px", color: "#666", marginTop: "2px" };
     const btnStyle = {
       background: "#9b59b6", border: "none", color: "#fff", padding: "4px 10px",
-      borderRadius: "4px", cursor: "pointer", fontSize: "12px", marginRight: "6px", marginBottom: "4px",
+      borderRadius: "2px", cursor: "pointer", fontSize: "12px", marginRight: "6px", marginBottom: "4px",
     };
     const btnDimStyle = { ...btnStyle, background: "#444" };
 

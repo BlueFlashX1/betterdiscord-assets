@@ -3,14 +3,14 @@ function buildLevelProgressBarSettingsPanel(plugin) {
   const panel = document.createElement("div");
   panel.style.padding = "20px";
   panel.innerHTML = `
-      <div style="background: rgba(10, 10, 16, 0.98); border-radius: 0; padding: 20px;">
+      <div style="background: rgba(10, 10, 16, 0.98); border-radius: 2px; padding: 20px;">
         <h3 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 16px; font-weight: 600;">Level Progress Bar</h3>
-        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: #2a2a3e; border-radius: 2px; border: 1px solid #3a3a4e;">
+        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: rgba(10, 10, 16, 0.98); border-radius: 2px; border: 1px solid rgba(138, 43, 226, 0.4);">
           <input type="checkbox" ${plugin.settings.debugMode ? "checked" : ""} data-lpb-setting="debugMode"
             style="accent-color: #8a2be2; width: 16px; height: 16px; margin: 0;">
-          <span style="margin-left: 10px; color: #e0e0e0; font-size: 14px;">Debug Mode</span>
+          <span style="margin-left: 10px; color: #dcddde; font-size: 14px;">Debug Mode</span>
         </label>
-        <p style="font-size: 12px; color: #6a6a8a; margin: 8px 0 0 0;">
+        <p style="font-size: 12px; color: #b5bac1; margin: 8px 0 0 0;">
           Show detailed console logs for troubleshooting. Reload Discord after changing.
         </p>
       </div>

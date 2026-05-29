@@ -1,13 +1,5 @@
 function getTitleManagerCss() {
   return `
-      /* ── Font Override ───────────────────────────────────────────── */
-      .tm-title-modal,
-      .tm-title-modal *,
-      .tm-modal-content,
-      .tm-modal-content * {
-        font-family: 'Friend or Foe BB', sans-serif !important;
-      }
-
       /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
       .tm-title-button-wrapper {
         display: flex;
@@ -19,20 +11,21 @@ function getTitleManagerCss() {
       }
       .tm-title-button {
         background: transparent;
-        border: 1px solid rgba(138, 43, 226, 1);
+        border: none;
         border-radius: 2px;
-        width: 32px;
-        height: 32px;
+        width: 24px;
+        height: 24px;
         cursor: pointer;
-        color: var(--interactive-normal, #b9bbbe);
+        color: #b5bac1;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: color 0.15s ease, background-color 0.15s ease;
-        margin: 0;
+        transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+        margin: 0 2px;
         flex-shrink: 0;
         padding: 0;
         box-sizing: border-box;
+        opacity: 0.85;
       }
 
       .tm-title-button svg {
@@ -43,9 +36,8 @@ function getTitleManagerCss() {
       }
 
       .tm-title-button:hover {
-        color: var(--interactive-hover, #dcddde);
+        opacity: 1;
         background: rgba(138, 43, 226, 0.15);
-        border-color: rgba(138, 43, 226, 0.85);
       }
 
       .tm-title-button:active {
@@ -70,8 +62,8 @@ function getTitleManagerCss() {
       }
 
       .tm-modal-content {
-        background: linear-gradient(135deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.85) 100%);
-        border: 2px solid rgba(138, 43, 226, 0.5);
+        background: rgba(10, 10, 16, 0.97);
+        border: 1px solid rgba(138, 43, 226, 0.4);
         border-radius: 2px;
         width: 90%;
         max-width: 800px;
@@ -85,7 +77,7 @@ function getTitleManagerCss() {
         justify-content: space-between;
         align-items: center;
         padding: 20px;
-        border-bottom: 2px solid rgba(138, 43, 226, 0.3);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.3);
       }
 
       .tm-modal-header h2 {
@@ -102,7 +94,7 @@ function getTitleManagerCss() {
         gap: 12px;
         padding: 16px 20px;
         background: linear-gradient(135deg, #12091e 0%, #0e0716 100%);
-        border-bottom: 2px solid rgba(138, 43, 226, 0.2);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.2);
       }
 
       .tm-filter-label {
@@ -117,7 +109,7 @@ function getTitleManagerCss() {
         flex: 1;
         padding: 10px 16px;
         background: #0d0d14;
-        border: 2px solid rgba(138, 43, 226, 0.5);
+        border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 2px;
         color: #e8dcff;
         font-size: 14px;
@@ -189,7 +181,7 @@ function getTitleManagerCss() {
 
       .tm-active-title {
         background: rgba(0, 255, 136, 0.1);
-        border: 2px solid rgba(0, 255, 136, 0.5);
+        border: 1px solid rgba(0, 255, 136, 0.5);
         border-radius: 2px;
         padding: 20px;
         margin-bottom: 20px;
@@ -219,7 +211,7 @@ function getTitleManagerCss() {
       .tm-unequip-btn {
         padding: 8px 20px;
         background: rgba(255, 68, 68, 0.8);
-        border: 2px solid rgba(255, 68, 68, 1);
+        border: 1px solid rgba(255, 68, 68, 1);
         border-radius: 2px;
         color: white;
         font-weight: bold;
@@ -234,7 +226,7 @@ function getTitleManagerCss() {
 
       .tm-no-title {
         background: rgba(138, 43, 226, 0.1);
-        border: 2px dashed rgba(138, 43, 226, 0.3);
+        border: 1px dashed rgba(138, 43, 226, 0.3);
         border-radius: 2px;
         padding: 30px;
         margin-bottom: 20px;
@@ -256,7 +248,7 @@ function getTitleManagerCss() {
         font-size: 18px;
         margin-bottom: 15px;
         padding-bottom: 10px;
-        border-bottom: 2px solid rgba(138, 43, 226, 0.3);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.3);
       }
 
       .tm-empty-state {
@@ -289,7 +281,7 @@ function getTitleManagerCss() {
 
       .tm-title-card {
         background: rgba(0, 0, 0, 0.6);
-        border: 2px solid rgba(138, 43, 226, 0.3);
+        border: 1px solid rgba(138, 43, 226, 0.3);
         border-radius: 2px;
         padding: 20px;
         text-align: center;
@@ -344,7 +336,7 @@ function getTitleManagerCss() {
         width: 100%;
         padding: 8px;
         background: linear-gradient(135deg, #8a2be2 0%, #8a2be2 100%);
-        border: 2px solid rgba(138, 43, 226, 0.8);
+        border: 1px solid rgba(138, 43, 226, 0.8);
         border-radius: 2px;
         color: white;
         font-weight: bold;

@@ -278,7 +278,7 @@ const CriticalHit = class CriticalHit {
       this.loadSettings();
 
       // PERSISTENT STARTUP LOG: Always show this so user knows if debug mode is on
-      console.log(`%c[CriticalHit] Plugin Started. Debug Mode: ${this.settings.debugMode ? 'ON' : 'OFF'}`, 'color: #ff0000; font-weight: bold; background: #222; padding: 4px; border-radius: 4px;');
+      console.log(`%c[CriticalHit] Plugin Started. Debug Mode: ${this.settings.debugMode ? 'ON' : 'OFF'}`, 'color: #ff0000; font-weight: bold; background: #222; padding: 4px; border-radius: 2px;');
 
       this.debugLog('PLUGIN_START', 'Starting CriticalHit plugin', {
         version: PLUGIN_VERSION,

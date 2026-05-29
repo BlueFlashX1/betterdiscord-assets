@@ -259,3 +259,27 @@ div[class*="scrollerBase_"]::-webkit-scrollbar-corner {
   background: transparent !important;
   border: none !important;
 }
+
+/* ── SL-themed scrollbar — GLOBAL baseline ───────────────────────────────────
+   Applies a sharp purple scrollbar to plugin popups/panels/modals and ANY
+   scroller not explicitly hidden above. Discord's own main scrollers stay
+   hidden (their !important width:0 rules outrank this non-important baseline),
+   so this purple bar appears everywhere else — every plugin UI included. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(8, 8, 13, 0.55);
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.38) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.35);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(186, 85, 211, 0.78) 0%, rgba(138, 43, 226, 0.5) 100%);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
