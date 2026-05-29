@@ -28,6 +28,7 @@ const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createToast } = require("../shared/toast");
 const { isEditableTarget, matchesHotkey } = require("../shared/hotkeys");
 const { loadSettings: _sharedLoadSettings, saveSettings: _sharedSaveSettings } = require("../shared/settings");
+const { onKeydown } = require("../shared/dom-bus");
 
 // Config & settings
 
@@ -263,7 +264,7 @@ module.exports = class CSSPicker {
       event.stopPropagation();
       if (this.isActive) this.deactivatePickMode(); else this.activatePickMode();
     };
-    document.addEventListener("keydown", this.onGlobalHotkeyDown, true);
+    this._unsubGlobalHotkey = onKeydown(this.onGlobalHotkeyDown, { capture: true });
 
     const hotkeyLabel =
       this.settings?.hotkeyEnabled && this.settings?.hotkey
@@ -275,8 +276,7 @@ module.exports = class CSSPicker {
   stop() {
     this.deactivatePickMode();
     this.removeLauncher();
-    if (this.onGlobalHotkeyDown)
-      document.removeEventListener("keydown", this.onGlobalHotkeyDown, true);
+    if (this._unsubGlobalHotkey) { this._unsubGlobalHotkey(); this._unsubGlobalHotkey = null; }
     this.onGlobalHotkeyDown = null;
     this._captureInProgress = false;
   }
@@ -506,7 +506,7 @@ module.exports = class CSSPicker {
 
     document.addEventListener("mousemove", this.onMouseMove, true);
     document.addEventListener("click", this.onClick, true);
-    document.addEventListener("keydown", this.onKeyDown, true);
+    this._unsubPickKeydown = onKeydown(this.onKeyDown, { capture: true });
 
     this.updateLauncherState();
     this._toast(
@@ -530,7 +530,7 @@ module.exports = class CSSPicker {
 
     if (this.onMouseMove) document.removeEventListener("mousemove", this.onMouseMove, true);
     if (this.onClick) document.removeEventListener("click", this.onClick, true);
-    if (this.onKeyDown) document.removeEventListener("keydown", this.onKeyDown, true);
+    if (this._unsubPickKeydown) { this._unsubPickKeydown(); this._unsubPickKeydown = null; }
 
     this.onMouseMove = null;
     this.onClick = null;

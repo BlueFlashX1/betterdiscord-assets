@@ -466,6 +466,11 @@ module.exports = class SkillTree {
       this.skillTreeButton = null;
     }
 
+    // Flush any pending shared-storage writes before teardown so nothing is lost.
+    if (this._sharedStorageFlushPending) {
+      this._flushSharedStorage();
+    }
+
     // Clear all caches
     this._cache.soloLevelingData = null;
     this._cache.soloLevelingDataTime = 0;
@@ -894,11 +899,46 @@ module.exports = class SkillTree {
   saveSettings() {
     try {
       saveSettings('SkillTree', this.settings);
-      this.saveSkillBonuses(); // Update bonuses in shared storage
-      this.saveHiddenBlessingBonuses(); // Update hidden blessing effects in shared storage
-      this.saveActiveBuffs();  // Update active buff effects in shared storage
+      // Batch the 3 derived-data writes through a debounced flush so that
+      // rapid consecutive calls (startup fan-out, per-click) collapse into one
+      // IDB round-trip instead of 3 synchronous ones per call.
+      this._scheduleSharedStorageFlush();
     } catch (error) {
       console.error('SkillTree: Error saving settings', error);
+    }
+  }
+
+  /**
+   * Schedule a single deferred flush of the 3 shared-storage keys.
+   * Multiple calls within the same turn collapse into one setTimeout(0).
+   */
+  _scheduleSharedStorageFlush() {
+    if (this._sharedStorageFlushPending) return;
+    this._sharedStorageFlushPending = true;
+    setTimeout(() => this._flushSharedStorage(), 0);
+  }
+
+  /**
+   * Write all 3 derived shared-storage keys in one pass.
+   * Called via setTimeout(0) from _scheduleSharedStorageFlush and synchronously
+   * from stop() to ensure nothing is lost when the plugin unloads.
+   */
+  _flushSharedStorage() {
+    this._sharedStorageFlushPending = false;
+    try {
+      this.saveSkillBonuses();
+    } catch (error) {
+      console.error('SkillTree: Error flushing skill bonuses', error);
+    }
+    try {
+      this.saveHiddenBlessingBonuses();
+    } catch (error) {
+      console.error('SkillTree: Error flushing hidden blessing bonuses', error);
+    }
+    try {
+      this.saveActiveBuffs();
+    } catch (error) {
+      console.error('SkillTree: Error flushing active buffs', error);
     }
   }
 

@@ -1,7 +1,6 @@
 const dc = require('../shared/discord-classes');
 const { createTrackedTimers } = require('../shared/tracked-timers');
 const EDGE_THRESHOLD = 100;
-const POLL_INTERVAL_MS = 2000;
 
 function getScrollerPair() {
   const wrapper =
@@ -119,7 +118,6 @@ function createFallbackState(plugin) {
     currentWrapper: null,
     currentScroller: null,
     scrollHandler: null,
-    pollTimer: null,
     downEl: null,
     upEl: null,
     downClickHandler: null,

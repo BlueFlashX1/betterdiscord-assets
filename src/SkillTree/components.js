@@ -1,4 +1,5 @@
 function buildSkillTreeComponents(pluginInstance) {
+  const { onKeydown } = require("../shared/dom-bus");
   const React = BdApi.React;
   const ce = React.createElement;
 
@@ -357,8 +358,8 @@ function buildActiveSkillAction(ce, options) {
           onCancel();
         }
       };
-      document.addEventListener("keydown", handler, true);
-      return () => document.removeEventListener("keydown", handler, true);
+      const unsub = onKeydown(handler, { capture: true });
+      return () => unsub();
     }, [onCancel]);
 
     return ce("div", { className: "st-confirm-dialog-overlay", onClick: (e) => { if (e.target.className === "st-confirm-dialog-overlay") onCancel(); } },
@@ -401,8 +402,8 @@ function buildActiveSkillAction(ce, options) {
           else onClose();
         }
       };
-      document.addEventListener("keydown", handler, true);
-      return () => document.removeEventListener("keydown", handler, true);
+      const unsub = onKeydown(handler, { capture: true });
+      return () => unsub();
     }, [isResetOpen, onClose]);
 
     const soloData = pluginInstance.getSoloLevelingData();

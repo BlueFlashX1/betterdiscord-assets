@@ -278,13 +278,21 @@ module.exports = {
         // ignore stale unsubscribe errors
       }
     }
-    this._xpChangedUnsub = this.on('xpChanged', () => {
+    const _hudRefresh = () => {
       try {
         this.updateChatUI();
       } catch (error) {
-        this.debugError('XP_CHANGED_LISTENER', 'Error updating UI on XP change', error);
+        this.debugError('XP_CHANGED_LISTENER', 'Error updating UI on XP/level/rank change', error);
       }
-    });
+    };
+    const _unsubXP    = this.on('xpChanged',    _hudRefresh);
+    const _unsubLevel = this.on('levelChanged',  _hudRefresh);
+    const _unsubRank  = this.on('rankChanged',   _hudRefresh);
+    this._xpChangedUnsub = () => {
+      _unsubXP();
+      _unsubLevel();
+      _unsubRank();
+    };
 
     // Startup is silent — no toast on every reload.
   },
@@ -495,8 +503,11 @@ module.exports = {
     // Remove activity tracking event listeners
     if (this._activityTrackingHandlers) {
       document.removeEventListener('mousemove', this._activityTrackingHandlers.mousemove);
-      document.removeEventListener('keydown', this._activityTrackingHandlers.keydown);
       this._activityTrackingHandlers = null;
+    }
+    if (typeof this._activityKeydownUnsub === 'function') {
+      try { this._activityKeydownUnsub(); } catch (_) {}
+      this._activityKeydownUnsub = null;
     }
     if (this._activityTimeout) {
       clearTimeout(this._activityTimeout);

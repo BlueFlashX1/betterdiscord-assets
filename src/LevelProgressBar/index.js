@@ -233,6 +233,7 @@ module.exports = class LevelProgressBar {
     this._minQueuedUpdateGapMs = 350;
     this._lastMilestoneCount = null;
     this._prefersReducedMotion = null;
+    this._xpGainClassTimer = null; // CRIT-2: tracks pending lpb-xp-gain removal timer
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
@@ -247,7 +248,7 @@ module.exports = class LevelProgressBar {
     this._cache = {
       soloLevelingData: null,
       soloLevelingDataTime: 0,
-      soloLevelingDataTTL: 100,
+      soloLevelingDataTTL: 500, // HIGH fix: raised from 100ms; cache is only invalidated on xp/level/rank events now
       soloPluginInstance: null,
       soloPluginInstanceTime: 0,
       soloPluginInstanceTTL: 5000,
@@ -791,9 +792,14 @@ module.exports = class LevelProgressBar {
     // startReconUpdates don't crash.
   }
   _fallbackStopReconUpdates() {
-    // No-op — see _fallbackStartReconUpdates. Resetting lastReconText
-    // preserved so callers that toggle visibility see a fresh paint
-    // on next event-driven update.
+    // Clear any interval the runtime helper may have started before being
+    // unloaded (or if stopReconUpdates is called via the fallback path while
+    // the interval is still running). Without this, the 1.2s recon poll leaks
+    // across stop()/start() cycles. CRIT-1 fix.
+    if (this.reconUpdateInterval) {
+      clearInterval(this.reconUpdateInterval);
+      this.reconUpdateInterval = null;
+    }
     this.lastReconText = '';
   }
   _invokeRuntimeHelper(name, ...args) {
@@ -884,8 +890,16 @@ module.exports = class LevelProgressBar {
     return true;
   }
   _handleEvent(eventName, data) {
-    this._cache.soloLevelingData = null;
-    this._cache.soloLevelingDataTime = 0;
+    // HIGH fix: only invalidate the soloLevelingData cache on events that
+    // actually change xp/level/rank. statsChanged fires frequently (e.g. on
+    // every message-read) and does not guarantee a data change; nuking the
+    // cache on every fire makes the 100ms TTL useless and forces a
+    // getCurrentLevel() call on each event. TTL raised to 500ms to match.
+    const INVALIDATING_EVENTS = new Set(['xpChanged', 'levelChanged', 'rankChanged']);
+    if (INVALIDATING_EVENTS.has(eventName)) {
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+    }
     if (eventName === 'levelChanged') {
       if (data && typeof data.newLevel === 'number' && data.newLevel !== this.lastLevel) {
         this.lastLevel = null;

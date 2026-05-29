@@ -1,4 +1,5 @@
 function buildTitleComponents(BdApi, pluginInstance) {
+  const { onKeydown } = require("../shared/dom-bus");
   const React = BdApi.React;
   const ce = React.createElement;
 
@@ -35,25 +36,35 @@ function buildTitleComponents(BdApi, pluginInstance) {
 
     React.useEffect(() => {
       const handler = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-      document.addEventListener("keydown", handler, true);
-      return () => document.removeEventListener("keydown", handler, true);
+      const unsub = onKeydown(handler, { capture: true });
+      return () => unsub();
     }, [onClose]);
 
     const soloData = pluginInstance.getSoloLevelingData();
     const isTitleAllowed = (t) => !pluginInstance._unwantedTitles.has(t);
     const rawTitles = soloData?.titles || [];
+    // Dep on contents (length + join), not reference — rawTitles may be the same
+    // cached array object across renders, so a reference dep never triggers recompute
+    // when titles are equipped/unequipped.
     const { sorted: titles, bonusMap } = React.useMemo(() => {
       const filtered = rawTitles.filter(isTitleAllowed);
       return pluginInstance.getSortedTitles({ titles: filtered, sortBy });
-    }, [rawTitles, sortBy]);
+    }, [rawTitles.length, rawTitles.join(','), sortBy]);
 
     const activeTitle = soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
 
+    const _sortSaveTimer = React.useRef(null);
     const handleSortChange = React.useCallback((e) => {
       const val = e.target.value;
       setSortBy(val);
       pluginInstance.settings.sortBy = val;
-      pluginInstance.saveSettings();
+      // Debounce the disk write ~300ms — rapid dropdown changes shouldn't fire
+      // multiple sync BdApi.Data.save calls.
+      if (_sortSaveTimer.current !== null) clearTimeout(_sortSaveTimer.current);
+      _sortSaveTimer.current = setTimeout(() => {
+        _sortSaveTimer.current = null;
+        pluginInstance.saveSettings();
+      }, 300);
     }, []);
 
     const handleEquip = React.useCallback((title) => {

@@ -447,14 +447,17 @@ module.exports = {
         return this._currentUserIdCache;
       }
   
-      // Method 1: Try webpack UserStore (most reliable)
-      if (this.webpackModuleAccess && this.webpackModules.UserStore) {
-        const storeUserId = this.getCurrentUserIdFromStore();
-        if (storeUserId) {
-          this._currentUserIdCache = storeUserId;
-          this._currentUserIdCacheTime = now;
-          return storeUserId;
-        }
+      // Method 1: Webpack UserStore via getCurrentUserIdFromStore(), which now
+      // self-resolves the store through BdApi.Webpack.getStore("UserStore").
+      // Do NOT gate on webpackModuleAccess/webpackModules.UserStore — the legacy
+      // webpack init that populated those is absent in the modular build, so the
+      // gate was permanently false and userId never resolved (=> no own-message
+      // detection => no XP). The resolver self-resolves + caches the store.
+      const storeUserId = this.getCurrentUserIdFromStore();
+      if (storeUserId) {
+        this._currentUserIdCache = storeUserId;
+        this._currentUserIdCacheTime = now;
+        return storeUserId;
       }
   
       // Method 2: Fallback to React fiber traversal (if webpack unavailable)

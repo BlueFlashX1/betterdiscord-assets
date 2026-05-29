@@ -90,7 +90,12 @@ function readFileBackup(plugin) {
         if (!fs.existsSync(candidatePath)) continue;
         const raw = fs.readFileSync(candidatePath, "utf8");
         const data = JSON.parse(raw);
-        const quality = Array.isArray(data.waypoints) ? data.waypoints.length : 0;
+        // HIGH-1 fix: timestamp-primary scorer (mirrors outer loadSettings scorer).
+        // Waypoint-count-only was selecting stale .bak files that had more entries
+        // than the current file but an older lastSave timestamp.
+        const ts = data?._metadata?.lastSave ? new Date(data._metadata.lastSave).getTime() || 0 : 0;
+        const wpCount = Array.isArray(data.waypoints) ? data.waypoints.length : 0;
+        const quality = ts * 1000 + wpCount;
         candidates.push({ data, quality, path: candidatePath });
       } catch (error) {
         plugin.debugError("Settings", `Failed to parse backup candidate ${candidatePath}`, error);

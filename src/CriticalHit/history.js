@@ -202,7 +202,10 @@ module.exports = {
         }
 
         if (migrated) {
-          BdApi.Data.save('CriticalHit', 'messageHistory', this.messageHistory);
+          const historySnapshot = [...this.messageHistory];
+          setTimeout(() => {
+            BdApi.Data.save('CriticalHit', 'messageHistory', historySnapshot);
+          }, 0);
         }
 
         this._cachedCritHistory = null;

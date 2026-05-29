@@ -66,6 +66,11 @@
   white-space: normal;
 }
 
+/* H1: animation reset class — cancels current animation without a sync forced reflow */
+.sl-toast.sl-animation-reset {
+  animation: none;
+}
+
 .sl-toast.fading-out {
   animation-fill-mode: forwards !important;
 }
@@ -171,17 +176,6 @@
     opacity: 0;
     transform: translate(var(--sl-particle-x, 0), var(--sl-particle-y, -50px)) scale(0);
   }
-}
-
-.sl-toast::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);
-  animation: sl-toast-progress linear forwards;
 }
 
 @keyframes sl-toast-progress {

@@ -6,6 +6,7 @@
  */
 
 const Events = require('../shared/event-bus');
+const { onKeydown } = require('../shared/dom-bus');
 const { watchToolbar } = require('../shared/header-toolbar');
 const { ItemVaultStorage } = require('./storage');
 const { ItemVaultEventAPI } = require('./event-api');
@@ -87,8 +88,17 @@ module.exports = class ItemVault {
     this._eventAPI.mount();
     this._eventAPI.broadcastReady();
 
-    // Listen for changes to re-render popup if open
-    this._onChanged = () => this._renderPopupContent();
+    // Listen for changes to re-render popup if open.
+    // Debounced at 16ms so rapid-fire drops (dungeon completion) batch into
+    // a single frame rather than triggering N full innerHTML rewrites.
+    this._renderDebounceTimer = null;
+    this._onChanged = () => {
+      clearTimeout(this._renderDebounceTimer);
+      this._renderDebounceTimer = setTimeout(() => {
+        if (!document.getElementById(POPUP_ID)) return;
+        this._renderPopupContent();
+      }, 16);
+    };
     Events.on('ItemVault:changed', this._onChanged);
 
     // Start header icon
@@ -109,6 +119,9 @@ module.exports = class ItemVault {
       Events.off('ItemVault:changed', this._onChanged);
       this._onChanged = null;
     }
+
+    clearTimeout(this._renderDebounceTimer);
+    this._renderDebounceTimer = null;
 
     if (this._eventAPI) {
       this._eventAPI.unmount();
@@ -301,7 +314,7 @@ module.exports = class ItemVault {
     this._escHandler = (e) => {
       if (e.key === 'Escape') { this._closePopup(); e.stopPropagation(); }
     };
-    document.addEventListener('keydown', this._escHandler, true);
+    this._escUnsub = onKeydown(this._escHandler, { capture: true });
   }
 
   _closePopup() {
@@ -311,10 +324,11 @@ module.exports = class ItemVault {
       document.removeEventListener('click', this._outsideHandler, true);
       this._outsideHandler = null;
     }
-    if (this._escHandler) {
-      document.removeEventListener('keydown', this._escHandler, true);
-      this._escHandler = null;
+    if (this._escUnsub) {
+      this._escUnsub();
+      this._escUnsub = null;
     }
+    this._escHandler = null;
   }
 
   _renderPopupContent() {

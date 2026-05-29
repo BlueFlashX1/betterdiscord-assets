@@ -59,7 +59,7 @@ module.exports = {
         // Award shadow essence on failed resurrection (1 essence per failure)
         try {
           if (SLEvents) {
-            SLEvents.emit('Dungeons:awardEssence', { amount: 1 });
+            SLEvents.emit('Dungeons:awardEssence', { amount: 1, source: 'failed_resurrection' });
           }
         } catch (essenceError) {
           this.debugLog?.(`Failed to award shadow essence: ${essenceError.message}`);

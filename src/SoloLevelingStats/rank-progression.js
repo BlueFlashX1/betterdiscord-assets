@@ -300,14 +300,9 @@ module.exports = {
         this.settings.xp = levelInfo.xp;
         // Persist XP synchronization when no level-up occurs.
         this.saveSettings();
-        // Emit XP changed event (level didn't change but XP did)
+        // Emit XP changed event (level didn't change but XP did).
+        // UI update is triggered by the 'xpChanged' listener in lifecycle.js start().
         this.emitXPChanged();
-        // Update chat UI
-        try {
-          this.updateChatUI();
-        } catch (error) {
-          this.debugError('CHECK_LEVEL_UP', error, { phase: 'update_ui_no_levelup' });
-        }
       }
     } catch (error) {
       this.debugError('CHECK_LEVEL_UP', error, { oldLevel });

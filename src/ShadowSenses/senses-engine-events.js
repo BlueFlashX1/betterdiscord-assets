@@ -826,9 +826,11 @@ function onTypingStart(payload) {
 
     // Suppress toast if user is currently viewing the same channel —
     // Discord's native typing indicator already shows there.
+    // Use the instance-cached _SelectedChannelStore (resolved once in
+    // initWebpack) rather than calling getStore on every TYPING_START.
     if (channelId) {
       try {
-        const selectedChannelId = BdApi.Webpack.getStore("SelectedChannelStore")?.getChannelId?.();
+        const selectedChannelId = this._plugin._SelectedChannelStore?.getChannelId?.();
         if (selectedChannelId && selectedChannelId === channelId) return;
       } catch (_) { /* fall through if store unavailable */ }
     }

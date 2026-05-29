@@ -168,7 +168,7 @@ module.exports = class HSLDockAutoHide {
       );
 
       const mountEngine = () => {
-        if (this._isStopped || this._engineMounted) return;
+        if (this._isStopped || this._engineMounted || !this._dockResourcesActive) return;
         this._warnOnce("react-fallback-timeout", "React patcher did not mount - using direct DOM fallback");
         const engine = new DockEngine();
         this._fallbackEngine = engine;
@@ -183,7 +183,13 @@ module.exports = class HSLDockAutoHide {
       // when DOM actually changes, then disconnects. Hard 3s ceiling
       // preserved as a safety timeout that mounts the engine regardless,
       // matching the prior `attempts >= 30` exit branch.
-      this._dockReadyObserver = new MutationObserver(() => {
+      this._dockReadyObserver = new MutationObserver((mutations) => {
+        // PERF: skip text/attribute-only mutations — we're waiting for an Element node
+        const hasElementNode = mutations.some(
+          m => m.addedNodes.length > 0 &&
+               Array.prototype.some.call(m.addedNodes, n => n.nodeType === 1)
+        );
+        if (!hasElementNode) return;
         if (this._isStopped || this._engineMounted) {
           this._dockReadyObserver?.disconnect();
           this._dockReadyObserver = null;

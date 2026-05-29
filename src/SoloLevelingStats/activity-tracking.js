@@ -1,3 +1,5 @@
+const { onKeydown } = require('../shared/dom-bus');
+
 module.exports = {
   startActivityTracking() {
     if (this.activityTracker) return;
@@ -39,14 +41,13 @@ module.exports = {
       this.settings.activity.lastActiveTime = now;
     };
   
-    // Store handlers for cleanup
+    // Store handlers for cleanup (keydown uses dom-bus unsub via this._activityKeydownUnsub)
     this._activityTrackingHandlers = {
       mousemove: resetActivityTimeout,
-      keydown: resetActivityTimeout,
     };
   
     document.addEventListener('mousemove', resetActivityTimeout, { passive: true });
-    document.addEventListener('keydown', resetActivityTimeout);
+    this._activityKeydownUnsub = onKeydown(resetActivityTimeout, { capture: false });
     resetActivityTimeout();
   },
 

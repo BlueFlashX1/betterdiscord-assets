@@ -54,11 +54,11 @@ module.exports = {
 
   findMessageElementForRestoration(node) {
     let messageElement = null;
-    if (node.classList) {
-      const classes = Array.from(node.classList);
+    if (node.className && typeof node.className === 'string') {
       if (
-        classes.some((c) => c.includes('message')) &&
-        !classes.some((c) => c.includes('messageContent') || c.includes('messageGroup'))
+        node.className.includes('message') &&
+        !node.className.includes('messageContent') &&
+        !node.className.includes('messageGroup')
       ) {
         messageElement = node;
       }

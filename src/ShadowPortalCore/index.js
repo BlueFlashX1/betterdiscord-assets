@@ -13,6 +13,8 @@
 let _gsapLoadPromise = null;
 let _gsapLoaded = false;
 let _gsapLogSent = false;
+// GSAP script elements injected into document.head — cleaned up on stop() to prevent accumulation across BD reloads
+let _gsapScriptEls = [];
 
 // CSS Portal spiral mask (PropJockey technique)
 // Preferred: imgur PNG. Fallback: procedurally generated spiral.
@@ -211,6 +213,7 @@ const methods = {
           el.onload = resolve;
           el.onerror = reject;
           document.head.appendChild(el);
+          _gsapScriptEls.push(el);
         });
 
         const CDN = "https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0";
@@ -265,9 +268,13 @@ const methods = {
     try {
       const channelId = this._extractChannelId(path);
       if (!channelId) return false;
-      const { Webpack } = BdApi;
-      const MessageStore = Webpack.getStore?.("MessageStore")
-        || Webpack.getModule?.(m => m.getMessage && m.getMessages);
+      if (!this._messageStoreCache) {
+        const { Webpack } = BdApi;
+        const ms = Webpack.getStore?.("MessageStore")
+          || Webpack.getModule?.(m => m.getMessage && m.getMessages);
+        if (ms?.getMessages) this._messageStoreCache = ms;
+      }
+      const MessageStore = this._messageStoreCache;
       if (!MessageStore?.getMessages) return false;
       const messages = MessageStore.getMessages(channelId);
       // If there are any cached messages, this channel has been visited before
@@ -983,7 +990,6 @@ const methods = {
     ];
 
     // CSS Portal GSAP animations (formation → expand → fade)
-    const cssPortalTweens = [];
     if (cssPortalEl) {
       const revealAt = dur * 0.60; // sync with canvas revealStart (synced with darkness clear)
       const expandDur = dur * 0.36; // expansion duration (compressed to fit remaining time)
@@ -1065,11 +1071,10 @@ const methods = {
     // Delegate to main-thread draw loop, passing GSAP state + CSS portal flag
     const stopCanvas = this._startPortalCanvasMainThread(canvas, duration, gs, !!cssPortalEl, perfProfile);
 
-    // Wrap stop function to kill GSAP timeline + breathing tweens + CSS portal tweens
+    // Wrap stop function to kill GSAP timeline + breathing tweens
     return () => {
       tl.kill();
       for (const tw of breathingTweens) tw.kill();
-      for (const tw of cssPortalTweens) tw.kill();
       this._gsapMasterTimeline = null;
       if (stopCanvas) stopCanvas();
     };
@@ -2285,6 +2290,11 @@ function stop() {
   _spiralMaskUrl = null;
   _spiralMaskReady = false;
   _spiralMaskLoadedFrom = null;
+  // Remove GSAP script tags injected during this session to prevent accumulation across BD reloads
+  for (const el of _gsapScriptEls) {
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }
+  _gsapScriptEls = [];
 }
 
 module.exports = {

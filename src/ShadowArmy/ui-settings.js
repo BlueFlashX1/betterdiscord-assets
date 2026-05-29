@@ -339,14 +339,17 @@ module.exports = {
         }
       }
 
-      // Tier 2: Save to BdApi.Data
-      try {
-        const storageKey = this.userId ? `settings_${this.userId}` : 'settings';
-        BdApi.Data.save('ShadowArmy', storageKey, settingsToSave);
-        this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data');
-      } catch (error) {
-        this.debugError('SETTINGS', 'Error saving settings to BdApi.Data', error);
-      }
+      // Tier 2: Save to BdApi.Data — deferred off the current microtask so it
+      // does not block the renderer thread synchronously after the IDB await.
+      queueMicrotask(() => {
+        try {
+          const storageKey = this.userId ? `settings_${this.userId}` : 'settings';
+          BdApi.Data.save('ShadowArmy', storageKey, settingsToSave);
+          this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data');
+        } catch (error) {
+          this.debugError('SETTINGS', 'Error saving settings to BdApi.Data', error);
+        }
+      });
 
       // Tier 3: File backup outside BD folder
       this.writeFileBackup(settingsToSave);

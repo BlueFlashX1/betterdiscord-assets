@@ -4,8 +4,10 @@ function attachStealthStatusProtoMethods(StealthClass) {
   Object.assign(StealthClass.prototype, {
     /** Find Discord's PreloadedUserSettings proto module.
      *  This is the REAL status-change mechanism in modern Discord —
-     *  updateAsync("status", cb) is what the UI status picker calls. */
+     *  updateAsync("status", cb) is what the UI status picker calls.
+     *  P1 FIX: bail early if already resolved (avoids repeated full registry scan). */
     _initProtoUtils() {
+      if (this._protoUtils) return; // already resolved — skip expensive scan
       try {
         // Collect ALL proto settings objects with updateAsync (searchExports needed — not top-level)
         const allProtos = [];

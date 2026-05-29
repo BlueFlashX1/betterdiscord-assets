@@ -11,6 +11,7 @@
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { loadSettings: _sharedLoadSettings, saveSettings: _sharedSaveSettings } = require("../shared/settings");
+const { onKeydown } = require("../shared/dom-bus");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 
@@ -351,10 +352,14 @@ module.exports = class ShadowStep {
   }
 
   renameAnchor(anchorId, newName) {
-    const anchor = this.settings.anchors.find((a) => a.id === anchorId);
-    if (anchor) {
-      anchor.name = newName;
-      this.saveSettings();
+    const exists = this.settings.anchors.some((a) => a.id === anchorId);
+    if (exists) {
+      this.settings.anchors = this.settings.anchors.map((a) =>
+        a.id === anchorId ? { ...a, name: newName } : a
+      );
+      this._rebuildAnchorIndex();
+      this.scheduleSaveSettings();
+      if (this._panelForceUpdate) this._panelForceUpdate();
       this.debugLog("Anchor", "Renamed:", anchorId, "->", newName);
     }
   }
@@ -447,12 +452,12 @@ module.exports = class ShadowStep {
 
     this.closePanel();
 
-    // Update usage stats (immutable update)
+    // Update usage stats (immutable update, debounced persist)
     const _now = Date.now();
     this.settings.anchors = this.settings.anchors.map((a) =>
       a.id === anchor.id ? { ...a, lastUsed: _now, useCount: (a.useCount || 0) + 1 } : a
     );
-    this.saveSettings();
+    this.scheduleSaveSettings();
 
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       if (!this._portalCoreApplyAttempted) {
@@ -529,15 +534,16 @@ module.exports = class ShadowStep {
         this.togglePanel();
       }
     };
-    document.addEventListener("keydown", this._hotkeyHandler);
+    this._hotkeyUnsub = onKeydown(this._hotkeyHandler, { capture: false });
     this.debugLog("Hotkey", `Registered: ${this.settings.hotkey} (macOS Cmd alias: ${isMac})`);
   }
 
   _unregisterHotkey() {
-    if (this._hotkeyHandler) {
-      document.removeEventListener("keydown", this._hotkeyHandler);
-      this._hotkeyHandler = null;
+    if (this._hotkeyUnsub) {
+      this._hotkeyUnsub();
+      this._hotkeyUnsub = null;
     }
+    this._hotkeyHandler = null;
   }
 
   // Panel

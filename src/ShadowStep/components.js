@@ -1,4 +1,5 @@
 function buildComponents(BdApi, pluginRef) {
+  const { onKeydown } = require("../shared/dom-bus");
   const React = BdApi.React;
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
   const ce = React.createElement;
@@ -82,8 +83,8 @@ function buildComponents(BdApi, pluginRef) {
       const handler = (e) => {
         if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); onClose(); }
       };
-      document.addEventListener("keydown", handler, true);
-      return () => document.removeEventListener("keydown", handler, true);
+      const unsub = onKeydown(handler, { capture: true });
+      return () => unsub();
     }, [onClose]);
 
     const anchors = useMemo(() => {

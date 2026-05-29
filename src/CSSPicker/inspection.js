@@ -427,8 +427,17 @@ const sampleScopeMatches = (nodes, pickedEl, maxSamples = 5) => {
   return samples;
 };
 
+// PERF: Universal or bare-tag selectors (e.g. `*`, `div`, `span`) trivially match
+// thousands of elements. Skip the querySelectorAll scan for these and report "global"
+// directly — it is accurate (they always match many elements) and avoids forced layout
+// stutter on pick-capture. Report shape (scope/totalMatches fields) is unchanged.
+const _BROAD_SELECTOR_RE = /^(\s*\*\s*|[a-zA-Z][a-zA-Z0-9]*\s*)$/;
+
 export function analyzeRuleScope(selectorText, pickedEl) {
   try {
+    if (_BROAD_SELECTOR_RE.test(selectorText)) {
+      return { scope: "global", totalMatches: -1 };
+    }
     const all = document.querySelectorAll(selectorText);
     const total = all.length;
     const result = { scope: getRuleScopeLabel(total), totalMatches: total };
@@ -666,8 +675,17 @@ export function trySaveReportJson(report) {
 
     const fileName = `css-picker-${getTimestampForFilename()}.json`;
     const filePath = path.join(reportsDir, fileName);
+    const data = JSON.stringify(report, null, 2);
 
-    fs.writeFileSync(filePath, JSON.stringify(report, null, 2), { encoding: "utf8" });
+    // Fire-and-forget: avoid blocking the renderer on a 10–50 KB disk write.
+    // The toast fires independently of write completion so the result is safe
+    // to return immediately.
+    fs.writeFile(filePath, data, { encoding: "utf8" }, (err) => {
+      if (err) {
+        // Non-fatal: user already received the toast; log for debugging only.
+        console.error("[CSSPicker] report write failed:", err.message);
+      }
+    });
 
     return { ok: true, filePath, fileName, error: null };
   } catch (error) {

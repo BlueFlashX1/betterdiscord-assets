@@ -38,6 +38,7 @@ const {
   writeDebugEntry,
 } = require("./debug");
 const dc = require("../shared/discord-classes");
+const { onKeydown, onResize } = require("../shared/dom-bus");
 
 // Selector Configuration
 // Centralized for easy updating when Discord changes class names.
@@ -165,6 +166,10 @@ class DockEngine {
     this.debugFilePath = null;
     this.fs = null;
 
+    // dom-bus unsub handles (set in mount, called in unmount)
+    this._unsubKeydown = null;
+    this._unsubResize = null;
+
     // Bind event handlers
     this.onMouseMove = this.onMouseMove.bind(this);
     this.onDockEnter = this.onDockEnter.bind(this);
@@ -202,9 +207,9 @@ class DockEngine {
     document.addEventListener("input", this.onComposerInput, { capture: true, passive: true });
     document.addEventListener("compositionstart", this.onComposerInput, { capture: true, passive: true });
     document.addEventListener("compositionupdate", this.onComposerInput, { capture: true, passive: true });
-    document.addEventListener("keydown", this.onComposerKeyDown, { capture: true, passive: true });
+    this._unsubKeydown = onKeydown(this.onComposerKeyDown, { capture: true });
     document.addEventListener("focusin", this.onComposerFocusIn, { capture: true, passive: true });
-    window.addEventListener("resize", this.onResize, { passive: true });
+    this._unsubResize = onResize(() => this.onResize());
     window.addEventListener("blur", this.onWindowBlur, { passive: true });
     window.addEventListener("focus", this.onWindowFocus, { passive: true });
     document.addEventListener("visibilitychange", this.onVisibilityChange, { passive: true });
@@ -230,9 +235,9 @@ class DockEngine {
     document.removeEventListener("input", this.onComposerInput, true);
     document.removeEventListener("compositionstart", this.onComposerInput, true);
     document.removeEventListener("compositionupdate", this.onComposerInput, true);
-    document.removeEventListener("keydown", this.onComposerKeyDown, true);
+    if (this._unsubKeydown) { this._unsubKeydown(); this._unsubKeydown = null; }
     document.removeEventListener("focusin", this.onComposerFocusIn, true);
-    window.removeEventListener("resize", this.onResize);
+    if (this._unsubResize) { this._unsubResize(); this._unsubResize = null; }
     window.removeEventListener("blur", this.onWindowBlur);
     window.removeEventListener("focus", this.onWindowFocus);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);

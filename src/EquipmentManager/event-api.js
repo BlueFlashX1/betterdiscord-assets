@@ -34,7 +34,11 @@ module.exports = {
         });
       }
 
-      this._refreshPopup();
+      // Coalesce popup refreshes — Dungeons:awardEssence can fire several
+      // times in quick succession during one dungeon, each potentially
+      // dropping loot. Batch the re-render into a single frame.
+      clearTimeout(this._bossKillRefreshTimer);
+      this._bossKillRefreshTimer = setTimeout(() => this._refreshPopup(), 200);
     };
     SLEvents.on('Dungeons:awardEssence', this._onBossKill);
   },
@@ -44,6 +48,8 @@ module.exports = {
       SLEvents.off('Dungeons:awardEssence', this._onBossKill);
       this._onBossKill = null;
     }
+    clearTimeout(this._bossKillRefreshTimer);
+    this._bossKillRefreshTimer = null;
   },
 
   _exposePublicAPI() {

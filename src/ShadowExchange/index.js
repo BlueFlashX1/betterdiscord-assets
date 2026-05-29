@@ -69,6 +69,7 @@ const { buildPanelComponents } = require("./panel-components");
 const { getShadowExchangeCss } = require("./styles");
 const { PORTAL_TRANSITION_CSS } = require("./portal-transition-css");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
+const { onResize } = require("../shared/dom-bus");
 const { isVoiceChannelChat } = require("../shared/channel-context");
 const {
   flushSaveSettings,
@@ -820,10 +821,6 @@ module.exports = class ShadowExchange {
     // Close panel first so target channel is visible during reveal.
     this.closePanel();
 
-    wp.lastVisited = Date.now();
-    wp.visitCount = (wp.visitCount || 0) + 1;
-    this.saveSettings();
-
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       if (!this._portalCoreApplyAttempted) {
         _ensureShadowPortalCoreApplied(this.constructor);
@@ -842,10 +839,20 @@ module.exports = class ShadowExchange {
       }
     };
 
+    // HIGH-2 fix: visit stats must only persist after navigation is confirmed.
+    // Mutating + saving before onConfirmed meant failed teleports (bad channel
+    // id, network hiccup) would still increment visitCount / update lastVisited.
+    const _recordVisit = () => {
+      wp.lastVisited = Date.now();
+      wp.visitCount = (wp.visitCount || 0) + 1;
+      this.saveSettings();
+    };
+
     // Fail-safe: do not throw if shared core failed to load.
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       this.debugError("Teleport", "Shared portal core missing; using direct navigation fallback");
       _stampCooldown();
+      _recordVisit();
       if (this._NavigationUtils?.transitionTo) {
         this._NavigationUtils.transitionTo(url);
       } else if (window.history?.pushState) {
@@ -863,7 +870,7 @@ module.exports = class ShadowExchange {
         waypointLabel: wp.label,
         channelId: wp.channelId,
       }, {
-        onConfirmed: () => { _stampCooldown(); this._finishChannelViewFade(fadeToken, true); },
+        onConfirmed: () => { _stampCooldown(); _recordVisit(); this._finishChannelViewFade(fadeToken, true); },
         onFailed: () => this._finishChannelViewFade(fadeToken, false),
       });
     }, url);
@@ -910,7 +917,9 @@ module.exports = class ShadowExchange {
         const path = String(window.location?.pathname || "");
         const m = path.match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
         if (m) {
-          const ch = BdApi?.Webpack?.getStore?.("ChannelStore")?.getChannel?.(m[1]);
+          // HIGH-3 fix: use already-cached this.ChannelStore instead of a fresh
+          // BdApi.Webpack.getStore("ChannelStore") on every reinject call.
+          const ch = (this.ChannelStore || BdApi?.Webpack?.getStore?.("ChannelStore"))?.getChannel?.(m[1]);
           const t = Number(ch?.type);
           if (t === 2 || t === 13) isVc = true;
         }
@@ -958,8 +967,7 @@ module.exports = class ShadowExchange {
       }, 250);
     }
 
-    this._swirlResizeHandler = () => this._scheduleSwirlIconReinject(80);
-    window.addEventListener("resize", this._swirlResizeHandler, { passive: true });
+    this._swirlResizeUnsub = onResize(() => this._scheduleSwirlIconReinject(80));
 
     this._scheduleSwirlIconReinject(60);
   }
@@ -976,9 +984,9 @@ module.exports = class ShadowExchange {
       this._swirlReinjectTimeout = null;
     }
 
-    if (this._swirlResizeHandler) {
-      window.removeEventListener("resize", this._swirlResizeHandler);
-      this._swirlResizeHandler = null;
+    if (this._swirlResizeUnsub) {
+      this._swirlResizeUnsub();
+      this._swirlResizeUnsub = null;
     }
   }
 

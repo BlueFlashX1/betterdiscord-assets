@@ -57,8 +57,10 @@ li${messageListItem} {
   margin-top: 4px !important;
   margin-bottom: 4px !important;
   padding: 4px 12px 8px 8px !important;
-  transition: box-shadow 200ms ease,
-              border-color 200ms ease !important;
+  /* PERF: box-shadow only (hover glow). border-color is JS-driven on every
+     classify pass; animating it caused paint waves across many LIs on scroll
+     and channel switch — apply border-color changes instantly instead. */
+  transition: box-shadow 200ms ease !important;
 }
 
 /* Mentioned messages pre-style (CSS-only) */
@@ -85,8 +87,8 @@ li.sw-group-end {
   margin-left: 48px !important;
   margin-right: 96px !important;
   padding: 4px 12px 8px 8px !important;
-  transition: box-shadow 200ms ease,
-              border-color 200ms ease !important;
+  /* PERF: see note above — box-shadow (hover) only, no border-color animation. */
+  transition: box-shadow 200ms ease !important;
 }
 
 /* ════════════════════════════════════════════

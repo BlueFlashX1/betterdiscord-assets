@@ -693,8 +693,8 @@ module.exports = {
       });
 
       this.emitXPChanged();
-      this.saveSettings();
-      this.debugLog('AWARD_XP', 'Settings save requested after XP gain');
+      // saveSettings() is NOT called here: checkLevelUp always saves (both level-up and no-level-up paths).
+      this.debugLog('AWARD_XP', 'XP applied; checkLevelUp will persist');
 
       try {
         this.checkLevelUp(stateResult.oldLevel);

@@ -14,6 +14,7 @@ const { getCreateRoot } = require("../shared/react-dom");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
 const { isVoiceChannelChat } = require("../shared/channel-context");
 const { watchToolbar } = require("../shared/header-toolbar");
+const { onKeydown } = require("../shared/dom-bus");
 
 const ShadowSensesUiMethods = {
   injectCSS() {
@@ -282,8 +283,9 @@ const ShadowSensesUiMethods = {
     try {
       // Remove any previously registered handler before adding a new one.
       // Prevents accumulation when the panel is opened multiple times.
-      if (this._escHandler) {
-        document.removeEventListener("keydown", this._escHandler);
+      if (this._escUnsub) {
+        this._escUnsub();
+        this._escUnsub = null;
         this._escHandler = null;
       }
       this._escHandler = (e) => {
@@ -293,7 +295,7 @@ const ShadowSensesUiMethods = {
           e.stopPropagation();
         }
       };
-      document.addEventListener("keydown", this._escHandler);
+      this._escUnsub = onKeydown(this._escHandler, { capture: false });
       this.debugLog("ESC", "Handler registered");
     } catch (err) {
       this.debugError("ESC", "Failed to register ESC handler", err);
@@ -625,7 +627,7 @@ const ShadowSensesUiMethods = {
         e.stopPropagation();
       }
     };
-    document.addEventListener('keydown', this._popupEscHandler, true);
+    this._popupEscUnsub = onKeydown(this._popupEscHandler, { capture: true });
 
     this.debugLog("Popup", "Opened");
   },
@@ -661,10 +663,11 @@ const ShadowSensesUiMethods = {
       document.removeEventListener('click', this._popupOutsideClickHandler, true);
       this._popupOutsideClickHandler = null;
     }
-    if (this._popupEscHandler) {
-      document.removeEventListener('keydown', this._popupEscHandler, true);
-      this._popupEscHandler = null;
+    if (this._popupEscUnsub) {
+      this._popupEscUnsub();
+      this._popupEscUnsub = null;
     }
+    this._popupEscHandler = null;
 
     this._panelOpen = false;
     this.debugLog("Popup", "Closed");

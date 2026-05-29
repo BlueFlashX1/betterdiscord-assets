@@ -11,19 +11,47 @@
  *   const data = getSoloLevelingData();           // null if unavailable
  */
 
+// Short-TTL cache for getPluginInstance. BdApi.Plugins.isEnabled+get both
+// iterate the plugin list; consumers often call this several times for the
+// same provider in a single pass (e.g. ShadowSenses reads ShadowArmy +
+// ShadowExchange + Dungeons per deployment eval). A 3s TTL collapses those
+// repeats to one lookup. The window is short enough that a plugin
+// enable/disable is reflected almost immediately. Per-bundle (esbuild) — that
+// is fine, the redundant reads we target are all within a single plugin.
+const _BRIDGE_TTL_MS = 3000;
+const _instanceCache = new Map(); // pluginName -> { instance, ts }
+
 /**
  * Get a plugin instance safely. Returns null if plugin is not found or not enabled.
+ * Result is cached for ~3s to avoid repeated registry scans on hot paths.
  * @param {string} pluginName
  * @returns {object|null}
  */
 function getPluginInstance(pluginName) {
+  // Date.now() is fine here (runs in Discord's renderer, not a workflow).
+  const now = Date.now();
+  const cached = _instanceCache.get(pluginName);
+  if (cached && (now - cached.ts) < _BRIDGE_TTL_MS) return cached.instance;
+  let instance = null;
   try {
-    if (!BdApi.Plugins.isEnabled(pluginName)) return null;
-    const plugin = BdApi.Plugins.get(pluginName);
-    return plugin?.instance || null;
+    if (BdApi.Plugins.isEnabled(pluginName)) {
+      instance = BdApi.Plugins.get(pluginName)?.instance || null;
+    }
   } catch (_) {
-    return null;
+    instance = null;
   }
+  _instanceCache.set(pluginName, { instance, ts: now });
+  return instance;
+}
+
+/**
+ * Drop a cached instance (or all of them) — call when you know a provider just
+ * (re)started and you need a fresh lookup before the TTL would expire.
+ * @param {string} [pluginName] omit to clear the whole cache
+ */
+function invalidatePluginInstance(pluginName) {
+  if (pluginName) _instanceCache.delete(pluginName);
+  else _instanceCache.clear();
 }
 
 /**
@@ -58,4 +86,4 @@ function getSoloLevelingData() {
   }
 }
 
-module.exports = { getPluginInstance, getSkillTreeLevel, getSoloLevelingData };
+module.exports = { getPluginInstance, getSkillTreeLevel, getSoloLevelingData, invalidatePluginInstance };

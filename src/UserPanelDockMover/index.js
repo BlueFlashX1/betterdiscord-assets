@@ -178,19 +178,23 @@ module.exports = class UserPanelDockMover {
     if (!mutation) return;
     if (document.hidden) return;
     if (mutation.addedNodes.length === 0 && mutation.removedNodes.length === 0) return;
-    for (const list of [mutation.addedNodes, mutation.removedNodes]) {
-      for (const node of list) {
-        if (node.nodeType !== 1) continue;
-        const hit =
-          node.matches?.(this.panelSelector) ||
-          node.matches?.(this.dockSelector) ||
-          node.querySelector?.(this.panelSelector) ||
-          node.querySelector?.(this.dockSelector);
-        if (hit) {
-          this.trySetup();
-          return;
-        }
-      }
+    for (const node of mutation.addedNodes) {
+      if (node.nodeType !== 1) continue;
+      const hit =
+        node.matches?.(this.panelSelector) ||
+        node.matches?.(this.dockSelector) ||
+        node.querySelector?.(this.panelSelector) ||
+        node.querySelector?.(this.dockSelector);
+      if (hit) { this.trySetup(); return; }
+    }
+    for (const node of mutation.removedNodes) {
+      if (node.nodeType !== 1) continue;
+      // A removed node's subtree is already detached — querySelector into it
+      // is pointless. matches() on the node itself is sufficient.
+      const hit =
+        node.matches?.(this.panelSelector) ||
+        node.matches?.(this.dockSelector);
+      if (hit) { this.trySetup(); return; }
     }
   }
 };

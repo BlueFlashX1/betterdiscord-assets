@@ -1,4 +1,5 @@
 const { RANK_ORDER } = require("../shared/rank-utils");
+const { onKeydown } = require("../shared/dom-bus");
 
 const RANK_COLORS = {
   E: "#808080", D: "#8B4513", C: "#FF6347", B: "#FFD700",
@@ -244,8 +245,8 @@ function createWaypointPanel(React, pluginInstance, WaypointCard) {
           onClose();
         }
       };
-      document.addEventListener("keydown", handler, true);
-      return () => document.removeEventListener("keydown", handler, true);
+      const unsub = onKeydown(handler, { capture: true });
+      return () => unsub();
     }, [onClose]);
     const waypoints = React.useMemo(
       () => getFilteredSortedWaypoints(pluginInstance.settings.waypoints, searchQuery, sortBy),

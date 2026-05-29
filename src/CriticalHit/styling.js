@@ -222,11 +222,10 @@ ${childSel} {
   // CRIT STYLING — Content Element Discovery & Style Application
 
   _isContentElement(element) {
-    if (!element?.classList) return false;
-    const classes = Array.from(element.classList || []);
-    const hasContentClass = classes.some(
-      (c) => c.includes('messageContent') || c.includes('markup') || c.includes('textContainer')
-    );
+    if (!element?.className || typeof element.className !== 'string') return false;
+    const cn = element.className;
+    const hasContentClass =
+      cn.includes('messageContent') || cn.includes('markup') || cn.includes('textContainer');
     return hasContentClass || element.id?.includes('message-content');
   },
 
@@ -267,10 +266,9 @@ ${childSel} {
 
     const siblings = Array.from(parent.children);
     return siblings.some((sib) => {
-      const classes = Array.from(sib.classList || []);
-      return classes.some(
-        (c) => c.includes('username') || c.includes('timestamp') || c.includes('author')
-      );
+      const cn = sib.className;
+      if (!cn || typeof cn !== 'string') return false;
+      return cn.includes('username') || cn.includes('timestamp') || cn.includes('author');
     });
   },
 

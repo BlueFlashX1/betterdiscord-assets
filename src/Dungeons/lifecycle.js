@@ -327,15 +327,16 @@ module.exports = {
   },
 
   async _flushPendingMobWritesOnStop() {
-    // Flush active dungeons to IDB before closing storage
+    // Flush active dungeons to IDB before closing storage — parallel fan-out so
+    // stop time = max(perDungeon) instead of sum(perDungeon).
     if (this.storageManager && this.activeDungeons) {
-      for (const [key, dungeon] of this.activeDungeons) {
-        try {
-          await this.storageManager.saveDungeon(dungeon);
-        } catch (error) {
-          this.errorLog('STOP', 'Failed to flush active dungeon before storage close', { key, error });
-        }
-      }
+      await Promise.all(
+        Array.from(this.activeDungeons.values()).map((dungeon) =>
+          this.storageManager.saveDungeon(dungeon).catch((err) =>
+            this.errorLog('STOP', 'Failed to flush active dungeon before storage close', err)
+          )
+        )
+      );
     }
 
     // Flush any pending mob writes before fully stopping

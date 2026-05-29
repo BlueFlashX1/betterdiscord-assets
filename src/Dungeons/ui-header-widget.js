@@ -2,6 +2,7 @@ const { getNavigationUtils } = require('../shared/navigation');
 const dc = require("../shared/discord-classes");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
 const { isVoiceChannelChat } = require('../shared/channel-context');
+const { watchToolbar } = require('../shared/header-toolbar');
 
 const HEADER_WIDGET_ID = 'dungeons-header-widget';
 const HEADER_POPUP_ID = 'dungeons-header-popup';
@@ -28,12 +29,22 @@ function escapeHtml(value) {
 
 module.exports = {
   startDungeonHeaderWidget() {
-    if (this._dungeonHeaderWidgetLoop) return;
+    if (this._unwatchToolbar) return;
 
-    const tick = () => {
+    // Event-driven toolbar placement: fires on CHANNEL_SELECT, VOICE_STATE, and
+    // a narrow MutationObserver fallback. Also fires once on attach — no need for
+    // a separate initial ensureDungeonHeaderWidget() call.
+    this._unwatchToolbar = watchToolbar(() => {
+      if (!this.started) return;
+      this.ensureDungeonHeaderWidget();
+    });
+
+    // Popup content refresh: keep a lightweight interval ONLY for re-rendering the
+    // open popup and badge when it's visible. Toolbar placement is now event-driven
+    // above, so this loop no longer calls ensureDungeonHeaderWidget().
+    const popupTick = () => {
       if (!this.started) return;
       if (document.hidden) return; // PERF: Skip DOM work when window not visible
-      this.ensureDungeonHeaderWidget();
       if (this._dungeonHeaderPopup?.isConnected) {
         this.renderDungeonHeaderPopup();
         this.queueDungeonHeaderPopupPosition();
@@ -42,12 +53,15 @@ module.exports = {
       }
     };
 
-    this.ensureDungeonHeaderWidget();
-    this._dungeonHeaderWidgetLoop = setInterval(tick, 3000);
+    this._dungeonHeaderWidgetLoop = setInterval(popupTick, 3000);
     this._intervals.add(this._dungeonHeaderWidgetLoop);
   },
 
   stopDungeonHeaderWidget() {
+    if (this._unwatchToolbar) {
+      this._unwatchToolbar();
+      this._unwatchToolbar = null;
+    }
     if (this._dungeonHeaderWidgetLoop) {
       clearInterval(this._dungeonHeaderWidgetLoop);
       this._intervals.delete(this._dungeonHeaderWidgetLoop);
@@ -276,6 +290,7 @@ module.exports = {
       this._dungeonHeaderPopup.remove();
     }
     this._dungeonHeaderPopup = null;
+    this._lastPopupVersionKey = null; // Force full render on next open
   },
 
   queueDungeonHeaderPopupPosition() {
@@ -322,14 +337,24 @@ module.exports = {
     const popup = this._dungeonHeaderPopup;
     if (!popup || !popup.isConnected) return;
 
-    // Preserve scroll position across re-renders
-    const contentEl = popup.querySelector('.dungeons-header-popup-content');
-    const savedScrollTop = contentEl ? contentEl.scrollTop : 0;
-
     const rows = this._getActiveDungeonsForWidget();
     this._updateDungeonHeaderWidgetBadge(rows.length);
 
     const activeTab = this._storyModePopupTab || 'dungeons';
+
+    // PERF: Dirty-flag — skip innerHTML rebuild when dungeon state is identical since
+    // last render. Version key encodes all tick-varying fields: boss HP, mob counts,
+    // deploy/join flags, active tab, and row count. Build it before any DOM work.
+    const popupVersionKey = activeTab + '|' + rows.map(([ck, d]) => {
+      const { aliveMobs, queuedMobs, mobsKilled, mobsSpawned } = this._getWidgetMobMetrics(ck, d);
+      return `${ck}:${Math.floor(d?.boss?.hp || 0)}:${aliveMobs}:${queuedMobs}:${mobsKilled}:${mobsSpawned}:${d.shadowsDeployed ? 1 : 0}:${d.userParticipating ? 1 : 0}`;
+    }).join('|');
+    if (popupVersionKey === this._lastPopupVersionKey) return;
+    this._lastPopupVersionKey = popupVersionKey;
+
+    // Preserve scroll position across re-renders
+    const contentEl = popup.querySelector('.dungeons-header-popup-content');
+    const savedScrollTop = contentEl ? contentEl.scrollTop : 0;
     const hasStoryTab = typeof this._getStoryModeTabHtml === 'function';
 
     if (rows.length === 0 && activeTab === 'dungeons' && !hasStoryTab) {

@@ -58,13 +58,7 @@ module.exports = {
   
       this._chatUIDirty = true;
       this.emit('xpChanged', xpData);
-  
-      // Trigger UI update immediately after emit
-      try {
-        this.updateChatUI();
-      } catch (error) {
-        this.debugError('EMIT_XP_CHANGED', error, { phase: 'ui_update_after_emit' });
-      }
+      // UI update is handled by the 'xpChanged' listener registered in lifecycle.js start().
     } catch (error) {
       this.debugError('EMIT_XP_CHANGED', error);
     }
@@ -82,8 +76,6 @@ module.exports = {
         ...this.buildCoreProgressPayload(levelInfo),
       });
   
-      // Also emit XP changed since level affects XP display
-      this.emitXPChanged();
     } catch (error) {
       this.debugError('EMIT_LEVEL_CHANGED', error);
     }
@@ -101,8 +93,6 @@ module.exports = {
         ...this.buildCoreProgressPayload(levelInfo),
       });
   
-      // Also emit XP changed since rank affects XP display
-      this.emitXPChanged();
     } catch (error) {
       this.debugError('EMIT_RANK_CHANGED', error);
     }

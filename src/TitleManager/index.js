@@ -629,25 +629,22 @@ module.exports = class SoloLevelingTitleManager {
       const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
       if (!instance) return false;
 
-      // Use setActiveTitle with null to unequip
+      // Use setActiveTitle with null to unequip.
+      // setActiveTitle(null) is the documented contract in SoloLevelingStats/achievements.js:213 —
+      // it handles null explicitly, saves settings, updates chat UI, and returns true.
       if (instance.setActiveTitle) {
-        // Try setting to null - if that doesn't work, set directly
         const result = instance.setActiveTitle(null);
-        if (!result && instance.settings?.achievements) {
-          // Fallback: set directly
-          instance.settings.achievements.activeTitle = null;
-          if (instance.saveSettings) {
-            instance.saveSettings(true);
-          }
-        }
-        if (instance.updateChatUI) {
-          instance.updateChatUI();
+        if (!result) {
+          // setActiveTitle returned falsy — unequip failed on the SLS side; do NOT mutate
+          // foreign plugin state directly. Surface failure to the user instead.
+          BdApi.UI.showToast('Could not unequip title', { type: 'error' });
+          return false;
         }
 
         // Invalidate cache since title was unequipped
         this._cache.soloLevelingData = null;
         this._cache.soloLevelingDataTime = 0;
-        this._toast('Title Unequipped', "info", 2000);
+        this._toast('Title Unequipped', 'info', 2000);
         this._modalForceUpdate?.();
         return true;
       }

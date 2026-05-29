@@ -40,6 +40,7 @@ const { createToast } = require("../shared/toast");
 const { getSkillTreeLevel } = require("../shared/plugin-bridge");
 const { saveSettings: _sharedSaveSettings } = require("../shared/settings");
 const { removeToolbarTooltip: _removeToolbarTooltip } = require("../shared/toolbar-tooltip");
+const { onKeydown } = require("../shared/dom-bus");
 
 // CRITICAL FIX: Use _resolved flags to avoid repeated Webpack lookups.
 const _safeGetByKeys = (...keys) => {
@@ -361,6 +362,7 @@ module.exports = class RulersAuthority {
 
     // Full teardown (mirrors stop() internals without removing skill listener)
     this._clearLifecycleTimers();
+    if (this._keydownUnsub) { this._keydownUnsub(); this._keydownUnsub = null; }
     if (this._controller) {
       this._controller.abort();
       this._controller = null;
@@ -408,7 +410,8 @@ module.exports = class RulersAuthority {
       // 1. Clear all timers first (prevents callbacks on stopped plugin).
       this._clearLifecycleTimers();
 
-      // 2. Abort all listeners registered via AbortController.
+      // 2. Abort all listeners registered via AbortController; unsub dom-bus handlers.
+      if (this._keydownUnsub) { this._keydownUnsub(); this._keydownUnsub = null; }
       if (this._controller) {
         this._controller.abort();
         this._controller = null;
@@ -526,6 +529,8 @@ module.exports = class RulersAuthority {
     this._panelElCache = null;
     this._dragging = null;
     this._dragPanel = null;
+    this._hotkeyHandler = null;
+    this._keydownUnsub = null;
   }
 
   initWebpack() {
@@ -629,8 +634,7 @@ module.exports = class RulersAuthority {
   updateToolbarIcon() { updateToolbarIcon(this); }
 
   setupHotkeyListener() {
-    if (!this._controller) return;
-    document.addEventListener("keydown", (e) => {
+    this._hotkeyHandler = (e) => {
       if (isEditableTarget(e.target)) return;
 
       for (const [panelName, config] of Object.entries(this.settings.panels)) {
@@ -641,7 +645,8 @@ module.exports = class RulersAuthority {
           return;
         }
       }
-    }, { capture: true, signal: this._controller.signal });
+    };
+    this._keydownUnsub = onKeydown(this._hotkeyHandler, { capture: true });
   }
 
   getSettingsPanel() { return getSettingsPanel(this); }

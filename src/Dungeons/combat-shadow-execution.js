@@ -674,15 +674,20 @@ module.exports = {
             attacksInSpan
           );
 
-          if (this.shadowArmy?.calculateShadowAttackInterval) {
-            const newInterval = this.shadowArmy.calculateShadowAttackInterval(shadow, 2000);
-            combatDataToUpdate.attackInterval = newInterval;
-          } else {
-            const cooldownVariance = this._varianceNarrow();
-            combatDataToUpdate.attackInterval = Math.max(
-              800,
-              Math.floor((combatDataToUpdate.attackInterval || combatDataToUpdate.cooldown || 2000) * cooldownVariance)
-            );
+          // PERF: calculateShadowAttackInterval only changes on rank/stat change.
+          // Recompute at most every 10 ticks (≈30s) instead of every tick.
+          // combatDataToUpdate.attackInterval is set at init by initializeShadowCombatData
+          // and remains valid until a rank or allocation change triggers re-init.
+          if (this._combatTickCount % 10 === 0) {
+            if (this.shadowArmy?.calculateShadowAttackInterval) {
+              combatDataToUpdate.attackInterval = this.shadowArmy.calculateShadowAttackInterval(shadow, 2000);
+            } else {
+              const cooldownVariance = this._varianceNarrow();
+              combatDataToUpdate.attackInterval = Math.max(
+                800,
+                Math.floor((combatDataToUpdate.attackInterval || combatDataToUpdate.cooldown || 2000) * cooldownVariance)
+              );
+            }
           }
         }
 

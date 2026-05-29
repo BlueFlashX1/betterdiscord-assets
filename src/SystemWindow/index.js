@@ -44,6 +44,10 @@ module.exports = class SystemWindow {
     this._classifyRAF = null;
     this._classifyVersion = 1;
     this._started = false;
+    // PERF: cache the <article> element per <li> so re-classify passes during
+    // scroll skip the querySelector. WeakMap => entries GC with the LI, no leak.
+    this._articleCache = new WeakMap();
+    this._onVisibility = null;
   }
 
   /* ═══════════════════════════════════════════════
@@ -112,6 +116,19 @@ module.exports = class SystemWindow {
         this._UserStore.addChangeListener(this._userListener);
       }
     } catch (_) {}
+
+    // PERF: stop the classify hot-path entirely while the window is hidden
+    // (minimized / occluded). The MutationObserver may still fire on
+    // background message renders, but _throttledClassify early-returns, so no
+    // querySelectorAll/classList work runs. On return to foreground we force
+    // one full re-classify to catch up on anything that arrived while hidden.
+    this._onVisibility = () => {
+      if (!document.hidden) {
+        this._classifyVersion += 1;
+        this._classifyMessages();
+      }
+    };
+    document.addEventListener("visibilitychange", this._onVisibility);
   }
 
   _checkChannelSwitch() {
@@ -184,6 +201,10 @@ module.exports = class SystemWindow {
       this._navBusUnsub();
       this._navBusUnsub = null;
     }
+    if (this._onVisibility) {
+      document.removeEventListener("visibilitychange", this._onVisibility);
+      this._onVisibility = null;
+    }
     if (this._classifyRAF) {
       cancelAnimationFrame(this._classifyRAF);
       this._classifyRAF = null;
@@ -194,6 +215,7 @@ module.exports = class SystemWindow {
   }
 
   _throttledClassify() {
+    if (document.hidden) return; // PERF: no classify work while backgrounded
     if (this._throttleTimer) return;
     this._throttleTimer = setTimeout(() => {
       this._throttleTimer = null;
@@ -336,9 +358,13 @@ module.exports = class SystemWindow {
       // Tolerant article query: prefer direct child, fall back to any
       // descendant. Discord occasionally re-wraps the <article> one
       // level deeper during render.
-      const article =
-        li.querySelector(':scope > div[role="article"]') ||
-        li.querySelector('div[role="article"]');
+      let article = this._articleCache.get(li);
+      if (!article || !li.contains(article)) {
+        article =
+          li.querySelector(':scope > div[role="article"]') ||
+          li.querySelector('div[role="article"]');
+        if (article) this._articleCache.set(li, article);
+      }
       if (!article) {
         flushGroup();
         prevAuthorId = null;

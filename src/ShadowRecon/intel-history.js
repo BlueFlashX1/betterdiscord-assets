@@ -5,25 +5,84 @@
  * All ring storage uses `BdApi.Data.save("ShadowRecon", key, [...])`. Keys
  * follow the convention `intel:<bucket>:<id>` so they group cleanly when
  * inspecting persistence dumps.
+ *
+ * Perf note: ringPush / ringRead use an in-memory working-set Map to avoid
+ * synchronous IDB round-trips on every PRESENCE_UPDATES event. Dirty keys are
+ * flushed to BdApi.Data on a 500 ms trailing debounce or on explicit
+ * flushRingBuffers() calls (e.g. stop()). The on-disk shape is unchanged —
+ * history rings survive reload because the first ringRead for any key cold-
+ * loads from disk into the working-set.
  */
 
 const PLUGIN_NAME = "ShadowRecon";
 
+// ─── In-memory working-set ─────────────────────────────────────────────
+
+/** @type {Map<string, Array>} */
+const _ringCache = new Map();
+/** @type {Set<string>} */
+const _ringDirty = new Set();
+/** @type {number|null} */
+let _ringFlushTimer = null;
+
+const FLUSH_DEBOUNCE_MS = 500;
+
+/**
+ * Flush all dirty keys to BdApi.Data. Safe to call from stop() even if no
+ * timer is pending — it's a no-op when nothing is dirty.
+ */
+function flushRingBuffers() {
+  if (_ringFlushTimer !== null) {
+    clearTimeout(_ringFlushTimer);
+    _ringFlushTimer = null;
+  }
+  for (const key of _ringDirty) {
+    try {
+      const arr = _ringCache.get(key);
+      if (Array.isArray(arr)) BdApi.Data.save(PLUGIN_NAME, key, arr);
+    } catch (_) {}
+  }
+  _ringDirty.clear();
+}
+
+function _scheduleFlush() {
+  if (_ringFlushTimer !== null) return; // already scheduled
+  _ringFlushTimer = setTimeout(() => {
+    _ringFlushTimer = null;
+    flushRingBuffers();
+  }, FLUSH_DEBOUNCE_MS);
+}
+
 // ─── Ring buffer helpers ───────────────────────────────────────────────
 
+/**
+ * Read a ring from the in-memory working-set, cold-loading from disk on the
+ * first access for a given key. Never hits IDB on subsequent calls within the
+ * same session.
+ */
 function ringRead(key) {
+  if (_ringCache.has(key)) return _ringCache.get(key);
   try {
     const raw = BdApi.Data.load(PLUGIN_NAME, key);
-    return Array.isArray(raw) ? raw : [];
+    const arr = Array.isArray(raw) ? raw : [];
+    _ringCache.set(key, arr);
+    return arr;
   } catch (_) {
+    _ringCache.set(key, []);
     return [];
   }
 }
 
+/**
+ * Trim the in-memory array to cap and mark it dirty for flushing.
+ * Does NOT call BdApi.Data.save synchronously.
+ */
 function ringWrite(key, arr, cap) {
   try {
     const trimmed = arr.length > cap ? arr.slice(arr.length - cap) : arr;
-    BdApi.Data.save(PLUGIN_NAME, key, trimmed);
+    _ringCache.set(key, trimmed);
+    _ringDirty.add(key);
+    _scheduleFlush();
     return trimmed;
   } catch (_) {
     return arr;
@@ -34,6 +93,8 @@ function ringWrite(key, arr, cap) {
  * Append `entry` to the ring at `key`, deduping by `bucketFn(entry) ===
  * bucketFn(lastExisting)` so e.g. multiple samples within the same hour
  * collapse to one. `entry.t` is expected to be a Date.now() timestamp.
+ *
+ * Mutates only the in-memory working-set; disk flush is debounced to 500 ms.
  */
 function ringPush(key, entry, cap, bucketFn) {
   const arr = ringRead(key);
@@ -100,6 +161,7 @@ module.exports = {
   ringRead,
   ringWrite,
   ringPush,
+  flushRingBuffers,
   bucketHour,
   bucketDay,
   dispatcherSubscribe,

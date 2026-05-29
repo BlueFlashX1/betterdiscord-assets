@@ -252,11 +252,22 @@ ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover
 }
 
 /* §9f+s — Selected/active channel: nuke ALL Discord highlight boxes,
-   then let the Selected_channel.svg do all the visual work. */
+   then let the Selected_channel.svg do all the visual work.
+   Replaced bare `*` wildcard descendants (perf-audit HIGH: forces full
+   subtree style recalc on selection change) with the specific child
+   class patterns that Discord actually applies highlight backgrounds to. */
 ul[aria-label="Channels"] li[class*="selected_"],
-ul[aria-label="Channels"] li[class*="selected_"] *,
+ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"],
+ul[aria-label="Channels"] li[class*="selected_"] [class*="wrapper_"],
+ul[aria-label="Channels"] li[class*="selected_"] [class*="name_"],
+ul[aria-label="Channels"] li[class*="selected_"] [class*="icon_"],
+ul[aria-label="Channels"] li[class*="selected_"] [class*="children_"],
 ul[aria-label="Channels"] [class*="modeSelected_"],
-ul[aria-label="Channels"] [class*="modeSelected_"] * {
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="wrapper_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="name_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="icon_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="children_"] {
   background-color: transparent !important;
   background: transparent !important;
   box-shadow: none !important;

@@ -70,6 +70,8 @@ module.exports = class EquipmentManager {
     this._popupDocClick = null;
     this._stopped = true;
     this._ready = false;
+    // Tracks the storage version at last popup render; skip re-render when unchanged.
+    this._lastPopupVersion = -1;
   }
 
   // ─── Lifecycle ──────────────────────────────────────────────────────────────
@@ -352,7 +354,8 @@ module.exports = class EquipmentManager {
     };
     document.addEventListener('mousedown', this._popupDocClick, true);
 
-    // Periodic re-render — preserves scroll position
+    // Periodic re-render — preserves scroll position.
+    // Skip the re-render entirely when storage hasn't changed since last tick.
     this._popupTickLoop = setInterval(() => {
       if (this._stopped) return;
       const p = document.getElementById(POPUP_ID);
@@ -361,6 +364,7 @@ module.exports = class EquipmentManager {
         this._popupTickLoop = null;
         return;
       }
+      if (this.storage.version === this._lastPopupVersion) return;
       const scrollTop = p.scrollTop;
       this._renderPopupContent(p);
       p.scrollTop = scrollTop;
@@ -390,11 +394,16 @@ module.exports = class EquipmentManager {
     if (!popup) popup = document.getElementById(POPUP_ID);
     if (!popup) return;
 
+    // Compute inventory once; pass the instanceMap into bonus helpers to avoid
+    // two additional getInventory() array allocations per render (HIGH fix).
     const equipped = this.storage.getEquipped();
     const inventory = this.storage.getInventory();
     const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
-    const bonuses = this._cachedBonuses || this.calculateTotalBonuses();
-    const sets = this.getActiveSetBonuses();
+    const bonuses = this._cachedBonuses || this.calculateTotalBonuses(instanceMap);
+    const sets = this.getActiveSetBonuses(instanceMap);
+
+    // Mark storage version as rendered so the tick loop can skip unchanged ticks.
+    this._lastPopupVersion = this.storage.version;
 
     // ── Equipment slot grid (2 rows × 5 cols) ─────────────────────────────
     const slotOrder = [

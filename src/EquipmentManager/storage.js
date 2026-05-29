@@ -32,6 +32,12 @@ class EquipmentStorage {
     this._dirty = new Set();     // 'inventory' | 'equipped'
     this._flushTimer = null;
     this._ready = false;
+    this._version = 0; // incremented on every mutation; used by popup dirty-check
+  }
+
+  /** Monotonically increasing counter — changes whenever inventory or equipped changes. */
+  get version() {
+    return this._version;
   }
 
   // ---------------------------------------------------------------------------
@@ -149,6 +155,7 @@ class EquipmentStorage {
   addToInventory(instance) {
     this._inventory.set(instance.instanceId, instance);
     this._dirty.add(STORE_INVENTORY);
+    this._version++;
     this._scheduleFlush();
   }
 
@@ -157,6 +164,7 @@ class EquipmentStorage {
     if (!this._inventory.has(instanceId)) return;
     this._inventory.delete(instanceId);
     this._dirty.add(STORE_INVENTORY);
+    this._version++;
     this._scheduleFlush();
   }
 
@@ -164,6 +172,7 @@ class EquipmentStorage {
   setEquipped(slot, instanceId) {
     this._equipped.set(slot, instanceId);
     this._dirty.add(STORE_EQUIPPED);
+    this._version++;
     this._scheduleFlush();
   }
 
@@ -172,6 +181,7 @@ class EquipmentStorage {
     if (!this._equipped.has(slot)) return;
     this._equipped.delete(slot);
     this._dirty.add(STORE_EQUIPPED);
+    this._version++;
     this._scheduleFlush();
   }
 

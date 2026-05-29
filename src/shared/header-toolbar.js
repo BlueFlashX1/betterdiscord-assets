@@ -107,78 +107,116 @@ function _resolveDispatcher() {
  * @param {Function} onChange — invoked with no args when re-evaluation is needed
  * @returns {Function} unsubscribe — call from your plugin's stop()
  */
-function watchToolbar(onChange) {
-  if (typeof onChange !== 'function') return () => {};
+/**
+ * Window-hosted toolbar hub — ONE MutationObserver + ONE pair of Flux
+ * subscriptions + ONE visibilitychange listener shared across EVERY plugin
+ * that calls watchToolbar(), regardless of which bundle they live in.
+ *
+ * esbuild bundles src/shared/* into each plugin separately, so module-level
+ * state is NOT shared cross-plugin — only globals are. Previously each
+ * consumer created its own observer on #app-mount (N observers firing on
+ * every Discord re-render). This collapses them to one, fanning out to all
+ * registered callbacks. Same first-wins pattern as shared/event-bus.js.
+ */
+function _getToolbarHub() {
+  if (window.__SL_ToolbarHub) return window.__SL_ToolbarHub;
 
-  let rafScheduled = false;
-  let disposed = false;
-  const fire = () => {
-    if (disposed || rafScheduled) return;
-    rafScheduled = true;
-    requestAnimationFrame(() => {
-      rafScheduled = false;
-      if (disposed) return;
-      try { onChange(); } catch (_) {}
-    });
-  };
+  const hub = {
+    callbacks: new Set(),
+    _rafScheduled: false,
+    _mo: null,
+    _dispatcherUnsubs: [],
+    _onVisibility: null,
 
-  // Dispatcher triggers — primary, covers 99% of cases.
-  const dispatcher = _resolveDispatcher();
-  const dispatcherUnsubs = [];
-  if (dispatcher) {
-    const actions = ['CHANNEL_SELECT', 'VOICE_STATE_UPDATES'];
-    for (const action of actions) {
-      try {
-        dispatcher.subscribe(action, fire);
-        dispatcherUnsubs.push(() => {
-          try { dispatcher.unsubscribe(action, fire); } catch (_) {}
-        });
-      } catch (_) {}
-    }
-  }
+    // Coalesce a burst of triggers into one rAF tick, fan out to all callbacks.
+    fireAll() {
+      if (this._rafScheduled || document.hidden) return;
+      this._rafScheduled = true;
+      requestAnimationFrame(() => {
+        this._rafScheduled = false;
+        for (const cb of this.callbacks) {
+          try { cb(); } catch (_) {}
+        }
+      });
+    },
 
-  // MutationObserver — narrow filter, only fires for direct toolbar /
-  // channel-header insertions/removals. Subtree:true is required because
-  // Discord re-renders the chat layer (which contains the channel header)
-  // as part of a larger React subtree, but we DON'T do a subtree
-  // querySelector inside the callback — only matches() on the added node
-  // itself. That keeps the callback O(1) per mutation regardless of
-  // subtree depth.
-  let mo = null;
-  try {
-    const target = document.getElementById('app-mount') || document.body;
-    mo = new MutationObserver((records) => {
-      if (disposed) return;
-      for (const r of records) {
-        for (const list of [r.addedNodes, r.removedNodes]) {
-          for (const node of list) {
-            if (node.nodeType !== 1) continue;
-            if (node.matches?.('[aria-label="Channel header"], [class*="toolbar_"]')) {
-              fire();
-              return;
-            }
-          }
+    _setup() {
+      const dispatcher = _resolveDispatcher();
+      if (dispatcher) {
+        const fire = () => this.fireAll();
+        for (const action of ['CHANNEL_SELECT', 'VOICE_STATE_UPDATES']) {
+          try {
+            dispatcher.subscribe(action, fire);
+            this._dispatcherUnsubs.push(() => {
+              try { dispatcher.unsubscribe(action, fire); } catch (_) {}
+            });
+          } catch (_) {}
         }
       }
-    });
-    mo.observe(target, { childList: true, subtree: true });
-  } catch (_) {
-    mo = null;
-  }
+      try {
+        const target = document.getElementById('app-mount') || document.body;
+        this._mo = new MutationObserver((records) => {
+          // PERF: no work while hidden; visibilitychange re-fires on return.
+          if (document.hidden) return;
+          for (const r of records) {
+            for (const list of [r.addedNodes, r.removedNodes]) {
+              for (const node of list) {
+                if (node.nodeType !== 1) continue;
+                if (node.matches?.('[aria-label="Channel header"], [class*="toolbar_"]')) {
+                  this.fireAll();
+                  return;
+                }
+              }
+            }
+          }
+        });
+        this._mo.observe(target, { childList: true, subtree: true });
+      } catch (_) { this._mo = null; }
+      try {
+        this._onVisibility = () => { if (!document.hidden) this.fireAll(); };
+        document.addEventListener('visibilitychange', this._onVisibility);
+      } catch (_) { this._onVisibility = null; }
+    },
 
-  // Fire once on attach so initial DOM is evaluated immediately.
-  fire();
+    _teardown() {
+      for (const fn of this._dispatcherUnsubs) { try { fn(); } catch (_) {} }
+      this._dispatcherUnsubs = [];
+      if (this._mo) { try { this._mo.disconnect(); } catch (_) {} this._mo = null; }
+      if (this._onVisibility) {
+        try { document.removeEventListener('visibilitychange', this._onVisibility); } catch (_) {}
+        this._onVisibility = null;
+      }
+    },
 
+    add(cb) {
+      const wasEmpty = this.callbacks.size === 0;
+      this.callbacks.add(cb);
+      if (wasEmpty) this._setup();
+      // Fire only the newly-registered callback once on attach.
+      requestAnimationFrame(() => {
+        if (this.callbacks.has(cb)) { try { cb(); } catch (_) {} }
+      });
+    },
+
+    remove(cb) {
+      this.callbacks.delete(cb);
+      if (this.callbacks.size === 0) this._teardown();
+    },
+  };
+
+  window.__SL_ToolbarHub = hub;
+  return hub;
+}
+
+function watchToolbar(onChange) {
+  if (typeof onChange !== 'function') return () => {};
+  const hub = _getToolbarHub();
+  hub.add(onChange);
+  let disposed = false;
   return function unwatch() {
     if (disposed) return;
     disposed = true;
-    for (const fn of dispatcherUnsubs) {
-      try { fn(); } catch (_) {}
-    }
-    if (mo) {
-      try { mo.disconnect(); } catch (_) {}
-      mo = null;
-    }
+    hub.remove(onChange);
   };
 }
 

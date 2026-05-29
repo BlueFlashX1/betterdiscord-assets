@@ -1,6 +1,5 @@
 const dc = require('../shared/discord-classes');
 const EDGE_THRESHOLD = 100;
-const POLL_INTERVAL_MS = 2000;
 
 function findScrollerElements() {
   const wrapper =
@@ -40,7 +39,7 @@ function useScrollerBinding(React, options) {
     setShowUp,
     setBindCount,
   } = options;
-  const { scrollerRef, wrapperRef, pollRef, lastScrollLogRef } = refs;
+  const { scrollerRef, wrapperRef, lastScrollLogRef } = refs;
 
   React.useEffect(() => {
     dbg("useEffect mounted");
@@ -270,14 +269,13 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
 
     const scrollerRef = React.useRef(null);
     const wrapperRef = React.useRef(null);
-    const pollRef = React.useRef(null);
     const domArrowsRef = React.useRef(null);
     const lastScrollLogRef = React.useRef(0);
 
     useScrollerBinding(React, {
       pluginInstance: activePlugin,
       dbg,
-      refs: { scrollerRef, wrapperRef, pollRef, lastScrollLogRef },
+      refs: { scrollerRef, wrapperRef, lastScrollLogRef },
       setShowDown,
       setShowUp,
       setBindCount,
@@ -328,12 +326,12 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
       domArrowsRef,
     });
 
-    dbg(
+    if (activePlugin._settings?.debug) dbg(
       `render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper?.isConnected}, createPortal=${portalAvailable}, showDown=${showDown}, showUp=${showUp}`
     );
 
     if (wrapperConnected && portalAvailable) {
-      dbg("render -> PORTAL path");
+      if (activePlugin._settings?.debug) dbg("render -> PORTAL path");
       return renderPortalArrows({
         React,
         ReactDOM: BdApi.ReactDOM,
@@ -345,7 +343,7 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
       });
     }
 
-    if (!wrapper) dbg("render -> NULL (no wrapper yet, waiting for findAndBind)");
+    if (!wrapper && activePlugin._settings?.debug) dbg("render -> NULL (no wrapper yet, waiting for findAndBind)");
     return null;
   };
 }

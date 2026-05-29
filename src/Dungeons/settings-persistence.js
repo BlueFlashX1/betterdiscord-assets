@@ -413,42 +413,44 @@ module.exports = {
         }
       }
 
-      // Also save to BdApi.Data (backup/legacy support). Keep this synchronous
-      // so immediate stop-time saves complete before the plugin instance can be restarted.
+      // Also save to BdApi.Data (backup/legacy support). Deferred via setTimeout so the
+      // hot path (IDB primary save) is not blocked. Snapshot is taken synchronously here
+      // before the defer so the saved value reflects this tick's state.
       const settingsSnapshot = structuredClone(this.settings);
-      let saveSuccess = false;
-      let lastError = null;
+      setTimeout(() => {
+        let saveSuccess = false;
+        let lastError = null;
 
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          BdApi.Data.save('Dungeons', 'settings', settingsSnapshot);
-          saveSuccess = true;
-          if (shouldLog) {
-            this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data', {
-              attempt: attempt + 1,
-              timestamp: new Date().toISOString(),
-            });
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            BdApi.Data.save('Dungeons', 'settings', settingsSnapshot);
+            saveSuccess = true;
+            if (shouldLog) {
+              this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data', {
+                attempt: attempt + 1,
+                timestamp: new Date().toISOString(),
+              });
+            }
+            break;
+          } catch (error) {
+            lastError = error;
           }
-          break;
-        } catch (error) {
-          lastError = error;
         }
-      }
 
-      if (!saveSuccess) {
-        this.errorLog('SAVE_SETTINGS', 'BdApi.Data save failed after 3 attempts', lastError);
-      }
-
-      // CRITICAL: Always replace backup after successful primary save (maximum persistence)
-      try {
-        BdApi.Data.save('Dungeons', 'settings_backup', settingsSnapshot);
-        if (shouldLog) {
-          this.debugLog('SAVE_SETTINGS', 'BdApi.Data backup saved');
+        if (!saveSuccess) {
+          this.errorLog('SAVE_SETTINGS', 'BdApi.Data save failed after 3 attempts', lastError);
         }
-      } catch (backupError) {
-        // Log backup failure but don't fail entire save
-        this.errorLog('SAVE_SETTINGS_BACKUP', 'BdApi.Data backup save failed', backupError);
-      }
+
+        // Always replace backup after primary save attempt (maximum persistence)
+        try {
+          BdApi.Data.save('Dungeons', 'settings_backup', settingsSnapshot);
+          if (shouldLog) {
+            this.debugLog('SAVE_SETTINGS', 'BdApi.Data backup saved');
+          }
+        } catch (backupError) {
+          this.errorLog('SAVE_SETTINGS_BACKUP', 'BdApi.Data backup save failed', backupError);
+        }
+      }, 0);
 
       if (shouldLog) {
         this._lastSaveLogTime = now;

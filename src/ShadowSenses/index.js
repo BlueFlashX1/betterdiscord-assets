@@ -22,6 +22,7 @@ const SensesEngineEvents = require("./senses-engine-events");
 const SensesEngineUtils = require("./senses-engine-utils");
 const { _TransitionCleanupUtils } = require("./shared-utils");
 const { createToast } = require("../shared/toast");
+const { onPresence } = require("../shared/presence-bus");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 const _fallbackToast = createToast();
@@ -170,7 +171,10 @@ class SensesEngine {
     this._purgeOldEntries();
     // Keep history chat-only: status/typing/relationship events are toast-only intel
     this._purgeUtilityEntries();
-    if (this._dirty || this._activityIndexDirty) this._flushToDisk();
+    // Do NOT call _flushToDisk() here — the constructor runs before the 30s
+    // flush interval is started (subscribe() hasn't been called yet) which
+    // would race with subscribe()'s interval setup. Leave the dirty flags set;
+    // the first interval tick will flush cleanly once fully initialised.
 
     this._plugin.debugLog("SensesEngine", "Loaded persisted feeds", {
       guilds: Object.keys(this._guildFeeds).length,
@@ -219,9 +223,9 @@ class SensesEngine {
     this._subscribeEvent("MESSAGE_CREATE", this._handleMessageCreate);
     this._subscribeEvent("CHANNEL_SELECT", this._handleChannelSelect);
     this._subscribeEvent("TYPING_START", this._handleTypingStart);
-    for (const eventName of PRESENCE_EVENT_NAMES) {
-      this._subscribeEvent(eventName, this._handlePresenceUpdate);
-    }
+    this._presenceUnsubs = PRESENCE_EVENT_NAMES.map(
+      (eventName) => onPresence(eventName, this._handlePresenceUpdate)
+    );
     for (const eventName of RELATIONSHIP_EVENT_NAMES) {
       this._subscribeEvent(eventName, this._handleRelationshipChange);
     }
@@ -284,6 +288,10 @@ class SensesEngine {
       }
     }
     this._subscribedEventHandlers.clear();
+    if (this._presenceUnsubs) {
+      for (const unsub of this._presenceUnsubs) { try { unsub(); } catch (_) {} }
+      this._presenceUnsubs = null;
+    }
     this._burstMap?.clear();
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
@@ -622,10 +630,11 @@ module.exports = class ShadowSenses {
     } catch (_) {}
 
     // ESC handler
-    if (this._escHandler) {
-      document.removeEventListener("keydown", this._escHandler);
-      this._escHandler = null;
+    if (this._escUnsub) {
+      this._escUnsub();
+      this._escUnsub = null;
     }
+    this._escHandler = null;
 
     // Transitions
     _TransitionCleanupUtils?.cancelPendingTransition?.(this);
@@ -1600,6 +1609,7 @@ module.exports = class ShadowSenses {
     this._Dispatcher = acquireDispatcher();
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
+    this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
     this._GuildStore = Webpack.getStore("GuildStore");
     this._UserStore = Webpack.getStore("UserStore");
     this._PresenceStore = Webpack.getStore("PresenceStore");
@@ -1611,6 +1621,7 @@ module.exports = class ShadowSenses {
       Dispatcher: !!this._Dispatcher,
       ChannelStore: !!this._ChannelStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
+      SelectedChannelStore: !!this._SelectedChannelStore,
       GuildStore: !!this._GuildStore,
       UserStore: !!this._UserStore,
       PresenceStore: !!this._PresenceStore,

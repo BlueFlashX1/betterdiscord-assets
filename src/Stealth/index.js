@@ -10,6 +10,7 @@
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { loadSettings: _sharedLoadSettings, saveSettings: _sharedSaveSettings } = require("../shared/settings");
+const { onPresence } = require("../shared/presence-bus");
 let _PluginUtils;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 const { createToast } = require("../shared/toast");
@@ -85,6 +86,17 @@ module.exports = class Stealth {
     this._protoUtils = null;
     this._sentryDisabled = false;
     this._pendingTimers = new Set();
+    // P2: cached Webpack modules resolved once in start() to avoid repeated searchExports scans
+    this._cachedSettingsManager = null;
+    this._cachedBoolSetting = null;
+    // P4: debounce handle for PRESENCE_UPDATES handler
+    this._presenceDebounceHandle = null;
+    // P4: unsub handle for PRESENCE_UPDATES routed via shared presence-bus
+    this._presenceUnsubHandle = null;
+    // P6: cached SkillTree plugin instance (invalidated on SkillTree events)
+    this._cachedSkillTreePlugin = null;
+    // P8: timestamp guard for _syncStatusPolicy no-change ACTIVE calls
+    this._lastSyncStatusTs = 0;
     this._gateState = STEALTH_GATE_STATES.UNAVAILABLE;
     this._lastGateReason = "init";
     this._skillTreeWatcher = {
@@ -130,6 +142,9 @@ module.exports = class Stealth {
 
     this._installPatches();
     this._statusSetters = this._resolveStatusSetters(); // eager resolve, avoid lazy init on hot path
+    // P2: resolve process-monitor Webpack modules once at start so _disableProcessMonitor
+    // does NOT trigger two searchExports scans on every gate activation
+    this._resolveProcessMonitorModules();
     this._setupStealthSkillGate();
     this._syncStatusPolicy();
     this._applyStealthHardening();
@@ -171,6 +186,17 @@ module.exports = class Stealth {
     this._sentryDisabled = false;
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
+    // P2/P6: clear cached modules on restart
+    this._cachedSettingsManager = null;
+    this._cachedBoolSetting = null;
+    this._cachedSkillTreePlugin = null;
+    // P4: cancel any pending presence debounce
+    if (this._presenceDebounceHandle !== null) {
+      clearTimeout(this._presenceDebounceHandle);
+      this._presenceDebounceHandle = null;
+    }
+    // P8: reset sync timestamp
+    this._lastSyncStatusTs = 0;
     this._gateState = STEALTH_GATE_STATES.UNAVAILABLE;
     this._lastGateReason = "cleared";
     BdApi.Patcher.unpatchAll(STEALTH_PLUGIN_ID);
@@ -223,7 +249,12 @@ module.exports = class Stealth {
 
   _resolveSkillTreeRuntime() {
     try {
-      const plugin = BdApi.Plugins.get(STEALTH_SKILLTREE_PLUGIN_ID);
+      // P6 FIX: cache BdApi.Plugins.get result — invalidated by _cachedSkillTreePlugin = null
+      // in the SkillTree event handlers (start/activate/expire cover all state changes)
+      if (this._cachedSkillTreePlugin === null) {
+        this._cachedSkillTreePlugin = BdApi.Plugins.get(STEALTH_SKILLTREE_PLUGIN_ID) || undefined;
+      }
+      const plugin = this._cachedSkillTreePlugin;
       const instance = plugin?.instance || null;
       if (!instance) return { available: false, unlocked: false, active: false, phase: null };
 
@@ -302,16 +333,19 @@ module.exports = class Stealth {
     this._skillTreeWatcher.stateChangeHandler = (event) => {
       const skillId = event?.detail?.skillId;
       if (skillId && skillId !== STEALTH_ACTIVE_SKILL_ID) return;
+      this._cachedSkillTreePlugin = null; // P6: invalidate on state change
       this._refreshStealthSkillGate("skill-event");
     };
     this._skillTreeWatcher.activatedHandler = (event) => {
       const skillId = event?.detail?.skillId;
       if (skillId !== STEALTH_ACTIVE_SKILL_ID) return;
+      this._cachedSkillTreePlugin = null; // P6: invalidate on activate
       this._refreshStealthSkillGate("legacy-activated");
     };
     this._skillTreeWatcher.expiredHandler = (event) => {
       const skillId = event?.detail?.skillId;
       if (skillId !== STEALTH_ACTIVE_SKILL_ID) return;
+      this._cachedSkillTreePlugin = null; // P6: invalidate on expire
       this._refreshStealthSkillGate("legacy-expired");
     };
 
@@ -379,8 +413,14 @@ module.exports = class Stealth {
     this._gateState = nextState;
 
     if (prevState === nextState) {
+      // P8 FIX: guard redundant _syncStatusPolicy calls when state is ACTIVE but unchanged.
+      // SkillTree events can fire multiple times per second; 5s cooldown prevents churn.
       if (nextState === STEALTH_GATE_STATES.ACTIVE) {
-        this._syncStatusPolicy();
+        const now = Date.now();
+        if (now - this._lastSyncStatusTs >= 5000) {
+          this._lastSyncStatusTs = now;
+          this._syncStatusPolicy();
+        }
       }
       return;
     }
@@ -428,12 +468,19 @@ module.exports = class Stealth {
   _subscribeFluxEvents() {
     if (!this._Dispatcher) return;
 
-    const events = {
-      PRESENCE_UPDATES: () => {
-        if (!this._canSuppress("invisibleStatus")) return;
-        this._ensureInvisibleStatus();
-      },
+    // P4 FIX: PRESENCE_UPDATES routed via shared presence-bus (one Flux sub for all plugins).
+    // 500ms trailing debounce preserved — presence fires very frequently on busy servers.
+    const presenceHandler = () => {
+      if (!this._canSuppress("invisibleStatus")) return;
+      if (this._presenceDebounceHandle !== null) clearTimeout(this._presenceDebounceHandle);
+      this._presenceDebounceHandle = setTimeout(() => {
+        this._presenceDebounceHandle = null;
+        if (this._canSuppress("invisibleStatus")) this._ensureInvisibleStatus();
+      }, 500);
+    };
+    this._presenceUnsubHandle = onPresence("PRESENCE_UPDATES", presenceHandler);
 
+    const events = {
       IDLE: () => {
         if (!this._canSuppress("suppressIdle")) return;
         this._recordSuppressed("idle");
@@ -479,6 +526,12 @@ module.exports = class Stealth {
   }
 
   _unsubscribeFluxEvents() {
+    // P4: release PRESENCE_UPDATES from shared presence-bus
+    if (this._presenceUnsubHandle) {
+      this._presenceUnsubHandle();
+      this._presenceUnsubHandle = null;
+    }
+
     if (!this._Dispatcher) {
       this._fluxHandlers.clear();
       return;
@@ -775,20 +828,38 @@ module.exports = class Stealth {
     }
   }
 
+  /** P2: resolve both searchExports modules once at start and cache them.
+   *  Called from start() so _disableProcessMonitor never triggers a full registry scan. */
+  _resolveProcessMonitorModules() {
+    try {
+      if (!this._cachedSettingsManager) {
+        // P3 FIX: no optional chaining in filter fn — use explicit guards
+        this._cachedSettingsManager = BdApi.Webpack.getModule(
+          (m) => m && typeof m.updateAsync === "function" && m.type === 1,
+          { searchExports: true }
+        ) || null;
+      }
+      if (!this._cachedBoolSetting) {
+        // P3 FIX: no optional chaining — explicit guards
+        this._cachedBoolSetting = BdApi.Webpack.getModule(
+          (m) => m && m.typeName && m.typeName.includes("Bool"),
+          { searchExports: true }
+        ) || null;
+      }
+    } catch (error) {
+      this._logWarning("PROCESS", "Failed to resolve process-monitor modules", error, "process-resolve");
+    }
+  }
+
   _disableProcessMonitor() {
     let patched = 0;
     try {
-      const settingsManager = BdApi.Webpack.getModule(
-        (m) => m?.updateAsync && m?.type === 1,
-        { searchExports: true }
-      );
+      // P2: use cached modules — no searchExports scan at activation time
+      const settingsManager = this._cachedSettingsManager;
       if (!settingsManager) {
         this._logWarning("PROCESS", "settingsManager module not found — showCurrentGame patch skipped", null, "process-settings-manager");
       } else {
-        const boolSetting = BdApi.Webpack.getModule(
-          (m) => m?.typeName?.includes("Bool"),
-          { searchExports: true }
-        );
+        const boolSetting = this._cachedBoolSetting;
         settingsManager.updateAsync(
           "status",
           (settings) => {
@@ -890,14 +961,18 @@ module.exports = class Stealth {
       }
     });
 
-    try {
-      add(
-        BdApi.Webpack.getModule(
-          (m) => m && fnNames.some((name) => typeof m[name] === "function")
-        )
-      );
-    } catch (error) {
-      this._logWarning("WEBPACK", "Fallback module scan failed", error, "collect-fallback-scan");
+    // P7 FIX: only run the broad fallback scan when keyCombos found nothing
+    // (avoids a redundant full-registry scan on every patch category that already matched)
+    if (modules.length === 0) {
+      try {
+        add(
+          BdApi.Webpack.getModule(
+            (m) => m && fnNames.some((name) => typeof m[name] === "function")
+          )
+        );
+      } catch (error) {
+        this._logWarning("WEBPACK", "Fallback module scan failed", error, "collect-fallback-scan");
+      }
     }
 
     return this._dedupeModules(modules);
@@ -994,7 +1069,8 @@ module.exports = class Stealth {
 
   _setSetting(key, value) {
     this.settings[key] = value;
-    this.saveSettings();
+    // P5 FIX: defer sync IDB write off the hot path (settings toggle is synchronous UI event)
+    setTimeout(() => this.saveSettings(), 0);
 
     if (this._isStatusPolicySetting(key)) {
       this._handleStatusPolicySettingChange(key);

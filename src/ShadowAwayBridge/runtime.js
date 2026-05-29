@@ -119,11 +119,77 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         module22.exports = { createWarnOnce: createWarnOnce2 };
       }
     });
+    var require_dom_bus = __commonJS2({
+      "src/shared/dom-bus.js"(exports22, module22) {
+        function _getDomBus2() {
+          if (window.__SL_DomBus) return window.__SL_DomBus;
+          const bus = {
+            _kdCapture: new Set(),
+            _kdBubble: new Set(),
+            _onKdCapture: null,
+            _onKdBubble: null,
+            _resize: new Set(),
+            _onResize: null,
+            _resizeRaf: false,
+            addKeydown(fn, capture) {
+              const set = capture ? this._kdCapture : this._kdBubble;
+              set.add(fn);
+              if (capture && !this._onKdCapture) {
+                this._onKdCapture = (e) => { for (const h of this._kdCapture) { try { h(e); } catch (_) {} } };
+                document.addEventListener("keydown", this._onKdCapture, true);
+              } else if (!capture && !this._onKdBubble) {
+                this._onKdBubble = (e) => { for (const h of this._kdBubble) { try { h(e); } catch (_) {} } };
+                document.addEventListener("keydown", this._onKdBubble, false);
+              }
+              return () => {
+                set.delete(fn);
+                if (capture && this._onKdCapture && this._kdCapture.size === 0) {
+                  document.removeEventListener("keydown", this._onKdCapture, true);
+                  this._onKdCapture = null;
+                } else if (!capture && this._onKdBubble && this._kdBubble.size === 0) {
+                  document.removeEventListener("keydown", this._onKdBubble, false);
+                  this._onKdBubble = null;
+                }
+              };
+            },
+            addResize(fn) {
+              this._resize.add(fn);
+              if (!this._onResize) {
+                this._onResize = () => {
+                  if (this._resizeRaf) return;
+                  this._resizeRaf = true;
+                  requestAnimationFrame(() => {
+                    this._resizeRaf = false;
+                    for (const h of this._resize) { try { h(); } catch (_) {} }
+                  });
+                };
+                window.addEventListener("resize", this._onResize, { passive: true });
+              }
+              return () => {
+                this._resize.delete(fn);
+                if (this._onResize && this._resize.size === 0) {
+                  window.removeEventListener("resize", this._onResize);
+                  this._onResize = null;
+                }
+              };
+            },
+          };
+          window.__SL_DomBus = bus;
+          return bus;
+        }
+        function onResize2(handler) {
+          if (typeof handler !== "function") return () => {};
+          return _getDomBus2().addResize(handler);
+        }
+        module22.exports = { onResize: onResize2 };
+      }
+    });
     var crypto = require("crypto");
     var { loadSettings, saveSettings } = require_settings();
     var { mixinDebug } = require_debug();
     var { pollForDispatcher } = require_dispatcher();
     var { createWarnOnce } = require_warn_once();
+    var { onResize } = require_dom_bus();
     // ── Toolbar tooltip helpers (mirrors shared/toolbar-tooltip.js) ────────────
     function showToolbarTooltip(icon, tooltipId, label) {
       let tip = document.getElementById(tooltipId);
@@ -256,10 +322,14 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         this._lastReturnSignalMs = 0;
         this._lastBridgeErrorToastMs = 0;
         this._headerObserver = null;
+        this._headerObserverRetryTimeout = null;
         this._headerReinjectTimeout = null;
         this._headerRouteListener = null;
         this._headerWidgetBusy = false;
         this._headerBadgePollTimer = null;
+        this._badgePollInFlight = false;
+        this._SelectedGuildStore = null;
+        this._SelectedChannelStore = null;
         this._clockOffsetMs = 0;
         this._bridgeOffline = false;
         this._queuedReturnSignal = null;
@@ -310,10 +380,10 @@ var require_ShadowAwayBridge_plugin = __commonJS({
       _getSelectedContext() {
         var _a, _b;
         try {
-          const selectedGuildStore = BdApi.Webpack.getStore("SelectedGuildStore");
-          const selectedChannelStore = BdApi.Webpack.getStore("SelectedChannelStore");
-          const guildId = ((_a = selectedGuildStore == null ? void 0 : selectedGuildStore.getGuildId) == null ? void 0 : _a.call(selectedGuildStore)) || null;
-          const channelId = ((_b = selectedChannelStore == null ? void 0 : selectedChannelStore.getChannelId) == null ? void 0 : _b.call(selectedChannelStore)) || null;
+          this._SelectedGuildStore = this._SelectedGuildStore || BdApi.Webpack.getStore("SelectedGuildStore");
+          this._SelectedChannelStore = this._SelectedChannelStore || BdApi.Webpack.getStore("SelectedChannelStore");
+          const guildId = ((_a = this._SelectedGuildStore == null ? void 0 : this._SelectedGuildStore.getGuildId) == null ? void 0 : _a.call(this._SelectedGuildStore)) || null;
+          const channelId = ((_b = this._SelectedChannelStore == null ? void 0 : this._SelectedChannelStore.getChannelId) == null ? void 0 : _b.call(this._SelectedChannelStore)) || null;
           return { guildId, channelId };
         } catch (_) {
           return { guildId: null, channelId: null };
@@ -339,6 +409,9 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         this._teardownDispatcher();
         this._queuedReturnSignal = null;
         this._queuedReturnSignalToastShown = false;
+        this._UserStore = null;
+        this._SelectedGuildStore = null;
+        this._SelectedChannelStore = null;
         this.debugLog("STOP", "ShadowAwayBridge stopped");
       }
       _setupDispatcher() {
@@ -808,7 +881,7 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           this._headerObserver = null;
         }
         this._headerRouteListener = () => this._scheduleHeaderWidgetReinject(80);
-        window.addEventListener("resize", this._headerRouteListener, { passive: true });
+        this._headerResizeUnsub = onResize(this._headerRouteListener);
         window.addEventListener("hashchange", this._headerRouteListener, { passive: true });
         this._scheduleHeaderWidgetReinject(80);
         this._refreshHeaderWidgetBadge();
@@ -852,8 +925,11 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           clearTimeout(this._headerObserverRetryTimeout);
           this._headerObserverRetryTimeout = null;
         }
+        if (this._headerResizeUnsub) {
+          this._headerResizeUnsub();
+          this._headerResizeUnsub = null;
+        }
         if (this._headerRouteListener) {
-          window.removeEventListener("resize", this._headerRouteListener);
           window.removeEventListener("hashchange", this._headerRouteListener);
         }
         this._headerRouteListener = null;
@@ -931,14 +1007,20 @@ var require_ShadowAwayBridge_plugin = __commonJS({
       }
       _startHeaderBadgePolling() {
         this._stopHeaderBadgePolling();
+        this._badgePollInFlight = false;
         this._headerBadgePollTimer = setInterval(async () => {
           if (document.hidden) return; // PERF: Skip when window not visible
+          if (this._badgePollInFlight) return; // PERF: Skip if prior async tick still running
+          this._badgePollInFlight = true;
           try {
             await this._flushQueuedReturnSignal();
             if (document.getElementById(HEADER_WIDGET_ID)) {
               await this._refreshHeaderWidgetBadge();
             }
           } catch (_) { /* badge poll — non-critical, swallow to avoid unhandled rejection every 12s */ }
+          finally {
+            this._badgePollInFlight = false;
+          }
         }, HEADER_WIDGET_BADGE_POLL_MS);
         Promise.resolve().then(async () => {
           await this._flushQueuedReturnSignal();

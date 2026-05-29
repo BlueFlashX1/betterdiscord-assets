@@ -189,9 +189,10 @@ module.exports = class PluginGuardian {
         } else {
           this._denylist.delete(id);
         }
-        this._saveDenylist();
-        this._snapshotEnabled();
-        this._reconcile();
+        this._saveDenylist(); // must persist immediately — kept sync
+        // Defer the snapshot+reconcile burst so a single toggle doesn't
+        // fire a synchronous cascade of BdApi.Plugins.isEnabled/enable calls.
+        setTimeout(() => { this._snapshotEnabled(); this._reconcile(); }, 0);
         name.style.color = cb.checked ? "#a0a0b0" : "#dcddde";
         tag.style.color = cb.checked ? "#f87171" : "#9b32ff";
         tag.textContent = cb.checked ? "denylisted" : "auto-enabled";
@@ -217,7 +218,8 @@ module.exports = class PluginGuardian {
       this._denylist = new Set(saved.filter((x) => typeof x === "string" && x.length > 0));
     } else {
       this._denylist = new Set(DEFAULT_DENYLIST);
-      this._saveDenylist();
+      // Defer initial save so it doesn't block the plugin-load path.
+      setTimeout(() => this._saveDenylist(), 0);
     }
   }
 

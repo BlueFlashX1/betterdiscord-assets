@@ -62,11 +62,19 @@ export function buildNthOfTypePath(el, maxDepth = 6) {
       break;
     }
 
-    const siblings = Array.from(parent.children).filter(
-      (c) => c.tagName && c.tagName.toLowerCase() === tag
-    );
-    const index = siblings.indexOf(current) + 1;
-    const segment = siblings.length > 1 ? `${tag}:nth-of-type(${index})` : tag;
+    // Count same-tag siblings with a plain loop — avoids Array.from + filter
+    // allocation on every hover-target change per depth level.
+    let sameTagCount = 0;
+    let currentIndex = 0;
+    const children = parent.children;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (child.tagName && child.tagName.toLowerCase() === tag) {
+        sameTagCount++;
+        if (child === current) currentIndex = sameTagCount;
+      }
+    }
+    const segment = sameTagCount > 1 ? `${tag}:nth-of-type(${currentIndex})` : tag;
     parts.unshift(segment);
 
     current = parent;

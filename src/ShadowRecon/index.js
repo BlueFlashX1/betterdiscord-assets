@@ -108,6 +108,7 @@ const {
 const {
   ringPush,
   ringRead,
+  flushRingBuffers,
   bucketHour,
   bucketDay,
   dispatcherSubscribe,
@@ -127,6 +128,7 @@ const {
   buildGuildReconActions,
   buildUserContextReconItems,
 } = require("./context-menu");
+const { onPresence } = require("../shared/presence-bus");
 
 module.exports = class ShadowRecon {
   constructor() {
@@ -232,6 +234,9 @@ module.exports = class ShadowRecon {
     this.removeServerCounterWidget();
     this.clearGuildIconHints();
     removeGuildTooltip();
+    // Flush any buffered ring writes before unsubscribing so no data is lost.
+    flushRingBuffers();
+    if (this._presenceUnsub) { this._presenceUnsub(); this._presenceUnsub = null; }
     dispatcherUnsubscribeAll(this);
     this._chokePointCache.clear();
     this._clearRuntimeCaches();
@@ -1156,10 +1161,13 @@ module.exports = class ShadowRecon {
     if (!wantSkirmish && !wantAura) return;
 
     // PRESENCE_UPDATES — both features need this.
+    // Route through the shared presence-bus (one Flux subscription for the suite).
+    // Clean up any prior unsub before re-registering (handles toggle/refresh).
+    if (this._presenceUnsub) { this._presenceUnsub(); this._presenceUnsub = null; }
     const presenceHandler = (action) => {
       try { this._onPresenceUpdate(action); } catch (_) {}
     };
-    dispatcherSubscribe(this, "PRESENCE_UPDATES", presenceHandler);
+    this._presenceUnsub = onPresence("PRESENCE_UPDATES", presenceHandler);
 
     if (wantSkirmish) {
       const voiceHandler = (action) => {
@@ -1238,15 +1246,18 @@ module.exports = class ShadowRecon {
     if (!guildId || !this.isGuildMarked(guildId)) return;
     const channelId = action?.channelId;
     if (!channelId) return;
+    // Early-exit: skip per-target getMember scans when no targets are
+    // deployed — avoids O(N) GuildMemberStore lookups on every navigation.
+    const deploymentMap = this._getShadowDeploymentMap();
+    if (deploymentMap.size === 0) return;
     // Record any marked target that's currently in this guild — the user
-    // navigated into its channel and might observe them. Lightweight
-    // single-tick scan.
-    const targetIds = this._getShadowDeploymentMap();
-    for (const userId of targetIds.keys()) {
+    // navigated into its channel and might observe them.
+    const now = Date.now();
+    for (const userId of deploymentMap.keys()) {
       if (!this._isUserPresentInGuild(userId, guildId)) continue;
       ringPush(
         `intel:skirmish:${userId}`,
-        { t: Date.now(), type: "channel-select", channelId: String(channelId), guildId: String(guildId) },
+        { t: now, type: "channel-select", channelId: String(channelId), guildId: String(guildId) },
         SKIRMISH_RING_CAP
       );
     }

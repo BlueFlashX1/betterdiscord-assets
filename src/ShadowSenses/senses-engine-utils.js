@@ -243,12 +243,15 @@ function scheduleDeferredUtilityToast(callback, delayMs = 0) {
 }
 
 function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatus, deployment }) {
-  // Lazy re-acquire if SoloLevelingToasts loaded after ShadowSenses
-  if (!this._toastEngine) {
+  // Lazy (re)acquire if SoloLevelingToasts loaded after ShadowSenses OR was
+  // reloaded since (a stale ref to a stopped engine silently drops toasts —
+  // the old `!this._toastEngine` guard never re-acquired in that case).
+  if (!this._toastEngine || this._toastEngine._isStopped) {
+    this._toastEngine = null;
     try {
       const p = BdApi.Plugins.get("SoloLevelingToasts");
       const inst = p?.instance;
-      if (inst?.toastEngineVersion >= 2) this._toastEngine = inst;
+      if (inst?.toastEngineVersion >= 2 && !inst._isStopped) this._toastEngine = inst;
     } catch (_) {}
   }
 

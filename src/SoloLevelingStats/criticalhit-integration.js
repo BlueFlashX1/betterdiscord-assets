@@ -241,8 +241,12 @@ module.exports = {
         capped: totalCritChance >= 0.5, // Indicate if it was capped at 50%
       };
   
-      // Always save agility bonus (even if 0) so CriticalHit knows current agility
-      BdApi.Data.save('SoloLevelingStats', 'agilityBonus', agilityData);
+      // Save agility bonus only when the value has changed (stat-derived; normally constant per-message).
+      const agilityKey = `${agilityData.bonus}|${agilityData.baseBonus}|${agilityData.titleCritBonus}|${agilityData.agility}|${agilityData.capped}`;
+      if (agilityKey !== this._lastAgilityBonusSaved) {
+        BdApi.Data.save('SoloLevelingStats', 'agilityBonus', agilityData);
+        this._lastAgilityBonusSaved = agilityKey;
+      }
   
       // Only log if there's a bonus
       if (cappedCritBonus > 0) {
@@ -270,16 +274,26 @@ module.exports = {
           updatedAt: Date.now(),
         };
   
-        BdApi.Data.save('SoloLevelingStats', 'perceptionBurst', perceptionData);
-  
+        // Save perceptionBurst only when the value has changed (PER stat-derived; constant per-message).
+        const perceptionKey = `${perceptionData.perception}|${perceptionData.burstChance}|${perceptionData.maxHits}|${perceptionData.jackpotChance}`;
+        if (perceptionKey !== this._lastPerceptionBurstSaved) {
+          BdApi.Data.save('SoloLevelingStats', 'perceptionBurst', perceptionData);
+          this._lastPerceptionBurstSaved = perceptionKey;
+        }
+
         // Backward compatibility payload for older readers: luck no longer affects crit chance.
-        BdApi.Data.save('SoloLevelingStats', 'luckBonus', {
-          bonus: 0,
-          perception: perceptionProfile.perception,
-          luck: perceptionProfile.perception,
-          luckBuffs: [],
-          totalBuffPercent: 0,
-        });
+        // Only write when perception (the sole varying field) has changed.
+        const luckKey = `${perceptionProfile.perception}`;
+        if (luckKey !== this._lastLuckBonusSaved) {
+          BdApi.Data.save('SoloLevelingStats', 'luckBonus', {
+            bonus: 0,
+            perception: perceptionProfile.perception,
+            luck: perceptionProfile.perception,
+            luckBuffs: [],
+            totalBuffPercent: 0,
+          });
+          this._lastLuckBonusSaved = luckKey;
+        }
   
         this.debugLog('PERCEPTION_BURST', 'Perception burst profile synced for CriticalHit', {
           perception: perceptionProfile.perception,

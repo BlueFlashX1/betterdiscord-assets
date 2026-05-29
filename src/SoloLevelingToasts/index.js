@@ -442,21 +442,13 @@ module.exports = class SoloLevelingToasts {
   }
 
   findToastByKey(groupKey) {
-    const keyedToast = this.activeToasts.find(
-      (toast) => toast?.dataset?.slGroupKey === groupKey
-    );
-    if (keyedToast) return keyedToast;
-
-    const normalized = groupKey.split("_")[0];
+    // H2 fix: dataset.slGroupKey is always set on grouped toasts (see _showToastInternal).
+    // Drop the O(n) textContent scan fallback — it read DOM text on every lookup and
+    // could never correctly match a toast that wasn't created with the same groupKey.
     return (
-      this.activeToasts.find((toast) => {
-        const toastText = toast.textContent
-          .toLowerCase()
-          .replace(/\d+/g, "N")
-          .replace(/\s+/g, " ")
-          .trim();
-        return toastText.includes(normalized.substring(0, 30));
-      }) || null
+      this.activeToasts.find(
+        (toast) => toast?.dataset?.slGroupKey === groupKey
+      ) || null
     );
   }
 
@@ -617,25 +609,16 @@ module.exports = class SoloLevelingToasts {
 
     this._clearToastFadeTimeout(toast);
 
-    const computedStyle = window.getComputedStyle(toast);
-    const currentTransform = computedStyle.transform;
-    const currentOpacity = computedStyle.opacity;
-
-    toast.style.animation = "none";
-    toast.style.transition = "none";
-    if (currentTransform && currentTransform !== "none") {
-      toast.style.transform = currentTransform;
-    }
-    if (currentOpacity) {
-      toast.style.opacity = currentOpacity;
-    }
-    // Single reflow commits animation:none + transition:none + inline values
-    void toast.offsetHeight;
-
-    toast.style.animation = "";
-    toast.style.transition = "";
-    toast.classList.add("fading-out");
+    // H1 fix: avoid forced sync reflow. Add sl-animation-reset class (animation:none
+    // via CSS) in frame 1, then swap to fading-out in frame 2. The browser batches
+    // the style invalidation across the two rAF boundaries without a sync layout read.
     toast.style.pointerEvents = "none";
+    toast.classList.add("sl-animation-reset");
+    requestAnimationFrame(() => {
+      if (!toast.parentElement) return;
+      toast.classList.remove("sl-animation-reset");
+      toast.classList.add("fading-out");
+    });
 
     this.debugLog("START_FADE_OUT", "Fade out started", {
       activeToasts: this.activeToasts.length,

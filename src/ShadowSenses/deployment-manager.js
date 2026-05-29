@@ -71,9 +71,16 @@ class DeploymentManager {
         : [];
       this._deployments = normalizedDeployments;
       this._rebuildSets();
-      // Self-heal persisted shape once if legacy records are found.
-      BdApi.Data.save(PLUGIN_NAME, "deployments", this._deployments);
-      this._debugLog("DeploymentManager", "Loaded deployments", { count: this._deployments.length });
+      // Self-heal persisted shape only when records were actually reshaped
+      // (e.g. legacy string alertKeywords → array). Avoids a sync IDB write
+      // on every cold start when data is already clean.
+      const needsReshape = !Array.isArray(saved) ||
+        saved.length !== normalizedDeployments.length ||
+        JSON.stringify(saved) !== JSON.stringify(normalizedDeployments);
+      if (needsReshape) {
+        BdApi.Data.save(PLUGIN_NAME, "deployments", this._deployments);
+      }
+      this._debugLog("DeploymentManager", "Loaded deployments", { count: this._deployments.length, reshaped: needsReshape });
     } catch (err) {
       this._debugError("DeploymentManager", "Failed to load deployments", err);
       this._deployments = [];

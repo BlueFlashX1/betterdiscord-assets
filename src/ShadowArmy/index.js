@@ -612,7 +612,13 @@ const ShadowArmy = class ShadowArmy {
         errorMessage.includes("Cannot find module 'discord_media'") ||
         errorMessage.includes('discord_media') ||
         errorStack.includes('discord_media') ||
-        errorStack.includes('nativeModules.js')
+        errorStack.includes('nativeModules.js') ||
+        // Discord's own <video>/GIFV autoplay handler only swallows
+        // NotAllowedError, so it rethrows this benign AbortError whenever a
+        // play() promise is interrupted by pause() (e.g. scrolling fast past
+        // GIFVs). Not caused by any plugin — suppress the console spam.
+        (error?.name === 'AbortError' &&
+          errorMessage.includes('The play() request was interrupted'))
       ) {
         event.preventDefault();
       }

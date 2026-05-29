@@ -78,77 +78,14 @@
 }
 
 /* §1 (continued) — Universal font override.
-   Two-layer approach:
-   Layer 1: Inheritance — set on #app-mount so all children inherit by default.
-   Layer 2: Override — catch elements where Discord hardcodes font-family via
-   inline styles or high-specificity class rules. Uses attribute selectors
-   targeting Discord's hashed class patterns instead of a bare wildcard. */
+   Single-layer approach: set font-family on #app-mount with !important so all
+   children inherit it. The !important flag on the root beats any class-based
+   Discord rule. Only inline style="" attributes can override inheritance this
+   way — those are rare and acceptable. Removed the former Layer-2 of 43
+   substring [class*=] selectors (perf-audit CRIT: recalc on every mutation). */
 
-/* Layer 1: Inheritance root — free, no per-element matching */
+/* Layer 1 only: Inheritance root — free, no per-element matching */
 #app-mount {
-  font-family: 'Friend or Foe BB', sans-serif !important;
-}
-
-/* Layer 2: Override Discord's hardcoded font-family on specific element patterns.
-   Discord sets font-family on elements with classes like message_, header_, title_,
-   input_, label_, text_, name_, etc. This catches them without a bare * selector. */
-#app-mount [class*="message_"],
-#app-mount [class*="header_"],
-#app-mount [class*="title_"],
-#app-mount [class*="input_"],
-#app-mount [class*="label_"],
-#app-mount [class*="text_"],
-#app-mount [class*="name_"],
-#app-mount [class*="content_"],
-#app-mount [class*="description_"],
-#app-mount [class*="placeholder_"],
-#app-mount [class*="username_"],
-#app-mount [class*="nickname_"],
-#app-mount [class*="channelName_"],
-#app-mount [class*="topic_"],
-#app-mount [class*="markup_"],
-#app-mount [class*="timestamp_"],
-#app-mount [class*="heading_"],
-#app-mount [class*="subtext_"],
-#app-mount [class*="note_"],
-#app-mount [class*="status_"],
-#app-mount [class*="activity_"],
-#app-mount [class*="tag_"],
-#app-mount [class*="badge_"],
-#app-mount [class*="pill_"],
-#app-mount [class*="button_"],
-#app-mount [class*="tab_"],
-#app-mount [class*="item_"],
-#app-mount [class*="option_"],
-#app-mount [class*="select_"],
-#app-mount [class*="modal_"],
-#app-mount [class*="tooltip_"],
-#app-mount [class*="notice_"],
-#app-mount [class*="toast_"],
-#app-mount [class*="card_"],
-#app-mount [class*="embed_"],
-#app-mount [class*="attachment_"],
-#app-mount [class*="reaction_"],
-#app-mount [class*="mention_"],
-#app-mount [class*="role_"],
-#app-mount [class*="sidebar_"],
-#app-mount [class*="panel_"],
-#app-mount [class*="form_"],
-#app-mount [class*="search_"],
-#app-mount [class*="typing_"],
-#app-mount [class*="members_"],
-#app-mount [class*="channel_"],
-#app-mount [class*="guild_"],
-#app-mount [class*="popout_"],
-#app-mount [class*="menu_"],
-#app-mount [class*="divider_"],
-#app-mount [class*="wrapper_"],
-#app-mount [class*="container_"],
-#app-mount span,
-#app-mount h1, #app-mount h2, #app-mount h3, #app-mount h4, #app-mount h5,
-#app-mount p, #app-mount a, #app-mount li, #app-mount label,
-#app-mount input, #app-mount textarea, #app-mount select, #app-mount option,
-#app-mount button, #app-mount strong, #app-mount em, #app-mount div {
   font-family: 'Friend or Foe BB', sans-serif !important;
 }
 

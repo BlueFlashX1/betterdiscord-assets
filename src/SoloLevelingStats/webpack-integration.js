@@ -1,8 +1,22 @@
 module.exports = {
   getCurrentUserIdFromStore() {
     try {
-      if (this.webpackModules.UserStore) {
-        const user = this.webpackModules.UserStore.getCurrentUser();
+      // Resolve UserStore from the cached module, else via the canonical BdApi
+      // store API. The legacy webpack init that used to populate
+      // this.webpackModules.UserStore is ABSENT in the modular build, so without
+      // this getStore fallback the store was never available, currentUserId
+      // never resolved, and every message read as "not own" -> zero XP (stuck
+      // at lv 1). getStore("UserStore") is the same reliable call used in
+      // criticalhit-integration.js.
+      let store = this.webpackModules && this.webpackModules.UserStore;
+      if (!store && BdApi.Webpack && typeof BdApi.Webpack.getStore === 'function') {
+        store = BdApi.Webpack.getStore('UserStore');
+        if (store && this.webpackModules) {
+          this.webpackModules.UserStore = store; // cache for subsequent calls
+        }
+      }
+      if (store) {
+        const user = store.getCurrentUser();
         if (user && user.id) {
           this.currentUserId = user.id;
           this.settings.ownUserId = user.id;

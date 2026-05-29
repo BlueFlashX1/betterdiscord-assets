@@ -144,15 +144,17 @@ module.exports = {
    *
    * @returns {object} — flat stat bonus object matching C.EMPTY_STATS shape
    */
-  calculateTotalBonuses() {
+  calculateTotalBonuses(instanceMap) {
     // 1. Start from a clean zero-baseline
     const totals = { ...C.EMPTY_STATS };
 
     const equipped = this.storage.getEquipped();
-    const inventory = this.storage.getInventory();
-
-    // Build a fast instanceId → definition lookup
-    const instanceMap = new Map(inventory.map(item => [item.instanceId, item]));
+    // Accept a pre-built instanceMap from the caller (avoids a redundant
+    // getInventory() allocation when called from _renderPopupContent).
+    if (!instanceMap) {
+      const inventory = this.storage.getInventory();
+      instanceMap = new Map(inventory.map(item => [item.instanceId, item]));
+    }
 
     // 2 & 3. Sum stats from each equipped item
     for (const [slot, instanceId] of Object.entries(equipped)) {
@@ -217,10 +219,14 @@ module.exports = {
    *
    * @returns {Array<{ setId: string, name: string, equipped: number, total: number, activeBonus: object }>}
    */
-  getActiveSetBonuses() {
+  getActiveSetBonuses(instanceMap) {
     const equipped = this.storage.getEquipped();
-    const inventory = this.storage.getInventory();
-    const instanceMap = new Map(inventory.map(item => [item.instanceId, item]));
+    // Accept a pre-built instanceMap from the caller (avoids a redundant
+    // getInventory() allocation when called from _renderPopupContent).
+    if (!instanceMap) {
+      const inventory = this.storage.getInventory();
+      instanceMap = new Map(inventory.map(item => [item.instanceId, item]));
+    }
 
     const setPieceCounts = new Map();
     for (const instanceId of Object.values(equipped)) {

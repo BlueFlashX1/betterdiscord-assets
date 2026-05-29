@@ -79,13 +79,13 @@ class WheelBridgeEngine {
     if (nextScroller === this.scroller) return;
     this.detach();
     if (!nextScroller) return;
-    nextScroller.addEventListener('wheel', this.handleWheel, { passive: false });
+    nextScroller.addEventListener('wheel', this.handleWheel, { passive: false, capture: false });
     this.scroller = nextScroller;
   }
 
   detach() {
     if (!this.scroller) return;
-    this.scroller.removeEventListener('wheel', this.handleWheel);
+    this.scroller.removeEventListener('wheel', this.handleWheel, { capture: false });
     this.scroller = null;
   }
 

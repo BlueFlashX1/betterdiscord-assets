@@ -21,6 +21,7 @@ import {
 import { applyChannelContextMenuPatch } from "./context-menu-helpers";
 import dc from "../shared/discord-classes";
 import { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } from "../shared/toolbar-tooltip";
+const { onResize } = require("../shared/dom-bus");
 // Helper: find channel sidebar element
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
@@ -128,10 +129,19 @@ export function restorePanelStates(ctx) {
     if (panelProbeTimeout) { clearTimeout(panelProbeTimeout); panelProbeTimeout = null; }
     apply();
   };
-  panelProbeObserver = new MutationObserver(() => {
-    if (probe()) finish();
+  panelProbeObserver = new MutationObserver((records) => {
+    // Prefilter: skip non-element nodes to reduce callback cost during
+    // startup hydration burst. Only element additions can satisfy probe().
+    for (const r of records) {
+      for (const node of r.addedNodes) {
+        if (node.nodeType === 1) { if (probe()) finish(); return; }
+      }
+    }
   });
-  panelProbeObserver.observe(document.body, { childList: true, subtree: true });
+  // Observe #app-mount (panels live inside it) rather than body to
+  // narrow the mutation volume during the startup hydration burst.
+  const probeRoot = document.getElementById("app-mount") || document.body;
+  panelProbeObserver.observe(probeRoot, { childList: true, subtree: true });
   panelProbeTimeout = setTimeout(finish, 4000);
 
   // Cleanup if plugin stops before observer fires
@@ -886,12 +896,7 @@ export function setupToolbarObserver(ctx) {
     }
   } catch (_) {}
 
-  if (ctx._controller) {
-    window.addEventListener("resize", () => scheduleIconReinject(ctx, 80), {
-      passive: true,
-      signal: ctx._controller.signal,
-    });
-  }
+  ctx._resizeUnsub = onResize(() => scheduleIconReinject(ctx, 80));
 
   scheduleIconReinject(ctx, 60);
 }
@@ -905,6 +910,10 @@ export function teardownToolbarObserver(ctx) {
   if (typeof ctx._voiceStateUnsub === "function") {
     try { ctx._voiceStateUnsub(); } catch (_) {}
     ctx._voiceStateUnsub = null;
+  }
+  if (typeof ctx._resizeUnsub === "function") {
+    try { ctx._resizeUnsub(); } catch (_) {}
+    ctx._resizeUnsub = null;
   }
   if (ctx._iconReinjectTimeout) {
     clearTimeout(ctx._iconReinjectTimeout);
@@ -1064,7 +1073,9 @@ export function setupSettingsGuard(ctx) {
       }
     }
   });
-  ctx._settingsGuardObserver.observe(document.body, { childList: true, subtree: true });
+  // Discord's settings modal is a DIRECT child of <body> — subtree:true is
+  // unnecessary and fires on every chat mutation. childList-only is sufficient.
+  ctx._settingsGuardObserver.observe(document.body, { childList: true });
 }
 
 export function isSettingsModalOpen() {

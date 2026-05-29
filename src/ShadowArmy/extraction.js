@@ -450,6 +450,10 @@ module.exports = {
             const shadowToSave = this.prepareShadowForSave(shadow);
             await this.storageManager.saveShadow(shadowToSave);
             this._invalidateSnapshot();
+            // Inline cache invalidation — avoids racing the +300ms widget refresh
+            // that a deferred setTimeout would cause.
+            this._armyStatsCache = null;
+            this._armyStatsCacheTime = null;
 
             // INCREMENTAL CACHE: Update total power cache
             await this.incrementTotalPower(shadowToSave);
@@ -558,19 +562,7 @@ module.exports = {
               this.invalidateShadowPowerCache(shadowToSave);
             }
 
-            // Trigger cache invalidation after small delay
-            const invalidateTimeoutId = setTimeout(() => {
-              this._retryTimeouts?.delete(invalidateTimeoutId);
-              if (this._isStopped) return;
-              try {
-                this._armyStatsCache = null;
-                this._armyStatsCacheTime = null;
-                this.debugLog('TOTAL_POWER_UPDATE', 'Invalidated full stats cache after extraction');
-              } catch (error) {
-                this.debugError('TOTAL_POWER_UPDATE', 'Failed to recalculate after extraction', error);
-              }
-            }, 100);
-            this._retryTimeouts?.add(invalidateTimeoutId);
+            this.debugLog('TOTAL_POWER_UPDATE', 'Invalidated full stats cache after extraction');
 
             this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - Shadow extraction completed successfully`, {
               attemptNum,

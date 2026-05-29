@@ -70,7 +70,13 @@ body::after {
    forum post-list column and the thread chat panel — by darkening the
    wallpaper, the seam stops showing wallpaper through and visually
    disappears. */
-body:not([data-sl-in-voice-chat="true"]):has(div[class^="chatLayerWrapper_"])::after {
+/* §2 (continued) — Replaces the :has() selector (perf-audit HIGH: recalc per
+   nav). The shared channel-context watcher (installVoiceChatBodyAttr) already
+   sets body[data-sl-in-forum-or-thread="true"] on the same CHANNEL_SELECT
+   reactive path, so we can key off that data-attr instead of a live :has()
+   query. No JS changes required — SoloLevelingTheme already calls
+   installVoiceChatBodyAttr() in start(). */
+body[data-sl-in-forum-or-thread="true"]:not([data-sl-in-voice-chat="true"])::after {
   background: rgba(0, 0, 0, 1) !important;
   transition: background 0.2s ease !important;
 }

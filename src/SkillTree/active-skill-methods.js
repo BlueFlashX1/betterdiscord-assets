@@ -301,9 +301,12 @@ const ActiveSkillMethods = {
     if (!this._activeSkillSustainIntervals) this._activeSkillSustainIntervals = {};
     this._clearActiveSkillSustain(skillId);
     let tickCounter = 0;
+    let _lastDisplayedMana = -1; // track last value forwarded to modal
 
     this._activeSkillSustainIntervals[skillId] = setInterval(() => {
       if (this._isStopped) return;
+      // Skip full reconcile when the tab is hidden — no visible change to push.
+      if (document.hidden) return;
       const running = this.isActiveSkillRunning(skillId);
       if (!running) {
         this._clearActiveSkillSustain(skillId);
@@ -349,7 +352,9 @@ const ActiveSkillMethods = {
         this._persistSettingsFast();
       }
 
-      if (typeof this._modalForceUpdate === "function") {
+      // Only trigger a React reconcile when the displayed value actually changed.
+      if (typeof this._modalForceUpdate === "function" && remainingMana !== _lastDisplayedMana) {
+        _lastDisplayedMana = remainingMana;
         this._modalForceUpdate();
       }
     }, tickMs);
