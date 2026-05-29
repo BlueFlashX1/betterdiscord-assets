@@ -849,13 +849,20 @@ module.exports = {
     if (combatEffect === 'shadow_buff' && def.shadowBuff) {
       const sb = def.shadowBuff;
       const duration = (sb.durationMs || 30000) + (sb.durationPerLevel || 0) * (passiveLevel - 1);
-      const multiplier = (sb.allStatMultiplier || 1.25) + (sb.allStatMultiplierPerLevel || 0) * (passiveLevel - 1);
+      let multiplier = (sb.allStatMultiplier || 1.25) + (sb.allStatMultiplierPerLevel || 0) * (passiveLevel - 1);
+
+      // SHADOW MONARCH PERK (Monarch's Domain -> Sovereign Territory): the domain is
+      // PERMANENT (never expires) once cast, the stat buff is +100% stronger, and the
+      // shadows are always status-immune within it. (Auto-apply-on-dungeon-start so it's
+      // truly cast-less is a follow-up refinement.)
+      const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
+      if (isShadowMonarch) multiplier += 1.0;
 
       if (!dungeon.activeBuffs) dungeon.activeBuffs = {};
       dungeon.activeBuffs.domain = {
-        expiresAt: Date.now() + duration,
+        expiresAt: isShadowMonarch ? Infinity : Date.now() + duration,
         statMultiplier: multiplier,
-        statusImmunity: Boolean(sb.statusImmunity), // Shadows immune to status effects in domain
+        statusImmunity: isShadowMonarch ? true : Boolean(sb.statusImmunity), // Shadows immune to status effects in domain
       };
 
       this.syncManaFromStats?.();

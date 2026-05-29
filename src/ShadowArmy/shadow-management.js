@@ -379,7 +379,12 @@ module.exports = {
           const baseAggregatedBuff = Math.sqrt(
             totalRolePower / config.aggregatedBuffPowerDivisor
           ) * config.aggregatedBuffScale;
-          const cappedAggregatedBuff = Math.min(config.aggregatedBaseBuffMax, baseAggregatedBuff);
+          // Legion (SM perk): army-size buff scaling cap is lifted — Infinity army, infinite
+          // scaling. For all other ranks the 0.42 hard-cap still applies.
+          const isLegionActive = this.getSoloLevelingData?.()?.rank === 'Shadow Monarch';
+          const cappedAggregatedBuff = isLegionActive
+            ? baseAggregatedBuff
+            : Math.min(config.aggregatedBaseBuffMax, baseAggregatedBuff);
           const roleMix = this.calculateRoleMixFromPowerMap(rolePowerMap);
           const diversityMultiplier = this.calculateShadowArmyDiversityMultiplier(rolePowerMap);
 
@@ -395,6 +400,7 @@ module.exports = {
             totalRolePower,
             baseAggregatedBuff: Number(baseAggregatedBuff.toFixed(4)),
             cappedAggregatedBuff: Number(cappedAggregatedBuff.toFixed(4)),
+            legion: isLegionActive,
             diversityMultiplier: Number(diversityMultiplier.toFixed(3)),
             roleMix,
           });

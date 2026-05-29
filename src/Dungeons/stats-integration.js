@@ -129,17 +129,34 @@ module.exports = {
 
   getUserCombatCritChanceBonus() {
     const bonuses = this.getSkillTreeBonuses() || null;
-    return Math.max(0, Math.min(0.35, Number(bonuses?.critBonus || 0)));
+    const raw = Math.max(0, Number(bonuses?.critBonus || 0));
+    // SHADOW MONARCH PERK (Dagger Arts -> Shadow Edge): crit-chance bonus x3, cap raised
+    // 0.35 -> 1.0. (The "first hit always crits" rider is combat-path, deferred.)
+    if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+      return Math.min(1, raw * 3);
+    }
+    return Math.min(0.35, raw);
   },
 
   getUserCritDamageBonus() {
     const bonuses = this.getSkillTreeBonuses() || null;
-    return Math.max(0, Number(bonuses?.critDamageBonus || 0));
+    const raw = Math.max(0, Number(bonuses?.critDamageBonus || 0));
+    // SHADOW MONARCH PERK (Mutilation -> Rend Reality): crit-damage bonus x2. (The
+    // "crits ignore 100% defense" rider is combat-path, deferred.)
+    if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+      return raw * 2;
+    }
+    return raw;
   },
 
   getUserAttackCooldownReduction() {
     const bonuses = this.getSkillTreeBonuses() || null;
-    return Math.max(0, Math.min(0.35, Number(bonuses?.attackCooldownReduction || 0)));
+    const raw = Math.max(0, Number(bonuses?.attackCooldownReduction || 0));
+    // SHADOW MONARCH PERK (Sprint -> Quicksilver): cooldown-reduction floor to -75%.
+    if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+      return 0.75;
+    }
+    return Math.min(0.35, raw);
   },
 
   getUserDaggerThrowDamageBonus() {

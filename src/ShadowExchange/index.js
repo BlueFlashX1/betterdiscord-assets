@@ -169,9 +169,26 @@ module.exports = class ShadowExchange {
   }
 
   /**
+   * Shadow Monarch perk: Instant Sovereign.
+   * Returns the player rank from SoloLevelingStats, or null if unavailable.
+   */
+  _getPlayerRank() {
+    try {
+      return BdApi.Plugins.get('SoloLevelingStats')?.instance?.settings?.rank || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Check if teleport is on cooldown — delegates to shared ShadowPortalCore.
+   * Shadow Monarch perk (Instant Sovereign): cooldown is always 0 at SM rank.
    */
   _checkTeleportCooldown() {
+    // Instant Sovereign: Shadow Monarch has no teleport cooldown.
+    if (this._getPlayerRank() === 'Shadow Monarch') {
+      return { onCooldown: false, remainingMs: 0, remainingText: '' };
+    }
     const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
     if (portalCore?.checkTeleportCooldown) return portalCore.checkTeleportCooldown();
     // Inline fallback if portal core unavailable

@@ -270,8 +270,31 @@ module.exports = {
     let hpChanged = false;
     let manaChanged = false;
     const skillBonuses = this.getSkillTreeBonuses?.() || {};
-    const hpRegenMultiplier = 1 + Math.max(0, Number(skillBonuses.hpRegenBonus || 0));
-    const manaRegenMultiplier = 1 + Math.max(0, Number(skillBonuses.manaRegenBonus || 0));
+
+    // SHADOW MONARCH PERK (Longevity -> Eternal Vigor, player-exclusive): out of combat,
+    // HP & mana refill to FULL instantly (no regen wait); in combat, regen is doubled.
+    const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
+    let smRegenMult = 1;
+    if (isShadowMonarch) {
+      let inCombat = false;
+      if (this.activeDungeons?.size > 0) {
+        for (const [, dg] of this.activeDungeons) {
+          if (dg?.userParticipating) { inCombat = true; break; }
+        }
+      }
+      if (!inCombat) {
+        this.settings.userHP = this.settings.userMaxHP;
+        this.settings.userMana = this.settings.userMaxMana;
+        this.pushHPToStats?.(true);
+        this.pushManaToStats?.(true);
+        this.updateStatsUI?.();
+        this.stopRegeneration();
+        return;
+      }
+      smRegenMult = 2; // doubled in-combat regen
+    }
+    const hpRegenMultiplier = (1 + Math.max(0, Number(skillBonuses.hpRegenBonus || 0))) * smRegenMult;
+    const manaRegenMultiplier = (1 + Math.max(0, Number(skillBonuses.manaRegenBonus || 0))) * smRegenMult;
 
     // DETECTION: Check if regeneration is needed
     const needsHPRegen = this.settings.userHP < this.settings.userMaxHP;
