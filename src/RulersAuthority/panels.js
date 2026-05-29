@@ -894,6 +894,13 @@ export function setupToolbarObserver(ctx) {
       Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
     if (dispatcher && typeof dispatcher.subscribe === "function") {
       const handler = () => scheduleIconReinject(ctx, 0);
+      // Drop any prior subscription first — setupToolbarObserver can re-run
+      // (e.g. on skill-level change) and would otherwise leak a handler pair
+      // each time, since the _layoutBusUnsub guard doesn't cover these.
+      if (typeof ctx._voiceStateUnsub === "function") {
+        try { ctx._voiceStateUnsub(); } catch (_) {}
+        ctx._voiceStateUnsub = null;
+      }
       dispatcher.subscribe("VOICE_STATE_UPDATES", handler);
       dispatcher.subscribe("CHANNEL_SELECT", handler);
       ctx._voiceStateUnsub = () => {

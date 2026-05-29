@@ -151,6 +151,12 @@ module.exports = class HSLDockAutoHide {
 
   _activateDockResources() {
     if (this._dockResourcesActive || this._isStopped) return;
+    // If the SkillTree event path got here first, cancel the pending fallback
+    // retry timer so it doesn't fire (and leak) after we're already active.
+    if (this._skillTreeRetryTimer) {
+      clearTimeout(this._skillTreeRetryTimer);
+      this._skillTreeRetryTimer = null;
+    }
     this._dockResourcesActive = true;
     this._engineMounted = false;
     this._fallbackEngine = null;

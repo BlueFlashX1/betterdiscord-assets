@@ -95,7 +95,6 @@ const {
 } = require("./modal-utils");
 const {
   getPlatformIntel,
-  getConnectionsIntel,
 } = require("./target-intel");
 const {
   getCurrentUserPermissionSummary,
@@ -328,12 +327,6 @@ module.exports = class ShadowRecon {
     this._SessionsStore = Webpack.getStore("SessionsStore");
 
     this._PermissionStore = Webpack.getStore("PermissionStore");
-
-    this._UserProfileStore = Webpack.getStore("UserProfileStore");
-
-    this._UserProfileActions =
-      Webpack.getByKeys("fetchProfile", "fetchUserProfile") ||
-      Webpack.getModule(m => m && (typeof m.fetchProfile === "function" || typeof m.fetchUserProfile === "function"));
 
     this._PermissionsBits =
       Webpack.getModule(m => m && typeof m === "object" && m.ADMINISTRATOR && m.VIEW_CHANNEL, { searchExports: true }) ||
@@ -1361,10 +1354,6 @@ module.exports = class ShadowRecon {
       platformLabels: PLATFORM_LABELS,
       statusLabels: STATUS_LABELS,
     });
-  }
-
-  async getConnectionsIntel(userId, guildId) {
-    return getConnectionsIntel(this, userId, guildId, PLUGIN_NAME);
   }
 
   // ---- Staff / Permissions --------------------------------------------

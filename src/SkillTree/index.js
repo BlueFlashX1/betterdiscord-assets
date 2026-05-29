@@ -590,13 +590,13 @@ module.exports = class SkillTree {
       const expectedSP = this.calculateSPForLevel(currentLevel);
       const lastLevel = this.settings.lastLevel || 1;
 
-      // Always update last level to current level (keep in sync)
+      // Just sync lastLevel here — do NOT call awardSPForLevelUp. recalc sets
+      // totalEarnedSP/skillPoints to absolute curve values below, which immediately
+      // clobber any increment, so awarding here only produced a wasted increment, a
+      // redundant save, and a phantom "+X Skill Points" toast on every startup after
+      // offline leveling. Live level-ups still toast via the levelChanged event
+      // handler and checkForLevelUp (the polling fallback) — those are unaffected.
       if (currentLevel !== lastLevel) {
-        // If level increased, award SP for the level difference
-        if (currentLevel > lastLevel) {
-          const levelsGained = currentLevel - lastLevel;
-          this.awardSPForLevelUp(levelsGained, lastLevel);
-        }
         this.settings.lastLevel = currentLevel;
       }
 
@@ -611,30 +611,16 @@ module.exports = class SkillTree {
       const currentAvailable = this.settings.skillPoints;
       const expectedAvailable = Math.max(0, expectedSP - spentSP); // Prevent negative SP
 
-      // If spentSP exceeds expectedSP, there's a calculation error - reset skills
+      // Over-spend guard (NON-destructive). This previously WIPED all skillLevels,
+      // unlockedSkills, and spent SP whenever spentSP > expectedSP. Removed: the SP
+      // curve / skill costs have been corrected so this no longer fires from a
+      // miscalculation, and a silent full skill reset is far worse than the symptom.
+      // Just log it and fall through to the clamp below, which sets available SP to
+      // max(0, expectedSP - spentSP) — skills and spent SP are preserved.
       if (spentSP > expectedSP) {
         this.debugLog(
-          `SP calculation error: spent ${spentSP} but only earned ${expectedSP}. Resetting skills...`
+          `SP over-spend detected: spent ${spentSP} vs earned ${expectedSP} for level ${currentLevel}. Clamping available SP to 0; skills preserved (no reset).`
         );
-        // CRITICAL FIX: Instead of just capping, reset all skills to fix data corruption
-        // This prevents infinite loops and ensures data integrity
-        this.settings.skillLevels = {};
-        this.settings.unlockedSkills = [];
-        this.settings.totalSpentSP = 0;
-        this.settings.skillPoints = expectedSP;
-        this.settings.totalEarnedSP = expectedSP;
-        this.saveSettings();
-        this.saveSkillBonuses(); // Clear skill bonuses
-
-        this.debugLog(`Reset all skills due to calculation error. Available SP: ${expectedSP}`);
-
-        // Show toast notification
-        BdApi?.UI?.showToast?.(
-          `Skills reset due to calculation error. You have ${expectedSP} SP for level ${currentLevel}`,
-          { type: 'warning', timeout: 5000 }
-        );
-
-        return; // Exit early after fixing
       }
 
       // Ensure available SP matches expected (always accurate)

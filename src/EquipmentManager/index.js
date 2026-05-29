@@ -101,6 +101,12 @@ module.exports = class EquipmentManager {
     this._startHeaderIcon();
 
     this._ready = true;
+
+    // Announce readiness so any plugin that loaded BEFORE us (e.g. SoloLevelingStats,
+    // which pulls equipment bonuses at its own init) re-reads now. Without this, if
+    // load order put us second and the user never changes gear, those plugins would
+    // cache zero equipment bonuses for the whole session.
+    try { this._emitChanged?.(null, 'startup'); } catch (_) {}
   }
 
   stop() {

@@ -80,7 +80,12 @@ function getSoloLevelingData() {
     if (typeof instance.getPublicAPI === 'function') {
       return instance.getPublicAPI() || null;
     }
-    return instance.settings || null;
+    // Return a defensive snapshot, NOT the live settings object — consumers
+    // must not be able to mutate SoloLevelingStats' state (and bypass its save
+    // guards) via this read accessor. Copy the top level plus the nested stats.
+    const s = instance.settings;
+    if (!s) return null;
+    return { ...s, stats: { ...(s.stats || {}) } };
   } catch (_) {
     return null;
   }

@@ -19,7 +19,10 @@
 function loadSettings(pluginId, defaults, key = "settings") {
   try {
     return { ...defaults, ...(BdApi.Data.load(pluginId, key) || {}) };
-  } catch (_) {
+  } catch (err) {
+    // Surface the failure — a silent fall-through to defaults can look like a
+    // data wipe to the user with no trace of why.
+    console.error(`[SL:settings] load failed for ${pluginId}/${key} — using defaults:`, err);
     return { ...defaults };
   }
 }
@@ -33,8 +36,10 @@ function loadSettings(pluginId, defaults, key = "settings") {
 function saveSettings(pluginId, settings, key = "settings") {
   try {
     BdApi.Data.save(pluginId, key, settings);
-  } catch (_) {
-    // ignore save failures
+  } catch (err) {
+    // 13 plugins delegate their primary save to this helper — a swallowed
+    // failure here is an invisible data-loss bug. Surface it.
+    console.error(`[SL:settings] save FAILED for ${pluginId}/${key}:`, err);
   }
 }
 
