@@ -156,7 +156,9 @@ module.exports = {
     const rankList = this.getDungeonRankList();
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
     const rankIndex = this.getRankIndexValue(userRank, rankList);
-    const maxRankIndex = rankList.length - 1;
+    // Shadow Monarch is the PLAYER's exclusive rank — dungeons cap at Monarch+.
+    const smIdx = rankList.indexOf('Shadow Monarch');
+    const maxRankIndex = smIdx > 0 ? smIdx - 1 : rankList.length - 1;
 
     // Functional: Generate weights using Array.from and map
     const weights = Array.from({ length: maxRankIndex + 1 }, (_, i) =>

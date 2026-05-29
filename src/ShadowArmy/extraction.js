@@ -198,11 +198,15 @@ module.exports = {
       return null;
     }
 
-    // Determine target rank (can extract same rank or 1 rank above)
+    // Determine target rank (can extract same rank or 1 rank above).
+    // Shadow Monarch is the PLAYER's exclusive rank — shadows cap at Monarch+, so
+    // SM is never extractable (slice end is exclusive of the Shadow Monarch index).
     const rankIndex = this.shadowRanks.indexOf(rank);
+    const smIdx = this.shadowRanks.indexOf('Shadow Monarch');
+    const rankCeil = smIdx > 0 ? smIdx : this.shadowRanks.length;
     const availableRanks = this.shadowRanks.slice(
       0,
-      Math.min(rankIndex + 2, this.shadowRanks.length)
+      Math.min(rankIndex + 2, rankCeil)
     );
     const targetRank = this._pickRandom(availableRanks) || rank;
 
