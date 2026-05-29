@@ -129,10 +129,26 @@ module.exports = {
     );
   },
 
-  calculateMobXP(mobRank, userParticipating = true) {
-    const rankIndex = this.getRankIndexValue(mobRank);
-    const baseXP = 10 + rankIndex * 5;
-    return userParticipating ? baseXP : Math.floor(baseXP * 0.3);
+  calculateMobXP(mobRank, userParticipating = true, dungeonRank = null) {
+    const rankIndex = Math.max(0, this.getRankIndexValue(mobRank));
+    // Exponential by mob rank, not flat-linear. A Monarch-tier monster is worth
+    // FAR more than an E-rank one — Solo Leveling lore: the System rewards by
+    // threat level, and mob difficulty/stats/counts all scale geometrically by
+    // rank, so the old "10 + rankIndex*5" (Monarch only 6x an E mob) made
+    // high-rank dungeons feel unrewarding. ~1.5x per rank tier:
+    //   E~8, A~40, S~61, SSS~205, Monarch~461, Shadow Monarch~1038 (pre-bonus).
+    const baseXP = Math.max(8, Math.round(8 * Math.pow(1.5, rankIndex)));
+    // Dungeon-rank bonus: clearing a higher-rank gate is worth a bit more per kill
+    // even at the same mob rank (the gate's overall threat). Falls back to mob
+    // rank when the dungeon rank isn't supplied.
+    const dungeonRankIndex = dungeonRank != null
+      ? Math.max(0, this.getRankIndexValue(dungeonRank))
+      : rankIndex;
+    const dungeonBonus = 1 + dungeonRankIndex * 0.04; // E ~1.0x → Monarch ~1.4x → SM ~1.48x
+    const xp = baseXP * dungeonBonus;
+    // Joining (fighting alongside) yields full XP; letting shadows solo (deploy-
+    // only) yields a reduced share. (Callers decide whether to pass participation.)
+    return userParticipating ? Math.round(xp) : Math.floor(xp * 0.3);
   },
 
   calculateAttacksInSpan(timeSinceLastAttack, attackCooldown, cyclesMultiplier = 1) {

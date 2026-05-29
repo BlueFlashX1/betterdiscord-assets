@@ -80,7 +80,7 @@ module.exports = {
 
     // Batch mob XP per dungeon run and award once on dungeon completion.
     // This prevents XP-event fanout during high-kill combat bursts.
-    const xpPerKill = this.calculateMobXP(mobRank, true);
+    const xpPerKill = this.calculateMobXP(mobRank, true, dungeon?.rank);
     if (xpPerKill > 0) {
       const totalMobXP = xpPerKill * killCount;
       this._queuePendingDungeonMobXP(channelKey, dungeon, totalMobXP, killCount);
