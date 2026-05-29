@@ -11,8 +11,13 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# Compiled plugin outputs (regenerable from src/ via npm run build)
-plugins/
+# Compiled plugin outputs (regenerable from src/ via npm run build).
+# Ignore everything in plugins/ EXCEPT the hand-maintained shared helper .js files
+# (BetterDiscordReactUtils.js, PluginMainLoader.js, etc.) which are real source with
+# no src/ equivalent — those must be tracked. Compiled *.plugin.js stay ignored.
+plugins/*
+!plugins/*.js
+plugins/*.plugin.js
 
 # Repo memory — sensitive session/dev state, not for backup
 memory/

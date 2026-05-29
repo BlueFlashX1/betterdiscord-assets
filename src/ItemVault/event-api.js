@@ -105,6 +105,11 @@ class ItemVaultEventAPI {
     const oldAmount = this._storage.getAmount(itemId);
     const newAmount = this._storage.set(itemId, amount);
 
+    // No-op set: another plugin (e.g. ShadowArmy/Dungeons) re-syncing an unchanged
+    // value. Skip the log and the change event so it doesn't spam the console or
+    // trigger needless downstream re-renders.
+    if (newAmount === oldAmount) return;
+
     this._debugLog(`SET ${itemId}: ${oldAmount} → ${newAmount} [${source || 'unknown'}]`);
 
     Events.emit('ItemVault:changed', {

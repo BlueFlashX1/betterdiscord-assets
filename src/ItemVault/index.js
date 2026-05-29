@@ -63,7 +63,7 @@ module.exports = class ItemVault {
   async start() {
     this._stopped = false;
     this._debugMode = BdApi.Data.load('ItemVault', 'debugMode') ?? false;
-    console.log(`[ItemVault] header-icon rules engaged · rev fd46eb0+ · ${new Date().toLocaleTimeString()}`);
+    this._log(`header-icon rules engaged · ${new Date().toLocaleTimeString()}`);
     this._log(`ItemVault v${PLUGIN_VERSION} starting...`);
 
     BdApi.DOM.addStyle(STYLE_ID, CSS);

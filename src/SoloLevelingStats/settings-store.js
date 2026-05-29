@@ -360,11 +360,18 @@ module.exports = {
     return totalXPNeeded + xp;
   },
 
-  async _getPersistedSaveFloorCandidate() {
+  async _getPersistedSaveFloorCandidate(preReadFileBackup) {
     const candidates = [];
 
+    // PERF: the file backup is a 6-file synchronous disk scan (main + 5 .bakN).
+    // When the caller (e.g. _validateCleanSettingsForSave) already read it in the
+    // same save pass, reuse that result instead of scanning again. Distinguish
+    // "passed (even as null)" from "not passed" via arguments.length so the
+    // standalone path still reads.
+    const fileBackup = arguments.length > 0 ? preReadFileBackup : this.readFileBackup();
+
     try {
-      this._collectSettingsCandidate(candidates, 'file', this.readFileBackup());
+      this._collectSettingsCandidate(candidates, 'file', fileBackup);
     } catch (_) {
       // best effort
     }
@@ -902,10 +909,16 @@ module.exports = {
       return { isValid: false, statSum };
     }
 
+    // Read the file backup ONCE here and reuse it for both the regression check
+    // below and the persisted-floor candidate (which would otherwise re-scan all
+    // 6 backup files). Halves the synchronous disk I/O per save.
+    let existingFileBackup;
+    let existingFileBackupRead = false;
     try {
-      const existingBackup = this.readFileBackup();
-      if (existingBackup?.stats) {
-        const existingStatSum = Object.values(existingBackup.stats).reduce(
+      existingFileBackup = this.readFileBackup();
+      existingFileBackupRead = true;
+      if (existingFileBackup?.stats) {
+        const existingStatSum = Object.values(existingFileBackup.stats).reduce(
           (a, b) => a + (Number(b) || 0),
           0
         );
@@ -924,7 +937,11 @@ module.exports = {
     }
 
     try {
-      const persistedFloor = await this._getPersistedSaveFloorCandidate();
+      // Reuse the backup read above when available; fall back to a fresh read only
+      // if the regression-check read threw (so the floor guard never goes blind).
+      const persistedFloor = existingFileBackupRead
+        ? await this._getPersistedSaveFloorCandidate(existingFileBackup)
+        : await this._getPersistedSaveFloorCandidate();
       const floorData = persistedFloor?.data;
       const hasFloorProgress = floorData && this._isRealProgressState(floorData);
       const hasCurrentProgress = this._isRealProgressState(cleanSettings);
