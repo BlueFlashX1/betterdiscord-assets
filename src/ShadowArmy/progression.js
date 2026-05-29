@@ -5,6 +5,14 @@
  */
 const C = require('./constants');
 
+// SHADOW MONARCH PERK (H4): once the player is the Shadow Monarch, shadow stats track the
+// player's stats by this per-rank factor. Always < 1 — higher-rank shadows scale closer
+// to the Monarch but NEVER reach (let alone exceed) the player's stats.
+const SHADOW_SCALE_FACTOR_BY_RANK = {
+  E: 0.50, D: 0.55, C: 0.60, B: 0.65, A: 0.70, S: 0.75, SS: 0.80,
+  SSS: 0.84, 'SSS+': 0.88, NH: 0.91, 'National Level': 0.91, Monarch: 0.94, 'Monarch+': 0.97,
+};
+
 module.exports = {
   // SHADOW GROWTH & LEVELING SYSTEM
 
@@ -227,13 +235,18 @@ module.exports = {
       });
     }
 
-    // SHADOW MONARCH PERK (D — Monarch's Aura, player-exclusive): while you are the
-    // Shadow Monarch, your whole army is empowered — +25% to all shadow effective
-    // stats. (getSoloLevelingData is cached, so the per-shadow check is cheap.)
-    if (this.getSoloLevelingData?.()?.rank === 'Shadow Monarch') {
-      const MONARCH_AURA = 1.25;
+    // SHADOW MONARCH PERK (H4 — shadows scale with the Monarch, never reaching them):
+    // once you are the Shadow Monarch, a shadow's stats are NO LONGER fixed — they track
+    // YOUR base stats by a per-rank factor that is always < 1 (higher-rank shadows scale
+    // closer to you, but never to 100%). This REPLACES the base/growth/grade computation
+    // above and supersedes the old flat Monarch's Aura. getSoloLevelingData is cached, so
+    // the per-shadow read is cheap even across a 10k+ army aggregation.
+    const soloData = this.getSoloLevelingData?.();
+    if (soloData?.rank === 'Shadow Monarch') {
+      const playerStats = soloData.stats || {};
+      const factor = SHADOW_SCALE_FACTOR_BY_RANK[shadow.rank] ?? 0.50;
       statKeys.forEach((stat) => {
-        effective[stat] = Math.floor(effective[stat] * MONARCH_AURA);
+        effective[stat] = Math.floor((Number(playerStats[stat]) || 0) * factor);
       });
     }
 
