@@ -198,11 +198,11 @@ const EQUIPMENT_DATABASE = {
     rarity: 'SSS',
     icon: '🌑',
     description: 'A shield formed from condensed shadow energy, said to be the literal embodiment of the Shadow Monarch\'s will. Ordinary attacks phase through its surface as if striking smoke.',
-    levelReq: 500,
-    stats: { ...EMPTY_STATS, defense: 100, vitality: 50, strength: 20 },
-    specialEffects: ['Shadow Absorption: absorbs 20% of all incoming damage as mana', 'Domain: activatable 6s invulnerability bubble (120s CD)', 'Unbreakable: cannot be destroyed or lost on death'],
-    setId: null,
-    source: 'Materialises when the Shadow Monarch reaches max rank — cannot be found in dungeons',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, defense: 10, vitality: 2 },
+    specialEffects: ['Shadow Absorption: absorbs 5% of all incoming damage as mana', 'Domain: activatable 6s invulnerability bubble (120s CD)', 'Unbreakable: cannot be destroyed or lost on death'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
     lore: 'It does not exist in any physical sense. It is presence. The mere sight of it has caused S-rank monsters to hesitate.',
   },
 
@@ -377,6 +377,148 @@ const EQUIPMENT_DATABASE = {
     lore: 'Each bead is a calcified mana core from a defeated lesser demon. The Monarch wore it as a record of conquests. Now it records yours.',
   },
 
+  // ── Shadow Monarch's Regalia — full 10-slot set ───────────────────────────
+  // Stats are intentionally minimal; real power comes from dynamic scaling
+  // in SoloLevelingStats.getTotalEffectiveStats (external, reads setId).
+
+  shadow_monarchs_blade: {
+    id: 'shadow_monarchs_blade',
+    name: "Shadow Monarch's Blade",
+    slot: 'weapon',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'A sword of pure condensed shadow, forged from the will of the Shadow Monarch himself. It exists between light and darkness.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, attack: 10, strength: 2 },
+    specialEffects: ['Shadow Affinity: all shadow-type skills deal +5% damage'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'It appeared in the Shadow Monarch\'s hand without being forged. The blade is not made of anything — it is the absence of everything.',
+  },
+
+  // offHand: shadow_monarchs_aegis is defined above (originally standalone;
+  // updated to setId: 'shadow_monarch_regalia' and levelReq: 2000).
+
+  crown_of_the_shadow_monarch: {
+    id: 'crown_of_the_shadow_monarch',
+    name: 'Crown of the Shadow Monarch',
+    slot: 'helmet',
+    rarity: 'SSS',
+    icon: '👑',
+    description: 'A circlet of living shadow that crowns the ruler of all shadows. It confers absolute authority over any shadow-type entity.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, defense: 5, intelligence: 2, perception: 2 },
+    specialEffects: ['Sovereign\'s Authority: shadow soldiers gain +3% ATK'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'Every Shadow Monarch throughout history wore an identical crown. None of them forged it. It simply arrived.',
+  },
+
+  shadow_sovereigns_mantle: {
+    id: 'shadow_sovereigns_mantle',
+    name: "Shadow Sovereign's Mantle",
+    slot: 'chestplate',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'A flowing mantle of shadow-silk that wraps the Shadow Monarch in absolute darkness. No physical force can pierce it while the Monarch\'s will holds.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, defense: 8, vitality: 2 },
+    specialEffects: ['Void Weave: 3% chance to phase through any incoming hit'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'It weighs nothing. It absorbs light. Enemies who look directly at the wearer report seeing only a silhouette even in bright daylight.',
+  },
+
+  shadow_gauntlets: {
+    id: 'shadow_gauntlets',
+    name: 'Shadow Gauntlets',
+    slot: 'gloves',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'Gauntlets of solidified shadow that amplify every strike the Shadow Monarch delivers. The fingers flex without resistance — they feel like wearing nothing.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, defense: 3, strength: 2, agility: 1 },
+    specialEffects: ['Shadow Strike: melee attacks leave a shadow imprint for 2s'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'Shadow soldiers can be summoned from the imprints left by these gauntlets. This was never documented anywhere — it simply happened.',
+  },
+
+  shadow_greaves: {
+    id: 'shadow_greaves',
+    name: 'Shadow Greaves',
+    slot: 'boots',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'Greaves that let the Shadow Monarch walk through shadows as if through air. Distance means nothing to those who command the dark.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, defense: 3, agility: 3 },
+    specialEffects: ['Shadow Step: movement through shadowed areas is silent and 10% faster'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'They leave no footprints. Not because of any enchantment — the darkness simply parts to let the Monarch pass.',
+  },
+
+  shadow_monarchs_earring: {
+    id: 'shadow_monarchs_earring',
+    name: "Shadow Monarch's Earring",
+    slot: 'earring',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'A single drop of solidified shadow, worn as an earring. It resonates with the full set, amplifying the Monarch\'s dominion.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, perception: 2, intelligence: 1 },
+    specialEffects: ['Set Piece: contributes to the Shadow Monarch\'s Regalia set bonus'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'Each piece of the Regalia holds a fragment of the Shadow Monarch\'s authority. The earring holds the fragment of awareness.',
+  },
+
+  shadow_monarchs_necklace: {
+    id: 'shadow_monarchs_necklace',
+    name: "Shadow Monarch's Necklace",
+    slot: 'necklace',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'A strand of shadow-crystal beads that encircles the Shadow Monarch\'s throat. Each bead contains the memory of a fallen enemy.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, intelligence: 2, vitality: 1 },
+    specialEffects: ['Set Piece: contributes to the Shadow Monarch\'s Regalia set bonus'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'The beads are unnumbered. Counting them produces different results each attempt. Most give up after twenty.',
+  },
+
+  shadow_monarchs_ring_left: {
+    id: 'shadow_monarchs_ring_left',
+    name: "Shadow Monarch's Ring (Void)",
+    slot: 'ring',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'A ring of pure shadow worn on the left hand. It is the seal of authority over life — the hand that commands shadows to rise.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, strength: 2, vitality: 1 },
+    specialEffects: ['Set Piece: contributes to the Shadow Monarch\'s Regalia set bonus', 'Arise: shadow extraction cost reduced by 2%'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'The word "Arise" is engraved on the inner band. It has always been there. It will always be there.',
+  },
+
+  shadow_monarchs_ring_right: {
+    id: 'shadow_monarchs_ring_right',
+    name: "Shadow Monarch's Ring (Domain)",
+    slot: 'ring',
+    rarity: 'SSS',
+    icon: '🌑',
+    description: 'A ring of pure shadow worn on the right hand. It is the seal of dominion over space — the hand that extends the Monarch\'s domain.',
+    levelReq: 2000,
+    stats: { ...EMPTY_STATS, perception: 2, agility: 1 },
+    specialEffects: ['Set Piece: contributes to the Shadow Monarch\'s Regalia set bonus', 'Domain Pulse: shadow soldier detection range +5%'],
+    setId: 'shadow_monarch_regalia',
+    source: 'Materialises for the Shadow Monarch',
+    lore: 'Twins to the Void ring. The two together form a circuit of authority that flows through the Monarch\'s entire body.',
+  },
+
   // ── Rings ─────────────────────────────────────────────────────────────────
   high_magicians_ring: {
     id: 'high_magicians_ring',
@@ -419,6 +561,30 @@ const EQUIPMENT_SETS = Object.freeze({
     bonuses: {
       2: Object.freeze({ strength: 5, agility: 5, intelligence: 5, vitality: 5, perception: 5 }),
       3: Object.freeze({ strength: 10, agility: 10, intelligence: 10, vitality: 10, perception: 10 }),
+    },
+  },
+
+  shadow_monarch_regalia: {
+    name: "Shadow Monarch's Regalia",
+    pieces: [
+      'shadow_monarchs_blade',
+      'shadow_monarchs_aegis',
+      'crown_of_the_shadow_monarch',
+      'shadow_sovereigns_mantle',
+      'shadow_gauntlets',
+      'shadow_greaves',
+      'shadow_monarchs_earring',
+      'shadow_monarchs_necklace',
+      'shadow_monarchs_ring_left',
+      'shadow_monarchs_ring_right',
+    ],
+    // Bonuses are intentionally minimal — real stat scaling is handled
+    // externally by SoloLevelingStats.getTotalEffectiveStats which reads
+    // the equipped setId count and applies dynamic rank-based scaling.
+    bonuses: {
+      3:  Object.freeze({ strength: 1, agility: 1, intelligence: 1, vitality: 1, perception: 1 }),
+      6:  Object.freeze({ strength: 2, agility: 2, intelligence: 2, vitality: 2, perception: 2 }),
+      10: Object.freeze({ strength: 3, agility: 3, intelligence: 3, vitality: 3, perception: 3 }),
     },
   },
 });

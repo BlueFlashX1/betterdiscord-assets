@@ -361,9 +361,35 @@ module.exports = {
     // Combat stats (attack, defense, critChance, critDamage) are flat additions only —
     // title and shadow multipliers are designed for base stats and must not apply here.
     const baseCombatKeys = new Set(['attack', 'defense', 'critChance', 'critDamage']);
+
+    // SHADOW MONARCH PERK (H1 — Shadow Monarch's Regalia): the SM gear has NO fixed bonus.
+    // Its power scales with the player's OWN base stats and grows over time as those grow
+    // (mob defeats -> Architect's Favor). Each equipped regalia piece contributes; the
+    // full 10-piece set scales hardest. Computed here (not the cached equipment path) so
+    // it stays fresh as base stats climb. Treated as a flat base-stat addition, like other
+    // equipment, so it then benefits from title/shadow multipliers below.
+    const smSetBonus = {};
+    if (this.settings.rank === 'Shadow Monarch') {
+      let smPieces = 0;
+      try {
+        smPieces = Number(window.EquipmentManager?.getEquippedSetPieceCount?.('shadow_monarch_regalia')) || 0;
+      } catch (_) {}
+      if (smPieces > 0) {
+        const coreKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const totalBase = coreKeys.reduce((s, k) => s + (Number(baseStats[k]) || 0), 0);
+        const SM_REGALIA_DIVISOR = 5000; // full set ≈ +100% all stats per 5000 base stats, uncapped
+        const setMultiplier = (smPieces / 10) * (totalBase / SM_REGALIA_DIVISOR);
+        if (setMultiplier > 0) {
+          for (const k of coreKeys) {
+            smSetBonus[k] = Math.floor((Number(baseStats[k]) || 0) * setMultiplier);
+          }
+        }
+      }
+    }
+
     const result = this.createEmptyStatBlock();
     for (const key of statKeys) {
-      const withEquip = baseStats[key] + (Number(equipBonuses[key]) || 0);
+      const withEquip = baseStats[key] + (Number(equipBonuses[key]) || 0) + (Number(smSetBonus[key]) || 0);
       if (baseCombatKeys.has(key)) {
         // Combat stats: flat addition only, no title/shadow multipliers
         result[key] = withEquip;

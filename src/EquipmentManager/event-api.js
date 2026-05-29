@@ -1,5 +1,24 @@
 const SLEvents = require('../shared/event-bus');
 
+// Shadow Monarch's Regalia — IDs of all 10 set pieces, ordered by slot.
+const SM_REGALIA_ITEM_IDS = [
+  'shadow_monarchs_blade',       // weapon
+  'shadow_monarchs_aegis',       // offHand
+  'crown_of_the_shadow_monarch', // helmet
+  'shadow_sovereigns_mantle',    // chestplate
+  'shadow_gauntlets',            // gloves
+  'shadow_greaves',              // boots
+  'shadow_monarchs_earring',     // earring
+  'shadow_monarchs_necklace',    // necklace
+  'shadow_monarchs_ring_left',   // ring (→ ring1)
+  'shadow_monarchs_ring_right',  // ring (→ ring2)
+];
+
+// Settings key used to persist the one-time grant flag.
+// Stored in BdApi.Data so it survives plugin reloads.
+const SM_GRANT_FLAG_KEY = '_shadowMonarchRegaliaGranted';
+const PLUGIN_NAME = 'EquipmentManager';
+
 module.exports = {
   _mountEventListeners() {
     // Listen for boss kills from Dungeons
@@ -41,6 +60,14 @@ module.exports = {
       this._bossKillRefreshTimer = setTimeout(() => this._refreshPopup(), 200);
     };
     SLEvents.on('Dungeons:awardEssence', this._onBossKill);
+
+    // Shadow Monarch rank-change detection: check on startup, then poll
+    // every 30 s. Guarded by a persisted once-flag so items are granted
+    // exactly once even across plugin reloads or Discord restarts.
+    this._checkShadowMonarchGrant();
+    this._smRankPollInterval = setInterval(() => {
+      this._checkShadowMonarchGrant();
+    }, 30_000);
   },
 
   _unmountEventListeners() {
@@ -50,11 +77,73 @@ module.exports = {
     }
     clearTimeout(this._bossKillRefreshTimer);
     this._bossKillRefreshTimer = null;
+
+    if (this._smRankPollInterval) {
+      clearInterval(this._smRankPollInterval);
+      this._smRankPollInterval = null;
+    }
+  },
+
+  /**
+   * Check if the player is Shadow Monarch rank and, if so, grant the full
+   * Shadow Monarch's Regalia set to their inventory exactly once.
+   *
+   * Idempotency: persisted via BdApi.Data[SM_GRANT_FLAG_KEY].
+   * Cross-plugin read: BdApi.Plugins.get('SoloLevelingStats')?.instance?.settings?.rank
+   */
+  _checkShadowMonarchGrant() {
+    try {
+      // 1. Bail immediately if already granted (persisted across reloads).
+      const alreadyGranted = BdApi.Data.load(PLUGIN_NAME, SM_GRANT_FLAG_KEY);
+      if (alreadyGranted) return;
+
+      // 2. Read rank from SoloLevelingStats.
+      const sls = BdApi.Plugins.get('SoloLevelingStats')?.instance;
+      const rank = sls?.settings?.rank || sls?.rank || null;
+      if (rank !== 'Shadow Monarch') return;
+
+      // 3. Grant all 10 set pieces to inventory.
+      const C = require('./constants');
+      for (const eqId of SM_REGALIA_ITEM_IDS) {
+        const instance = this.createDropInstance(eqId, 'shadow_monarch_regalia_grant');
+        this.storage.addToInventory(instance);
+
+        const def = C.getEquipmentById(eqId);
+        SLEvents.emit('EquipmentManager:itemDropped', {
+          equipmentId: eqId,
+          instanceId: instance.instanceId,
+          rarity: def?.rarity,
+          name: def?.name,
+        });
+      }
+
+      // 4. Persist the once-flag so this never runs again.
+      BdApi.Data.save(PLUGIN_NAME, SM_GRANT_FLAG_KEY, true);
+
+      // 5. Notify the player and refresh the popup if open.
+      BdApi.UI.showToast(
+        "Shadow Monarch's Regalia has materialised in your inventory.",
+        { type: 'success' }
+      );
+      this._refreshPopup?.();
+
+      SLEvents.emit('EquipmentManager:shadowMonarchRegaliaGranted', {
+        itemIds: SM_REGALIA_ITEM_IDS,
+      });
+    } catch (err) {
+      console.error('[EquipmentManager] _checkShadowMonarchGrant error:', err);
+    }
   },
 
   _exposePublicAPI() {
     window.EquipmentManager = {
       getTotalEquippedBonuses: () => this._cachedBonuses || this.calculateTotalBonuses(),
+
+      /**
+       * Returns a map of slot → equipment definition for every filled slot.
+       * Each definition includes `setId` so callers can filter by set membership.
+       * @returns {{ [slot: string]: object }}
+       */
       getEquippedItems: () => {
         const C = require('./constants');
         const equipped = this.storage.getEquipped();
@@ -67,6 +156,33 @@ module.exports = {
         }
         return result;
       },
+
+      /**
+       * Returns the number of equipped pieces belonging to the given setId.
+       * Convenience wrapper so external plugins don't need to iterate getEquippedItems().
+       *
+       * Usage from another plugin:
+       *   const count = window.EquipmentManager?.getEquippedSetPieceCount?.('shadow_monarch_regalia') ?? 0;
+       *
+       * @param {string} setId
+       * @returns {number}
+       */
+      getEquippedSetPieceCount: (setId) => {
+        const C = require('./constants');
+        const equipped = this.storage.getEquipped();
+        const inventory = this.storage.getInventory();
+        const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
+        let count = 0;
+        for (const instanceId of Object.values(equipped)) {
+          if (!instanceId) continue;
+          const inst = instanceMap.get(instanceId);
+          if (!inst) continue;
+          const def = C.getEquipmentById(inst.equipmentId);
+          if (def?.setId === setId) count++;
+        }
+        return count;
+      },
+
       getInventory: () => this.storage.getInventory(),
       isReady: () => this._ready || false,
     };
