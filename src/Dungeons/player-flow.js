@@ -1127,7 +1127,18 @@ module.exports = {
     const piercingCap = isPiercing
       ? Math.max(50, Math.floor(basePierce * piercingVariance))
       : Infinity;
-    const targetCap = isSingleTarget ? 1 : piercingCap;
+    let targetCap = isSingleTarget ? 1 : piercingCap;
+
+    // INFINITE QUIVER (Dagger Throw): the number of daggers per throw (= targets hit) is
+    // capped by RANK pre-Shadow-Monarch, and UNLIMITED at SM. Shadow-envelopment damage
+    // is applied in the damage loop below. (Equipped dagger's stats already feed base
+    // damage via getUserEffectiveStats -> calculateUserDamageBreakdown.)
+    const isDaggerThrow = def.id === 'dagger_throw' || def.passiveDamageBonusKey === 'daggerThrowDamageBonus';
+    if (isDaggerThrow) {
+      // Index by rank: E,D,C,B,A,S,SS,SSS,SSS+,NH,Monarch,Monarch+ (12 = Shadow Monarch).
+      const DAGGERS_BY_RANK = [10, 20, 35, 55, 80, 120, 170, 230, 300, 400, 550, 750];
+      targetCap = userRankIdx >= 12 ? Infinity : (DAGGERS_BY_RANK[userRankIdx] ?? 50);
+    }
 
     let aliveMobs = [];
     const rawActiveMobs = dungeon.mobs?.activeMobs || [];
@@ -1204,6 +1215,16 @@ module.exports = {
       if (def.passiveDamageBonusKey === 'daggerThrowDamageBonus' && damage > 0) {
         const throwBonus = this.getUserDaggerThrowDamageBonus?.() || 0;
         if (throwBonus > 0) damage = Math.max(1, Math.floor(damage * (1 + throwBonus)));
+
+        // INFINITE QUIVER — shadow envelopment: daggers wrapped in shadow grow stronger,
+        // scaling with the shadow army. +1% per 100 shadows, capped +150% pre-SM and
+        // +500% at Shadow Monarch (full envelopment). Uses the sync shadow-count cache.
+        const armyCount = Number(this._shadowCountCache?.count) || 0;
+        if (armyCount > 0) {
+          const isSM = userRankIdx >= 12;
+          const envelopMult = 1 + Math.min(isSM ? 5.0 : 1.5, (armyCount / 100) * 0.01);
+          if (envelopMult > 1) damage = Math.max(1, Math.floor(damage * envelopMult));
+        }
       }
 
       // Execute threshold works on mobs too (based on mob HP %)
