@@ -108,6 +108,7 @@ const {
   ringPush,
   ringRead,
   flushRingBuffers,
+  clearRingCache,
   bucketHour,
   bucketDay,
   dispatcherSubscribe,
@@ -235,6 +236,8 @@ module.exports = class ShadowRecon {
     removeGuildTooltip();
     // Flush any buffered ring writes before unsubscribing so no data is lost.
     flushRingBuffers();
+    // LEAK FIX: clear in-memory ring cache and cancel any pending debounced flush.
+    clearRingCache();
     if (this._presenceUnsub) { this._presenceUnsub(); this._presenceUnsub = null; }
     dispatcherUnsubscribeAll(this);
     this._chokePointCache.clear();

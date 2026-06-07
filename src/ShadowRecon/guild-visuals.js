@@ -332,11 +332,18 @@ function hideGuildTooltip() {
   if (tooltip) tooltip.classList.remove("shadow-recon-tooltip--visible");
 }
 
+// LEAK FIX: track all tooltip-handler nodes so clearGuildIconHints() can
+// removeEventListener them.  Keyed by node; value is { enter, leave }.
+const _tooltipHandlerNodes = new Map();
+
 function ensureTooltipHandlers(plugin, node) {
   if (node._shadowReconHoverBound) return;
   node._shadowReconHoverBound = true;
-  node.addEventListener("mouseenter", () => showGuildTooltip(plugin, node));
-  node.addEventListener("mouseleave", hideGuildTooltip);
+  const enterHandler = () => showGuildTooltip(plugin, node);
+  const leaveHandler = hideGuildTooltip;
+  node.addEventListener("mouseenter", enterHandler);
+  node.addEventListener("mouseleave", leaveHandler);
+  _tooltipHandlerNodes.set(node, { enter: enterHandler, leave: leaveHandler });
 }
 
 // PERF (2026-04-12): Cache TTL for guild hint stats. Member counts and online
@@ -424,6 +431,16 @@ function clearGuildIconHints() {
     node.removeAttribute("data-shadow-recon-hint");
     node.removeAttribute("data-shadow-recon-title");
   }
+  // LEAK FIX: remove stored mouseenter/mouseleave handlers so nodes are not
+  // retained by the _tooltipHandlerNodes Map after plugin stop.
+  for (const [node, { enter, leave }] of _tooltipHandlerNodes) {
+    try {
+      node.removeEventListener("mouseenter", enter);
+      node.removeEventListener("mouseleave", leave);
+    } catch (_) {}
+    node._shadowReconHoverBound = false;
+  }
+  _tooltipHandlerNodes.clear();
   removeGuildTooltip();
 }
 

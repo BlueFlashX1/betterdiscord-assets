@@ -24,6 +24,8 @@ const _ringCache = new Map();
 const _ringDirty = new Set();
 /** @type {number|null} */
 let _ringFlushTimer = null;
+/** @type {boolean} LEAK FIX: guard so debounced flush no-ops after stop(). */
+let _ringStopped = false;
 
 const FLUSH_DEBOUNCE_MS = 500;
 
@@ -46,11 +48,31 @@ function flushRingBuffers() {
 }
 
 function _scheduleFlush() {
+  if (_ringStopped) return; // LEAK FIX: no-op after stop()
   if (_ringFlushTimer !== null) return; // already scheduled
   _ringFlushTimer = setTimeout(() => {
     _ringFlushTimer = null;
-    flushRingBuffers();
+    if (!_ringStopped) flushRingBuffers(); // LEAK FIX: guard stale callback
   }, FLUSH_DEBOUNCE_MS);
+}
+
+/**
+ * Clear the in-memory working-set and cancel any pending flush.
+ * Call from the plugin's stop()/teardown path so the Map doesn't
+ * persist across re-enables within the same BD session.
+ */
+function clearRingCache() {
+  _ringStopped = true;
+  if (_ringFlushTimer !== null) {
+    clearTimeout(_ringFlushTimer);
+    _ringFlushTimer = null;
+  }
+  _ringCache.clear();
+  // NOTE: _ringDirty is already cleared by flushRingBuffers() on stop();
+  // if stop() calls flushRingBuffers() THEN clearRingCache() the Set is
+  // already empty. Clear defensively in case the order is reversed.
+  _ringDirty.clear();
+  _ringStopped = false; // reset so re-enable works cleanly
 }
 
 // ─── Ring buffer helpers ───────────────────────────────────────────────
@@ -162,6 +184,7 @@ module.exports = {
   ringWrite,
   ringPush,
   flushRingBuffers,
+  clearRingCache,
   bucketHour,
   bucketDay,
   dispatcherSubscribe,

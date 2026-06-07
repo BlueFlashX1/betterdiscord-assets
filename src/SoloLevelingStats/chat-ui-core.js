@@ -385,7 +385,11 @@ module.exports = {
             }
           }
         });
-        this.chatUICreationObserver.observe(document.body, { childList: true, subtree: true });
+        // PERF FIX: observe #app-mount instead of document.body to avoid
+        // receiving unrelated mutations from <head>, <html>, and browser
+        // extensions that write to the body root.
+        const _chatObserveRoot = document.getElementById("app-mount") || document.body;
+        this.chatUICreationObserver.observe(_chatObserveRoot, { childList: true, subtree: true });
 
         // Stop trying after 10 seconds (hard ceiling preserved).
         this.chatUICreationRetryTimeout = setTimeout(() => {

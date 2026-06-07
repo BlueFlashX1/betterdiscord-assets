@@ -673,15 +673,32 @@ export function isDMGripped(ctx, channelId) {
 
 export function setupDMObserver(ctx) {
   if (ctx._dmObserver) { ctx._dmObserver.disconnect(); ctx._dmObserver = null; }
+  // LEAK FIX: cancel the previous throttle's pending trailing timer before
+  // creating a new throttle closure (releaseDM calls setupDMObserver each
+  // time a DM is released, producing a new closure each call).  The timer id
+  // is captured via a shared ref object written to by the throttle wrapper.
+  if (ctx._dmThrottleTimerRef) {
+    clearTimeout(ctx._dmThrottleTimerRef.id);
+    ctx._dmThrottleTimerRef = null;
+  }
   if (ctx.settings.grippedDMs.length === 0) return;
 
   const dmList = ctx._findElement(DM_LIST_FALLBACKS);
   if (!dmList) return;
 
-  const throttledGrip = ctx._throttle(() => {
+  const timerRef = { id: null };
+  ctx._dmThrottleTimerRef = timerRef;
+  const _innerThrottle = ctx._throttle(() => {
     if (!ctx._dmObserver) return;
+    timerRef.id = null;
     applyDMGripping(ctx);
   }, RA_OBSERVER_THROTTLE_MS);
+  const throttledGrip = function (...args) {
+    // Record that the throttle may have set an internal timer; clear our ref
+    // on each invocation so a stale id is never cancelled twice.
+    timerRef.id = null;
+    _innerThrottle(...args);
+  };
 
   ctx._dmObserver = new MutationObserver(throttledGrip);
   ctx._dmObserver.observe(dmList, { childList: true, subtree: true });

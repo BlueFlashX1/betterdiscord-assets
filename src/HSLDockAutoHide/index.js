@@ -270,7 +270,12 @@ module.exports = class HSLDockAutoHide {
     if (mutation.addedNodes.length === 0 && mutation.removedNodes.length === 0) return;
     for (const list of [mutation.addedNodes, mutation.removedNodes]) {
       for (const node of list) {
+        // PERF FIX: skip text/comment nodes and known-irrelevant tags before
+        // the heavier matches/querySelector call (matches the pre-filter
+        // pattern used elsewhere in the codebase at _deactivateDockResources).
         if (node.nodeType !== 1) continue;
+        const tag = node.tagName;
+        if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "META") continue;
         if (node.matches?.(PANEL_SELECTOR_STR) || node.querySelector?.(PANEL_SELECTOR_STR)) {
           this._trySetupUserPanel();
           return;

@@ -870,6 +870,12 @@ function onTypingStart(payload) {
         userName,
         deployment,
       });
+      // LEAK FIX: prune stale typing entries (>60s old) on each insert so
+      // the Map doesn't grow unbounded across long sessions.
+      const _ltaExpiry = Date.now() - 60000;
+      for (const [_ltaKey, _ltaVal] of this._lastTypingAt) {
+        if (_ltaVal.ts < _ltaExpiry) this._lastTypingAt.delete(_ltaKey);
+      }
 
       if (this._toastEngine) {
         const avatarUrl = this._resolveUserAvatarUrl(userId) || DEFAULT_AVATAR_URL;

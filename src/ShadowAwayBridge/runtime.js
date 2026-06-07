@@ -908,9 +908,13 @@ var require_ShadowAwayBridge_plugin = __commonJS({
         }
         // Toolbar not in DOM yet — retry up to 10 times
         if (attempt < 10 && !this._isStopped) {
-          this._headerObserverRetryTimeout = setTimeout(() => {
+          // LEAK FIX: accumulate all retry timeouts so _teardownHeaderWidget
+          // can cancel every pending retry, not just the latest one.
+          if (!this._headerObserverRetryTimeouts) this._headerObserverRetryTimeouts = [];
+          const retryId = setTimeout(() => {
             this._observeToolbarArea(attempt + 1);
           }, 500);
+          this._headerObserverRetryTimeouts.push(retryId);
         }
         // After 10 retries, silently give up — the header widget still works,
         // it just won't auto-reinject on toolbar mutations.
@@ -923,6 +927,13 @@ var require_ShadowAwayBridge_plugin = __commonJS({
           }
         }
         this._headerObserver = null;
+        // LEAK FIX: cancel ALL accumulated retry timeouts (previously only the
+        // last timeout was tracked in _headerObserverRetryTimeout).
+        if (this._headerObserverRetryTimeouts) {
+          for (const id of this._headerObserverRetryTimeouts) clearTimeout(id);
+          this._headerObserverRetryTimeouts = null;
+        }
+        // Legacy scalar field — clear defensively if present from older code.
         if (this._headerObserverRetryTimeout) {
           clearTimeout(this._headerObserverRetryTimeout);
           this._headerObserverRetryTimeout = null;

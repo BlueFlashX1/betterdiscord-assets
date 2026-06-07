@@ -333,6 +333,8 @@ class SensesEngine {
     this._deferredStatusToastTimers.clear();
     for (const timer of this._deferredUtilityToastTimers) clearTimeout(timer);
     this._deferredUtilityToastTimers.clear();
+    // LEAK FIX: clear _lastTypingAt tracking map on unsubscribe.
+    if (this._lastTypingAt) { this._lastTypingAt.clear(); this._lastTypingAt = null; }
 
     this._plugin.debugLog("SensesEngine", "Unsubscribed from all events");
   }
@@ -411,6 +413,8 @@ class SensesEngine {
     this._activityIndexDirty = false;
     this._deferredStatusToastTimers = new Set();
     this._deferredUtilityToastTimers = new Set();
+    // LEAK FIX: initialize _lastTypingAt in reset so it's always a Map.
+    this._lastTypingAt = new Map();
   }
 
   clear() {
@@ -1358,6 +1362,8 @@ module.exports = class ShadowSenses {
     let attempts = 0;
     const maxAttempts = 30; // ~1.5s polling window
     const tick = () => {
+      // PERF FIX: halt busy-wait if the plugin stopped mid-loop.
+      if (this._stopped) return;
       attempts++;
       const marker = document.querySelector(".shadowsenses-igris-report-modal");
       if (!marker) {
