@@ -97,6 +97,13 @@ const ActiveSkillMethods = {
     const current = Math.max(0, Math.min(Number(nextMana) || 0, max));
     instance.settings.userMaxMana = max;
     instance.settings.userMana = current;
+    // Route through SLS's own save so a concurrent SLS tick does not overwrite these values.
+    // saveSettings() is the standard SLS persist method used throughout the SLS module.
+    // FLAG: SLS does not expose a dedicated setMana() API — direct-settings + save is the
+    //       safest available path. A proper SLS mana setter would be preferable.
+    if (typeof instance.saveSettings === "function") {
+      instance.saveSettings();
+    }
     if (typeof instance.updateChatUI === "function") {
       instance.updateChatUI();
     }

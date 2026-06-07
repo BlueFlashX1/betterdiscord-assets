@@ -96,7 +96,6 @@ module.exports = {
         return { applied: false, reason: 'backup_failed', backupKey, error };
       }
   
-      const statKeys = this.getStatKeys();
       const previousState = {
         stats: { ...this.settings.stats },
         userHP: this.settings.userHP,
@@ -110,8 +109,12 @@ module.exports = {
       };
   
       try {
-        const statSum = this.sumStatBlock(this.settings.stats);
-        const averageStat = statSum / Math.max(1, statKeys.length);
+        const BASE_STAT_KEYS = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const baseStatSum = BASE_STAT_KEYS.reduce(
+          (sum, k) => sum + (Number(this.settings.stats?.[k]) || 0),
+          0
+        );
+        const averageStat = baseStatSum / BASE_STAT_KEYS.length;
         const dampener = this.calculateRankPromotionDampener(averageStat);
         const perStatDelta = Math.max(1, Math.round(deltaBase * dampener));
   

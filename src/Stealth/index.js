@@ -510,8 +510,13 @@ module.exports = class Stealth {
       // Fires when user changes status via Discord's UI status picker
       USER_SETTINGS_PROTO_UPDATE: () => {
         if (!this._canSuppress("invisibleStatus")) return;
-        // Small delay so Discord applies the setting, then we override
-        this._scheduleTimer(() => this._ensureInvisibleStatus(), 300);
+        // Small delay so Discord applies the setting, then we override.
+        // Re-check _canSuppress inside the callback: the user may have toggled
+        // invisibleStatus off in the 300ms window, and we must not fight their change.
+        this._scheduleTimer(() => {
+          if (!this._canSuppress("invisibleStatus")) return;
+          this._ensureInvisibleStatus();
+        }, 300);
       },
     };
 

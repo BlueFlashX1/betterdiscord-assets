@@ -417,40 +417,43 @@ module.exports = class RulersAuthority {
         this._controller = null;
       }
 
-      // 3. Remove body classes and visual state.
+      // 3. Clear all hover timer state and reveal classes before removing body classes.
+      clearAllHoverStates(this);
+
+      // 4. Remove body classes and visual state.
       this._resetBodyVisualState();
 
-      // 4. Remove CSS.
+      // 5. Remove CSS.
       BdApi.DOM.removeStyle(RA_STYLE_ID);
       BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
 
-      // 5. Remove toolbar icon + tooltip.
+      // 6. Remove toolbar icon + tooltip.
       const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
       if (icon) icon.remove();
       _removeToolbarTooltip("sl-toolbar-tip-ra");
       teardownToolbarObserver(this);
 
-      // 6. Unpatch context menus.
+      // 7. Unpatch context menus.
       if (this._unpatchChannelCtx) { this._unpatchChannelCtx(); this._unpatchChannelCtx = null; }
 
-      // 7. Disconnect observers + guard interval.
+      // 8. Disconnect observers + guard interval.
       this._disconnectObserversAndGuards();
 
-      // 8. SkillTree listeners.
+      // 9. SkillTree listeners.
       this._detachSkillTreeListeners();
 
-      // 9. Guild + channel change listeners.
+      // 10. Guild + channel change listeners.
       this._detachStoreListeners();
 
-      // 10. Restore hidden channels.
+      // 11. Restore hidden channels.
       restoreAllHiddenChannels();
       restoreAllCrushedCategories();
 
-      // 11. Remove resize inline styles.
+      // 12. Remove resize inline styles.
       removeAllResizeStyles(this);
       document.body.classList.remove(RA_SETTINGS_OPEN_CLASS);
 
-      // 12. Null refs.
+      // 13. Null refs.
       this._resetRuntimeReferences();
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
