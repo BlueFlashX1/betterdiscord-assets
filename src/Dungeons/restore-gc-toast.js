@@ -463,6 +463,11 @@ module.exports = {
         if (cacheCleanupTime - (val?.timestamp || 0) > 30000) this._containerCache.delete(key);
       }
     }
+    if (this._shadowStatsCache?.size > 0) {
+      for (const [key, val] of this._shadowStatsCache) {
+        if (cacheCleanupTime - (val?.timestamp || 0) > 30000) this._shadowStatsCache.delete(key);
+      }
+    }
 
     // Clean up extraction events (keep only recent 500)
     if (this.extractionEvents && this.extractionEvents.size > 500) {

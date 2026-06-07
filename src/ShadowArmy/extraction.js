@@ -43,10 +43,25 @@ module.exports = {
       return { atCap: false, currentCount: 0, cap: Infinity, overBy: 0 };
     }
 
+    // PERF: Cache the IDB count so rapid successive messages don't each await getTotalCount().
+    // Cache is invalidated by _invalidateCapCountCache() on save and delete paths.
+    const now = Date.now();
+    if (
+      this._capCountCache !== undefined &&
+      this._capCountCacheTime &&
+      now - this._capCountCacheTime < 5000
+    ) {
+      const currentCount = this._capCountCache;
+      const overBy = Math.max(0, currentCount - cap);
+      return { atCap: currentCount >= cap, currentCount, cap, overBy };
+    }
+
     let currentCount = 0;
     if (this.storageManager && typeof this.storageManager.getTotalCount === 'function') {
       try {
         currentCount = await this.storageManager.getTotalCount();
+        this._capCountCache = currentCount;
+        this._capCountCacheTime = Date.now();
       } catch (e) {
         this.debugError('CAP_CHECK', 'Failed to get shadow count', e);
         // Safe default: block extraction rather than allow unlimited extraction on IDB error
@@ -56,6 +71,12 @@ module.exports = {
 
     const overBy = Math.max(0, currentCount - cap);
     return { atCap: currentCount >= cap, currentCount, cap, overBy };
+  },
+
+  /** Invalidate the cap-count cache. Call after any IDB write that changes the shadow count. */
+  _invalidateCapCountCache() {
+    this._capCountCache = undefined;
+    this._capCountCacheTime = 0;
   },
 
   // SOLO LEVELING INTEGRATION
@@ -462,6 +483,7 @@ module.exports = {
             // that a deferred setTimeout would cause.
             this._armyStatsCache = null;
             this._armyStatsCacheTime = null;
+            this._invalidateCapCountCache();
 
             // INCREMENTAL CACHE: Update total power cache
             await this.incrementTotalPower(shadowToSave);

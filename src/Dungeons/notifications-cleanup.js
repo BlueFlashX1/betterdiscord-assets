@@ -112,5 +112,23 @@ module.exports = {
         this.cleanupDefeatedBoss(channelKey);
       });
     }
+
+    // Prune persisted spawn-time maps: these plain objects (keyed by channelKey)
+    // grow one entry per channel ever visited and otherwise persist forever.
+    // An entry older than the channel spawn cooldown can no longer gate a spawn,
+    // so it is safe to delete. Floor at 1h to stay safe if the setting is missing.
+    const cooldownRaw = Number(this.settings?.channelSpawnCooldown);
+    const pruneAgeMs = Number.isFinite(cooldownRaw) && cooldownRaw > 0
+      ? cooldownRaw
+      : 3600000;
+    [this.settings?.lastSpawnTime, this.settings?.lastDungeonEndTime].forEach((map) => {
+      if (!map || typeof map !== 'object') return;
+      for (const channelKey of Object.keys(map)) {
+        const ts = Number(map[channelKey]);
+        if (!Number.isFinite(ts) || now - ts >= pruneAgeMs) {
+          delete map[channelKey];
+        }
+      }
+    });
   }
 };

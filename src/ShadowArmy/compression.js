@@ -296,6 +296,7 @@ module.exports = {
       await this.storageManager.deleteShadowsBatch(shadowIds);
       this.clearShadowPowerCache();
       this._invalidateSnapshot();
+      this._invalidateCapCountCache?.();
       return true;
     } catch (error) {
       this.debugError(scope, 'Batch delete error', error);
