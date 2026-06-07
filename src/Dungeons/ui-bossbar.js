@@ -505,16 +505,44 @@ module.exports = {
           hpCont.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
           hpCont.setAttribute('data-hp-percent', hpPercent);
         }
-        const textEl = hpBar.querySelector('.hp-bar-text');
+        // PERF: cache the fast-path element lookups on the hpBar element itself so the
+        // 8 querySelector calls only run once per element, not up to 4x/sec. Re-query and
+        // refresh the cache if it's missing or any cached ref has been detached from the DOM
+        // (React re-render). _cachedEls.shadow is null when the bar was built without a shadow
+        // section; .shadowsDeployed below still re-queries lazily if the section appeared later.
+        const SELECTORS = {
+          text: '.hp-bar-text',
+          hpCurrent: '.boss-hp-current',
+          hpMax: '.boss-hp-max',
+          mobAlive: '.mob-alive',
+          mobTotal: '.mob-total',
+          shadowAlive: '.shadow-alive',
+          shadowTotal: '.shadow-total',
+          shadowDead: '.shadow-dead',
+        };
+        let cachedEls = hpBar._cachedEls;
+        const cacheStale = !cachedEls ||
+          Object.keys(SELECTORS).some((key) => {
+            const el = cachedEls[key];
+            return el && !el.isConnected;
+          });
+        if (cacheStale) {
+          cachedEls = {};
+          for (const key of Object.keys(SELECTORS)) {
+            cachedEls[key] = hpBar.querySelector(SELECTORS[key]);
+          }
+          hpBar._cachedEls = cachedEls;
+        }
+        const textEl = cachedEls.text;
         if (textEl) textEl.textContent = `${Math.floor(hpPercent)}%`;
         // Boss HP + mob count text updates (avoids full innerHTML rebuild for numeric changes)
-        const hpCurrentEl = hpBar.querySelector('.boss-hp-current');
+        const hpCurrentEl = cachedEls.hpCurrent;
         if (hpCurrentEl) hpCurrentEl.textContent = Math.floor(currentBossHP).toLocaleString();
-        const hpMaxEl = hpBar.querySelector('.boss-hp-max');
+        const hpMaxEl = cachedEls.hpMax;
         if (hpMaxEl) hpMaxEl.textContent = currentBossMaxHP.toLocaleString();
-        const mobAliveEl = hpBar.querySelector('.mob-alive');
+        const mobAliveEl = cachedEls.mobAlive;
         if (mobAliveEl) mobAliveEl.textContent = aliveMobs.toLocaleString();
-        const mobTotalEl = hpBar.querySelector('.mob-total');
+        const mobTotalEl = cachedEls.mobTotal;
         if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
         // Fast-path: update shadow alive/dead counts (changes every combat tick)
         if (dungeon.shadowsDeployed) {
@@ -522,11 +550,17 @@ module.exports = {
           const deadSet = this.deadShadows?.get(channelKey);
           const deadCount = deadSet?.size || 0;
           const aliveCount = Math.max(0, allocated.length - deadCount);
-          const shadowAliveEl = hpBar.querySelector('.shadow-alive');
+          // Shadow elements may be conditionally absent from the cache (bar built without a
+          // shadow section). Lazily re-query a single selector if its slot is empty so a
+          // later-appearing section is still picked up without a full cache rebuild.
+          let shadowAliveEl = cachedEls.shadowAlive;
+          if (!shadowAliveEl) shadowAliveEl = cachedEls.shadowAlive = hpBar.querySelector('.shadow-alive');
           if (shadowAliveEl) shadowAliveEl.textContent = aliveCount.toLocaleString();
-          const shadowTotalEl = hpBar.querySelector('.shadow-total');
+          let shadowTotalEl = cachedEls.shadowTotal;
+          if (!shadowTotalEl) shadowTotalEl = cachedEls.shadowTotal = hpBar.querySelector('.shadow-total');
           if (shadowTotalEl) shadowTotalEl.textContent = allocated.length.toLocaleString();
-          const shadowDeadEl = hpBar.querySelector('.shadow-dead');
+          let shadowDeadEl = cachedEls.shadowDead;
+          if (!shadowDeadEl) shadowDeadEl = cachedEls.shadowDead = hpBar.querySelector('.shadow-dead');
           if (shadowDeadEl) {
             shadowDeadEl.textContent = deadCount > 0 ? `(${deadCount} dead)` : '';
             shadowDeadEl.style.display = deadCount > 0 ? '' : 'none';

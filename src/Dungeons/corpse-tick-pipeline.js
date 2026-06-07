@@ -25,6 +25,11 @@ module.exports = {
       strength: Number(deadMob.strength) || 0,
       isBoss,
     });
+    // In-memory cap (mirrors the IDB-flush cap in storage.js): prevent the pile
+    // from spiking past 500 between periodic saves on high kill-count dungeons.
+    if (dungeon.corpsePile.length > 500) {
+      dungeon.corpsePile = dungeon.corpsePile.slice(-500);
+    }
   },
 
   async _processCorpsePile(channelKey, dungeon, pileSnapshot = null) {

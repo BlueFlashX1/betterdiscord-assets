@@ -648,13 +648,15 @@ module.exports = {
     const shadowId = this.getShadowIdValue(shadow);
     if (!shadowId) return null;
 
-    const cacheKey = `shadow_${shadowId}`;
+    // PERF: key by raw shadowId (avoids `shadow_${id}` string allocation each call).
+    // GC path in restore-gc-toast.js only reads val.timestamp, never the key itself — safe.
+    const cacheKey = shadowId;
     const now = Date.now();
 
-    // Check cache (2500ms TTL — stats don't mutate during combat ticks)
+    // Check cache (3000ms TTL — above the ~2000ms combat tick so entries survive between ticks)
     if (this._shadowStatsCache && this._shadowStatsCache.has(cacheKey)) {
       const cached = this._shadowStatsCache.get(cacheKey);
-      if (now - cached.timestamp < 2500) {
+      if (now - cached.timestamp < 3000) {
         return cached.stats;
       }
     }

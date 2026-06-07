@@ -403,6 +403,13 @@ module.exports = {
           dungeon.mobs = { killed: 0, remaining: 0, activeMobs: [], total: 0 };
         }
 
+        // PERF TODO (FIX C — deferred, needs runtime testing):
+        // Group shadows by rank before this loop and call calculateShadowDamage once per
+        // (rank, enemy) pair instead of once per shadow. The blocker: `shadowVariance` is
+        // sampled per shadow (random per-tick), so only the deterministic `perHit` base could
+        // be shared, not the final damage. Mixed-rank armies and role multipliers (applied
+        // per shadow) would also need to be correctly folded. Safe to apply only after a
+        // runtime test comparing total damage across a full tick against the current result.
         for (
           let i = 0, processed = 0;
           i < combatReadyShadows.length && processed < maxShadowsToProcess;
