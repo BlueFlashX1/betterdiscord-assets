@@ -852,7 +852,11 @@ module.exports = class ShadowExchange {
         this._lastTeleportTime = portalCore.stampTeleportCooldown();
       } else {
         this._lastTeleportTime = Date.now();
-        BdApi.Data.save(SE_PLUGIN_ID, '_lastTeleportTime', this._lastTeleportTime);
+        // Fallback: write to the canonical ShadowPortalCore namespace so all plugins
+        // (ShadowStep, ShadowSenses, ShadowExchange) share the same cooldown record.
+        // Key mirrors ShadowPortalCore:2227-2228: SHARED_COOLDOWN_KEY="ShadowPortalCore",
+        // SHARED_COOLDOWN_DATA_KEY="_lastTeleportTime".
+        BdApi.Data.save("ShadowPortalCore", "_lastTeleportTime", this._lastTeleportTime);
       }
     };
 

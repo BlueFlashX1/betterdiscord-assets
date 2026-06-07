@@ -26,10 +26,11 @@ module.exports = {
       return;
     }
 
-    if (
-      this._messageProcessWrapper &&
-      instance.processMessageSent === this._messageProcessWrapper
-    ) {
+    // Idempotency guard: skip if the current function is already our wrapper.
+    // Check the __shadowArmyWrapped tag (set on the wrapper below) rather than
+    // identity alone, so that an SLS reload that swaps in a fresh but still-tagged
+    // function is also detected correctly.
+    if (instance.processMessageSent?.__shadowArmyWrapped === true) {
       this.debugLog('MESSAGE_LISTENER', 'processMessageSent already wrapped by ShadowArmy');
       return;
     }
@@ -177,7 +178,11 @@ module.exports = {
       if (
         instance &&
         instance.processMessageSent &&
-        (!this._messageProcessWrapper || instance.processMessageSent === this._messageProcessWrapper)
+        // Only restore if the CURRENT function is still our wrapper (tag check).
+        // If SLS reloaded and replaced processMessageSent with a new function,
+        // that function won't carry __shadowArmyWrapped — skip the restore to
+        // avoid clobbering SLS's fresh binding with our stale originalProcessMessage.
+        instance.processMessageSent.__shadowArmyWrapped === true
       ) {
         instance.processMessageSent = this.originalProcessMessage;
       }

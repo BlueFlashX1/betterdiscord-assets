@@ -250,7 +250,9 @@ module.exports = class HSLDockAutoHide {
     document.body.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
     document.body.style.removeProperty("--sl-dock-height");
     document.body.style.removeProperty("--sl-dock-peek");
-    document.body.style.removeProperty("--custom-app-panels-height");
+    // NOTE: --custom-app-panels-height is owned by UserPanelDockMover (UPDM), not by this
+    // plugin. HSLDockAutoHide never sets it, so it must never remove it — doing so would
+    // clobber UPDM's value when both plugins are active and dock-skill toggles off.
     // NOTE: user panel stays positioned — only auto-hide transitions are removed.
     // The always-on poller + STYLE_ID_USERPANEL keep the nameplate in the dock area.
     document.querySelectorAll(".sl-hsl-dock-target").forEach((el) => el.classList.remove("sl-hsl-dock-target"));
