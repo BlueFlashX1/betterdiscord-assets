@@ -22,7 +22,6 @@ const STEALTH_PLUGIN_ID = "Stealth";
 const STEALTH_STYLE_ID = "stealth-plugin-css";
 const STEALTH_SKILLTREE_PLUGIN_ID = "SkillTree";
 const STEALTH_ACTIVE_SKILL_ID = "stealth_technique";
-const STEALTH_GATE_REFRESH_MS = 15000;
 const STEALTH_GATE_STATES = Object.freeze({
   PLUGIN_DISABLED: "PLUGIN_DISABLED",
   LOCKED: "LOCKED",

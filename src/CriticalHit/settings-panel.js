@@ -106,6 +106,25 @@ module.exports = {
                 ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, `${historyCount} messages`)
               )
             )
+          ),
+          ce("div", {
+            className: "crit-stats-display",
+            style: { marginTop: "8px", padding: "12px", background: "rgba(138, 43, 226, 0.1)", borderRadius: "2px", border: "1px solid rgba(138, 43, 226, 0.2)" }
+          },
+            ce("div", { style: { display: "flex", gap: "24px", fontSize: "13px" } },
+              ce("div", null,
+                ce("span", { style: { opacity: 0.7 } }, "Effective Crit:"),
+                ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, `${effectiveCrit.toFixed(2)}%`)
+              ),
+              ce("div", null,
+                ce("span", { style: { opacity: 0.7 } }, "Agility Bonus:"),
+                ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, `+${agilityBonus.toFixed(2)}%`)
+              ),
+              ce("div", null,
+                ce("span", { style: { opacity: 0.7 } }, "Skill Bonus:"),
+                ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, `+${skillBonus.toFixed(2)}%`)
+              )
+            )
           )
         ),
 

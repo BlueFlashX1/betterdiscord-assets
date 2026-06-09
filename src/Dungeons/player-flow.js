@@ -28,8 +28,6 @@ module.exports = {
     // Also check by channel ID and identifier for extra safety
     const channelInfo = this.getChannelInfo();
     if (channelInfo) {
-      const currentChannelKey = `${channelInfo.guildId}_${channelInfo.channelId}`;
-
       // Note: no need to re-check !dungeon here — line 11 already exits if dungeon is falsy.
     }
 
@@ -1019,7 +1017,6 @@ module.exports = {
         if (rawActiveMobs[i]?.hp > 0) burstMobs.push(rawActiveMobs[i]);
       }
       let burstKills = 0;
-      let burstDamage = 0;
       const burstMult = Math.max(0.8, dmgMultiplier * 1.5); // Initial burst is 1.5x the DOT tick damage
       for (const mob of burstMobs) {
         const mobStats = { strength: mob.strength || 0, agility: mob.agility || 0, intelligence: mob.intelligence || 0, vitality: mob.vitality || 0 };
@@ -1036,7 +1033,6 @@ module.exports = {
         const mobId = this.getEnemyKey(mob, 'mob');
         const adjDmg = this.applyStatusAdjustedIncomingDamage(channelKey, 'mob', mobId, dmg, Date.now());
         mob.hp = Math.max(0, mob.hp - adjDmg);
-        burstDamage += adjDmg;
         if (mob.hp <= 0) {
           this._onMobKilled(channelKey, dungeon, mob.rank);
           this._addToCorpsePile(channelKey, mob, false);

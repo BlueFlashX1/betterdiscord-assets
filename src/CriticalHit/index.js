@@ -1,6 +1,5 @@
 const { version: PLUGIN_VERSION } = require("./manifest.json");
 const C = require("./constants");
-const { FRIENDORFOEBB_WOFF2_DATA, SPEEDYSPACEGOATODDITY_WOFF2_DATA } = require("./font-data");
 const { loadSettings, saveSettings } = require("../shared/settings");
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */

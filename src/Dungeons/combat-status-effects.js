@@ -887,7 +887,7 @@ module.exports = {
       }
 
       const deadMobsFromStatus = [];
-      for (const [mobId, bucket] of state.mobs.entries()) {
+      for (const [mobId] of state.mobs.entries()) {
         const mob = liveMobById.get(String(mobId));
         if (!mob || mob.hp <= 0) {
           state.mobs.delete(String(mobId));

@@ -53,7 +53,6 @@ module.exports = {
     }
 
     const floor = state.currentFloor || 1;
-    const isAutoAdvance = this._dcAutoAdvancing;
     this._dcAutoAdvancing = false;
 
     // Permits are only consumed to ADVANCE floors (handled by permit drop → auto-advance).

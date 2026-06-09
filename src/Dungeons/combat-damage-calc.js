@@ -1,5 +1,3 @@
-const C = require('./constants');
-
 module.exports = {
   applyBossDamageVariance(baseDamage) {
     const variance = 0.75 + Math.random() * 0.5; // 75% to 125%

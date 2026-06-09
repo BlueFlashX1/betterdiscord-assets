@@ -108,7 +108,7 @@ module.exports = class SoloLevelingTheme {
     }
 
     // Remove all injected style tags
-    for (const [id, styleEl] of this._injectedStyles) {
+    for (const [, styleEl] of this._injectedStyles) {
       if (styleEl?.isConnected) styleEl.remove();
     }
     this._injectedStyles.clear();

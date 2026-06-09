@@ -151,9 +151,6 @@ function withStartupDelay(ctx, startupState, action) {
 function showActivityToast(ctx, options) {
   const {
     deployment,
-    authorName,
-    guildName,
-    channelName,
     accentColor,
     body,
     detail,

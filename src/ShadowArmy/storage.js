@@ -455,7 +455,6 @@ class ShadowStorageManager {
 
     return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
-      let errors = 0;
 
       tx.oncomplete = () => resolve(completed);
       tx.onabort = () => reject(tx.error || new Error('saveShadowsBatch transaction aborted'));
@@ -463,7 +462,6 @@ class ShadowStorageManager {
       shadows.forEach((shadow, index) => {
         const shadowId = this.getCacheKey(shadow);
         if (!shadow || !shadowId) {
-          errors++;
           this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index });
           return;
         }
@@ -471,7 +469,6 @@ class ShadowStorageManager {
         const request = store.put(normalizedShadow);
         request.onsuccess = () => { completed++; };
         request.onerror = () => {
-          errors++;
           this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, {
             index, id: shadowId, error: request.error,
           });
@@ -739,16 +736,14 @@ class ShadowStorageManager {
 
     return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
-      let errors = 0;
 
       tx.oncomplete = () => resolve(completed);
       tx.onabort = () => reject(tx.error || new Error('updateShadowsBatch transaction aborted'));
 
       shadows.forEach((shadow, index) => {
-        if (!shadow) { errors++; return; }
+        if (!shadow) { return; }
         const idForStore = this.getCacheKey(shadow);
         if (!idForStore) {
-          errors++;
           this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, {
             index, hasI: !!shadow.i, hasId: !!shadow.id,
           });
@@ -765,7 +760,6 @@ class ShadowStorageManager {
           this.updateCache(normalizedShadow, oldShadow);
         };
         request.onerror = () => {
-          errors++;
           this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
             index, id: this.getCacheKey(normalizedShadow), error: request.error,
           });
@@ -779,13 +773,12 @@ class ShadowStorageManager {
 
     return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
-      let errors = 0;
 
       tx.oncomplete = () => resolve(completed);
       tx.onabort = () => reject(tx.error || new Error('deleteShadowsBatch transaction aborted'));
 
       shadowIds.forEach((id, index) => {
-        if (!id) { errors++; return; }
+        if (!id) { return; }
         const request = store.delete(id);
         request.onsuccess = () => {
           completed++;
@@ -797,7 +790,6 @@ class ShadowStorageManager {
           }
         };
         request.onerror = () => {
-          errors++;
           this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, {
             index, id, error: request.error,
           });

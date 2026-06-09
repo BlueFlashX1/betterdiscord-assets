@@ -39,7 +39,6 @@ module.exports = {
         this.storage.addToInventory(instance);
 
         const def = require('./constants').getEquipmentById(eqId);
-        const rarityColor = require('./constants').getRarityColor(def?.rarity);
         BdApi.UI.showToast(
           `Equipment Drop: ${def?.name || eqId} [${def?.rarity || '?'}-Rank]`,
           { type: 'success' }

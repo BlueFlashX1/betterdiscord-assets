@@ -67,16 +67,12 @@ function buildWidgetComponents(pluginInstance) {
 
   // ShadowArmyWidget
   function ShadowArmyWidget() {
-    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [data, setData] = React.useState(null);
 
-    // NOTE: forceUpdate wiring moved to refreshCounter useEffect below
-
-    // Fetch rank data on mount + whenever forceUpdate is called
+    // Fetch rank data on mount + whenever refreshCounter changes
     const [refreshCounter, setRefreshCounter] = React.useState(0);
     const fetchIdRef = React.useRef(0);
 
-    // Wire up forceUpdate to increment refreshCounter (triggers re-fetch)
     React.useEffect(() => {
       const origForceUpdate = pluginInstance._widgetForceUpdate;
       pluginInstance._widgetForceUpdate = () => setRefreshCounter((c) => c + 1);

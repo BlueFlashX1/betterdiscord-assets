@@ -1,7 +1,6 @@
 const { buildCSS } = require("./build-styles");
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createToast } = require("../shared/toast");
-const dc = require("../shared/discord-classes");
 const { loadSettings, saveSettings } = require("../shared/settings");
 
 // HARDCODED wildcard selectors — bypass dc.sel for the two runtime queries

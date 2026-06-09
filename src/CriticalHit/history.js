@@ -620,7 +620,6 @@ module.exports = {
       if (channelId && this.currentChannelId !== targetChannelId) return;
 
       const limit = Math.min(channelCrits.length, startIndex + CHUNK_SIZE);
-      let restoredInChunk = 0;
 
       for (let i = startIndex; i < limit; i++) {
         const crit = channelCrits[i];
@@ -631,7 +630,6 @@ module.exports = {
 
         if (messageElement) {
           this.restoreSingleCrit(messageElement, crit, normalizedId, retryCount);
-          restoredInChunk++;
         }
       }
 

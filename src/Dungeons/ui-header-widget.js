@@ -1,5 +1,4 @@
 const { getNavigationUtils } = require('../shared/navigation');
-const dc = require("../shared/discord-classes");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
 const { isVoiceChannelChat } = require('../shared/channel-context');
 const { watchToolbar } = require('../shared/header-toolbar');
@@ -383,7 +382,6 @@ module.exports = {
         aliveMobs,
         queuedMobs,
         mobsKilled,
-        mobsTarget,
         mobsSpawned,
       } = this._getWidgetMobMetrics(channelKey, dungeon);
       // Show kills as running total (no target — spawning is continuous until boss dies)
