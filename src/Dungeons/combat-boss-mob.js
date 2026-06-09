@@ -807,7 +807,7 @@ module.exports = {
     if (source === 'shadows') {
       // Legacy compatibility path: delegate to the canonical shadow combat engine so
       // shadow-vs-mob behavior stays in one place and cannot drift over time.
-      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible());
       return;
     }
   },

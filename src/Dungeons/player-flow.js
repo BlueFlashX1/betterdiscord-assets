@@ -446,7 +446,7 @@ module.exports = {
 
     // Run one immediate shadow attack pass so combat starts visibly.
     if (assignedShadows.length > 0) {
-      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible());
     }
     if (!dungeon.shadowsDeployed) return;
 

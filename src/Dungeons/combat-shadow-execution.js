@@ -1,7 +1,7 @@
 const C = require('./constants');
 
 module.exports = {
-  async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, shadowBudget = 250) {
+  async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null) {
     try {
       // PERF: Use hoisted visibility when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
@@ -218,82 +218,124 @@ module.exports = {
         const now = Date.now();
 
         const activeInterval = 3000;
-        const totalTimeSpan = cyclesMultiplier * activeInterval;
 
-        // PERF: Sample representative subset of shadows and scale damage up
-        const visibleTargetBudget = aliveMobs.length > 0
-          ? Math.max(80, Math.min(shadowBudget, aliveMobs.length * 2))
-          : Math.max(100, Math.min(shadowBudget, 160));
-        const backgroundTargetBudget = Math.max(20, Math.min(80, Math.floor(assignedShadows.length * 0.25)));
-        const sampleCap = isWindowVisible ? visibleTargetBudget : backgroundTargetBudget;
+        // PERF + PRECISION (Item C, 2026-06-08): Rotating-subset hybrid.
+        //
+        // OLD approach: reservoir-sample TICK_BUDGET shadows from the whole army each tick,
+        // then multiply damage by scaleFactor (up to 200×) to approximate the rest.
+        // Problem: (a) iterates EVERY assigned shadow to build the sample — O(N) per tick;
+        //          (b) scaleFactor is an approximation; imprecise at large N.
+        //
+        // NEW approach: per-dungeon rotation cursor advances TICK_BUDGET positions each tick.
+        // Each shadow is processed exactly once per rotation cycle (ceil(N/B) ticks).
+        // Each processed shadow uses its REAL elapsed time since it was last processed.
+        // getCappedAttackElapsedMs clamps elapsed to max(totalTimeSpan*2, cooldown*4).
+        // If we pass totalTimeSpan=ONE_TICK the cap eats the rotation period for large armies
+        // (50k army → 100-tick revisit → ~300s elapsed → clamped to ~8s → ~4 attacks instead of ~150).
+        // FIX: compute revisitSpan = ceil(N/B) × tickInterval and pass it as the span arg so
+        // getCappedAttackElapsedMs allows the full inter-visit elapsed through uncapped.
+        //
+        // DPS equivalence (corrected):
+        //   revisitSpan ≈ elapsed since last visit. getCappedAttackElapsedMs clamps to
+        //   max(revisitSpan*2, cooldown*4) ≥ revisitSpan, so timeSinceLastAttack passes through.
+        //   attacks = floor(elapsed / cooldown) = exact attacks over the real inter-visit window.
+        //   Summed over a full rotation cycle: Σ attacks = Σ floor(revisitSpan / cooldown)
+        //   = N × floor(revisitSpan / cooldown) = total real attacks with no over/under-count.
+        //   For N ≤ TICK_BUDGET: revisitSpan = 1 tick — identical to the old per-tick sim.
+        //
+        // TICK_BUDGET: tunable const. 500 = processes 500 shadows per tick regardless of army size.
+        // At 50k army this is 1% per tick, full rotation in ~100 ticks.
+        const TICK_BUDGET = 500;
+
+        // revisitSpan: the real wall-clock interval between a shadow's successive visits.
+        // At a 50k army with TICK_BUDGET=500 each shadow is visited once every 100 ticks.
+        // Each tick fires every ~3s (activeInterval), so revisitSpan ≈ 100 × 3000 = 300 000ms.
+        // This is passed as the `totalTimeSpan` arg to calculateAttacksInTimeSpan and
+        // getPostAttackTimestamp so getCappedAttackElapsedMs's maxCatchUp = max(revisitSpan*2,
+        // cooldown*4) ≥ revisitSpan, allowing the full elapsed window through without truncation.
+        // Capped at 5 min to prevent a pathological burst after a long idle.
+        const previewAssignedLen = assignedShadows.length; // snapshot before cursor scan
+        const rotationTicks = previewAssignedLen > 0
+          ? Math.ceil(previewAssignedLen / TICK_BUDGET)
+          : 1;
+        const revisitSpan = Math.min(
+          rotationTicks * cyclesMultiplier * activeInterval,
+          5 * 60 * 1000  // 5-minute safety cap
+        );
+
+        // Init per-dungeon rotation cursor and last-processed map on first use.
+        if (!Number.isFinite(dungeon._rotationCursor)) dungeon._rotationCursor = 0;
+        if (!(dungeon._shadowLastProcessed instanceof Map)) dungeon._shadowLastProcessed = new Map();
+        const shadowLastProcessed = dungeon._shadowLastProcessed;
 
         const { exchangeMarkedIds, sensesDeployedIds } = this._getCachedExclusionSets();
-        const combatReadyShadows = [];
+
+        // Build the slice to process this tick: TICK_BUDGET shadows starting at cursor.
+        // We scan assignedShadows starting at cursor, collect up to TICK_BUDGET combat-ready ones,
+        // then advance the cursor past what we scanned (wrap-around included).
+        const totalAssigned = assignedShadows.length;
         let aliveShadowCount = 0;
-        let combatReadyCount = 0;
-        for (const shadow of assignedShadows) {
-          const shadowId = this.getShadowIdValue(shadow);
-          if (!shadowId) continue;
+        const combatReadyShadows = [];
 
-          const shadowKey = String(shadowId);
-          const isDead = deadShadows.has(shadowId) || deadShadows.has(shadowKey);
-          if (isDead) continue;
+        if (totalAssigned > 0) {
+          // Single scan to count alive (needed for critical-HP warning) + collect the slice.
+          // To keep this O(TICK_BUDGET) on hot path, we do two lightweight passes:
+          //   pass 1: collect TICK_BUDGET from cursor (wrap), record alive count along the way
+          //   note: alive count is approximate (only covers what we scanned), cached on dungeon
+          let scanned = 0;
+          let cursorStart = dungeon._rotationCursor % totalAssigned;
+          let scanPos = cursorStart;
+          let collected = 0;
 
-          const hpData = shadowHP.get(shadowId) || shadowHP.get(shadowKey);
-          if (!hpData || hpData.hp <= 0) continue;
-          aliveShadowCount++;
+          while (scanned < totalAssigned && collected < TICK_BUDGET) {
+            const shadow = assignedShadows[scanPos];
+            scanPos = (scanPos + 1) % totalAssigned;
+            scanned++;
 
-          if (exchangeMarkedIds.has(shadowKey) || sensesDeployedIds.has(shadowKey)) continue;
+            const shadowId = this.getShadowIdValue(shadow);
+            if (!shadowId) continue;
+            const shadowKey = String(shadowId);
 
-          // Reservoir sampling keeps memory bounded while preserving representative coverage.
-          combatReadyCount++;
-          if (combatReadyShadows.length < sampleCap) {
+            const isDead = deadShadows.has(shadowId) || deadShadows.has(shadowKey);
+            if (isDead) continue;
+            const hpData = shadowHP.get(shadowId) || shadowHP.get(shadowKey);
+            if (!hpData || hpData.hp <= 0) continue;
+            aliveShadowCount++;
+
+            if (exchangeMarkedIds.has(shadowKey) || sensesDeployedIds.has(shadowKey)) continue;
+
             combatReadyShadows.push(shadow);
-          } else {
-            const pickIndex = Math.floor(Math.random() * combatReadyCount);
-            if (pickIndex < sampleCap) combatReadyShadows[pickIndex] = shadow;
+            collected++;
+          }
+
+          // Advance cursor by how many positions we scanned (not just collected).
+          dungeon._rotationCursor = (cursorStart + scanned) % totalAssigned;
+
+          // Update alive-count cache (best-effort from the scanned window; full count recalculated periodically).
+          // Use the last full-count if we have one, otherwise use our window estimate scaled up.
+          if (dungeon._cachedAliveCount == null || scanned >= totalAssigned) {
+            dungeon._cachedAliveCount = aliveShadowCount;
           }
         }
-        dungeon._cachedAliveCount = aliveShadowCount;
 
-        // Shadow deployment status tracked internally (debug logs removed for performance)
-        if (aliveShadowCount < assignedShadows.length * 0.25 && !dungeon.criticalHPWarningShown) {
+        if (dungeon._cachedAliveCount != null && dungeon._cachedAliveCount < assignedShadows.length * 0.25 && !dungeon.criticalHPWarningShown) {
           dungeon.criticalHPWarningShown = true;
           this.debugLog(
-            `CRITICAL: Only ${aliveShadowCount}/${
+            `CRITICAL: Only ${dungeon._cachedAliveCount}/${
               assignedShadows.length
-            } shadows alive (${Math.floor((aliveShadowCount / assignedShadows.length) * 100)}%)!`
+            } shadows alive (${Math.floor((dungeon._cachedAliveCount / assignedShadows.length) * 100)}%)!`
           );
         }
 
         const maxShadowsToProcess = combatReadyShadows.length;
-        const stride = 1;
-        const totalPowerAll =
-          Number.isFinite(dungeon?.shadowAllocation?.totalPower) &&
-          dungeon.shadowAllocation.totalPower > 0
-            ? dungeon.shadowAllocation.totalPower
-            : null;
-        let sampledPower = 0;
-        for (
-          let i = 0, processed = 0;
-          i < combatReadyShadows.length && processed < maxShadowsToProcess;
-          i += stride, processed++
-        ) {
-          sampledPower += this.getShadowCombatScore(combatReadyShadows[i]);
-        }
-        const countScale =
-          maxShadowsToProcess > 0
-            ? Math.max(1, combatReadyCount / maxShadowsToProcess)
-            : 1;
-        const powerScale =
-          totalPowerAll && sampledPower > 0 ? totalPowerAll / sampledPower : countScale;
-        // Scale factor cap raised — 25 was silently discarding 43%+ of army damage at 11k shadows.
-        // New cap of 200 handles armies up to ~50k with 250-sample budget.
-        const scaleFactor = this.clampNumber(powerScale, 0.25, 200);
+
+        // scaleFactor = 1: exact damage, no approximation.
+        // Each shadow deals damage for its real elapsed time; no scaling needed.
+        const scaleFactor = 1;
 
         // TRACE: Log combat state every 10th tick
         if (this._combatTickCount % 10 === 0) {
-          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, ready=${combatReadyCount}, sample=${maxShadowsToProcess}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, slice=${maxShadowsToProcess}, cursor=${dungeon._rotationCursor}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
         }
 
         const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
@@ -403,17 +445,13 @@ module.exports = {
           dungeon.mobs = { killed: 0, remaining: 0, activeMobs: [], total: 0 };
         }
 
-        // PERF TODO (FIX C — deferred, needs runtime testing):
-        // Group shadows by rank before this loop and call calculateShadowDamage once per
-        // (rank, enemy) pair instead of once per shadow. The blocker: `shadowVariance` is
-        // sampled per shadow (random per-tick), so only the deterministic `perHit` base could
-        // be shared, not the final damage. Mixed-rank armies and role multipliers (applied
-        // per shadow) would also need to be correctly folded. Safe to apply only after a
-        // runtime test comparing total damage across a full tick against the current result.
+        // Process the rotating slice: each shadow uses its REAL elapsed time since
+        // it was last processed by this loop (shadowLastProcessed map). This ensures
+        // exact cumulative damage without any scaleFactor approximation.
         for (
-          let i = 0, processed = 0;
-          i < combatReadyShadows.length && processed < maxShadowsToProcess;
-          i += stride, processed++
+          let i = 0;
+          i < combatReadyShadows.length && i < maxShadowsToProcess;
+          i++
         ) {
           const shadow = combatReadyShadows[i];
           const shadowId = this.getShadowIdValue(shadow);
@@ -439,7 +477,10 @@ module.exports = {
 
           const finalCombatData = combatData;
 
-          const timeSinceLastAttack = Math.max(0, now - (finalCombatData.lastAttackTime || 0));
+          // Use real elapsed time since this shadow was last visited by the rotation.
+          // First visit defaults to revisitSpan ago (one full inter-visit window worth of backlog).
+          const lastProcessedAt = shadowLastProcessed.get(String(shadowId)) || (now - revisitSpan);
+          const timeSinceLastAttack = Math.max(0, now - lastProcessedAt);
           let effectiveCooldown = this.getEffectiveAttackCooldownMs(
             finalCombatData.attackInterval || finalCombatData.cooldown || 2000,
             activeInterval
@@ -450,10 +491,12 @@ module.exports = {
             effectiveCooldown = Math.max(800, Math.floor(effectiveCooldown * (1 - sprintReduction)));
           }
 
+          // Pass revisitSpan so getCappedAttackElapsedMs allows the full inter-visit
+          // elapsed through: maxCatchUp = max(revisitSpan*2, cooldown*4) ≥ revisitSpan.
           const attacksInSpan = this.calculateAttacksInTimeSpan(
             timeSinceLastAttack,
             effectiveCooldown,
-            totalTimeSpan
+            revisitSpan
           );
 
           if (attacksInSpan <= 0) continue;
@@ -677,9 +720,13 @@ module.exports = {
             now,
             timeSinceLastAttack,
             effectiveCooldown,
-            totalTimeSpan,
+            revisitSpan,
             attacksInSpan
           );
+
+          // Record when this shadow was last processed by the rotation cursor.
+          // Used next visit to compute exact elapsed time for attack calculation.
+          shadowLastProcessed.set(String(shadowId), now);
 
           // PERF: calculateShadowAttackInterval only changes on rank/stat change.
           // Recompute at most every 10 ticks (≈30s) instead of every tick.

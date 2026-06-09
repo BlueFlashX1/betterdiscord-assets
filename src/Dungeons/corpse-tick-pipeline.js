@@ -289,7 +289,6 @@ module.exports = {
       const globalShadowBudget = Math.max(160, Math.floor(configuredShadowBudget * pressureScale * visibilityScale * adaptiveScale));
       const globalMobBudget = Math.max(320, Math.floor(800 * pressureScale * visibilityScale * adaptiveScale));
       const budgetDivisor = Math.max(1, processedDungeonCount);
-      const perDungeonShadowBudget = Math.max(20, Math.floor(globalShadowBudget / budgetDivisor));
       const perDungeonMobBudget = Math.max(50, Math.floor(globalMobBudget / budgetDivisor));
 
       if (
@@ -351,7 +350,7 @@ module.exports = {
       let dungeonIndex = 0;
       for (const [channelKey, dungeon] of selectedEntries) {
         dungeonPromises.push(this._processDungeonCombatTick(
-          channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget, dungeonIndex
+          channelKey, dungeon, now, isWindowVisible, perDungeonMobBudget, dungeonIndex
         ));
         dungeonIndex++;
       }
@@ -482,7 +481,7 @@ module.exports = {
     return { selectedEntries, skippedCount: Math.max(0, total - selectedEntries.length) };
   },
 
-  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, shadowBudget, mobBudget, dungeonIndex = 0) {
+  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, mobBudget, dungeonIndex = 0) {
     try {
       // MANUAL DEPLOY: Skip combat entirely for dungeons where shadows haven't been deployed
       if (!dungeon.shadowsDeployed) return;
@@ -574,7 +573,7 @@ module.exports = {
         if (shadowDue) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(shadowElapsed / shadowActiveInterval));
           const preAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
-          await this.processShadowAttacks(channelKey, cyclesToProcess, isWindowVisible, shadowBudget);
+          await this.processShadowAttacks(channelKey, cyclesToProcess, isWindowVisible);
           const postAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
           this._lastShadowAttackTime.set(channelKey, now);
           this.settings.debug && console.log(`[Dungeons] COMBAT_MOB_TRACE: ch=${channelKey.slice(-8)}, isActive=${isActive}, mobsBefore=${preAttackMobs}, mobsAfter=${postAttackMobs}, bossHP=${dungeon.boss?.hp}, elapsed=${shadowElapsed}ms`);

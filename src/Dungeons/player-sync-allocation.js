@@ -107,10 +107,12 @@ module.exports = {
       !dungeonRank ||
       !this._deployStarterPoolCacheRank ||
       this._deployStarterPoolCacheRank === dungeonRank;
+    // minReusablePool: pool must be at least this large to be reused without a fresh warm.
+    // Raised cap to 50000 so large-army deploys (mob × 1.5 can exceed 2000) aren't stale-served.
     const minReusablePool = this.clampNumber(
       Number.isFinite(targetCount) ? Math.floor(targetCount) : this._deployStarterShadowCap || 240,
       24,
-      2000
+      50000
     );
 
     if (
@@ -135,18 +137,22 @@ module.exports = {
     }
 
     const warmPromise = (async () => {
+      // desiredCount: fetch 4× target so rank-filtered selection has enough candidates.
+      // Raised cap 8000→100000 to accommodate large deploy targets (S = 15k, SS = 37k, etc.)
       const desiredCount = this.clampNumber(
         Math.max(
           200,
           Math.floor((Number.isFinite(targetCount) ? targetCount : this._deployStarterShadowCap || 240) * 4)
         ),
         200,
-        8000
+        100000
       );
+      // hardLimit: absolute cap on pool size. Raised 10000→100000 so the pool can hold
+      // enough rank-appropriate shadows for large dungeons without being truncated.
       const hardLimit = this.clampNumber(
         Math.max(desiredCount, Number.isFinite(sampleLimit) ? Math.floor(sampleLimit) : 2000),
         200,
-        10000
+        100000
       );
 
       const candidates = [];
@@ -301,19 +307,37 @@ module.exports = {
     // Force refresh when rank mismatch or cache is aging out soon.
     const forceRefresh = !sameRankHint || ageMs > Math.max(30000, Math.floor(this._deployStarterPoolCacheTTL * 0.5));
 
+    // Warm the pool to the actual expected deploy count (mob × 1.5) so rank-appropriate
+    // shadows from IDB are fetched instead of just the top-240 elites.
+    // Must match _buildDeployStarterAllocation's MOB_CAP_BY_RANK + DEPLOY_MOB_RATIO.
+    const WARM_MOB_CAP_BY_RANK = {
+      E: 50, D: 150, C: 400, B: 1200, A: 4000, S: 10000, SS: 25000,
+      SSS: 50000, 'SSS+': 75000, NH: 100000, Monarch: 250000,
+      'Monarch+': 500000, 'Shadow Monarch': 1000000,
+    };
+    const WARM_DEPLOY_MOB_RATIO = 1.5;
+    const rankIdx = dungeonRank ? Math.max(0, this.getRankIndexValue(dungeonRank)) : 0;
+    const mobCap = (dungeonRank && WARM_MOB_CAP_BY_RANK[dungeonRank])
+      || Math.round(50 * Math.pow(2.5, rankIdx));
+    const warmTarget = Math.max(
+      this._deployStarterShadowCap || 240,
+      Math.ceil(mobCap * WARM_DEPLOY_MOB_RATIO)
+    );
+
     this._setTrackedTimeout(() => {
       Promise.resolve()
         .then(async () => {
           const warmedPoolCount = await this._warmDeployStarterPool({
             dungeonRank: dungeonRank || null,
-            targetCount: this._deployStarterShadowCap || 240,
-            sampleLimit: Math.max(1200, Math.floor((this._deployStarterShadowCap || 240) * 8)),
+            targetCount: warmTarget,
+            sampleLimit: Math.max(1200, Math.floor(warmTarget * 8)),
             forceRefresh,
           });
 
           this.settings.debug && this.debugLog('DEPLOY', 'Spawn rank warmup completed', {
             channelKey,
             dungeonRank: dungeonRank || null,
+            warmTarget,
             warmedPoolCount,
             forceRefresh,
             cacheRank: this._deployStarterPoolCacheRank || null,
@@ -326,23 +350,25 @@ module.exports = {
   },
 
   _buildDeployStarterAllocation(channelKey, dungeon) {
-    // Deploy target scales with the dungeon's MOB CAPACITY (set by rank), so a
-    // high-capacity dungeon (Monarch ~250K mobs) deploys a real force — not a flat
-    // 240. We deploy ~10% of mob capacity; shadows are strong (each clears many
-    // mobs), so a fraction handles the attrition. Bounded by an army reserve and a
-    // perf ceiling (combat tracks each deployed shadow individually).
+    // Deploy target scales with mob capacity (rank-rebalance, 2026-06-08):
+    // - DEPLOY_MOB_RATIO: deploy ~1.5× the dungeon's mob capacity (overwhelming but not OP)
+    // - armyAvailableCap: hard upper bound (25% reserve, split by active dungeons)
+    // - MAX_OVERRANK: shadows more than this many ranks ABOVE the dungeon are withheld
+    //   (prevents Monarchs flooding an S dungeon; they deploy only as absolute last resort)
     const MOB_CAP_BY_RANK = {
       E: 50, D: 150, C: 400, B: 1200, A: 4000, S: 10000, SS: 25000,
       SSS: 50000, 'SSS+': 75000, NH: 100000, Monarch: 250000,
       'Monarch+': 500000, 'Shadow Monarch': 1000000,
     };
-    const DEPLOY_MOB_FRACTION = 0.10; // deploy ~10% of the dungeon's mob capacity
-    const PERF_CEIL = 10000;          // default cap on deployed combat entities
+    // --- Tunable constants (rank-rebalance, 2026-06-08) ---
+    const RESERVE_FRACTION  = 0.25; // keep 25% of army as reserve across all active dungeons
+    const DEPLOY_MOB_RATIO  = 1.5;  // target ≈ 1.5× mob capacity (overwhelming, not OP)
+    const MAX_OVERRANK      = 1;    // max ranks ABOVE dungeon a shadow may be deployed (anti-overkill)
+    // deployCeiling: safe with rotating-subset combat (O(TICK_BUDGET) per tick)
+    const DEFAULT_DEPLOY_CEIL = 50000;
     const userCap = Number(this.settings?.deployStarterShadowCap);
     const hasUserCap = Number.isFinite(userCap) && userCap > 0;
-    // Honor an explicit deployStarterShadowCap as a hard ceiling (up to 50K for
-    // those who want huge deploys and accept the combat-perf cost); else PERF_CEIL.
-    const deployCeiling = hasUserCap ? this.clampNumber(Math.floor(userCap), 24, 50000) : PERF_CEIL;
+    const deployCeiling = hasUserCap ? this.clampNumber(Math.floor(userCap), 24, 50000) : DEFAULT_DEPLOY_CEIL;
 
     const deployedDungeonCount = Math.max(
       1,
@@ -354,11 +380,10 @@ module.exports = {
       ? Math.max(0, Math.floor(this.allocationCache.count))
       : 0;
 
-    // Reserve lever ("shadows remaining"): deploy at most ~half the known army,
-    // split across active dungeons — big armies deploy big (up to the ceiling) but
-    // always keep a reserve; small armies never over-commit.
-    const armyReserveCap = knownShadowCount > 0
-      ? Math.max(24, Math.floor((knownShadowCount * 0.5) / deployedDungeonCount))
+    // Available army: total army minus reserve, split equally across active dungeons.
+    // e.g. 53k army, 1 dungeon, 25% reserve → armyAvailableCap = 39,750
+    const armyAvailableCap = knownShadowCount > 0
+      ? Math.max(24, Math.floor((knownShadowCount * (1 - RESERVE_FRACTION)) / deployedDungeonCount))
       : deployCeiling;
 
     let targetCount;
@@ -367,18 +392,24 @@ module.exports = {
       const DC = require('./story-constants');
       const fraction = DC.getDeployFraction(dungeon._dcFloor || 1);
       targetCount = this.clampNumber(
-        Math.min(Math.floor(knownShadowCount * fraction), armyReserveCap),
+        Math.min(Math.floor(knownShadowCount * fraction), armyAvailableCap),
         24,
         deployCeiling
       );
     } else {
-      // ~10% of the dungeon's mob capacity (A~400, S~1000, SSS~5000, SSS+~7500,
-      // NH+ → capped). Bounded by army reserve + the deploy ceiling.
+      // Target = ceil(mobCap × DEPLOY_MOB_RATIO), capped by available army and ceiling.
+      // Use the dungeon's LIVE mob capacity (what the UI shows, e.g. 12,000) so the
+      // 1.5× tracks the actual dungeon; fall back to the static rank table pre-spawn.
+      // S dungeon @ 12,000 cap → target = ceil(12000 × 1.5) = 18,000.
+      // Small armies are still capped by armyAvailableCap so the reserve is honored.
       const rankIdx = Math.max(0, this.getRankIndexValue(dungeon.rank));
-      const mobCap = MOB_CAP_BY_RANK[dungeon.rank] || Math.round(50 * Math.pow(2.5, rankIdx));
-      const mobDemand = Math.ceil(mobCap * DEPLOY_MOB_FRACTION);
+      const liveMobCap = Number(dungeon.mobs?.mobCapacity);
+      const mobCap = (Number.isFinite(liveMobCap) && liveMobCap > 0)
+        ? liveMobCap
+        : (MOB_CAP_BY_RANK[dungeon.rank] || Math.round(50 * Math.pow(2.5, rankIdx)));
+      const mobTarget = Math.ceil(mobCap * DEPLOY_MOB_RATIO);
       targetCount = this.clampNumber(
-        Math.min(mobDemand, armyReserveCap),
+        Math.min(mobTarget, armyAvailableCap),
         24,
         deployCeiling
       );
@@ -495,37 +526,52 @@ module.exports = {
       return normalized;
     };
 
-    // ── Tiered rank composition ──────────────────────────────────────
-    // Build deployment like a real army: bulk of same-rank soldiers,
-    // some ±1 rank support, and a small elite vanguard of stronger shadows.
+    // ── Tiered rank composition (rank-rebalance, 2026-06-08) ────────
+    // Deploy rank-APPROPRIATE shadows: bulk of same-rank, some ±1 adjacent,
+    // some under-ranked backfill — but NO over-ranked elites above MAX_OVERRANK.
     //
-    // Tier A (50%): same rank as dungeon            (rank distance 0)
-    // Tier B (35%): ±1 rank (adjacent support)      (rank distance 1)
-    // Tier C (15%): ±2+ ranks (elite vanguard)      (rank distance 2+)
+    // Tier A (50%): same rank as dungeon                 (signed dist = 0)
+    // Tier B (35%): within ±1 rank OR up to MAX_OVERRANK above (dist ≤ 1)
+    // Tier C (15%): under-ranked backfill (MORE than 1 below dungeon rank)
+    // Overkill: shadows more than MAX_OVERRANK ranks ABOVE dungeon → withheld.
+    //           Only deployed as absolute last-resort if other tiers all empty.
     //
-    // Each tier fills its quota then leftovers cascade to the next tier.
-    // Final fallback picks any remaining shadow regardless of rank.
+    // signed dist: positive = shadow rank ABOVE dungeon, negative = below.
+    // This prevents "far above" (Monarch) being lumped with "far below" (B-rank).
+    //
+    // Each tier fills its quota then shortfalls cascade downward.
 
     const tierATarget = Math.ceil(targetCount * 0.50);
     const tierBTarget = Math.ceil(targetCount * 0.35);
     const tierCTarget = targetCount - tierATarget - tierBTarget; // remainder ≈ 15%
 
-    // Pre-bucket candidates by rank distance (single pass over pool)
-    const bucketA = []; // distance 0
-    const bucketB = []; // distance 1
-    const bucketC = []; // distance 2+
+    // Pre-bucket candidates by SIGNED rank distance (single pass over pool)
+    const bucketA       = []; // signedDist = 0 (same rank)
+    const bucketB       = []; // |signedDist| = 1, OR signedDist is 1..MAX_OVERRANK above
+    const bucketC       = []; // signedDist < -1 (under-ranked backfill, more than 1 below)
+    const bucketOverkill = []; // signedDist > MAX_OVERRANK (far-above — withheld from normal fill)
     for (let i = 0; i < candidatePool.length; i++) {
       const normalized = normalizeCandidateShadow(candidatePool[i]);
       if (!normalized) continue;
       const sid = this.getShadowIdValue(normalized);
       if (!sid || usedIds.has(String(sid)) || blockedIds.has(String(sid))) continue;
-      const dist = Math.abs(this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex);
-      if (dist === 0) bucketA.push(normalized);
-      else if (dist === 1) bucketB.push(normalized);
-      else bucketC.push(normalized);
+      // positive = shadow is HIGHER rank than dungeon; negative = lower rank
+      const signedDist = this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex;
+      if (signedDist === 0) {
+        bucketA.push(normalized);
+      } else if (signedDist > MAX_OVERRANK) {
+        // Too many ranks above — overkill; withheld unless we run out of everything else
+        bucketOverkill.push(normalized);
+      } else if (signedDist >= -1) {
+        // 1 below, same, or up to MAX_OVERRANK above: rank-appropriate
+        bucketB.push(normalized);
+      } else {
+        // More than 1 below: under-ranked backfill (deploy by numbers to meet target)
+        bucketC.push(normalized);
+      }
     }
 
-    // Pick from each tier up to its quota
+    // Pick from each tier up to its quota (pool is already power-desc sorted)
     const pickFromBucket = (bucket, quota) => {
       let count = 0;
       for (let i = 0; i < bucket.length && count < quota; i++) {
@@ -535,21 +581,33 @@ module.exports = {
       return count;
     };
 
-    // Fill tiers — shortfalls cascade to the next tier
-    const pickedA = pickFromBucket(bucketA, tierATarget);
+    // Fill tiers — shortfalls cascade to the next appropriate tier
+    const pickedA  = pickFromBucket(bucketA, tierATarget);
     const shortfallA = tierATarget - pickedA;
 
-    const pickedB = pickFromBucket(bucketB, tierBTarget + shortfallA);
+    const pickedB  = pickFromBucket(bucketB, tierBTarget + shortfallA);
     const shortfallB = (tierBTarget + shortfallA) - pickedB;
 
     pickFromBucket(bucketC, tierCTarget + shortfallB);
 
-    // Final fallback: if still under target, pick any unpicked shadow
+    // Last-resort fallback 1: any remaining shadow in the eligible pool (still NO overkill)
     if (picked.length < targetCount) {
       for (let i = 0; i < candidatePool.length && picked.length < targetCount; i++) {
-        const accepted = tryPickShadow(candidatePool[i]);
+        const normalized = normalizeCandidateShadow(candidatePool[i]);
+        if (!normalized) continue;
+        const sid = this.getShadowIdValue(normalized);
+        if (!sid) continue;
+        const signedDist = this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex;
+        if (signedDist > MAX_OVERRANK) continue; // skip overkill in this pass
+        const accepted = tryPickShadow(normalized);
         accepted && picked.push(accepted);
       }
+    }
+
+    // Last-resort fallback 2: overkill shadows if we're still under target
+    // (e.g. player genuinely lacks rank-appropriate shadows to fill the quota)
+    if (picked.length < targetCount) {
+      pickFromBucket(bucketOverkill, targetCount - picked.length);
     }
 
     if (picked.length === 0 && this.settings.debug) {
