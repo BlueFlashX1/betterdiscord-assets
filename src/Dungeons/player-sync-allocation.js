@@ -563,7 +563,7 @@ module.exports = {
         // Too many ranks above — overkill; withheld unless we run out of everything else
         bucketOverkill.push(normalized);
       } else if (signedDist >= -1) {
-        // 1 below, same, or up to MAX_OVERRANK above: rank-appropriate
+        // 1 below, or up to MAX_OVERRANK above (same-rank already went to bucketA)
         bucketB.push(normalized);
       } else {
         // More than 1 below: under-ranked backfill (deploy by numbers to meet target)

@@ -604,6 +604,11 @@ module.exports = class ShadowRecon {
           if (this._stopped || document.hidden) return;
           this._queueVisualRefresh(120);
         }, 500);
+      } else if (!this._layoutBusWarned) {
+        // Intentional degradation, not silent: without PluginUtils there is no
+        // observer (and nothing to tear down) — visuals won't auto-refresh.
+        this._layoutBusWarned = true;
+        console.warn(`[${PLUGIN_NAME}] LayoutObserverBus unavailable (PluginUtils missing) — guild visual hints will not auto-refresh on layout changes`);
       }
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed observer setup`, err);

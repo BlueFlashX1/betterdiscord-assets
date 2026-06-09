@@ -48,6 +48,9 @@ function createTtlCache(ttlMs = 5000) {
 /**
  * Create a single-value TTL cache (no key needed).
  * Drop-in replacement for the inline _ttl pattern used in ShadowStep, ShadowSenses, etc.
+ * NOTE: get() returns `null` on miss/expiry, unlike createTtlCache which returns
+ * `undefined`. Kept asymmetric on purpose — changing it would break any consumer
+ * doing strict null checks. Use truthy/`== null` checks against either factory.
  * @param {number} [ttlMs=5000] - Time-to-live in milliseconds
  * @returns {{ get: () => *, set: (value: *) => void, invalidate: () => void }}
  */

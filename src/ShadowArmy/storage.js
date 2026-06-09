@@ -845,13 +845,14 @@ class ShadowStorageManager {
           });
           completed++;
           if (completed + errors === weakRanks.length) {
-            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now() });
+            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now(), partial: errors > 0 });
           }
         };
         request.onerror = () => {
           errors++;
+          this.debugError('AGGREGATE_POWER', `rank index getAll failed for rank ${rank} — aggregated power will be partial`, request.error);
           if (completed + errors === weakRanks.length) {
-            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now() });
+            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now(), partial: errors > 0 });
           }
         };
       });

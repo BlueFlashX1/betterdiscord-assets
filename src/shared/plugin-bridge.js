@@ -31,7 +31,12 @@ function getPluginInstance(pluginName) {
   // Date.now() is fine here (runs in Discord's renderer, not a workflow).
   const now = Date.now();
   const cached = _instanceCache.get(pluginName);
-  if (cached && (now - cached.ts) < _BRIDGE_TTL_MS) return cached.instance;
+  if (cached && (now - cached.ts) < _BRIDGE_TTL_MS) {
+    const inst = cached.instance;
+    // Never serve an instance that stopped after it was cached (provider
+    // reload) — fall through to a fresh registry lookup instead.
+    if (!inst || !(inst._stopped || inst._isStopped)) return inst;
+  }
   let instance = null;
   try {
     if (BdApi.Plugins.isEnabled(pluginName)) {
