@@ -161,7 +161,7 @@ module.exports = {
         aggregatedBuffScale: 0.01,
         aggregatedBuffPowerDivisor: 10000,
         aggregatedBaseBuffMax: 0.42,
-        diversityCountThreshold: 10,
+        diversityMinRolePower: 500,
         diversityPerRoleBonus: 0.03,
         diversityMaxBonus: 0.18,
         statSoftCaps: Object.freeze({
@@ -262,7 +262,7 @@ module.exports = {
     let activeRoles = 0;
     for (let i = 0; i < entries.length; i++) {
       const power = Math.max(0, Number(entries[i][1]) || 0);
-      if (power >= config.diversityCountThreshold) {
+      if (power >= config.diversityMinRolePower) {
         activeRoles++;
       }
     }

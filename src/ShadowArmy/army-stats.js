@@ -77,6 +77,7 @@ module.exports = {
         this.settings.cachedTotalPower = newPower;
         this.settings.cachedTotalPowerShadowCount = currentCount;
         this.settings.cachedTotalPowerTimestamp = Date.now();
+        this.settings.cachedTotalPowerVersion = (this.settings.cachedTotalPowerVersion || 0) + 1;
         this.saveSettings();
 
         return { shadowPower, currentPower, newPower, currentCount };

@@ -303,6 +303,7 @@ module.exports = {
   },
 
   async _persistShadowToSettingsFallback(shadow, attemptNum, reasonLabel) {
+    this._invalidateCapCountCache?.();
     const shadowId = shadow ? this.getCacheKey?.(shadow) || shadow.id || shadow.i : null;
     this.debugError('STORAGE', 'Shadow extraction cannot persist without Shadow Preservation storage', {
       attemptNum,

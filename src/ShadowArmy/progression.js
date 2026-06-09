@@ -438,7 +438,7 @@ module.exports = {
       const baseGrowth = getBaseGrowth(roleWeight);
       const levelVariance = 0.9 + Math.random() * 0.2;
       const growth = baseGrowth * rankGrowthMultiplier * seedVariance * levelVariance * growthMult;
-      const roundedGrowth = Math.max(1, Math.round(growth));
+      const roundedGrowth = Math.max(0, Math.round(growth));
       growthStats[stat] = (growthStats[stat] || 0) + roundedGrowth;
       return growthStats;
     }, shadow.growthStats);
