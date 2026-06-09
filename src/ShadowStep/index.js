@@ -12,6 +12,7 @@
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { loadSettings: _sharedLoadSettings, saveSettings: _sharedSaveSettings } = require("../shared/settings");
 const { onKeydown } = require("../shared/dom-bus");
+const { getSkillTreeLevel } = require("../shared/plugin-bridge");
 let _EmbeddedShadowPortalCore;
 try { _EmbeddedShadowPortalCore = require("../ShadowPortalCore"); } catch (_) { _EmbeddedShadowPortalCore = null; }
 
@@ -88,9 +89,9 @@ module.exports = class ShadowStep {
   // SkillTree gate helpers
 
   _isShadowExchangeUnlocked() {
-    try {
-      return (BdApi.Plugins.get("SkillTree")?.instance?.getSkillLevel("shadow_exchange") || 0) >= 1;
-    } catch (_) { return false; }
+    // Use plugin-bridge for the 3s-TTL cache instead of calling
+    // BdApi.Plugins.get directly on every invocation.
+    return getSkillTreeLevel("shadow_exchange") >= 1;
   }
 
   // Lifecycle

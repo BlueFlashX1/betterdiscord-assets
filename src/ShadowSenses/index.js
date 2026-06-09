@@ -251,7 +251,7 @@ class SensesEngine {
           if (this._presencePollDebounce) return;
           this._presencePollDebounce = setTimeout(() => {
             this._presencePollDebounce = null;
-            this._pollMonitoredPresenceStatuses("store-change");
+            if (!this._stopped) this._pollMonitoredPresenceStatuses("store-change");
           }, 200);
         };
         PresenceStore.addChangeListener(this._presenceStoreListener);
@@ -261,7 +261,7 @@ class SensesEngine {
 
     // Start debounced flush interval (30s)
     this._flushInterval = setInterval(() => {
-      if (!this._dirty) return;
+      if (!this._dirty && !this._activityIndexDirty) return;
       this._flushToDisk();
     }, 30000);
 

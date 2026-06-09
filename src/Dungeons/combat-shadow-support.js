@@ -105,6 +105,14 @@ module.exports = {
       this.deadShadows.set(channelKey, deadShadows);
     }
 
+    // Prune stale _shadowLastProcessed entries for shadows no longer assigned.
+    // Without this, the rotation-cursor timestamp Map grows unbounded as shadows leave.
+    if (dungeon._shadowLastProcessed instanceof Map) {
+      for (var sid of dungeon._shadowLastProcessed.keys()) {
+        assignedIds.has(sid) || dungeon._shadowLastProcessed.delete(sid);
+      }
+    }
+
     return true;
   },
 

@@ -136,7 +136,7 @@ module.exports = {
           const shadowId = this.getShadowIdValue(shadow);
           if (!shadowId) continue;
           if (deadShadows.has(shadowId)) continue;
-          if (!isWindowVisible && shadowHP.has(shadowId)) continue;
+          if (shadowHP.has(shadowId)) continue; // already initialized -- skip Map write entirely
 
           try {
             this.initializeShadowHPSync(shadow, shadowHP);
@@ -156,6 +156,7 @@ module.exports = {
           for (const shadow of assignedShadows) {
             const shadowId = this.getShadowIdValue(shadow);
             if (!shadowId) continue;
+            if (!deadShadows.has(shadowId)) continue; // PERF: skip alive shadows without Map lookup
             const hpData = shadowHP.get(shadowId);
             if (!hpData || hpData.hp > 0) continue;
 
@@ -217,7 +218,9 @@ module.exports = {
         const analytics = dungeon.combatAnalytics;
         const now = Date.now();
 
-        const activeInterval = 3000;
+        // Use the real per-dungeon tick interval so revisitSpan and catch-up cap are accurate
+        // on background->foreground transitions (was hardcoded 3000 regardless of actual rate).
+        const activeInterval = (this._shadowActiveIntervalMs && this._shadowActiveIntervalMs.get(channelKey)) || 3000;
 
         // PERF + PRECISION (Item C, 2026-06-08): Rotating-subset hybrid.
         //
@@ -311,10 +314,16 @@ module.exports = {
           // Advance cursor by how many positions we scanned (not just collected).
           dungeon._rotationCursor = (cursorStart + scanned) % totalAssigned;
 
-          // Update alive-count cache (best-effort from the scanned window; full count recalculated periodically).
-          // Use the last full-count if we have one, otherwise use our window estimate scaled up.
-          if (dungeon._cachedAliveCount == null || scanned >= totalAssigned) {
+          // Update alive-count cache every tick.
+          // Full scan: exact count. Partial scan (N > TICK_BUDGET): scale window sample to full population.
+          // This ensures deaths (which never call back here) still register within one rotation cycle.
+          if (scanned >= totalAssigned) {
             dungeon._cachedAliveCount = aliveShadowCount;
+          } else {
+            // Scaled estimate: alive fraction in scanned window projected to full army.
+            dungeon._cachedAliveCount = scanned > 0
+              ? Math.round(aliveShadowCount / scanned * totalAssigned)
+              : (dungeon._cachedAliveCount != null ? dungeon._cachedAliveCount : 0);
           }
         }
 

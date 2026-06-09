@@ -153,10 +153,12 @@ const ActiveSkillMethods = {
 
     const manaInfo = this.getManaInfo();
     const nextMana = Math.min((manaInfo.current || 0) + regenAmount, manaInfo.max);
+    this.settings.lastManaRegen = now;
+    // Skip cross-plugin write when mana is unchanged (full-mana idle case).
+    if (nextMana === manaInfo.current && nextMana === manaInfo.max) return;
     this.settings.currentMana = nextMana;
     this.settings.maxMana = manaInfo.max;
     this._setSharedMana(nextMana, manaInfo.max);
-    this.settings.lastManaRegen = now;
   },
 
   startManaRegen() {

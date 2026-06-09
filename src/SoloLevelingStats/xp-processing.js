@@ -268,8 +268,11 @@ module.exports = {
       for (const k of keys) {
         if ((Number(stats[k]) || 0) < (Number(stats[lowest]) || 0)) lowest = k;
       }
-      this.allocateStatPoints(lowest, 1);
+      // Suppress per-iteration save and UI refresh — batch them after the loop.
+      this.allocateStatPoints(lowest, 1, { saveImmediately: false, refreshUI: false });
     }
+    // One coalesced save + UI update for all minted points.
+    this.applyStatMutationEffects({ saveImmediately: true, refreshUI: true, recomputeHpMana: false });
   },
 
   _applyExternalXpToState(xpAmount, source) {

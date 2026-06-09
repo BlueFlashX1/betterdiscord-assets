@@ -111,44 +111,53 @@ module.exports = {
       }
     };
 
-    if (targetShadowIds && targetShadowIds.length > 0 && this.storageManager?.getShadowsByIds) {
-      const uniqueTargetIds = Array.from(
-        new Set(
-          targetShadowIds
-            .map((id) => (id === null || id === undefined ? '' : String(id).trim()))
-            .filter(Boolean)
-        )
-      );
-      if (uniqueTargetIds.length === 0) return { updatedShadows: [] };
+    this._batchXpInProgress = true;
+    try {
+      if (targetShadowIds && targetShadowIds.length > 0 && this.storageManager?.getShadowsByIds) {
+        const uniqueTargetIds = Array.from(
+          new Set(
+            targetShadowIds
+              .map((id) => (id === null || id === undefined ? '' : String(id).trim()))
+              .filter(Boolean)
+          )
+        );
+        if (uniqueTargetIds.length === 0) return { updatedShadows: [] };
 
-      for (let i = 0; i < uniqueTargetIds.length; i += targetFetchChunkSize) {
-        const idChunk = uniqueTargetIds.slice(i, i + targetFetchChunkSize);
-        let shadowsChunk = await this.storageManager.getShadowsByIds(idChunk, {
-          chunkSize: idChunk.length,
-        });
-        if (this.getShadowData && shadowsChunk.length > 0) {
-          shadowsChunk = shadowsChunk.map((s) => this.getShadowData(s));
-        }
-        await processXpBatch(shadowsChunk);
+        for (let i = 0; i < uniqueTargetIds.length; i += targetFetchChunkSize) {
+          const idChunk = uniqueTargetIds.slice(i, i + targetFetchChunkSize);
+          let shadowsChunk = await this.storageManager.getShadowsByIds(idChunk, {
+            chunkSize: idChunk.length,
+          });
+          if (this.getShadowData && shadowsChunk.length > 0) {
+            shadowsChunk = shadowsChunk.map((s) => this.getShadowData(s));
+          }
+          await processXpBatch(shadowsChunk);
 
-        if (i + targetFetchChunkSize < uniqueTargetIds.length) {
-          await new Promise((r) => setTimeout(r, 0));
+          if (i + targetFetchChunkSize < uniqueTargetIds.length) {
+            await new Promise((r) => setTimeout(r, 0));
+          }
         }
-      }
-    } else {
-      if (targetShadowIds && targetShadowIds.length > 0) {
-        const targetIds = new Set(targetShadowIds.map((id) => String(id)));
-        const allShadows = await this.getAllShadows();
-        shadowsToGrant = allShadows.filter((s) => {
-          const sid = s?.id || s?.i;
-          return sid && targetIds.has(String(sid));
-        });
       } else {
-        shadowsToGrant = await this.getAllShadows();
-      }
+        if (targetShadowIds && targetShadowIds.length > 0) {
+          if (!this._getShadowsByIdsFallbackWarned) {
+            this._getShadowsByIdsFallbackWarned = true;
+            this.debugError('XP_PERF', 'grantShadowXP: getShadowsByIds unavailable, falling back to full IDB scan — check storageManager wiring', null);
+          }
+          const targetIds = new Set(targetShadowIds.map((id) => String(id)));
+          const allShadows = await this.getAllShadows();
+          shadowsToGrant = allShadows.filter((s) => {
+            const sid = s?.id || s?.i;
+            return sid && targetIds.has(String(sid));
+          });
+        } else {
+          shadowsToGrant = await this.getAllShadows();
+        }
 
-      if (!shadowsToGrant.length) return { updatedShadows: [] };
-      await processXpBatch(shadowsToGrant);
+        if (!shadowsToGrant.length) return { updatedShadows: [] };
+        await processXpBatch(shadowsToGrant);
+      }
+    } finally {
+      this._batchXpInProgress = false;
     }
 
     if (!hasPersistedUpdates) return { updatedShadows: [] };
@@ -334,9 +343,12 @@ module.exports = {
     this.settings.cachedTotalPowerShadowCount = 0;
     this.clearShadowPowerCache();
 
-    this.getTotalShadowPower(true).catch((error) => {
-      this.debugError('POWER_CALC', 'Failed to refresh total shadow power after rank up', error);
-    });
+    if (!this._batchXpInProgress) {
+      // Skip per-rank-up power recalc during batch XP — grantShadowXP does one post-batch recalc
+      this.getTotalShadowPower(true).catch((error) => {
+        this.debugError('POWER_CALC', 'Failed to refresh total shadow power after rank up', error);
+      });
+    }
 
     return {
       success: true, oldRank: currentRank, newRank: nextRank,

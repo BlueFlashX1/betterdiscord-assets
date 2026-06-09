@@ -262,6 +262,12 @@ let _vcWatchInstalled = false;
 let _vcWatchInterval = null;
 let _vcWatchRefCount = 0;
 let _vcDispatcherUnsub = null;
+// Cross-bundle refcount for the shared CSS rule (window-keyed so all esbuild
+// bundles share ONE counter — prevents bundle A from removeStyle-ing while
+// bundle B still needs the rule).
+if (typeof window !== "undefined") {
+  window.__SL_VcHideRefs = window.__SL_VcHideRefs || 0;
+}
 
 function _writeVcAttribute() {
   try {
@@ -295,6 +301,11 @@ function _writeVcAttribute() {
  */
 function installVoiceChatBodyAttr() {
   _vcWatchRefCount++;
+  // Also increment the cross-bundle window counter so removeStyle only fires
+  // when the LAST plugin across ALL esbuild bundles releases the CSS.
+  if (typeof window !== "undefined") {
+    window.__SL_VcHideRefs = (window.__SL_VcHideRefs || 0) + 1;
+  }
 
   if (!_vcWatchInstalled) {
     _vcWatchInstalled = true;
@@ -335,6 +346,12 @@ function installVoiceChatBodyAttr() {
 
   return function uninstallVoiceChatBodyAttr() {
     _vcWatchRefCount = Math.max(0, _vcWatchRefCount - 1);
+    // Decrement the cross-bundle window counter; only remove the CSS rule
+    // when ALL bundles across ALL plugins have released it.
+    const globalRefs = typeof window !== "undefined"
+      ? Math.max(0, (window.__SL_VcHideRefs || 1) - 1)
+      : 0;
+    if (typeof window !== "undefined") window.__SL_VcHideRefs = globalRefs;
     if (_vcWatchRefCount === 0 && _vcWatchInstalled) {
       _vcWatchInstalled = false;
       if (_vcWatchInterval) {
@@ -353,9 +370,12 @@ function installVoiceChatBodyAttr() {
           document.body.removeAttribute(HOME_BODY_ATTR);
         }
       } catch (_) {}
-      try {
-        if (BdApi?.DOM?.removeStyle) BdApi.DOM.removeStyle(VC_HIDE_STYLE_ID);
-      } catch (_) {}
+      // Only remove the shared CSS when the cross-bundle counter hits zero.
+      if (globalRefs === 0) {
+        try {
+          if (BdApi?.DOM?.removeStyle) BdApi.DOM.removeStyle(VC_HIDE_STYLE_ID);
+        } catch (_) {}
+      }
     }
   };
 }

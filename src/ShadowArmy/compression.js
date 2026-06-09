@@ -647,6 +647,7 @@ module.exports = {
         }
       }
       this._invalidateSnapshot?.();
+      this._gradeCacheTs = 0; // Invalidate widget grade-count cache after promotion
       this.saveSettings();
 
       this.debugLog?.('GRADE', `Auto-promoted ${promoted} shadows (${essenceSpent.toLocaleString()} essence spent, ${remainingEssence.toLocaleString()} remaining)`);

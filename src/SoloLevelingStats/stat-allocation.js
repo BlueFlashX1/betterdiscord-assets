@@ -118,7 +118,7 @@ module.exports = {
     return this.allocateStatPoints(statName, 1);
   },
 
-  allocateStatPoints(statName, amount = 1) {
+  allocateStatPoints(statName, amount = 1, options = {}) {
     // Normalize stat name (handle case variations)
     if (!statName) {
       this.debugError('ALLOCATE_STAT', new Error('No stat name provided'), {
@@ -205,6 +205,7 @@ module.exports = {
           oldValue,
           newValue,
         },
+        ...options,
       });
   
       this.debugLog(
@@ -250,6 +251,7 @@ module.exports = {
         oldValue,
         newValue,
       },
+      ...options,
     });
   
     this.debugLog('ALLOCATE_STAT', 'Stat point allocated successfully', {

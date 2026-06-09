@@ -21,9 +21,11 @@ module.exports = {
         this.settings.activity.timeActive += timeDiff;
         this.settings.activity.lastActiveTime = now;
   
-        // Only save if meaningful time accumulated (>6 seconds)
+        // Only flag dirty if meaningful time accumulated (>6 seconds).
+        // The 30s periodic save in lifecycle.js flushes _settingsDirty — avoid
+        // restarting the debounce on every 60s tick under burst conditions.
         if (timeDiff > 0.1) {
-          this.saveSettings();
+          this._settingsDirty = true;
         }
   
         // Update daily quest: Active Adventurer

@@ -224,6 +224,10 @@ module.exports = class ShadowRecon {
   stop(options = {}) {
     const { silent = false } = options;
     this._stopped = true;
+    if (this._saveMarkedGuildsTimer) {
+      clearTimeout(this._saveMarkedGuildsTimer);
+      this._saveMarkedGuildsTimer = null;
+    }
     if (this._startupRetryTimers) {
       this._startupRetryTimers.forEach(t => clearTimeout(t));
       this._startupRetryTimers = null;
@@ -268,11 +272,20 @@ module.exports = class ShadowRecon {
   }
 
   saveMarkedGuilds() {
-    try {
-      BdApi.Data.save(PLUGIN_NAME, "markedGuildIds", Array.from(this._markedGuildIds));
-    } catch (err) {
-      console.error(`[${PLUGIN_NAME}] Failed saving marked guilds`, err);
+    // Debounce: snapshot current set immediately, write after 0ms so rapid
+    // bulk toggles (e.g. context-menu) coalesce into one BdApi.Data.save call.
+    if (this._saveMarkedGuildsTimer) {
+      clearTimeout(this._saveMarkedGuildsTimer);
     }
+    const snapshot = Array.from(this._markedGuildIds);
+    this._saveMarkedGuildsTimer = setTimeout(() => {
+      this._saveMarkedGuildsTimer = null;
+      try {
+        BdApi.Data.save(PLUGIN_NAME, "markedGuildIds", snapshot);
+      } catch (err) {
+        console.error(`[${PLUGIN_NAME}] Failed saving marked guilds`, err);
+      }
+    }, 0);
   }
 
   isGuildMarked(guildId) {

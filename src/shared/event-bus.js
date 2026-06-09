@@ -14,18 +14,30 @@
   if (!window.__SL_EventBus) {
     const listeners = new Map();
 
-    // Detect native BdApi.Events (present in BetterDiscord 1.10+)
-    const nativeBus = (typeof BdApi !== 'undefined' && BdApi.Events &&
-      typeof BdApi.Events.on === 'function' && typeof BdApi.Events.emit === 'function')
-      ? BdApi.Events : null;
+    // Lazily-resolved reference to BdApi.Events. Captured at first call
+    // rather than at module-init, because BdApi.Events may not be ready
+    // when the first plugin initialises window.__SL_EventBus.
+    // Memoized on first success so the lookup runs at most once.
+    let _nativeBus = null;
+    let _nativeBusChecked = false;
+    function _getNativeBus() {
+      if (_nativeBusChecked) return _nativeBus;
+      _nativeBusChecked = true;
+      if (typeof BdApi !== 'undefined' && BdApi.Events &&
+          typeof BdApi.Events.on === 'function' && typeof BdApi.Events.emit === 'function') {
+        _nativeBus = BdApi.Events;
+      }
+      return _nativeBus;
+    }
 
     window.__SL_EventBus = {
       on(event, handler) {
         if (!listeners.has(event)) listeners.set(event, new Set());
         listeners.get(event).add(handler);
         // Also subscribe on native bus so events from plugins using BdApi.Events directly arrive
-        if (nativeBus) {
-          try { nativeBus.on(event, handler); } catch (_) {}
+        const _nb_on = _getNativeBus();
+        if (_nb_on) {
+          try { _nb_on.on(event, handler); } catch (_) {}
         }
       },
       off(event, handler) {
@@ -34,8 +46,9 @@
           set.delete(handler);
           if (set.size === 0) listeners.delete(event);
         }
-        if (nativeBus) {
-          try { nativeBus.off(event, handler); } catch (_) {}
+        const _nb_off = _getNativeBus();
+        if (_nb_off) {
+          try { _nb_off.off(event, handler); } catch (_) {}
         }
       },
       emit(event, ...args) {

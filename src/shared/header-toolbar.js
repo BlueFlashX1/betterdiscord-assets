@@ -200,7 +200,12 @@ function _getToolbarHub() {
 
     remove(cb) {
       this.callbacks.delete(cb);
-      if (this.callbacks.size === 0) this._teardown();
+      if (this.callbacks.size === 0) {
+        this._teardown();
+        // Null the window reference so next _setup() re-resolves the
+        // Flux dispatcher fresh (avoids stale bindings after hot-reload).
+        if (typeof window !== "undefined") window.__SL_ToolbarHub = null;
+      }
     },
   };
 

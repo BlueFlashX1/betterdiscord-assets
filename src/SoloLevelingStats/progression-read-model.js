@@ -321,11 +321,20 @@ module.exports = {
     const now = Date.now();
     const statKeys = this.getStatKeys();
     const stats = this.settings.stats || null;
+    // Compute SM Regalia piece count BEFORE the cache-hit guard so equip/unequip
+    // invalidates the cache. Gated on SM rank to avoid calling EquipmentManager otherwise.
+    let _smPiecesForKey = 0;
+    if (this.settings.rank === 'Shadow Monarch') {
+      try {
+        _smPiecesForKey = Number(window.EquipmentManager?.getEquippedSetPieceCount?.('shadow_monarch_regalia')) || 0;
+      } catch (_) {}
+    }
+
     let cacheKey = '';
     for (let i = 0; i < statKeys.length; i++) {
       cacheKey += (stats?.[statKeys[i]] || 0) + '_';
     }
-    cacheKey += this.settings.achievements?.activeTitle || '';
+    cacheKey += (this.settings.achievements?.activeTitle || '') + '_sm' + _smPiecesForKey;
   
     if (
       this._cache.totalEffectiveStats &&
@@ -370,10 +379,8 @@ module.exports = {
     // equipment, so it then benefits from title/shadow multipliers below.
     const smSetBonus = {};
     if (this.settings.rank === 'Shadow Monarch') {
-      let smPieces = 0;
-      try {
-        smPieces = Number(window.EquipmentManager?.getEquippedSetPieceCount?.('shadow_monarch_regalia')) || 0;
-      } catch (_) {}
+      // Reuse _smPiecesForKey computed above for the cache key — avoids a second EquipmentManager call.
+      const smPieces = _smPiecesForKey;
       if (smPieces > 0) {
         const coreKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
         const totalBase = coreKeys.reduce((s, k) => s + (Number(baseStats[k]) || 0), 0);

@@ -398,6 +398,9 @@ class ShadowStorageManager {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
+    if (batches >= MAX_BATCHES) {
+      this.debugError('MIGRATION', 'migratePersonalityKeys: hit MAX_BATCHES cap — migration may be incomplete; scanned=' + scanned + ' batches=' + batches, null);
+    }
     return { scanned, updated, errors, batches };
   }
 

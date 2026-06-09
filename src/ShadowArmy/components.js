@@ -76,7 +76,7 @@ function buildWidgetComponents(pluginInstance) {
     React.useEffect(() => {
       const origForceUpdate = pluginInstance._widgetForceUpdate;
       pluginInstance._widgetForceUpdate = () => setRefreshCounter((c) => c + 1);
-      return () => { pluginInstance._widgetForceUpdate = origForceUpdate || null; };
+      return () => { pluginInstance._widgetForceUpdate = origForceUpdate; };
     }, []);
 
     React.useEffect(() => {
@@ -106,15 +106,25 @@ function buildWidgetComponents(pluginInstance) {
               totalCount = (await sm.getTotalCount()) || counts.reduce((s, r) => s + r.count, 0);
               rankCounts = counts;
 
-              // Tally grades via batch cursor if available, else fall back to settings.shadows
-              const gradeMap = {};
-              if (sm.forEachShadowBatch) {
+              // Tally grades — cache on pluginInstance to avoid full IDB scan on every dirty refresh.
+              // Cache is valid for 60s; invalidated by grade-changing ops via pluginInstance._gradeCacheTs = 0.
+              const GRADE_CACHE_TTL = 60000;
+              const now = Date.now();
+              if (
+                pluginInstance._cachedGradeCounts &&
+                (now - (pluginInstance._gradeCacheTs || 0)) < GRADE_CACHE_TTL
+              ) {
+                gradeCounts = pluginInstance._cachedGradeCounts;
+              } else if (sm.forEachShadowBatch) {
+                const gradeMap = {};
                 await sm.forEachShadowBatch((batch) => {
                   for (const s of batch) {
                     const g = s.grade || 'Common';
                     gradeMap[g] = (gradeMap[g] || 0) + 1;
                   }
                 });
+                pluginInstance._cachedGradeCounts = gradeMap;
+                pluginInstance._gradeCacheTs = now;
                 gradeCounts = gradeMap;
               } else {
                 gradeCounts = tallyGrades(pluginInstance.settings.shadows || []);
