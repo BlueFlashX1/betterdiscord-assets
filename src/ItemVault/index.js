@@ -2,7 +2,8 @@
  * ItemVault — Centralized item storage for the Solo Leveling plugin ecosystem.
  *
  * Channel header icon with popup inventory display.
- * Other plugins interact via BdApi.Events (see event-api.js).
+ * Other plugins interact via the shared SLEvents bus (shared/event-bus.js).
+ * (Note: BdApi has no Events namespace — the bus is window-keyed.)
  */
 
 const Events = require('../shared/event-bus');

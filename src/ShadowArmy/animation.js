@@ -448,22 +448,16 @@ module.exports = {
     content.appendChild(info);
     animation.appendChild(content);
 
-    if (BdApi && BdApi.DOM && typeof BdApi.DOM.append === 'function') {
-      BdApi.DOM.append(document.body, animation);
-    } else {
-      document.body.appendChild(animation);
-    }
+    // BdApi.DOM has no append/remove methods (verified against BD source) —
+    // plain DOM calls are the correct path.
+    document.body.appendChild(animation);
 
     const fadeOutId = setTimeout(() => {
       this._retryTimeouts?.delete(fadeOutId);
       animation.classList.add('fade-out');
       const removeId = setTimeout(() => {
         this._retryTimeouts?.delete(removeId);
-        if (BdApi && BdApi.DOM && typeof BdApi.DOM.remove === 'function') {
-          BdApi.DOM.remove(animation);
-        } else {
-          animation.remove();
-        }
+        animation.remove();
       }, 500);
       this._retryTimeouts?.add(removeId);
     }, 2000);
