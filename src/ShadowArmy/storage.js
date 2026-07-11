@@ -526,6 +526,43 @@ class ShadowStorageManager {
   }
 
   /**
+   * Get a page of shadows via primary-key cursor resume (keyset pagination).
+   * Unlike getShadows()'s offset pagination — which costs O(offset) cursor
+   * steps to skip to a position, growing to O(N) near the end of a large
+   * store — this resumes directly from lastKey via IDBKeyRange, so each call
+   * costs O(limit) regardless of how far through the store it is. Same
+   * resume-cursor pattern as migratePersonalityKeys() above.
+   * @param {string|null} lastKey - primary key ('id') to resume after, or null to start from the beginning
+   * @param {number} limit - max records to return
+   * @returns {Promise<{shadows: Array, lastKey: string|null, exhausted: boolean}>}
+   */
+  async getShadowsByKeyPage(lastKey, limit) {
+    const safeLimit = Math.max(1, Math.floor(Number(limit) || 1));
+    return this._withStore('readonly', (store, _tx, resolve, reject) => {
+      const range = lastKey == null ? null : IDBKeyRange.lowerBound(lastKey, true);
+      const request = range ? store.openCursor(range) : store.openCursor();
+      const results = [];
+      let nextKey = null;
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          resolve({ shadows: results, lastKey: null, exhausted: true });
+          return;
+        }
+        results.push(cursor.value);
+        nextKey = cursor.key;
+        if (results.length >= safeLimit) {
+          resolve({ shadows: results, lastKey: nextKey, exhausted: false });
+          return;
+        }
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
    * Get shadows with pagination and filters (optimized with indexes).
    */
   async getShadows(
@@ -825,70 +862,6 @@ class ShadowStorageManager {
           this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, {
             index, id, error: request.error,
           });
-        };
-      });
-    });
-  }
-
-  // AGGREGATION
-
-  async getAggregatedPower(userRank, shadowRanks) {
-    const emptyResult = { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
-    if (!userRank || !shadowRanks || !Array.isArray(shadowRanks)) return emptyResult;
-
-    const userRankIndex = shadowRanks.indexOf(userRank);
-    if (userRankIndex === -1) return emptyResult;
-
-    const weakRanks = shadowRanks.slice(0, Math.max(0, userRankIndex - 2) + 1);
-    if (weakRanks.length === 0) return emptyResult;
-
-    const resolveStrength = (shadow) => {
-      if (shadow.strength > 0) return shadow.strength;
-      if (shadow._c === 2 && shadow.p !== undefined) return shadow.p * 10;
-      // Growth-aware path tried before the raw baseStats fallback below —
-      // baseStats alone is nearly always present, which previously made this
-      // branch unreachable and under-counted leveled shadows (growthStats/
-      // naturalGrowthStats ignored). Falls through to baseStats/decompressed
-      // only when the effective-stats calculation yields no real power.
-      const effectiveStats = this.getShadowEffectiveStats?.(shadow);
-      const effectivePower = effectiveStats ? this.calculateShadowPower(effectiveStats, 1) : 0;
-      if (effectivePower > 0) return effectivePower;
-      if (shadow.baseStats) return this.calculateShadowPower(shadow.baseStats, 1);
-      const decompressed = this.getShadowData(shadow);
-      if (decompressed?.baseStats) return this.calculateShadowPower(decompressed.baseStats, 1);
-      if (decompressed?.strength > 0) return decompressed.strength;
-      if (decompressed?._c === 2 && decompressed?.p !== undefined) return decompressed.p * 10;
-      return 0;
-    };
-
-    return this._withStore('readonly', (store, _tx, resolve) => {
-      const rankIndex = store.index('rank');
-      let totalPower = 0;
-      let totalCount = 0;
-      let completed = 0;
-      let errors = 0;
-
-      weakRanks.forEach((rank) => {
-        const request = rankIndex.getAll(rank);
-        request.onsuccess = () => {
-          (request.result || []).forEach((shadow) => {
-            const strength = resolveStrength(shadow);
-            if (strength > 0) {
-              totalPower += strength;
-              totalCount++;
-            }
-          });
-          completed++;
-          if (completed + errors === weakRanks.length) {
-            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now(), partial: errors > 0 });
-          }
-        };
-        request.onerror = () => {
-          errors++;
-          this.debugError('AGGREGATE_POWER', `rank index getAll failed for rank ${rank} — aggregated power will be partial`, request.error);
-          if (completed + errors === weakRanks.length) {
-            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now(), partial: errors > 0 });
-          }
         };
       });
     });

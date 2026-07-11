@@ -248,23 +248,34 @@ class DungeonStorageManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
-      const request = store.openCursor();
+      // Index-scoped scans instead of a full store.openCursor() — 'completed' and
+      // 'failed' are already-populated indices (see init() above), so this walks
+      // only matching records instead of every dungeon ever created.
+      const seenKeys = new Set();
       let deleted = 0;
 
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (cursor) {
-          const dungeon = cursor.value;
-          if (dungeon.completed || dungeon.failed) {
+      const scanIndex = (indexName) => {
+        const request = store.index(indexName).openCursor(IDBKeyRange.only(true));
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (!cursor) return;
+          // A dungeon could in principle match both indices; dedupe by primary key
+          // so it's only counted/deleted once.
+          if (!seenKeys.has(cursor.primaryKey)) {
+            seenKeys.add(cursor.primaryKey);
             cursor.delete();
             deleted++;
           }
           cursor.continue();
-        } else {
-          resolve({ deleted });
-        }
+        };
+        request.onerror = () => reject(request.error);
       };
-      request.onerror = () => reject(request.error);
+
+      scanIndex('completed');
+      scanIndex('failed');
+
+      transaction.oncomplete = () => resolve({ deleted });
+      transaction.onerror = () => reject(transaction.error);
     });
   }
 
@@ -586,9 +597,13 @@ class MobBossStorageManager {
    */
   async cleanupOldExtractedMobs() {
     const cutoffTime = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
+    // Index-scoped scan instead of a full store.openCursor() — 'extracted' is an
+    // already-populated index (see init() above), so this walks only extracted
+    // mobs instead of every mob ever created. mob.extracted is guaranteed by the
+    // index range, so only the age check remains in the (much smaller) callback.
     return this._deleteMobCursorMatches(
-      (store) => store.openCursor(),
-      (mob) => mob.extracted && mob.extractedAt && mob.extractedAt < cutoffTime
+      (store) => store.index('extracted').openCursor(IDBKeyRange.only(true)),
+      (mob) => mob.extractedAt && mob.extractedAt < cutoffTime
     );
   }
 

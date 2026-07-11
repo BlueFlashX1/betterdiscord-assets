@@ -83,7 +83,9 @@ module.exports = {
     try {
       const now = Date.now();
       const cacheKey = this.getArmyStatsCacheKey();
-      const cacheTtlMs = 1500;
+      // Same reasoning as getAggregatedArmyStats (army-stats.js): cacheKey is the
+      // real validity signal, this TTL is only a safety-net ceiling.
+      const cacheTtlMs = 30000;
       if (
         this._topGeneralsCache &&
         this._topGeneralsCacheKey === cacheKey &&

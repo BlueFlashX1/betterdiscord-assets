@@ -37,11 +37,23 @@ module.exports = {
   
       let fiber = messageElement[reactKey];
       for (let i = 0; i < 20 && fiber; i++) {
+        const hasMessageProp = Boolean(fiber.memoizedProps?.message || fiber.memoizedState?.message);
         const authorId =
           fiber.memoizedProps?.message?.author?.id ||
           fiber.memoizedState?.message?.author?.id ||
           fiber.memoizedProps?.message?.authorId;
         if (authorId === authorIdToMatch) return true;
+        // PERF: the ancestor (.return) walk from a message row's own DOM
+        // node can only ever reach ONE fiber carrying a `.message` prop --
+        // the row's own Message component. Reply/forwarded-message preview
+        // components are rendered as children of this row, not ancestors,
+        // so they live in a different branch of the tree and are never
+        // reached by walking upward from here. Once that one fiber is
+        // found and its author doesn't match, every fiber further up
+        // (group wrapper, list virtualizer, scroller) operates on
+        // collections and never carries a single-message `.message` prop,
+        // so there is nothing left to check.
+        if (hasMessageProp) return false;
         fiber = fiber.return;
       }
       return false;

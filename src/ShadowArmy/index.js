@@ -75,6 +75,11 @@ const ShadowArmy = class ShadowArmy {
     this._shadowPowerCache = new Map();
     this._shadowPowerCacheLimit = 1000;
 
+    // Coalesced message-source shared XP (see progression.js shareShadowXP /
+    // flushPendingSharedXp) — accumulated here, applied on a 10-min timer and on stop().
+    this._pendingSharedXp = 0;
+    this._sharedXpFlushInterval = null;
+
     // Cache for Solo Leveling data (user stats, rank, level)
     this._soloDataCache = null;
     this._soloDataCacheTime = 0;
@@ -194,6 +199,9 @@ const ShadowArmy = class ShadowArmy {
     // Get user ID for storage isolation
     this.userId = await this.getUserId();
     if (this._sessionToken !== sessionToken) return; // orphaned coroutine
+
+    // Restore any shared XP that hadn't been flushed before the last stop/crash
+    this._restorePendingSharedXp();
 
     try {
       this.storageManager = new ShadowStorageManager(
@@ -527,6 +535,19 @@ const ShadowArmy = class ShadowArmy {
       });
     }, gradePromoteInterval);
 
+    // Flush accumulated message-source shared XP every 10 minutes. Coalesces
+    // what used to be a full-army XP grant on every chat message into one
+    // grant per window (flushPendingSharedXp() no-ops when nothing is pending).
+    if (this._sharedXpFlushInterval) {
+      clearInterval(this._sharedXpFlushInterval);
+    }
+    this._sharedXpFlushInterval = setInterval(() => {
+      if (this._isStopped) return;
+      this.flushPendingSharedXp().catch((error) => {
+        this.debugError('SHADOW_XP_SHARE', 'Scheduled shared-XP flush failed', error);
+      });
+    }, 10 * 60 * 1000);
+
     // Listen for Dungeons essence awards via shared event bus
     {
       if (this._dungeonEssenceListener) {
@@ -629,7 +650,10 @@ const ShadowArmy = class ShadowArmy {
 
   // STOP — CLEANUP
 
-  stop() {
+  // async: BD does not await stop() (see the settings-flush comment below), but
+  // this lets us await the pending shared-XP flush before storageManager.close()
+  // without racing the IDB connection teardown at the end of this function.
+  async stop() {
     this._isStopped = true;
 
     // Remove SkillTree skill gate listener
@@ -696,6 +720,10 @@ const ShadowArmy = class ShadowArmy {
     if (this._gradePromoteInterval) {
       clearInterval(this._gradePromoteInterval);
       this._gradePromoteInterval = null;
+    }
+    if (this._sharedXpFlushInterval) {
+      clearInterval(this._sharedXpFlushInterval);
+      this._sharedXpFlushInterval = null;
     }
 
     // Self-heal resume timer: scheduled by resumeSelfHeal() with a 30s delay,
@@ -796,6 +824,17 @@ const ShadowArmy = class ShadowArmy {
     if (this._batchExtractionListener) {
       SLEvents.off('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
       this._batchExtractionListener = null;
+    }
+
+    // Flush any pending shared XP before closing storage — awaited (unlike the
+    // fire-and-forget settings save above) because it needs storageManager to
+    // still be open; skipped entirely when nothing is pending.
+    if (this._pendingSharedXp > 0 && this.storageManager) {
+      try {
+        await this.flushPendingSharedXp();
+      } catch (error) {
+        console.error('[ShadowArmy] Failed to flush pending shared XP on stop:', error);
+      }
     }
 
     // Close IndexedDB connection

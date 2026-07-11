@@ -71,6 +71,9 @@ module.exports = {
 
     // GARBAGE COLLECTION: Periodic cleanup every 5 minutes
     this.gcInterval = setInterval(() => {
+      // PERF: triggerGarbageCollection is DB/cache cleanup keyed off wall-clock
+      // timestamps and TTLs — safe to skip while hidden and catch up next visible tick.
+      if (document.hidden) return;
       this.triggerGarbageCollection('periodic');
     }, 300000); // 5 minutes
     this._intervals.add(this.gcInterval);

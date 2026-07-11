@@ -534,24 +534,27 @@ module.exports = {
     const batchSize = Math.min(500, Math.max(configuredBatch, Math.ceil(totalCount / 600)));
     const windowSize = batchSize * 4;
 
-    // ROTATING SCAN OFFSET — the distribution fix. Previously this always loaded
-    // offset 0 (the newest ~1000 shadows by extractedAt), so 99%+ of a large army
-    // was NEVER considered for promotion and stayed Common forever. Rotate the
-    // offset across cycles so every shadow gets promotion chances; wrap to 0 on a
-    // short read (end of the army reached).
-    if (!Number.isFinite(this._gradePromoteOffset)) this._gradePromoteOffset = 0;
-    const offset = this._gradePromoteOffset;
+    // ROTATING SCAN — the distribution fix. Previously this always loaded offset 0
+    // (the newest ~1000 shadows by extractedAt), so 99%+ of a large army was NEVER
+    // considered for promotion and stayed Common forever. Resume from the last-seen
+    // primary key each cycle (keyset pagination) so every shadow gets a promotion
+    // chance; wrap to the start on a short read (end of the army reached). Keyset
+    // resume costs O(windowSize) per tick regardless of position, unlike the old
+    // offset-based getShadows() call, which cost O(offset) cursor-skip steps and
+    // grew to ~20M cursor steps/lap near the end of a 281k-shadow store.
+    if (this._gradePromoteLastKey === undefined) this._gradePromoteLastKey = null;
 
     let shadows = [];
-    if (this.storageManager?.getShadows) {
+    if (this.storageManager?.getShadowsByKeyPage) {
       try {
-        shadows = await this.storageManager.getShadows({}, offset, windowSize);
+        const page = await this.storageManager.getShadowsByKeyPage(this._gradePromoteLastKey, windowSize);
+        shadows = page.shadows;
+        this._gradePromoteLastKey = page.exhausted ? null : page.lastKey;
       } catch (error) {
         this.debugError('GRADE', 'Failed to load shadows for grade promotion', error);
         return { promoted: 0 };
       }
     }
-    this._gradePromoteOffset = shadows.length < windowSize ? 0 : offset + windowSize;
     if (shadows.length === 0) return { promoted: 0 };
 
     // Sort by LOWEST grade first (ensure even progression through grade tiers),

@@ -603,11 +603,14 @@ module.exports = {
       if (!this.markAsProcessed(messageId)) return;
 
       if (this.isLoadingChannel) return;
-      if (this.shouldFilterMessage(messageElement)) return;
 
       // USER-ONLY: Only roll crits on your own messages — no styling other people's messages.
       // The crit system is personal (Solo Leveling: only the Monarch sees the System).
       // This also reduces DOM mutations and MutationObserver overhead significantly.
+      // PERF: own-message check runs BEFORE shouldFilterMessage — shouldFilterMessage
+      // does ~13 DOM queries + a react-fiber walk that's only worth paying for on
+      // messages the crit roll could ever apply to (own messages). For every other
+      // author's message this bails out immediately without touching that cost.
       {
         const msgAuthorId = this.getAuthorId(messageElement);
         if (msgAuthorId && !this.isOwnMessage(messageElement, msgAuthorId)) {
@@ -617,6 +620,8 @@ module.exports = {
           return;
         }
       }
+
+      if (this.shouldFilterMessage(messageElement)) return;
 
       const hasText =
         messageElement.textContent?.trim().length > 0 ||

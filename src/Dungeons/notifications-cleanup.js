@@ -53,6 +53,10 @@ module.exports = {
   startDungeonCleanupLoop() {
     if (this.dungeonCleanupInterval) return;
     this.dungeonCleanupInterval = setInterval(() => {
+      // PERF: cleanupExpiredDungeons is entirely wall-clock-timestamp driven
+      // (_idleSince, deployedAt, defeated-boss timestamps) — safe to skip while
+      // hidden and catch up on the next visible tick.
+      if (document.hidden) return;
       this.cleanupExpiredDungeons();
     }, 60000);
     this._intervals.add(this.dungeonCleanupInterval);

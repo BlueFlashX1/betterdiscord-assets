@@ -464,7 +464,13 @@ module.exports = {
   },
 
   async getAggregatedArmyStats() {
-    const cacheTtlMs = 1500;
+    // cacheKey (getArmyStatsCacheKey) already encodes {timestamp, count, version}
+    // and is the real "did the army change" signal — it's the primary validity
+    // check below. This TTL is only a safety-net ceiling for clock-drift/edge
+    // cases, not a forced re-scan cadence (previously 1.5s, which re-ran the
+    // full-store dual scan every 1.5-5s during any UI/XP activity regardless
+    // of whether the army had actually changed).
+    const cacheTtlMs = 30000;
     const now = Date.now();
     const currentCacheKey = this.getArmyStatsCacheKey();
     if (

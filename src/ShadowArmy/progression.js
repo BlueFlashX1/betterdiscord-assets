@@ -20,6 +20,17 @@ module.exports = {
     const amount = Math.max(0, Math.floor(Number(xpAmount) || 0));
     if (amount <= 0) return { updatedShadows: [] };
 
+    if (source === 'message') {
+      // Coalesce per-message shared XP instead of granting it synchronously —
+      // each grant used to trigger a full 281k-row IDB scan + decompress-all +
+      // army-wide XP loop + write-back on every distinct Discord message sent.
+      // Accumulate here; flushPendingSharedXp() applies the sum via the normal
+      // grantShadowXP/processXpBatch path on a 10-minute timer (index.js) and
+      // on stop(). Total XP awarded is unchanged, only arrival time shifts.
+      this._pendingSharedXp = (this._pendingSharedXp || 0) + amount;
+      return { updatedShadows: [] };
+    }
+
     const result = this.grantShadowXP(amount, source);
     if (result && typeof result.catch === 'function') {
       return result.catch((error) => {
@@ -28,6 +39,57 @@ module.exports = {
       });
     }
     return result;
+  },
+
+  /** BdApi.Data key for the persisted pending-shared-XP counter (user-scoped). */
+  _pendingSharedXpDataKey() {
+    return this.userId ? `pendingSharedXp_${this.userId}` : 'pendingSharedXp';
+  },
+
+  /** Restore the pending shared-XP counter at startup (crash loses at most one flush window). */
+  _restorePendingSharedXp() {
+    try {
+      const stored = BdApi.Data.load('ShadowArmy', this._pendingSharedXpDataKey());
+      this._pendingSharedXp = Math.max(0, Math.floor(Number(stored) || 0));
+    } catch (error) {
+      this.debugError('SHADOW_XP_SHARE', 'Failed to restore pending shared XP', error);
+      this._pendingSharedXp = 0;
+    }
+  },
+
+  /** Persist the pending shared-XP counter. Called only from flush/stop — never per message. */
+  _persistPendingSharedXp() {
+    try {
+      BdApi.Data.save('ShadowArmy', this._pendingSharedXpDataKey(), this._pendingSharedXp || 0);
+    } catch (error) {
+      this.debugError('SHADOW_XP_SHARE', 'Failed to persist pending shared XP', error);
+    }
+  },
+
+  /**
+   * Apply accumulated message-source shared XP to the whole army via the
+   * existing grantShadowXP/processXpBatch machinery. Called on a 10-minute
+   * timer and synchronously (awaited) before teardown in stop().
+   */
+  async flushPendingSharedXp() {
+    const amount = Math.floor(this._pendingSharedXp || 0);
+    if (amount <= 0) return { updatedShadows: [] };
+    // Reuse the existing _batchXpInProgress guard (set/cleared by grantShadowXP's
+    // try/finally) instead of introducing a second in-progress flag — a flush and
+    // any other concurrent grant are mutually exclusive by construction.
+    if (this._batchXpInProgress) return { updatedShadows: [] };
+
+    this._pendingSharedXp = 0;
+    try {
+      const result = await this.grantShadowXP(amount, 'message', null);
+      this._persistPendingSharedXp();
+      return result;
+    } catch (error) {
+      this._pendingSharedXp += amount; // don't lose XP on failure
+      this._persistPendingSharedXp();
+      this.debugError('SHADOW_XP_SHARE', 'Failed to flush pending shared XP', error);
+      return { updatedShadows: [] };
+    }
   },
 
   async grantShadowXP(baseAmount, reason = 'message', shadowIds = null, options = {}) {

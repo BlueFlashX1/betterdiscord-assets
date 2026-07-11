@@ -108,10 +108,17 @@ module.exports = {
 
   _matchesByContentHash(entry, contentHash) {
     if (!entry.messageContent || !entry.author) return false;
-    const entryContent = entry.messageContent.substring(0, 100);
-    const entryHashContent = `${entry.author}:${entryContent}:${entry.timestamp || ''}`;
-    const entryHash = this._createSimpleContentHash(entryHashContent);
-    return entryHash === contentHash;
+    // PERF: cache the computed hash on the entry so repeat calls (multiple
+    // checkForRestoration invocations scanning the same history array) don't
+    // re-hash the same entry's content every time. Entries are replaced
+    // wholesale, never mutated in place, when their content changes (see
+    // addToHistory in history.js), so a cached hash never goes stale.
+    if (entry._contentHash === undefined) {
+      const entryContent = entry.messageContent.substring(0, 100);
+      const entryHashContent = `${entry.author}:${entryContent}:${entry.timestamp || ''}`;
+      entry._contentHash = this._createSimpleContentHash(entryHashContent);
+    }
+    return entry._contentHash === contentHash;
   },
 
   // History Entry Matching
@@ -127,27 +134,29 @@ module.exports = {
     };
   },
 
-  _findEntryByExactId(channelCrits, normalizedMsgId, pureMessageId) {
-    return channelCrits.find((entry) => {
-      const entryId = String(entry.messageId).trim();
-      if (entryId.startsWith('hash_')) return false;
-      return entryId === normalizedMsgId || entryId === pureMessageId;
-    });
-  },
+  /**
+   * PERF: O(1) _historyMap lookup instead of O(N) Array.find scans over
+   * channelCrits (replaces the former _findEntryByExactId/_findEntryByPureId
+   * pair) — same pattern _isKnownCritMessageId already documents/uses.
+   * channelCrits was only ever channel-scoped (+ isCrit-filtered) as a
+   * byproduct of getCritHistory(); replicate that scoping explicitly here
+   * since _historyMap itself is global across channels. Every entry ever
+   * written to _historyMap already carries a normalized/pure messageId
+   * (see normalizeMessageData in history.js), so the two direct-key lookups
+   * below cover what the old fuzzy substring match handled in practice.
+   */
+  _findEntryByHistoryMap(normalizedMsgId, pureMessageId) {
+    const entry =
+      this._historyMap.get(normalizedMsgId) ||
+      (pureMessageId && pureMessageId !== normalizedMsgId
+        ? this._historyMap.get(pureMessageId)
+        : undefined);
 
-  _findEntryByPureId(channelCrits, normalizedMsgId, pureMessageId) {
-    return channelCrits.find((entry) => {
-      const entryId = String(entry.messageId).trim();
-      if (entryId.startsWith('hash_')) return false;
-      const entryPureId = this.isValidDiscordId(entryId)
-        ? entryId
-        : entryId.match(/\d{17,19}/)?.[0];
-      return (
-        (pureMessageId && entryPureId && entryPureId === pureMessageId) ||
-        normalizedMsgId.includes(entryId) ||
-        entryId.includes(normalizedMsgId)
-      );
-    });
+    if (!entry || !entry.isCrit) return undefined;
+    if (entry.channelId !== this.currentChannelId) return undefined;
+    if (String(entry.messageId).trim().startsWith('hash_')) return undefined;
+
+    return entry;
   },
 
   _findEntryByContentHash(channelCrits, contentHash) {
@@ -158,45 +167,61 @@ module.exports = {
     });
   },
 
+  /**
+   * PERF: ID-based lookups (pendingCrits Map + O(1) _historyMap) are tried
+   * first and are cheap. textContent extraction + calculateContentHash are
+   * only computed below, in the fallback branch, once those have missed —
+   * this used to run unconditionally on every checkForRestoration call
+   * regardless of whether the ID lookup already found the entry.
+   * Returns { entry, contentHash } — contentHash is surfaced so the caller
+   * can reuse it for the pendingCrits hash-hint check without re-hashing.
+   */
   findHistoryEntryForRestoration(
     normalizedMsgId,
     pureMessageId,
     channelCrits,
-    contentHash,
-    messageContent,
-    author
+    messageElement
   ) {
-    if (!this.isValidDiscordId(normalizedMsgId)) return null;
+    if (!this.isValidDiscordId(normalizedMsgId)) return { entry: null, contentHash: null };
 
     const pendingCrit =
       this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
     if (pendingCrit?.channelId === this.currentChannelId) {
-      return this._createHistoryEntryFromPending(normalizedMsgId, pendingCrit);
+      return {
+        entry: this._createHistoryEntryFromPending(normalizedMsgId, pendingCrit),
+        contentHash: null,
+      };
     }
 
-    let historyEntry = this._findEntryByExactId(channelCrits, normalizedMsgId, pureMessageId);
+    const idEntry = this._findEntryByHistoryMap(normalizedMsgId, pureMessageId);
+    if (idEntry) return { entry: idEntry, contentHash: null };
 
-    if (!historyEntry) {
-      historyEntry = this._findEntryByPureId(channelCrits, normalizedMsgId, pureMessageId);
-    }
+    const messageContent = messageElement?.textContent?.trim() || '';
+    const author =
+      dc.query(messageElement, 'username')?.textContent?.trim() ||
+      messageElement?.querySelector?.(dc.sel.author)?.textContent?.trim() ||
+      '';
+    const timestamp = messageElement?.querySelector?.('time')?.getAttribute('datetime') || '';
+    const contentHash = this.calculateContentHash(author, messageContent, timestamp);
 
-    if (!historyEntry && contentHash && messageContent && author) {
-      historyEntry = this._findEntryByContentHash(channelCrits, contentHash);
+    let hashEntry = null;
+    if (contentHash && messageContent && author) {
+      hashEntry = this._findEntryByContentHash(channelCrits, contentHash);
 
-      if (historyEntry) {
+      if (hashEntry) {
         this.debugLog(
           'CHECK_FOR_RESTORATION',
           'Found match by content hash (reprocessed message)',
           {
             msgId: normalizedMsgId,
-            matchedId: historyEntry.messageId,
+            matchedId: hashEntry.messageId,
             contentHash,
           }
         );
       }
     }
 
-    return historyEntry;
+    return { entry: hashEntry, contentHash };
   },
 
   // Visual State Checks
@@ -427,14 +452,6 @@ module.exports = {
 
         const pureMessageId = this.extractPureDiscordId(normalizedMsgId) || normalizedMsgId;
 
-        const messageContent = messageElement.textContent?.trim() || '';
-        const author =
-          dc.query(messageElement, 'username')?.textContent?.trim() ||
-          messageElement.querySelector(dc.sel.author)?.textContent?.trim() ||
-          '';
-        const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
-        const contentHash = this.calculateContentHash(author, messageContent, timestamp);
-
         this.debug?.verbose &&
           this.debugLog('CHECK_FOR_RESTORATION', 'Checking if message needs restoration', {
             msgId: normalizedMsgId,
@@ -443,13 +460,14 @@ module.exports = {
             channelCritCount: channelCrits.length,
           });
 
-        const historyEntry = this.findHistoryEntryForRestoration(
+        // PERF: textContent extraction + calculateContentHash are deferred
+        // inside findHistoryEntryForRestoration — only paid for when the
+        // O(1) ID-based lookups miss (finding #2, cpu-audit-crit-syswin-2026-07-11.md).
+        const { entry: historyEntry, contentHash } = this.findHistoryEntryForRestoration(
           normalizedMsgId,
           pureMessageId,
           channelCrits,
-          contentHash,
-          messageContent,
-          author
+          messageElement
         );
 
         const isValidDiscordId = this.isValidDiscordId(normalizedMsgId);

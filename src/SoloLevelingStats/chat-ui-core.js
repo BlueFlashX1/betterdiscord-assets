@@ -1,4 +1,3 @@
-const dc = require('../shared/discord-classes');
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
 
 module.exports = {
@@ -401,53 +400,19 @@ module.exports = {
         }, 10000);
       }
   
-      // Watch for DOM changes (channel switches, etc.)
-      if (!this.chatUIObserver) {
-        this.chatUIObserver = new MutationObserver(() => {
-          if (document.hidden) return;
-          if (!this._canShowChatUIInCurrentView()) {
-            this.removeChatUI();
-            return;
-          }
-          // Self-heal: detect stale reference (DOM removed by React re-render)
-          if (this.chatUIPanel && !this.chatUIPanel.isConnected) {
-            this.debugLog('CHAT_UI_OBSERVER', 'Stale chatUIPanel detected — DOM disconnected, clearing');
-            this.chatUIPanel = null;
-          }
-          if (document.getElementById('sls-chat-ui')) return;
-          if (this._chatUiObserverDebounceTimeout) return;
-          this._chatUiObserverDebounceTimeout = setTimeout(() => {
-            this._chatUiObserverDebounceTimeout = null;
-            tryCreateUI();
-          }, 150);
-        });
-  
-        // PERF(P5-7): Narrowed selector — '[class*="chat"]' was too broad (matches any
-        // element with "chat" in any class), risking a wide-scope subtree observer
-        const cc = dc.sel.chatContent;
-        const chatContainer =
-          document.querySelector(`main${cc}`) ||
-          document.querySelector(`section${cc}`) ||
-          document.querySelector('main[class*="chatContent-"]') ||
-          document.querySelector(`div${dc.sel.messagesWrapper}`) ||
-          document.querySelector(`div${dc.sel.chat}:not(${dc.sel.chatLayerWrapper})`) ||
-          null;
-  
-        // IMPORTANT: Never observe document.body; Discord mutates it constantly and can peg CPU.
-        if (!chatContainer) {
-          this._chatUiObserverRetryTimeout ||= setTimeout(() => {
-            this._chatUiObserverRetryTimeout = null;
-            this.chatUIObserver && this.createChatUI();
-          }, 1500);
-          this._isCreatingUI = false;
-          return;
-        }
-  
-        this.chatUIObserver.observe(chatContainer, {
-          childList: true,
-          subtree: true,
-        });
-      }
+      // PERF: chatUIObserver (subtree MutationObserver over the whole chat
+      // content area, firing on every message/reaction/embed mutation) was
+      // removed here. Its only two jobs -- (1) recreate the panel on channel
+      // switch, (2) self-heal a panel React silently removed -- are both
+      // already covered without a per-mutation observer:
+      //   (1) handleChannelChange (xp-processing.js) is event-driven off
+      //       NavigationBus + SelectedChannelStore.addChangeListener and
+      //       already calls createChatUI() on every channel switch.
+      //   (2) ensureChatUIUpdateInterval's 2s tick (already document.hidden-
+      //       gated) already detects a missing #sls-chat-ui and recreates it.
+      // Net effect: recovery latency for the rare same-channel stale-panel
+      // case moves from ~150ms to at most 2s, in exchange for not running a
+      // subtree observer on every message-area DOM mutation.
       this._isCreatingUI = false;
     } catch (error) {
       this._isCreatingUI = false;

@@ -204,12 +204,33 @@ module.exports = {
     }, 100);
   },
 
-  _processMutationNode(node, currentUserId) {
-    if (!node?.isConnected) return;
+  _ensureNotOwnMessageElementCache() {
+    if (!this._notOwnMessageElements) {
+      this._notOwnMessageElements = new WeakSet();
+    }
+    return this._notOwnMessageElements;
+  },
 
-    const messageElement = this._extractMutationMessageElement(node);
-    this._trackMutationNodeAddedAt(node, messageElement);
-    if (!messageElement) return;
+  _processMutationNode(messageElement, currentUserId) {
+    if (!messageElement?.isConnected) return;
+
+    // PERF: skip elements already confirmed NOT the current user's message.
+    // Safe because Discord's virtualized message list unmounts/removes a
+    // row's DOM node when it scrolls out of view rather than reusing the
+    // same node instance for a different message's content while mounted
+    // (this codebase already relies on that same assumption elsewhere --
+    // SystemWindow caches author-id lookups directly on the DOM element).
+    // So a given element here always maps to the same message for its
+    // entire lifetime in the WeakSet.
+    const notOwnCache = this._ensureNotOwnMessageElementCache();
+    if (notOwnCache.has(messageElement)) return;
+
+    // PERF: cheap ID-based dedup ahead of the expensive ownership check --
+    // only when the ID is obtainable from the DOM attribute alone (no
+    // fiber walk needed). Falls through to the normal order if absent.
+    const cheapMessageId =
+      messageElement.getAttribute('data-list-item-id') || messageElement.getAttribute('id');
+    if (cheapMessageId && this.processedMessageIds?.has(cheapMessageId)) return;
 
     const isOwnMessage = this.isOwnMessage(messageElement, currentUserId);
     this.debugLog('MUTATION_OBSERVER', 'Message element detected', {
@@ -217,7 +238,10 @@ module.exports = {
       isOwnMessage,
       hasCurrentUserId: Boolean(currentUserId),
     });
-    if (!isOwnMessage) return;
+    if (!isOwnMessage) {
+      notOwnCache.add(messageElement);
+      return;
+    }
 
     const messageId = this.getMessageId(messageElement);
     this.debugLog('MUTATION_OBSERVER', 'Own message detected via MutationObserver', {
@@ -283,8 +307,20 @@ module.exports = {
       if (!nodes.length || !this._isRunning) return;
 
       requestAnimationFrame(() => {
+        // PERF: resolve each added node to its enclosing message row first,
+        // then dedupe to distinct elements before running the (expensive)
+        // per-element ownership pipeline -- N nested mutations inside one
+        // message row (reaction add, embed load, hover toolbar, etc.)
+        // collapse to a single ownership check per 150ms batch instead of N.
+        const seenElements = new Set();
         for (let i = 0; i < nodes.length; i++) {
-          this._processMutationNode(nodes[i], currentUserId);
+          const node = nodes[i];
+          if (!node?.isConnected) continue;
+          const messageElement = this._extractMutationMessageElement(node);
+          this._trackMutationNodeAddedAt(node, messageElement);
+          if (!messageElement || seenElements.has(messageElement)) continue;
+          seenElements.add(messageElement);
+          this._processMutationNode(messageElement, currentUserId);
         }
         this.trackChannelVisit();
       });

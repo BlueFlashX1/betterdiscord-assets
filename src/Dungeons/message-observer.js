@@ -342,17 +342,12 @@ module.exports = {
         (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
       );
       if (reactKey) {
-        const result = Array.from({ length: 20 }).reduce(
-          (acc) => {
-            if (acc.found || !acc.fiber) return acc;
-            const msgId = acc.fiber.memoizedProps?.message?.id;
-            return msgId
-              ? { fiber: null, found: String(msgId) }
-              : { fiber: acc.fiber.return, found: null };
-          },
-          { fiber: messageElement[reactKey], found: null }
-        );
-        if (result.found) return result.found;
+        let fiber = messageElement[reactKey];
+        for (let i = 0; i < 20 && fiber; i++) {
+          const msgId = fiber.memoizedProps?.message?.id;
+          if (msgId) return String(msgId);
+          fiber = fiber.return;
+        }
       }
     } catch (e) { /* swallow */ }
     return null;
