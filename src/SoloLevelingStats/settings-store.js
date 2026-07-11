@@ -800,7 +800,16 @@ module.exports = {
         });
     }
 
-    // Debounced path — coalesce rapid calls
+    // Debounced path — coalesce rapid calls. Widened from 2s to 20s (2026-07):
+    // per-message events (xp-processing, achievements, quests) call this
+    // non-immediate path, and the full pipeline it triggers (file rotation +
+    // regression scan + IndexedDB + BdApi.Data x2, each gated behind
+    // console.warn) is expensive enough that firing it every ~2-3s during
+    // active chat produced a measurable CPU/IO storm. This only throttles the
+    // heavy persistence tier — in-memory settings mutations from callers are
+    // unaffected, and the 30s periodicSaveInterval safety net (lifecycle.js)
+    // plus the immediate-save path (stop()/unload, level-up, rank changes)
+    // still flush promptly when it matters.
     this._settingsDirty = true;
     if (this._saveSettingsTimer) return;
     this._saveSettingsTimer = setTimeout(() => {
@@ -812,7 +821,7 @@ module.exports = {
         .catch((err) => {
           this.debugError?.('SAVE_SETTINGS_DEBOUNCED', err);
         });
-    }, 2000);
+    }, 20000);
   },
 
   async _runStartupSaveProbeGuard() {
@@ -909,13 +918,17 @@ module.exports = {
       return { isValid: false, statSum };
     }
 
-    // Read the file backup ONCE here and reuse it for both the regression check
-    // below and the persisted-floor candidate (which would otherwise re-scan all
-    // 6 backup files). Halves the synchronous disk I/O per save.
+    // PERF: use the in-memory file-backup cache (kept warm by readFileBackup()
+    // on load/recovery and by writeFileBackup() after every write) instead of
+    // re-scanning all 6 backup files from disk on every save. A save should
+    // never need to re-read old backups to write a new one — the regression
+    // check only needs to know what was already persisted, which the cache
+    // already reflects. Reused below for both the regression check and the
+    // persisted-floor candidate (avoids a second read/scan in the same pass).
     let existingFileBackup;
     let existingFileBackupRead = false;
     try {
-      existingFileBackup = this.readFileBackup();
+      existingFileBackup = this.getCachedFileBackup();
       existingFileBackupRead = true;
       if (existingFileBackup?.stats) {
         const existingStatSum = Object.values(existingFileBackup.stats).reduce(

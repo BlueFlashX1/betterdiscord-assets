@@ -85,7 +85,14 @@ class ItemVaultEventAPI {
         reason,
       });
     } else {
-      this._debugLog(`SPEND FAILED ${itemId}: have ${oldAmount}, need ${amount}, short ${result.shortfall} [${source || 'unknown'}]`);
+      // Dedup identical failures: a caller retrying the same unaffordable spend
+      // (same item, same need, same balance) logs once, not once per attempt.
+      // A change in either amount or balance produces a new key and logs again.
+      const failKey = `${itemId}:${amount}:${oldAmount}`;
+      if (this._lastSpendFailKey !== failKey) {
+        this._lastSpendFailKey = failKey;
+        this._debugLog(`SPEND FAILED ${itemId}: have ${oldAmount}, need ${amount}, short ${result.shortfall} [${source || 'unknown'}]`);
+      }
 
       Events.emit('ItemVault:spendFailed', {
         itemId,

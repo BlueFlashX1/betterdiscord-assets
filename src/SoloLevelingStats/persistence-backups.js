@@ -59,11 +59,24 @@ module.exports = {
         );
       }
 
+      // Keep the in-memory mirror warm so the save-time regression/floor
+      // check (getCachedFileBackup) doesn't need its own disk scan.
+      this._fileBackupCache = candidates[0].data;
       return candidates[0].data;
     } catch (error) {
       this.debugError('LOAD_SETTINGS_FILE', error);
       return null;
     }
+  },
+
+  // PERF: save-time-only accessor. Returns the in-memory mirror populated by
+  // readFileBackup() (load/recovery) or writeFileBackup() (after a write)
+  // instead of re-scanning all 6 backup files from disk. Falls back to a
+  // real read only if the cache hasn't been warmed yet (e.g. a save races
+  // ahead of the first load), so the regression/floor check never goes blind.
+  getCachedFileBackup() {
+    if (this._fileBackupCache !== null) return this._fileBackupCache;
+    return this.readFileBackup();
   },
 
   writeFileBackup(data) {
@@ -90,6 +103,9 @@ module.exports = {
       fs.writeFileSync(tmpPath, jsonStr, 'utf8');
       fs.renameSync(tmpPath, this.fileBackupPath);
       this.debugLog('SAVE_SETTINGS', 'Saved file backup (rotated)', { path: this.fileBackupPath });
+      // The data we just wrote IS the new best file backup — update the
+      // in-memory mirror instead of leaving the next save to re-read it.
+      this._fileBackupCache = data;
       return true;
     } catch (error) {
       this.debugError('SAVE_SETTINGS_FILE', error);

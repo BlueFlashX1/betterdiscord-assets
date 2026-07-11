@@ -2,7 +2,6 @@ const {
   DEFAULT_TYPING_ALERT_COOLDOWN_MS,
   PANEL_CONTAINER_ID,
   PLUGIN_NAME,
-  RANKS,
   STYLE_ID,
   WIDGET_ID,
   WIDGET_REINJECT_DELAY_MS,
@@ -314,6 +313,13 @@ const ShadowSensesUiMethods = {
       }
       this._unpatchContextMenu = BdApi.ContextMenu.patch("user-context", (tree, props) => {
         // No outer try-catch — let menu construction errors propagate visibly
+        // TEMP [SS-DEPLOY-TRACE]: ungated diagnostics for silent-deploy bug — remove after fix
+        console.log("[SS-DEPLOY-TRACE] patch fired", {
+          hasUser: !!(props && props.user),
+          treeType: typeof tree,
+          childrenIsArray: Array.isArray(tree && tree.props && tree.props.children),
+          childrenLen: (tree && tree.props && Array.isArray(tree.props.children)) ? tree.props.children.length : null,
+        });
         if (!props || !props.user) return;
         const user = props.user;
         const userId = user.id;
@@ -342,12 +348,17 @@ const ShadowSensesUiMethods = {
             type: "text",
             label: "Deploy Shadow",
             action: async () => {
+              console.log("[SS-DEPLOY-TRACE] deploy action clicked", { userId });
+              // Immediate feedback — the shadow lookup below is async and
+              // there must never be silent dead air between click and toast.
+              this._toast("Deploying shadow…", "info");
               // Try-catch only around risky async shadow loading
-              let available;
+              let weakest;
               try {
-                available = this.deploymentManager
-                  ? await this.deploymentManager.getAvailableShadows()
-                  : [];
+                weakest = this.deploymentManager
+                  ? await this.deploymentManager.getWeakestAvailableShadow()
+                  : null;
+                console.log("[SS-DEPLOY-TRACE] weakest available shadow resolved", { shadowId: weakest?.id, rank: weakest?.rank });
               } catch (err) {
                 this.debugError("ContextMenu", "Failed to load available shadows", err);
                 this._toast("Failed to load shadows", "error");
@@ -355,18 +366,13 @@ const ShadowSensesUiMethods = {
               }
 
               try {
-                if (available.length === 0) {
+                if (!weakest) {
                   this._toast("No available shadows. All are deployed, in dungeons, or marked for exchange.", "warning");
                   return;
                 }
-                // Sort weakest first (ascending rank index)
-                const sorted = [...available].sort((a, b) => {
-                  const aIdx = RANKS.indexOf(a.rank || "E");
-                  const bIdx = RANKS.indexOf(b.rank || "E");
-                  return aIdx - bIdx;
-                });
-                const weakest = sorted[0];
+                console.log("[SS-DEPLOY-TRACE] deploying", { shadowId: weakest.id, rank: weakest.rank });
                 const success = await this.deploymentManager.deploy(weakest, user);
+                console.log("[SS-DEPLOY-TRACE] deploy returned", { success });
                 if (success) {
                   const targetName = user.globalName || user.username || "User";
                   this._toast(`Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`, "success");
@@ -388,7 +394,12 @@ const ShadowSensesUiMethods = {
         if (tree && tree.props && tree.props.children) {
           if (Array.isArray(tree.props.children)) {
             tree.props.children.push(separator, menuItem);
+            console.log("[SS-DEPLOY-TRACE] item appended to menu");
+          } else {
+            console.log("[SS-DEPLOY-TRACE] children NOT an array — item NOT appended", { childrenType: typeof tree.props.children });
           }
+        } else {
+          console.log("[SS-DEPLOY-TRACE] no tree.props.children — item NOT appended");
         }
       });
       this.debugLog("ContextMenu", "Patched user-context menu");

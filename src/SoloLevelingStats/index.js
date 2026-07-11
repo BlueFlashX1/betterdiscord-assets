@@ -307,6 +307,11 @@ const SoloLevelingStats = class SoloLevelingStats {
     } catch (_) {
       this.fileBackupPath = null;
     }
+    // PERF: in-memory mirror of the best-known file backup, kept warm by
+    // readFileBackup() (load/recovery paths) and writeFileBackup() (after a
+    // successful write). The per-save regression/floor check reads this
+    // instead of re-scanning all 6 backup files from disk on every save.
+    this._fileBackupCache = null;
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;

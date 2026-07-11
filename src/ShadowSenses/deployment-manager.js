@@ -124,13 +124,32 @@ class DeploymentManager {
       return false;
     }
 
-    // Re-verify shadow is still available before committing deployment
+    // Re-verify shadow is still available before committing deployment.
+    // Uses a single bounded IDB get (getShadowsByIds([id])) instead of the
+    // full getAvailableShadows() scan — otherwise this re-verify would
+    // silently reintroduce the same 281k-record full scan that
+    // getWeakestAvailableShadow() was added to avoid.
     try {
-      const currentAvailable = await this.getAvailableShadows();
-      const stillAvailable = currentAvailable.find(s => s.id === shadow.id);
-      if (!stillAvailable) {
-        this._debugLog("DeploymentManager", `Shadow ${shadow.id} no longer available, aborting deployment`);
-        return false;
+      const armyInstance = this._getShadowArmyInstance();
+      const shadowStorage = armyInstance?.storageManager;
+      if (shadowStorage && typeof shadowStorage.getShadowsByIds === "function") {
+        const exclusion = this._buildExclusionSnapshot();
+        const [freshRaw] = await shadowStorage.getShadowsByIds([shadow.id]);
+        const fresh = freshRaw && armyInstance.getShadowData
+          ? armyInstance.getShadowData(freshRaw)
+          : freshRaw;
+        if (!fresh || !this._isShadowAvailable(fresh, exclusion)) {
+          this._debugLog("DeploymentManager", `Shadow ${shadow.id} no longer available, aborting deployment`);
+          return false;
+        }
+      } else {
+        // Bounded lookup unavailable — fall back to the full scan unchanged.
+        const currentAvailable = await this.getAvailableShadows();
+        const stillAvailable = currentAvailable.find(s => s.id === shadow.id);
+        if (!stillAvailable) {
+          this._debugLog("DeploymentManager", `Shadow ${shadow.id} no longer available, aborting deployment`);
+          return false;
+        }
       }
     } catch (err) {
       this._debugError("DeploymentManager", "Failed to re-verify shadow availability", err);
@@ -285,16 +304,35 @@ class DeploymentManager {
     return snapshot;
   }
 
+  _isShadowAvailable(shadow, exclusion) {
+    const sid = String(shadow?.id || "").trim();
+    if (!sid) return false;
+    if (exclusion.deployedIds.has(sid)) return false;
+    if (exclusion.exchangeMarkedIds.has(sid)) return false;
+    if (exclusion.reserveIds.has(sid)) return true;             // Reserve = idle = available
+    if (exclusion.dungeonAllocatedIds.has(sid)) return false;   // In dungeon = unavailable
+    return true;
+  }
+
   _buildAvailableShadowList(allShadows, exclusion) {
-    return allShadows.filter((shadow) => {
-      const sid = String(shadow?.id || "").trim();
-      if (!sid) return false;
-      if (exclusion.deployedIds.has(sid)) return false;
-      if (exclusion.exchangeMarkedIds.has(sid)) return false;
-      if (exclusion.reserveIds.has(sid)) return true;             // Reserve = idle = available
-      if (exclusion.dungeonAllocatedIds.has(sid)) return false;   // In dungeon = unavailable
-      return true;
-    });
+    return allShadows.filter((shadow) => this._isShadowAvailable(shadow, exclusion));
+  }
+
+  _buildExclusionSnapshot() {
+    const dungeons = this._getDungeonsSnapshot();
+    return {
+      deployedIds: this._deployedShadowIds,
+      exchangeMarkedIds: this._getExchangeMarkedIds(),
+      dungeonAllocatedIds: dungeons.dungeonAllocatedIds,
+      reserveIds: dungeons.reserveIds,
+    };
+  }
+
+  _pickWeakest(shadows) {
+    if (!Array.isArray(shadows) || shadows.length === 0) return null;
+    return [...shadows].sort(
+      (a, b) => RANKS.indexOf(a.rank || "E") - RANKS.indexOf(b.rank || "E")
+    )[0];
   }
 
   _injectDungeonFallbackShadow(available, allShadows, exclusion) {
@@ -326,13 +364,7 @@ class DeploymentManager {
       const allShadows = armyInstance.getShadowSnapshot?.() || await armyInstance.getAllShadows();
       if (!Array.isArray(allShadows)) return [];
 
-      const dungeons = this._getDungeonsSnapshot();
-      const exclusion = {
-        deployedIds: this._deployedShadowIds,
-        exchangeMarkedIds: this._getExchangeMarkedIds(),
-        dungeonAllocatedIds: dungeons.dungeonAllocatedIds,
-        reserveIds: dungeons.reserveIds,
-      };
+      const exclusion = this._buildExclusionSnapshot();
 
       const available = this._buildAvailableShadowList(allShadows, exclusion);
       this._injectDungeonFallbackShadow(available, allShadows, exclusion);
@@ -351,6 +383,61 @@ class DeploymentManager {
     } catch (err) {
       this._debugError("DeploymentManager", "Failed to get available shadows", err);
       return [];
+    }
+  }
+
+  /**
+   * Find the single weakest available shadow without loading the full
+   * shadow store. Walks RANKS ascending (E first) and queries a bounded
+   * sample per rank via ShadowArmy's 'rank' IDB index — replaces the
+   * previous getAvailableShadows() + full-array sort used by the
+   * "Deploy Shadow" context-menu action, which forced a full 281k-record
+   * scan just to pick one shadow.
+   */
+  async getWeakestAvailableShadow({ rankSampleLimit = 500 } = {}) {
+    try {
+      const armyInstance = this._getShadowArmyInstance();
+      if (!armyInstance) return null;
+
+      const shadowStorage = armyInstance.storageManager;
+      if (!shadowStorage || typeof shadowStorage.getShadowsByRankLimited !== "function") {
+        // Bounded query unavailable — fall back to the full-scan path unchanged.
+        return this._pickWeakest(await this.getAvailableShadows());
+      }
+
+      const exclusion = this._buildExclusionSnapshot();
+
+      for (const rank of RANKS) {
+        let rankShadows;
+        try {
+          rankShadows = await shadowStorage.getShadowsByRankLimited(rank, rankSampleLimit);
+        } catch (err) {
+          this._debugError("DeploymentManager", `Bounded rank query failed for rank ${rank}`, err);
+          continue;
+        }
+        if (!Array.isArray(rankShadows) || rankShadows.length === 0) continue;
+
+        const decompressed = armyInstance.getShadowData
+          ? rankShadows.map((s) => armyInstance.getShadowData(s))
+          : rankShadows;
+        const eligible = this._buildAvailableShadowList(decompressed, exclusion);
+        if (eligible.length > 0) {
+          this._debugLog("DeploymentManager", "Weakest available shadow found via bounded rank query", {
+            rank,
+            sampled: rankShadows.length,
+          });
+          return eligible[0];
+        }
+      }
+
+      // No rank yielded an eligible shadow within the bounded sample — fall
+      // back to the full scan so edge-case (dungeon-fallback) behavior is
+      // unchanged from the previous getAvailableShadows() path.
+      this._debugLog("DeploymentManager", "Bounded rank query exhausted with no match, falling back to full scan");
+      return this._pickWeakest(await this.getAvailableShadows());
+    } catch (err) {
+      this._debugError("DeploymentManager", "Failed to get weakest available shadow", err);
+      return null;
     }
   }
 }

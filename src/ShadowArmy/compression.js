@@ -484,8 +484,38 @@ module.exports = {
   async autoPromoteGrades() {
     const essenceConfig = this.settings?.shadowEssence || this.defaultSettings.shadowEssence;
     if (essenceConfig?.enabled === false) return { promoted: 0 };
-    const currentEssence = essenceConfig?.essence || 0;
+    const localEssence = essenceConfig?.essence || 0;
+    if (localEssence <= 0) return { promoted: 0 };
+
+    // PRE-CHECK (burst-retry fix): ShadowArmy's local essenceConfig.essence counter
+    // is maintained independently of ItemVault's real ledger (it's only ever pushed
+    // TO ItemVault via fire-and-forget add/spend events — see the Dungeons essence
+    // listener in index.js — never re-synced back down). When the two drift, this
+    // cycle used to promote against the stale local value, then emit a spend
+    // ItemVault could never honor, repeating "SPEND FAILED" every autoPromote tick.
+    // Query the actual balance once per cycle (event bus emit is synchronous, so
+    // this read and the spend below happen in the same tick — no other writer can
+    // interleave) and cap what we're willing to spend to it.
+    let vaultBalance = null;
+    if (SLEvents) {
+      SLEvents.emit('ItemVault:query', {
+        itemId: 'shadow_essence',
+        callback: (result) => { vaultBalance = result?.amount ?? 0; },
+      });
+    }
+    // If ItemVault didn't answer (not mounted yet), fall back to the local counter
+    // rather than blocking promotions outright.
+    const currentEssence = vaultBalance != null ? Math.min(localEssence, vaultBalance) : localEssence;
     if (currentEssence <= 0) return { promoted: 0 };
+
+    // Cooldown safety net: if a prior cycle's spend still failed (e.g. the vault
+    // query above ever misses a mounted-but-desynced ItemVault instance), don't
+    // retry until the vault balance has grown past what we tried to spend, or 5
+    // minutes have passed.
+    const cooldownUntil = this._essenceSpendCooldownUntil || 0;
+    if (Date.now() < cooldownUntil && currentEssence < (this._essenceSpendCooldownAmount || 0)) {
+      return { promoted: 0 };
+    }
 
     const gradeOrder = C.SHADOW_GRADES;
     // SHADOW MONARCH PERK (player-exclusive): the top grade (Grand Marshal) is only
@@ -593,14 +623,27 @@ module.exports = {
       // Persist essence deduction
       essenceConfig.essence = Math.max(0, remainingEssence);
 
-      // Mirror essence spend to ItemVault audit trail
+      // Mirror essence spend to ItemVault audit trail. The pre-check above caps
+      // essenceSpent to the real vault balance, so this should always succeed —
+      // but if it doesn't (e.g. ItemVault wasn't mounted when we queried), arm a
+      // cooldown so the next cycle doesn't immediately repeat the same failed spend.
       if (SLEvents && essenceSpent > 0) {
+        let spendFailed = false;
+        const onSpendFailed = (data) => {
+          if (data?.itemId === 'shadow_essence') spendFailed = true;
+        };
+        SLEvents.on('ItemVault:spendFailed', onSpendFailed);
         SLEvents.emit('ItemVault:spend', {
           itemId: 'shadow_essence',
           amount: essenceSpent,
           source: 'ShadowArmy',
           reason: 'grade_promotion',
         });
+        SLEvents.off('ItemVault:spendFailed', onSpendFailed);
+        if (spendFailed) {
+          this._essenceSpendCooldownUntil = Date.now() + 5 * 60 * 1000;
+          this._essenceSpendCooldownAmount = essenceSpent;
+        }
       }
 
       // PERF (2026-04-12): Yield to the event loop after the heavy load+sort

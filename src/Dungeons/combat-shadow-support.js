@@ -131,7 +131,13 @@ module.exports = {
       ? Number(totalTimeSpan)
       : 1000;
     // Catch-up window allows moderate backlog processing without huge burst loops.
-    const maxCatchUp = Math.max(span * 2, effectiveCooldown * 4);
+    // Absolute 5-min ceiling mirrors the shadow-rotation revisitSpan cap
+    // (combat-shadow-execution.js): span itself scales with wall-clock elapsed,
+    // so without this ceiling a long-backgrounded (timer-throttled) session made
+    // the boss/mob attack loops iterate proportionally to the whole gap in one
+    // synchronous burst on refocus — the measured 350-465s PERF SPIKE ticks.
+    const MAX_CATCHUP_MS = 5 * 60 * 1000;
+    const maxCatchUp = Math.min(Math.max(span * 2, effectiveCooldown * 4), MAX_CATCHUP_MS);
     const elapsed = Number(timeSinceLastAttack);
     const safeElapsed = Number.isFinite(elapsed) ? elapsed : 0;
     return Math.min(Math.max(0, safeElapsed), maxCatchUp);

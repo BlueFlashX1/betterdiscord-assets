@@ -902,6 +902,22 @@ class ShadowStorageManager {
     });
   }
 
+  /**
+   * Fetch up to `limit` shadows of a single rank via the 'rank' index.
+   * Bounded read — avoids a full-store scan when only a small sample of
+   * one rank is needed (e.g. deployment's weakest-available-shadow lookup).
+   */
+  async getShadowsByRankLimited(rank, limit = 500) {
+    if (!rank) return [];
+    const safeLimit = Math.max(1, Math.floor(limit) || 500);
+
+    return this._withStore('readonly', (store, _tx, resolve, reject) => {
+      const request = store.index('rank').getAll(rank, safeLimit);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error || new Error('getShadowsByRankLimited failed'));
+    });
+  }
+
   // DATABASE CLEANUP
 
   close() {
