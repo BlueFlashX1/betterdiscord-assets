@@ -3,6 +3,7 @@
  *
  * Mixin: Object.assign(ShadowArmy.prototype, require('./extraction'))
  */
+const C = require('./constants');
 const SLEvents = require('../shared/event-bus');
 const { getPluginInstance, getSkillTreeLevel } = require('../shared/plugin-bridge');
 
@@ -386,6 +387,9 @@ module.exports = {
         lastNaturalGrowth: Date.now(),
         ownerLevelAtExtraction: userLevel,
         growthVarianceSeed: Math.random(),
+        // Stamp clean-by-construction — self-heal.js Phase 2 skip-flag relies
+        // on every creation path stamping (see self-heal.js HEAL_VERSION doc).
+        _healV: C.HEAL_VERSION,
       };
     } else {
       shadow = this.generateShadow(targetRank, userLevel, userStats);
@@ -817,6 +821,9 @@ module.exports = {
             lastNaturalGrowth: _now,
             ownerLevelAtExtraction: userLevel,
             growthVarianceSeed: Math.random(),
+            // Stamp clean-by-construction — self-heal.js Phase 2 skip-flag
+            // relies on every creation path stamping (see self-heal.js doc).
+            _healV: C.HEAL_VERSION,
           };
         } else {
           shadow = this.generateShadow(mobRank, userLevel, userStats);

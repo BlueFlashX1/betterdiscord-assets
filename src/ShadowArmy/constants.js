@@ -405,6 +405,11 @@ const RANK_STAT_MULTIPLIERS = {
   'Shadow Monarch': 36.64419807055644,
 };
 
+// SELF-HEAL — single source of truth for the heal-version stamp so
+// extraction (creation-time stamping) and self-heal.js (Phase 2 skip check)
+// never drift apart. Bump when stat weights change again to force a re-heal.
+const HEAL_VERSION = 1;
+
 // CSS STYLE IDs — For injection tracking and cleanup
 
 const STYLE_ID_EXTRACTION = 'shadow-army-extraction-styles';
@@ -433,6 +438,8 @@ module.exports = {
   RANK_PROBABILITY_MULTIPLIERS,
   RANK_STAT_MULTIPLIERS,
   SHADOW_ARMY_CAPACITY,
+  // Self-heal
+  HEAL_VERSION,
   // CSS style IDs
   STYLE_ID_EXTRACTION,
   STYLE_ID_ARISE,

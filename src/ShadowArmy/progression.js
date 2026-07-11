@@ -229,6 +229,10 @@ module.exports = {
 
     this.settings.cachedTotalPowerShadowCount = 0;
     this.clearShadowPowerCache();
+    // XP/level changes mutate shadow.strength — bump the write-gen counter
+    // the hourly compression gate uses (see army-stats.js:_applyTotalPowerDelta
+    // for why this is NOT bumped from the getTotalShadowPower recalc below).
+    this._armyWriteGen = (this._armyWriteGen || 0) + 1;
 
     if (!skipPowerRecalc) {
       this.getTotalShadowPower(true).catch((error) => {
@@ -406,6 +410,9 @@ module.exports = {
     this.invalidateShadowPowerCache(shadow);
     this.settings.cachedTotalPowerShadowCount = 0;
     this.clearShadowPowerCache();
+    // Rank-up mutates shadow.strength — bump the write-gen counter the
+    // hourly compression gate uses (see army-stats.js:_applyTotalPowerDelta).
+    this._armyWriteGen = (this._armyWriteGen || 0) + 1;
 
     if (!this._batchXpInProgress) {
       // Skip per-rank-up power recalc during batch XP — grantShadowXP does one post-batch recalc

@@ -297,6 +297,11 @@ module.exports = {
       this.clearShadowPowerCache();
       this._invalidateSnapshot();
       this._invalidateCapCountCache?.();
+      // Deletion/exchange mutates the army — bump the write-gen counter the
+      // hourly compression gate uses (see army-stats.js:_applyTotalPowerDelta).
+      // Currently unreached (no live caller), kept for when a shadow-exchange
+      // feature routes through here.
+      this._armyWriteGen = (this._armyWriteGen || 0) + 1;
       return true;
     } catch (error) {
       this.debugError(scope, 'Batch delete error', error);
@@ -322,6 +327,26 @@ module.exports = {
         return;
       }
 
+      // R1 (perf): skip the full 281k-row scan entirely when nothing
+      // tiering-relevant has happened since the last completed pass.
+      // this._armyWriteGen is a dedicated write-generation counter bumped
+      // only at real mutation sites (extraction: army-stats.js
+      // _applyTotalPowerDelta; XP/rank-up: progression.js grantShadowXP +
+      // attemptAutoRankUp; heal: self-heal.js). It deliberately does NOT
+      // reuse getArmyStatsCacheKey()/cachedTotalPowerVersion — that field is
+      // also re-stamped by passive cache-refresh reads (widget/buff lookups
+      // recomputing a stale cachedTotalPowerShadowCount, including the one
+      // THIS pass resets below), which would make the gate look "changed"
+      // on every tick regardless of real activity and defeat the skip for
+      // exactly the large/active armies that need it.
+      // this._lastCompressionGen starts undefined, so the first pass after
+      // plugin start always runs.
+      const currentGen = this._armyWriteGen || 0;
+      if (this._lastCompressionGen !== undefined && currentGen === this._lastCompressionGen) {
+        this.debugLog('COMPRESSION', 'Army unchanged since last pass, skipping full scan');
+        return;
+      }
+
       let allShadows = [];
       if (this.storageManager) {
         try {
@@ -334,6 +359,10 @@ module.exports = {
 
       if (allShadows.length <= 1000) {
         this.debugLog('COMPRESSION', 'Army too small, skipping');
+        // Record completion even for the "too small" branch — re-reading
+        // getAllShadowsRaw() every tick for a stable small army is exactly
+        // the wasted work this gate exists to remove.
+        this._lastCompressionGen = this._armyWriteGen || 0;
         return;
       }
 
@@ -450,6 +479,13 @@ module.exports = {
       }
       this.settings.shadowCompression.lastCompressionTime = Date.now();
       this.saveSettings();
+
+      // Record completion. Re-read this._armyWriteGen fresh (not the
+      // currentGen captured at the top) in case a real mutation landed
+      // mid-pass (e.g. a concurrent extraction while getAllShadowsRaw() was
+      // awaited) — recording the newer value means next tick still detects
+      // that change instead of masking it.
+      this._lastCompressionGen = this._armyWriteGen || 0;
 
       if (compressed > 0 || ultraCompressed > 0 || decompressed > 0) {
         this.debugLog(

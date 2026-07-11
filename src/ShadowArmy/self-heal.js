@@ -6,6 +6,12 @@
  *   Phase 2 (every start):  Lightweight scan that catches any shadow still
  *                           missing beastType/beastFamily or with stale stats.
  *                           Skips shadows already healed (checks _healV field).
+ *                           Skips the ENTIRE traversal once a completed pass
+ *                           has been recorded (BdApi.Data 'selfHealCleanV' >=
+ *                           HEAL_VERSION) — safe only because extraction.js
+ *                           and combat-stats.js stamp _healV on every newly
+ *                           created shadow, so nothing created after that
+ *                           pass can be un-healed.
  *
  * Repairs:
  *   1. Adds beastType/beastFamily derived from role
@@ -18,9 +24,20 @@
  */
 const C = require('./constants');
 
-// Current heal version — bump this when stat weights change again
-// to force a re-heal of all shadows on next start
-const HEAL_VERSION = 1;
+// Current heal version — single source of truth in constants.js so
+// extraction.js/combat-stats.js (creation-time stamping) and self-heal.js
+// (Phase 2 skip check) can never drift apart. Bump C.HEAL_VERSION when
+// stat weights change again to force a re-heal of all shadows on next start.
+const HEAL_VERSION = C.HEAL_VERSION;
+
+// BdApi.Data key for the Phase 2 completion flag. When this is >= HEAL_VERSION,
+// every shadow in IDB is either: (a) present during the completed pass this
+// flag records (validated then), or (b) created after extraction/combat-stats
+// began stamping _healV at creation (clean by construction, never touched by
+// Phase 2 healing) — so a full Phase 2 traversal is provably unnecessary.
+// Bumping HEAL_VERSION invalidates this flag naturally (stale value < new
+// version), re-enabling exactly one more full pass.
+const SELF_HEAL_CLEAN_KEY = 'selfHealCleanV';
 
 module.exports = {
   /**
@@ -44,8 +61,27 @@ module.exports = {
   async selfHealOnStart() {
     if (!this.storageManager) return;
 
+    // Skip the full 281k-row traversal entirely once a prior Phase 2 pass has
+    // PROVABLY completed at this heal version: every shadow present then was
+    // validated, and every shadow created since is stamped _healV at creation
+    // (extraction.js/combat-stats.js) — so nothing in IDB can be un-healed.
+    const cleanVersion = BdApi.Data.load('ShadowArmy', SELF_HEAL_CLEAN_KEY) || 0;
+    if (cleanVersion >= HEAL_VERSION) {
+      this.debugLog('SELF-HEAL', `Phase 2: skipped (army already clean at v${cleanVersion})`);
+      return;
+    }
+
     this.debugLog('SELF-HEAL', `Phase 2: Integrity check (heal version ${HEAL_VERSION})...`);
     const result = await this._healShadowBatch(HEAL_VERSION);
+
+    if (result.aborted) {
+      // Do NOT persist the clean flag — an aborted pass never verified every
+      // shadow, so the next start must retry the full traversal.
+      this.debugLog('SELF-HEAL', `Phase 2 aborted before completion (${result.healed} healed so far)`);
+      return;
+    }
+
+    BdApi.Data.save('ShadowArmy', SELF_HEAL_CLEAN_KEY, HEAL_VERSION);
 
     if (result.healed > 0) {
       this.debugLog('SELF-HEAL', `Phase 2 complete: healed ${result.healed} shadows`);
@@ -77,6 +113,7 @@ module.exports = {
           if (failed > 0) result.healed = Math.max(0, result.healed - failed);
           saveBatch.length = 0;
         }
+        result.aborted = true;
         return result;
       }
 
@@ -94,6 +131,7 @@ module.exports = {
             if (failed > 0) result.healed = Math.max(0, result.healed - failed);
             saveBatch.length = 0;
           }
+          result.aborted = true;
           return result;
         }
 
@@ -231,6 +269,7 @@ module.exports = {
         // Re-check abort after yield — deployment may have signaled during flush
         if (this._selfHealAborted) {
           this.debugLog('SELF-HEAL', 'Aborted after flush (deployment requested IDB)');
+          result.aborted = true;
           return result;
         }
       }
@@ -254,6 +293,11 @@ module.exports = {
       this._totalPowerCache = null;
       this._totalPowerCacheTime = null;
       if (this._shadowPowerCache) this._shadowPowerCache.clear();
+      // Heal writes change shadow.strength (recalculated from corrected
+      // stats) — bump the army write-generation counter so the hourly
+      // compression tiering gate (compression.js:processShadowCompression)
+      // doesn't skip a pass that heal just made tiering-relevant.
+      this._armyWriteGen = (this._armyWriteGen || 0) + 1;
     }
 
     return result;

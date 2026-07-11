@@ -69,16 +69,24 @@ built before debugLog gate; debug-logging signature unification (6+ variants); S
 stale committed runtime.js (NEEDS USER DECISION); Dungeons header-widget loop never self-stops
 (near-zero cost); SLS activityTracker 60s no hidden-gate (trivial arithmetic).
 
-HIGH — needs user/design judgment before touching (do not blind-fix):
-- ShadowArmy self-heal.js Phase 2: full 281k-row cursor traversal on EVERY plugin start.
-  A skip-once-clean flag is unsafe until extraction.js stamps `_healV` on newly created
-  shadows (it currently doesn't — a flag would silently stop healing new shadows).
-  Safe fix = stamp at creation + skip-flag, together.
-- ShadowArmy hourly compression tiering: full-scan is required by the current algorithm
-  (global power comparison). True fix = streaming top-K min-heap rewrite of
-  tiering/compression/cache-invalidation — game-balance invariant, needs design review.
-- SLS achievements.js:402/:450 fallback getShadows caps (10k/1M) — cold path, only reached
-  if ShadowArmy aggregate APIs are absent/zero; arbitrary caps risk under-counting power.
+HIGH items — RESOLVED 2026-07-11 with user approval (wave 4):
+- Self-heal every-start scan: FIXED — shadows stamped `_healV` (persists as `hv` through
+  compression) at all 3 creation sites; `selfHealCleanV` flag persisted only on non-aborted
+  full passes skips Phase 2; HEAL_VERSION bump re-enables one pass. (constants.js owns
+  HEAL_VERSION.)
+- Hourly compression full-scan: MITIGATED — `_armyWriteGen` counter bumped only at real
+  mutation sites (extraction delta, XP flush, rank-up, heal writes, deletes) gates the pass;
+  skip when unchanged; first pass after start always runs; gen re-read at record time so
+  mid-pass mutations aren't masked. NOTE: getArmyStatsCacheKey was evaluated and REJECTED as
+  the signal — it self-invalidates on passive reads. The streaming top-K tiering rewrite
+  remains available as a future HIGH item if the gated scan ever matters again.
+- SLS achievements fallback: FIXED — cache-first ladder (ShadowArmy cachedTotalPower →
+  SLS cachedShadowPower → one 10k-bounded scan only on never-cached fresh installs, with
+  visible debugError); honest-zero commit guard verified upstream and untouched.
+
+Incidental discovery (wave 4): ShadowArmy `deleteShadowsBatch` currently has ZERO live
+callers (dead code today; left in place, defensively write-gen-bumped — the batch API is
+sound and likely to be wired up by a future exchange/conversion feature).
 
 ## 5. Dispatch template (copy for each subagent)
 

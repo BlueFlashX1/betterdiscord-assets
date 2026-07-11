@@ -60,6 +60,9 @@ module.exports = {
       lastNaturalGrowth: Date.now(),
       ownerLevelAtExtraction: userLevel,
       growthVarianceSeed,
+      // Stamp clean-by-construction so self-heal.js Phase 2 can skip this
+      // shadow forever (its skip-flag relies on every creation path stamping).
+      _healV: C.HEAL_VERSION,
     };
 
     return shadow;

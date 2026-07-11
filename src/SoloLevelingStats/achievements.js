@@ -326,6 +326,22 @@ module.exports = {
     this.updateShadowPowerDisplay();
   },
 
+  // Last-known power fallback for when ShadowArmy's aggregate APIs are absent/erroring.
+  // Checked before any scan — stale cache beats scanning the full IDB store. Both fields
+  // are kept fresh on every successful commit via _commitShadowPower.
+  _getCachedPowerFallback(shadowArmy) {
+    const armyCached = shadowArmy?.settings?.cachedTotalPower;
+    if (armyCached !== undefined) {
+      return { found: true, power: armyCached, source: 'ShadowArmy' };
+    }
+    const raw = this.settings.cachedShadowPower;
+    if (raw !== undefined) {
+      const power = Number(String(raw).replace(/,/g, '')) || 0;
+      return { found: true, power, source: 'SoloLevelingStats' };
+    }
+    return { found: false, power: 0 };
+  },
+
   _sumShadowPower(shadowArmy, shadows) {
     return shadows.reduce((sum, shadow) => {
       try {
@@ -394,11 +410,23 @@ module.exports = {
   
           const armyStats = await shadowArmy.getAggregatedArmyStats();
   
-          // Diagnostic: IDB has data but aggregation returned 0 shadows -> manual calc
+          // Diagnostic: IDB has data but aggregation returned 0 shadows -> reconcile.
+          // This is a real mismatch (not honest-zero — honest-zero is armyStats.totalShadows
+          // === 0 with a raw count of 0 too, handled above at the commit-result guard).
           if (totalPower === 0 && armyStats?.totalShadows === 0 && shadowArmy.storageManager) {
             try {
               const count = await shadowArmy.storageManager.getTotalCount();
               if (count > 0) {
+                const cached = this._getCachedPowerFallback(shadowArmy);
+                if (cached.found) {
+                  this.debugLog('UPDATE_SHADOW_POWER', 'Aggregation/index mismatch — using last cached power', cached);
+                  this._commitShadowPower(cached.power, shadowArmy);
+                  return;
+                }
+                // No cached value has ever been recorded (fresh install) — one bounded
+                // scan as the true last resort. Capped, so large armies may under-count;
+                // logged so that's visible rather than silent.
+                this.debugError('UPDATE_SHADOW_POWER', 'No cached power available; running capped diagnostic scan (10000 cap, may undercount)');
                 const direct = await shadowArmy.storageManager.getShadows({}, 0, 10000);
                 if (direct?.length > 0) {
                   const manualPower = this._sumShadowPower(shadowArmy, direct);
@@ -443,11 +471,24 @@ module.exports = {
         }
       }
   
-      // --- FALLBACK: manual storage manager enumeration ---
+      // --- FALLBACK: aggregate APIs absent/erroring. Try last cached power before any
+      // scan — stale beats a 281k-row scan, and the primary path refreshes it whenever
+      // ShadowArmy answers. ---
+      const cachedFallback = this._getCachedPowerFallback(shadowArmy);
+      if (cachedFallback.found) {
+        this.debugLog('UPDATE_SHADOW_POWER', 'Aggregate APIs unavailable — using last cached power', cachedFallback);
+        this._commitShadowPower(cachedFallback.power, shadowArmy);
+        return;
+      }
+
+      // No cached value has ever been recorded (fresh install edge case) — one bounded
+      // scan as the true last resort. Capped, so large armies may under-count; logged
+      // so that's visible rather than silent.
       if (shadowArmy.storageManager?.getShadows) {
         try {
           if (!shadowArmy.storageManager.db) await shadowArmy.storageManager.init();
-          const shadows = await shadowArmy.storageManager.getShadows({}, 0, 1000000);
+          this.debugError('UPDATE_SHADOW_POWER', 'No cached power available; running capped last-resort scan (10000 cap, may undercount on large armies)');
+          const shadows = await shadowArmy.storageManager.getShadows({}, 0, 10000);
           if (shadows?.length > 0) {
             const totalPower = this._sumShadowPower(shadowArmy, shadows);
             this._commitShadowPower(totalPower, shadowArmy);

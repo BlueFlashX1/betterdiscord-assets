@@ -80,6 +80,13 @@ module.exports = {
         this.settings.cachedTotalPowerVersion = (this.settings.cachedTotalPowerVersion || 0) + 1;
         this.saveSettings();
 
+        // Real army mutation (extraction add/remove) — bump the write-gen
+        // counter the hourly compression gate uses. NOTE: do NOT bump this
+        // from _persistTotalPowerCache/getTotalShadowPower — those also run
+        // on passive cache-refresh reads (e.g. widget/buff lookups) with no
+        // underlying mutation, which would falsely defeat the gate.
+        this._armyWriteGen = (this._armyWriteGen || 0) + 1;
+
         return { shadowPower, currentPower, newPower, currentCount };
       })
       .catch((err) => {
