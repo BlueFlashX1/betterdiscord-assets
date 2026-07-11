@@ -17,7 +17,7 @@ module.exports = {
     }
 
     try {
-      let shadows = await this.storageManager.getShadows({}, 0, Infinity);
+      let shadows = await this.storageManager.getAllShadowsRaw();
 
       // HYBRID COMPRESSION: Decompress all shadows transparently
       if (shadows && shadows.length > 0) {

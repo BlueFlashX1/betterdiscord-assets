@@ -714,6 +714,26 @@ class ShadowStorageManager {
     return { scanned, batches };
   }
 
+  /**
+   * Collect every shadow via the bounded batch cursor (forEachShadowBatch)
+   * instead of getShadows({}, 0, Infinity)'s FILTERED PATH, which opens an
+   * unindexed store cursor then does a full in-memory Array.sort over the
+   * entire result — wasted work when the caller needs the whole army anyway
+   * (order already comes out correct from the index-ordered cursor below).
+   * Returns raw records as stored (no auto-decompression) — same contract
+   * as the getShadows() call sites this replaces.
+   */
+  async getAllShadowsRaw({ batchSize = 500 } = {}) {
+    const collected = [];
+    await this.forEachShadowBatch(
+      (batch) => {
+        for (let i = 0; i < batch.length; i++) collected.push(batch[i]);
+      },
+      { batchSize, sortBy: 'extractedAt', sortOrder: 'desc' }
+    );
+    return collected;
+  }
+
   async getTotalCount() {
     return this._withStore('readonly', (store, _tx, resolve, reject) => {
       const request = store.count();
@@ -757,7 +777,12 @@ class ShadowStorageManager {
             request.result && found.push(request.result);
             finalize();
           };
-          request.onerror = () => {
+          request.onerror = (event) => {
+            // Prevent the per-id error from bubbling to tx.onerror and
+            // aborting the whole chunk — one bad record shouldn't lose every
+            // other id's result in this chunk (R8: per-item IDB tolerance).
+            event.preventDefault();
+            event.stopPropagation();
             // Surface the per-key read failure: previously counted down as if
             // the id were absent, which silently produced short result lists
             // (e.g. grantShadowXP would grant 0 XP to the missing shadows).

@@ -232,11 +232,15 @@ module.exports = {
     if (!this.settings.enabled) return;
 
     try {
+      // R3: cheapest/most-likely-to-reject first — dedup check is a single
+      // attribute read + Set lookup, cheaper than the querySelector('time')
+      // + potential fiber-walk in getMessageTimestamp below.
+      const messageId = this.getMessageId(messageElement);
+      if (messageId && this.processedMessageIds.has(messageId)) return;
+
       const messageTimestamp = this.getMessageTimestamp(messageElement);
       if (messageTimestamp && messageTimestamp < this.observerStartTime) return;
 
-      const messageId = this.getMessageId(messageElement);
-      if (messageId && this.processedMessageIds.has(messageId)) return;
       if (messageId) {
         this.processedMessageIds.add(messageId);
         // Bound set size to prevent unbounded growth

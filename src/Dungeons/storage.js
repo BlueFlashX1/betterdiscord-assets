@@ -263,7 +263,12 @@ class DungeonStorageManager {
           // so it's only counted/deleted once.
           if (!seenKeys.has(cursor.primaryKey)) {
             seenKeys.add(cursor.primaryKey);
-            cursor.delete();
+            const deleteRequest = cursor.delete();
+            // R8: a bad record must not abort the whole cleanup transaction.
+            deleteRequest.onerror = (delEvent) => {
+              delEvent.preventDefault();
+              delEvent.stopPropagation();
+            };
             deleted++;
           }
           cursor.continue();
@@ -448,7 +453,13 @@ class MobBossStorageManager {
         };
         const request = store.put(mobData);
         request.onsuccess = () => saved++;
-        request.onerror = () => errors++;
+        request.onerror = (event) => {
+          // R8: prevent one bad mob record from aborting the whole batch —
+          // mirrors ShadowArmy/storage.js saveShadowsBatch.
+          event.preventDefault();
+          event.stopPropagation();
+          errors++;
+        };
       });
 
       transaction.oncomplete = () => resolve({ saved, errors });
@@ -581,7 +592,12 @@ class MobBossStorageManager {
         }
 
         if (shouldDelete(cursor.value)) {
-          cursor.delete();
+          const deleteRequest = cursor.delete();
+          // R8: a bad record must not abort the whole cleanup transaction.
+          deleteRequest.onerror = (delEvent) => {
+            delEvent.preventDefault();
+            delEvent.stopPropagation();
+          };
           deleted++;
         }
 

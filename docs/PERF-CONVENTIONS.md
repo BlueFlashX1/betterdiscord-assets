@@ -57,11 +57,28 @@ visibilitychange (correct as-is); ShadowPortalCore breathing tweens; ShadowArmy 
 onabort handlers; CSSPicker ESM/CJS mix; plugin-bridge cache; toolbar-tooltip fallback;
 Dungeons usedIds sentinel; EquipmentManager bonus cache; SoloLevelingTheme hashed classes.
 
+Fixed 2026-07 wave 3 (R1-R10 conformance sweep): ShadowSenses onTypingStart monitored-check
+ordering; Dungeons handleMessage dedup-before-DOM-query + R8 preventDefault on 3 mob/dungeon
+store sites; ShadowArmy getAllShadowsRaw() (indexed stream, no wasted sort) rewiring
+compression/migrations/getAllShadows + getShadowsByIds onerror preventDefault.
+
 Parked (small, grab-bag for a future round): Dungeons mobs `extracted` never set true (GC
-branch no-op); CriticalHit content-hash restoration fallback unreachable under LEAN schema;
-SoloLevelingToasts debug-payload built before debugLog gate; debug-logging signature
-unification (6+ variants); ShadowAwayBridge stale committed runtime.js (NEEDS USER DECISION);
-Dungeons header-widget loop never self-stops (near-zero cost).
+branch no-op); CriticalHit content-hash restoration fallback unreachable under LEAN schema +
+dead CSS_STYLE_IDS constants + uncapped startObserving retry; SoloLevelingToasts debug-payload
+built before debugLog gate; debug-logging signature unification (6+ variants); ShadowAwayBridge
+stale committed runtime.js (NEEDS USER DECISION); Dungeons header-widget loop never self-stops
+(near-zero cost); SLS activityTracker 60s no hidden-gate (trivial arithmetic).
+
+HIGH — needs user/design judgment before touching (do not blind-fix):
+- ShadowArmy self-heal.js Phase 2: full 281k-row cursor traversal on EVERY plugin start.
+  A skip-once-clean flag is unsafe until extraction.js stamps `_healV` on newly created
+  shadows (it currently doesn't — a flag would silently stop healing new shadows).
+  Safe fix = stamp at creation + skip-flag, together.
+- ShadowArmy hourly compression tiering: full-scan is required by the current algorithm
+  (global power comparison). True fix = streaming top-K min-heap rewrite of
+  tiering/compression/cache-invalidation — game-balance invariant, needs design review.
+- SLS achievements.js:402/:450 fallback getShadows caps (10k/1M) — cold path, only reached
+  if ShadowArmy aggregate APIs are absent/zero; arbitrary caps risk under-counting power.
 
 ## 5. Dispatch template (copy for each subagent)
 

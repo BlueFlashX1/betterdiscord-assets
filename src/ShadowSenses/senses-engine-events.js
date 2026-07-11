@@ -808,6 +808,16 @@ function onTypingStart(payload) {
     const currentUserId = userStore?.getCurrentUser?.()?.id;
     if (currentUserId && userId === currentUserId) return;
 
+    // Monitored-Set lookup before the selected-channel store call: most
+    // typing events are for unmonitored users (rejects here in the common
+    // case), so check that first and only pay for the store call when the
+    // typer is actually being watched.
+    const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+    if (!monitoredIds || !monitoredIds.has(userId)) return;
+
+    const deployment = this._plugin.deploymentManager.getDeploymentForUser(userId);
+    if (!deployment) return;
+
     // Suppress toast if user is currently viewing the same channel —
     // Discord's native typing indicator already shows there.
     // Use the instance-cached _SelectedChannelStore (resolved once in
@@ -818,12 +828,6 @@ function onTypingStart(payload) {
         if (selectedChannelId && selectedChannelId === channelId) return;
       } catch (_) { /* fall through if store unavailable */ }
     }
-
-    const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
-    if (!monitoredIds || !monitoredIds.has(userId)) return;
-
-    const deployment = this._plugin.deploymentManager.getDeploymentForUser(userId);
-    if (!deployment) return;
 
     const { guildId, channelName } = resolveTypingChannelContext(
       this,

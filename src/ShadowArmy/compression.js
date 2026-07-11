@@ -325,7 +325,7 @@ module.exports = {
       let allShadows = [];
       if (this.storageManager) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
+          allShadows = await this.storageManager.getAllShadowsRaw();
         } catch (error) {
           this.debugError('COMPRESSION', 'Error getting shadows', error);
           return;
