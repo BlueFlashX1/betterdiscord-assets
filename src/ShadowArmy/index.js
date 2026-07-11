@@ -75,8 +75,9 @@ const ShadowArmy = class ShadowArmy {
     this._shadowPowerCache = new Map();
     this._shadowPowerCacheLimit = 1000;
 
-    // Coalesced message-source shared XP (see progression.js shareShadowXP /
-    // flushPendingSharedXp) — accumulated here, applied on a 10-min timer and on stop().
+    // Coalesced shared XP from all shareShadowXP sources — chat messages, quests,
+    // etc (see progression.js shareShadowXP / flushPendingSharedXp) — accumulated
+    // here, applied on a 10-min timer and on stop().
     this._pendingSharedXp = 0;
     this._sharedXpFlushInterval = null;
 
@@ -535,9 +536,10 @@ const ShadowArmy = class ShadowArmy {
       });
     }, gradePromoteInterval);
 
-    // Flush accumulated message-source shared XP every 10 minutes. Coalesces
-    // what used to be a full-army XP grant on every chat message into one
-    // grant per window (flushPendingSharedXp() no-ops when nothing is pending).
+    // Flush accumulated shared XP (all sources) every 10 minutes. Coalesces
+    // what used to be a full-army XP grant on every chat message / quest
+    // completion / etc into one grant per window (flushPendingSharedXp()
+    // no-ops when nothing is pending).
     if (this._sharedXpFlushInterval) {
       clearInterval(this._sharedXpFlushInterval);
     }

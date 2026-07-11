@@ -529,21 +529,27 @@ function resetHiddenChannelReveal(ctx) {
   document.body.classList.remove("ra-channels-hover-reveal");
 }
 
-export function applyChannelHiding(ctx, guildId) {
+export function applyChannelHiding(ctx, guildId, sidebar) {
   const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
   const hiddenIds = resolveHiddenIdSet(guildData, effectiveGuildId);
 
-  const sidebar = findChannelSidebar();
-  const scope = sidebar || document;
-  clearStalePushedChannelMarkers(scope, hiddenIds);
+  const scope = sidebar || findChannelSidebar() || document;
 
   if (hiddenIds.size === 0) {
+    // Cheap single-element gate before the full querySelectorAll scan —
+    // keeps the "never hidden anything" path cheap while still catching
+    // leftover markers from a previous non-empty state (e.g. right after
+    // the last channel was recalled).
+    if (scope.querySelector("[data-ra-pushed]")) {
+      clearStalePushedChannelMarkers(scope, hiddenIds);
+    }
     resetHiddenChannelReveal(ctx);
     return;
   }
 
+  clearStalePushedChannelMarkers(scope, hiddenIds);
   applyHiddenChannelVisibility(scope, hiddenIds, ctx._channelsHoverRevealActive);
 }
 
@@ -628,15 +634,14 @@ function applyCategoryCrushForId(ctx, scope, categoryId) {
   hideCrushedCategoryChildren(ctx, categoryEl, categoryId);
 }
 
-export function applyCategoryCrushing(ctx, guildId) {
+export function applyCategoryCrushing(ctx, guildId, sidebar) {
   const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
   const crushedCategories = guildData?.crushedCategories || [];
   if (crushedCategories.length === 0) return;
 
-  const sidebar = findChannelSidebar();
-  const scope = sidebar || document;
+  const scope = sidebar || findChannelSidebar() || document;
 
   for (const { id: categoryId } of crushedCategories) {
     applyCategoryCrushForId(ctx, scope, categoryId);
@@ -658,8 +663,12 @@ export function restoreAllCrushedCategories() {
 export function applyMicroStateForCurrentGuild(ctx) {
   const guildId = ctx._SelectedGuildStore?.getGuildId?.();
   if (guildId) {
-    applyChannelHiding(ctx, guildId);
-    applyCategoryCrushing(ctx, guildId);
+    // Resolve once, share across both calls — halves the sidebar lookup
+    // cost per channel-observer firing (mirrors ShadowRecon's cached
+    // getGuildsTarget pattern in guild-visuals.js).
+    const sidebar = findChannelSidebar();
+    applyChannelHiding(ctx, guildId, sidebar);
+    applyCategoryCrushing(ctx, guildId, sidebar);
   }
 }
 

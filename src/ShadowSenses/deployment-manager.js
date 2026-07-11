@@ -43,6 +43,7 @@ class DeploymentManager {
     this._deployments = [];
     this._monitoredUserIds = new Set();
     this._deployedShadowIds = new Set();
+    this._deploymentByUserId = new Map();
     this._availableCache = _ttl(5000); // 5s TTL — avoids redundant IDB reads
 
     // _version — incremented on every save. Setter fires a 'change'
@@ -100,6 +101,7 @@ class DeploymentManager {
   _rebuildSets() {
     this._monitoredUserIds = new Set(this._deployments.map((d) => String(d.targetUserId)));
     this._deployedShadowIds = new Set(this._deployments.map((d) => String(d.shadowId)));
+    this._deploymentByUserId = new Map(this._deployments.map((d) => [String(d.targetUserId), d]));
   }
 
   async deploy(shadow, targetUser) {
@@ -189,7 +191,7 @@ class DeploymentManager {
   getDeploymentForUser(userId) {
     const normalizedUserId = String(userId || "").trim();
     if (!normalizedUserId) return null;
-    return this._deployments.find((d) => String(d.targetUserId) === normalizedUserId) || null;
+    return this._deploymentByUserId.get(normalizedUserId) || null;
   }
 
   getDeployments() {

@@ -52,9 +52,11 @@ function isVoiceChannelChat() {
   const Webpack = BdApi?.Webpack;
 
   // 1) Primary: selected channel type === voice or stage
+  let path1Resolved = false;
   try {
     const channel = getCurrentChannel();
     if (channel) {
+      path1Resolved = true;
       const type = Number(channel.type);
       if (type === 2 || type === 13) return true;
     }
@@ -63,7 +65,10 @@ function isVoiceChannelChat() {
   // 2) URL-based: most reliable — Discord's URL is /channels/<g>/<id>
   //    whenever a channel is being viewed. Look up that ID in
   //    ChannelStore and check its type. Bypasses any
-  //    SelectedChannelStore staleness.
+  //    SelectedChannelStore staleness (path 1 can lag one tick behind the
+  //    URL right after a channel switch, so this always runs even when
+  //    path 1 resolved — do NOT short-circuit path 2 on a path-1 negative).
+  let path2Resolved = false;
   try {
     if (typeof window !== "undefined" && window.location && Webpack) {
       const m = String(window.location.pathname || "").match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
@@ -71,10 +76,19 @@ function isVoiceChannelChat() {
         const ChannelStore = Webpack.getStore("ChannelStore");
         const ch = ChannelStore?.getChannel?.(m[1]);
         const t = Number(ch?.type);
-        if (t === 2 || t === 13) return true;
+        if (!Number.isNaN(t)) {
+          path2Resolved = true;
+          if (t === 2 || t === 13) return true;
+        }
       }
     }
   } catch (_) {}
+
+  // Both independent sources (store + URL) resolved a channel and agree
+  // it's not voice/stage — skip paths 3/4 (voice-connect cross-check and
+  // the document-wide DOM scan), which exist for when 1+2 can't resolve
+  // or can't agree, not to override a confirmed non-voice result.
+  if (path1Resolved && path2Resolved) return false;
 
   // 3) Voice-connect state: user is connected to a VC AND the currently
   //    selected channel matches that VC.

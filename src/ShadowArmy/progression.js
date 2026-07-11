@@ -20,25 +20,19 @@ module.exports = {
     const amount = Math.max(0, Math.floor(Number(xpAmount) || 0));
     if (amount <= 0) return { updatedShadows: [] };
 
-    if (source === 'message') {
-      // Coalesce per-message shared XP instead of granting it synchronously —
-      // each grant used to trigger a full 281k-row IDB scan + decompress-all +
-      // army-wide XP loop + write-back on every distinct Discord message sent.
-      // Accumulate here; flushPendingSharedXp() applies the sum via the normal
-      // grantShadowXP/processXpBatch path on a 10-minute timer (index.js) and
-      // on stop(). Total XP awarded is unchanged, only arrival time shifts.
-      this._pendingSharedXp = (this._pendingSharedXp || 0) + amount;
-      return { updatedShadows: [] };
-    }
-
-    const result = this.grantShadowXP(amount, source);
-    if (result && typeof result.catch === 'function') {
-      return result.catch((error) => {
-        this.debugError('SHADOW_XP_SHARE', 'Failed to share XP with ShadowArmy', error);
-        return { updatedShadows: [] };
-      });
-    }
-    return result;
+    // shareShadowXP never targets specific shadows (no shadowIds param) — every
+    // call is an army-wide broadcast. Each grant used to trigger a full
+    // 281k-row IDB scan + decompress-all + army-wide XP loop + write-back on
+    // every distinct source event (chat message, quest completion, etc).
+    // Coalesce ALL sources into one accumulator instead of granting
+    // synchronously — flushPendingSharedXp() applies the sum via the normal
+    // grantShadowXP/processXpBatch path on a 10-minute timer (index.js) and
+    // on stop(). The per-shadow XP application in processXpBatch is
+    // source-agnostic (grantShadowXP's `reason` param is never read past the
+    // function signature), so merging sources here changes only arrival
+    // timing, never total XP awarded or how it's applied.
+    this._pendingSharedXp = (this._pendingSharedXp || 0) + amount;
+    return { updatedShadows: [] };
   },
 
   /** BdApi.Data key for the persisted pending-shared-XP counter (user-scoped). */
@@ -67,9 +61,10 @@ module.exports = {
   },
 
   /**
-   * Apply accumulated message-source shared XP to the whole army via the
-   * existing grantShadowXP/processXpBatch machinery. Called on a 10-minute
-   * timer and synchronously (awaited) before teardown in stop().
+   * Apply accumulated army-wide shared XP (all shareShadowXP sources — chat
+   * messages, quests, etc — merged into one counter) via the existing
+   * grantShadowXP/processXpBatch machinery. Called on a 10-minute timer and
+   * synchronously (awaited) before teardown in stop().
    */
   async flushPendingSharedXp() {
     const amount = Math.floor(this._pendingSharedXp || 0);
@@ -81,7 +76,10 @@ module.exports = {
 
     this._pendingSharedXp = 0;
     try {
-      const result = await this.grantShadowXP(amount, 'message', null);
+      // 'shared' reflects the merged sources — grantShadowXP's `reason` param
+      // has no functional effect (never read beyond the function signature),
+      // so this label is for debug-log clarity only.
+      const result = await this.grantShadowXP(amount, 'shared', null);
       this._persistPendingSharedXp();
       return result;
     } catch (error) {

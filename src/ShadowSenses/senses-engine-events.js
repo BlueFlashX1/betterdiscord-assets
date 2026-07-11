@@ -682,25 +682,12 @@ function mergePresenceUpdatesWithStoreSnapshot(ctx, updates, monitoredIds) {
     upsert(update.userId, update.status);
   }
 
-  const presenceStore = ctx._resolvePresenceStore();
-  if (presenceStore && typeof presenceStore.getStatus === "function") {
-    for (const monitoredId of monitoredIds) {
-      const normalizedUserId = String(monitoredId || "").trim();
-      if (!normalizedUserId) continue;
-      // Skip store reads for users already present from the dispatcher payload —
-      // the dispatcher data is fresher and should not be overwritten by a potentially stale store.
-      if (mergedByUserId.has(normalizedUserId)) continue;
-      let liveStatus = null;
-      try {
-        const rawStatus = presenceStore.getStatus(normalizedUserId);
-        if (typeof rawStatus === "string" && rawStatus.trim().length > 0) {
-          liveStatus = ctx._normalizeStatus(rawStatus);
-        }
-      } catch (_) {}
-      upsert(normalizedUserId, liveStatus);
-    }
-  }
-
+  // PERF: the full monitored-set rescan against the presence store was
+  // removed here — it duplicated _pollMonitoredPresenceStatuses (index.js
+  // subscribe(): PresenceStore.addChangeListener, 200ms debounce), which
+  // already owns catching monitored-user transitions missed by a given
+  // dispatcher batch, and fires on every store mutation (a broader trigger
+  // set than the 4 dispatcher event names this function is fed from).
   return Array.from(mergedByUserId.values());
 }
 
@@ -709,7 +696,7 @@ function onPresenceUpdate(payload) {
     const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
     if (!monitoredIds || monitoredIds.size === 0) return;
 
-    const updates = this._extractPresenceUpdates(payload);
+    const updates = this._extractPresenceUpdates(payload, monitoredIds);
     const mergedUpdates = mergePresenceUpdatesWithStoreSnapshot(this, updates, monitoredIds);
     if (mergedUpdates.length === 0) return;
 

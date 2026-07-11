@@ -35,6 +35,31 @@ this._Dispatcher =
 **DO NOT use optional chaining (`?.`) in Webpack filter functions** — it breaks matching.
 Apply this pattern to every plugin that needs the Dispatcher.
 
+## Performance Conventions (BD community canon + suite audits, 2026-07)
+
+> Full playbook for perf work + subagent dispatch template: [docs/PERF-CONVENTIONS.md](docs/PERF-CONVENTIONS.md)
+> (hard rules R1–R10, verification discipline, do-not-refix registry, risk grading).
+
+- **Webpack module searches are resolved ONCE and cached** — at `start()` (Stealth pattern) or
+  memoized in the shared acquirer (`shared/navigation.js`, `shared/discord-classes.js`,
+  `shared/dispatcher.js`). `{ searchExports: true }` loops over every export of every module —
+  never call it outside a cached one-time resolution. (BD ≥1.13 adds an internal query cache,
+  but per-plugin caching remains the convention.)
+- **Hot-path ordering:** cheapest, most-likely-to-reject check first. Own-message/monitored-user
+  gates come BEFORE any DOM query or fiber walk.
+- **Never full-scan the ShadowArmy store** (281k+ records ≈ 45-50s): rank-index + count-capped
+  reads, keyset (not offset) pagination, chunked `getShadowsByIds`. Army-wide XP goes through
+  the pending-shared-XP accumulator, never per-event grants.
+- **Persistence:** `BdApi.Data.save` deferred off hot paths, coalesced (SLS: 20s debounce +
+  30s dirty-gated safety net); never re-READ backups on the write path.
+- **Observers:** shared hubs (`LayoutObserverBus`, `__SL_ToolbarHub`, `__SL_DomBus`) over
+  per-plugin document-wide observers; narrow scope, throttle callbacks, `document.hidden`-gate
+  periodic work. DELIBERATE deviation from the community's "patch React render instead of
+  observers" advice: Patcher-on-render couples to hashed Discord internals, which rot faster
+  than aria/role-anchored DOM observation in this suite's history — keep observers.
+- **React:** memoize components in frequently-refreshing containers (FeedCard pattern); module-
+  scope ref callbacks that close over nothing.
+
 ## BD Constraints
 
 Output must be a single `.plugin.js` file. `BdApi` is global (no import). Node built-ins `fs`, `crypto`, `buffer`, `https` available via BD polyfills. npm packages OK (bundled by esbuild). `child_process`, remote libraries, and minification are banned.

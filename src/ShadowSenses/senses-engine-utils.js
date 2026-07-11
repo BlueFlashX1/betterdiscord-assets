@@ -92,7 +92,7 @@ function resolvePresenceUpdateStatus(update, normalizer) {
   );
 }
 
-function flattenPresenceUpdateCandidates(group) {
+function flattenPresenceUpdateCandidates(group, monitoredIds) {
   if (!group) return [];
   const queue = [group];
   const visited = new Set();
@@ -114,7 +114,12 @@ function flattenPresenceUpdateCandidates(group) {
       continue;
     }
 
-    if (resolvePresenceUpdateUserId(current)) {
+    // PERF: id resolution is cheap (property reads only); filter here,
+    // BEFORE resolvePresenceUpdateStatus's allocating normalization ever
+    // runs on this candidate, so non-monitored users cost one Set lookup.
+    const candidateId = resolvePresenceUpdateUserId(current);
+    if (candidateId) {
+      if (monitoredIds && !monitoredIds.has(candidateId)) continue;
       updates.push(current);
       continue;
     }
@@ -318,7 +323,7 @@ function getTypingCooldownMs() {
   return Math.min(60000, Math.max(3000, Math.floor(ms)));
 }
 
-function extractPresenceUpdates(payload) {
+function extractPresenceUpdates(payload, monitoredIds) {
   if (!payload) return [];
   const updatesByUserId = new Map();
   const normalizer = (statusValue) => this._normalizeStatus(statusValue);
@@ -352,7 +357,7 @@ function extractPresenceUpdates(payload) {
     payload.members,
   ];
   for (const group of updateGroups) {
-    for (const update of flattenPresenceUpdateCandidates(group)) {
+    for (const update of flattenPresenceUpdateCandidates(group, monitoredIds)) {
       const userId = resolvePresenceUpdateUserId(update);
       if (!userId) continue;
       const status = resolvePresenceUpdateStatus(update, normalizer);
@@ -361,7 +366,7 @@ function extractPresenceUpdates(payload) {
   }
 
   const directUserId = resolvePresenceUpdateUserId(payload);
-  if (directUserId) {
+  if (directUserId && (!monitoredIds || monitoredIds.has(directUserId))) {
     const directStatus = resolvePresenceUpdateStatus(payload, normalizer);
     upsertUpdate(directUserId, directStatus);
   }
