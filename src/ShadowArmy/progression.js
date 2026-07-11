@@ -103,7 +103,11 @@ module.exports = {
           await Promise.all(updatedShadows.map((s) => this.storageManager.saveShadow(s)));
         }
         hasPersistedUpdates = true;
-        allUpdatedShadows.push(...updatedShadows);
+        // Plain loop, not push(...spread): spreading a Monarch-sized batch
+        // (>~65k shadows) overflows the call stack — and since the IDB write
+        // above already succeeded, the RangeError made this return 0 and
+        // under-report persisted updates (seen 14x in debug.log since June).
+        for (const s of updatedShadows) allUpdatedShadows.push(s);
         return updatedShadows.length;
       } catch (error) {
         this.debugError('STORAGE', 'Failed to batch-save shadow XP updates to IndexedDB', error);

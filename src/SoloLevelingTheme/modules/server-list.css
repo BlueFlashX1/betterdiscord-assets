@@ -50,15 +50,27 @@ body.sl-dock-autohide .base__5e434[data-fullscreen="false"]::after {
 /* Notification rail is handled by HSLDockAutoHide plugin via
    .sl-hsl-dock-host / .sl-dock-alert runtime classes. */
 
-/* §8c — Server list layout: width/overflow containment
-   Ensures the items container fills width and doesn't overflow horizontally */
+/* §8g — Gap fix for Discord's 2026-07 server-rail update.
+   The new tree ([role="tree"], now a div — no more ul or itemsContainer_
+   wrapper) ships justify-content: space-between. With any second in-flow
+   child at the tree head (e.g. ShadowRecon's widget), space-between pins it
+   at the list start and shoves the servers scroller to the list end —
+   rendered as a huge blank stretch at the left of the rotated dock.
+   Diagnosed 2026-07-10 via DockProbe geometry dump. */
+nav[aria-label="Servers sidebar"] [role="tree"] {
+  justify-content: flex-start !important;
+}
+
+/* §8c — Server list layout: width/overflow containment.
+   Old DOM (ul[role="tree"] > itemsContainer_ > scroller stack) kept as
+   fallback; new DOM (div[role="tree"] > scroller stack directly) added. */
 nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] {
   width: 100% !important;
   min-width: 0 !important;
   overflow: hidden !important;
 }
 
-nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
+nav[aria-label="Servers sidebar"] [role="tree"] div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
   overflow: hidden scroll !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
@@ -67,13 +79,21 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
   -webkit-overflow-scrolling: touch !important;
 }
 
+/* New DOM only: let the scroller fill the remaining tree length so wheel
+   scrolling and hover work across the whole dock lane, not just the part
+   covered by server icons. */
+nav[aria-label="Servers sidebar"] div[role="tree"] > div[class^="stack_"][class*="scroller_"] {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
 /* §8b — Hide the scrollbar visually while preserving wheel/gesture scroll
    Uses scrollbar-width:none for Firefox and ::-webkit-scrollbar for Chrome/Electron */
-nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
+nav[aria-label="Servers sidebar"] [role="tree"] div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
-nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"]::-webkit-scrollbar {
+nav[aria-label="Servers sidebar"] [role="tree"] div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"]::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
   display: none !important;

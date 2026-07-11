@@ -11,6 +11,9 @@ const dc = require("../shared/discord-classes");
 
 // Scroller selectors — primary + fallbacks for Discord class name changes
 const HSL_SCROLLER_SELECTORS = [
+  // Discord 2026-07 DOM: tree is a div and the scroller stack is its direct
+  // child (no ul, no itemsContainer_ wrapper). Old selectors kept as fallback.
+  `nav[aria-label='Servers sidebar'] [role='tree'] > div[class^='stack_']${dc.sel.scroller}${dc.sel.scrollerBase}`,
   `nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_']${dc.sel.scroller}${dc.sel.scrollerBase}`,
   `nav[aria-label='Servers'] ul[role='tree'] ${dc.sel.scroller}`,
   `nav${dc.sel.guilds} ${dc.sel.scroller}${dc.sel.scrollerBase}`,
