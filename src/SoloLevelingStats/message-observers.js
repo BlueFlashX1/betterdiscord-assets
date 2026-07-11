@@ -71,20 +71,6 @@ module.exports = {
     return messageText.substring(0, 2000);
   },
 
-  _scheduleWebpackSendFallback(messageText) {
-    const hash = this.hashString(messageText.substring(0, 2000));
-    this._pendingSendFallback = { at: Date.now(), hash };
-
-    this._scheduleTrackedMessageTimeout(() => {
-      if (!this._isRunning) return;
-      const pending = this._pendingSendFallback;
-      if (!pending || pending.hash !== hash) return;
-
-      this._pendingSendFallback = null;
-      this.processMessageSent(messageText, this.buildMessageContextFromView(messageText));
-    }, 350);
-  },
-
   _scheduleInputSendProcessing(messageText, messageInput, onProcessed) {
     this._scheduleTrackedMessageTimeout(() => {
       if (!this._isRunning) return;
@@ -140,10 +126,6 @@ module.exports = {
   },
 
   _shouldSkipMutationMessageById(messageId) {
-    if (this.webpackModuleAccess && messageId && this.processedMessageIds?.has(messageId)) {
-      return true;
-    }
-
     if (!messageId || this.processedMessageIds?.has(messageId)) {
       this.debugLog('MUTATION_OBSERVER', 'Message already processed or no ID', {
         messageId,
@@ -242,7 +224,6 @@ module.exports = {
       messageId,
       alreadyProcessed: messageId ? this.processedMessageIds?.has(messageId) : false,
       elementClasses: messageElement.classList?.toString() || '',
-      usingWebpack: this.webpackModuleAccess,
     });
     if (this._shouldSkipMutationMessageById(messageId)) return;
 
@@ -379,11 +360,6 @@ module.exports = {
         let messageText = this._extractSendTextFromInput(messageInput, lastInputValue);
         if (!messageText) return;
 
-        if (this.webpackModuleAccess && this.messageStorePatch) {
-          this._scheduleWebpackSendFallback(messageText);
-          return;
-        }
-
         messageText = this._normalizeLongInputText(messageInput, messageText);
         if (messageText.length <= 0 || messageText.length > 2000) return;
 
@@ -439,9 +415,6 @@ module.exports = {
     this.processedMessageIds = this.processedMessageIds || new Set();
 
     const currentUserId = this.getCurrentUserIdForMessageDetection();
-    if (this.webpackModuleAccess) {
-      this.debugLog('START_OBSERVING', 'Using webpack patches, DOM observer as fallback only');
-    }
 
     this.setupMessageObserver({ messageContainer, currentUserId });
     this.setupInputMonitoringForMessageSending({ maxRetries: 10 });

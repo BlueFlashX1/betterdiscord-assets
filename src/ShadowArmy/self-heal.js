@@ -83,7 +83,19 @@ module.exports = {
       const batch = allShadows.slice(i, i + batchSize);
 
       for (const shadow of batch) {
-        if (this._isStopped || this._selfHealAborted) return result;
+        if (this._isStopped || this._selfHealAborted) {
+          // Flush any healed-but-unsaved shadows before aborting — mirrors
+          // the outer batch-window abort above. Without this, healed shadows
+          // accumulated in saveBatch during this inner pass were dropped
+          // silently (re-healed next pass since _healV was never stamped,
+          // but wasted work + result.healed overcounted vs what was saved).
+          if (saveBatch.length > 0) {
+            const { failed } = await this._flushHealBatch(saveBatch);
+            if (failed > 0) result.healed = Math.max(0, result.healed - failed);
+            saveBatch.length = 0;
+          }
+          return result;
+        }
 
         try {
           // Phase 2 fast-path: skip already-healed shadows

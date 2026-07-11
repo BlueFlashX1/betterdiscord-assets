@@ -156,7 +156,12 @@ function buildActiveSkillAction(ce, options) {
       );
     }
 
-    const canActivate = !isOnCooldown && manaInfo.current >= def.manaCost;
+    // Gate on the SAME effective cost activateSkill() charges (mana-cost
+    // reduction passives / Shadow Monarch free-cast) — the raw def.manaCost
+    // check left the button permanently disabled for players who could
+    // actually afford (or free-cast) the skill.
+    const effectiveManaCost = pluginInstance._getEffectiveManaCost(def.manaCost);
+    const canActivate = !isOnCooldown && manaInfo.current >= effectiveManaCost;
     return ce(
       "button",
       {
@@ -428,13 +433,13 @@ function buildActiveSkillAction(ce, options) {
 
     const handleActivate = React.useCallback((skillId) => {
       const result = pluginInstance.activateSkill(skillId);
-      if (!result.success && BdApi?.UI?.showToast) pluginInstance._toast(result.reason, "error", 2500);
+      if (!result.success) pluginInstance._toast(result.reason, "error", 2500);
       forceUpdate();
     }, []);
 
     const handleDeactivate = React.useCallback((skillId) => {
       const result = pluginInstance.deactivateSkill(skillId, "manual");
-      if (!result.success && BdApi?.UI?.showToast) pluginInstance._toast(result.reason, "error", 2500);
+      if (!result.success) pluginInstance._toast(result.reason, "error", 2500);
       forceUpdate();
     }, []);
 

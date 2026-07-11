@@ -303,17 +303,37 @@ module.exports = {
         'bossDamage',
         totalBossDamageOverTime
       );
-      dungeon.boss.hp = Math.max(0, dungeon.boss.hp - totalBossDamageOverTime);
-      if (dungeon.boss.hp <= 0) {
-        // Mark completed + remove HP bar before completeDungeon
-        // (same pattern as applyDamageToBoss — prevents restore interval re-injection)
-        dungeon.completed = true;
-        this.removeBossHPBar(channelKey);
-        document
-          .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
-          .forEach((el) => el.remove());
-        this.completeDungeon(channelKey, 'boss');
-        return;
+
+      // Route the catch-up lump sum through applyDamageToBoss so phase shields,
+      // rank resistance, and the per-hit damage cap apply exactly as they would
+      // have during live combat. Applying it as ONE hit would over-nerf catch-up
+      // (the 6%-of-maxHP cap would throttle a multi-minute background window down
+      // to a single capped hit), so split it into per-cycle chunks -- one
+      // application per elapsed shadow-attack cycle, matching how live combat
+      // would have called applyDamageToBoss once per cycle. Cap the number of
+      // chunks so an extremely long background period doesn't loop hundreds of
+      // times; scale the chunk size up instead once that cap is hit.
+      const maxBossDamageApplications = 20;
+      const numBossDamageApplications = Math.min(cycles, maxBossDamageApplications);
+      const baseDamagePerApplication = Math.floor(totalBossDamageOverTime / numBossDamageApplications);
+      let remainingBossDamage = totalBossDamageOverTime;
+
+      for (let i = 0; i < numBossDamageApplications; i++) {
+        const isLastApplication = i === numBossDamageApplications - 1;
+        const damageThisApplication = isLastApplication
+          ? remainingBossDamage
+          : baseDamagePerApplication;
+        remainingBossDamage -= damageThisApplication;
+        if (damageThisApplication <= 0) continue;
+
+        await this.applyDamageToBoss(channelKey, damageThisApplication, 'shadow-simulated');
+
+        const liveDungeon = this._getActiveDungeon(channelKey);
+        if (!liveDungeon || liveDungeon.completed || liveDungeon.failed || liveDungeon.boss.hp <= 0) {
+          // applyDamageToBoss already handled death/completion (HP bar removal,
+          // completeDungeon, storage save) -- nothing left to do here.
+          return;
+        }
       }
     }
 
@@ -384,6 +404,18 @@ module.exports = {
 
     const maxTargetsPerAttack = Dungeons.RANK_MULTIPLIERS[dungeon.boss?.rank] || 1;
 
+    // Mirrors processBossAttacks (combat-boss-mob.js) — role-combat incoming-damage
+    // mitigation and the Shadow Monarch Domain perk (30% incoming-damage reduction to
+    // shadows) both apply to live boss->shadow/user damage, so the catch-up simulation
+    // must apply them too or shadows/user take MORE damage during a backgrounded
+    // window than live combat would have dealt.
+    const roleCombatContext = this.getRoleCombatTickContext(channelKey);
+    const _domainMitigation =
+      this.soloLevelingStats?.settings?.rank === 'Shadow Monarch' ? 0.7 : 1;
+    const incomingDamageMultiplier =
+      this.getRoleCombatIncomingDamageMultiplier(channelKey, roleCombatContext) *
+      _domainMitigation;
+
     // Calculate average damage per attack
     let totalShadowDamage = 0;
     let totalUserDamage = 0;
@@ -410,7 +442,9 @@ module.exports = {
 
       // Calculate total shadow damage (boss attacks multiple shadows per attack)
       const targetsPerAttack = Math.min(maxTargetsPerAttack, aliveShadows.length);
-      totalShadowDamage = Math.floor(avgShadowDamage * targetsPerAttack * cycles);
+      totalShadowDamage = Math.floor(
+        avgShadowDamage * targetsPerAttack * cycles * incomingDamageMultiplier
+      );
     } else if (dungeon.userParticipating) {
       // All shadows dead, boss attacks user
       const userStats = this.getUserEffectiveStats();
@@ -423,7 +457,7 @@ module.exports = {
         bossRole,
         dungeon.boss.beastFamily
       );
-      totalUserDamage = Math.floor(avgUserDamage * cycles);
+      totalUserDamage = Math.floor(avgUserDamage * cycles * incomingDamageMultiplier);
     }
 
     // Apply shadow damage (distribute across alive shadows)

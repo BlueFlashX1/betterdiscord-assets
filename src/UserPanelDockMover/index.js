@@ -41,11 +41,16 @@ module.exports = class UserPanelDockMover {
         return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
       } catch { return null; }
     })();
-    this.stop({ silent: true });
-
     try {
       const prev = window[this.instanceKey];
       if (prev && prev !== this && typeof prev.stop === "function") prev.stop();
+    } catch (error) {
+      this._logDebug("Failed to check for zombie singleton instance", error);
+    }
+
+    this.stop({ silent: true });
+
+    try {
       window[this.instanceKey] = this;
     } catch (error) {
       this._logDebug("Failed to register singleton instance", error);

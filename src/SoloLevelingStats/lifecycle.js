@@ -441,26 +441,11 @@ module.exports = {
 
     this.removeChatUI();
 
-    // Cleanup webpack patches
-    if (this.messageStorePatch || this.reactInjectionActive) {
-      try {
-        BdApi.Patcher.unpatchAll('SoloLevelingStats');
-        this.messageStorePatch = null;
-        this.reactInjectionActive = false;
-        this.debugLog('STOP', 'Webpack patches and React injection removed');
-      } catch (error) {
-        this.debugError('STOP', error, { phase: 'unpatch' });
-      }
-    }
-
     // Clear webpack module references
     this.webpackModules = {
-      MessageStore: null,
       UserStore: null,
       ChannelStore: null,
-      MessageActions: null,
     };
-    this.webpackModuleAccess = false;
 
     // Stop shadow power observer/interval
     if (this.shadowPowerObserver) {

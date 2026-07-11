@@ -1,19 +1,6 @@
-const dc = require('../shared/discord-classes');
+const { getScrollerPair, createArrowElement } = require('./dom-helpers');
 const { createTrackedTimers } = require('../shared/tracked-timers');
 const EDGE_THRESHOLD = 100;
-
-function getScrollerPair() {
-  const wrapper =
-    document.querySelector(`div${dc.sel.messagesWrapper}`) ||
-    document.querySelector('div[class*="messagesWrapper-"]') ||
-    document.querySelector(`main${dc.sel.chatContent} > div > div${dc.sel.scroller}`)?.parentElement;
-  const scroller =
-    wrapper?.querySelector(`div${dc.sel.scroller}`) ||
-    wrapper?.querySelector('div[class*="scroller-"]') ||
-    wrapper?.querySelector(dc.sel.scrollerInner)?.parentElement ||
-    null;
-  return { wrapper: wrapper || null, scroller };
-}
 
 function setArrowVisible(el, isVisible) {
   if (!el) return;
@@ -29,15 +16,6 @@ function updateArrowState(state) {
   const atTop = scrollTop < EDGE_THRESHOLD;
   setArrowVisible(state.downEl, !atBottom);
   setArrowVisible(state.upEl, !atTop);
-}
-
-function createArrowElement(className, title, svgPath, clickHandler) {
-  const el = document.createElement("div");
-  el.className = className;
-  el.title = title;
-  el.innerHTML = `<svg viewBox="0 0 24 24"><path d="${svgPath}"></path></svg>`;
-  el.addEventListener("click", clickHandler);
-  return el;
 }
 
 function ensureArrowElements(state, wrapper) {

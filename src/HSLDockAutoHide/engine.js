@@ -262,6 +262,16 @@ class DockEngine {
       this.stateTarget.style.removeProperty("--sl-dock-peek");
     }
 
+    // --custom-app-panels-height is owned by UserPanelDockMover (UPDM), but mount()
+    // above overwrites it to "0px" so the dock can occupy the full panel area while
+    // active. Restore whatever was captured at construct time (or clear it if unset)
+    // so UPDM's value isn't left clobbered after this engine unmounts.
+    if (this._origPanelsHeight) {
+      document.body.style.setProperty("--custom-app-panels-height", this._origPanelsHeight);
+    } else {
+      document.body.style.removeProperty("--custom-app-panels-height");
+    }
+
     // Rail
     this.removeRail();
     this.stopRailFollow();

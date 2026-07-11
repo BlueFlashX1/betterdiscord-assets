@@ -14,6 +14,8 @@
  * loads from disk into the working-set.
  */
 
+const { acquireDispatcher } = require("../shared/dispatcher");
+
 const PLUGIN_NAME = "ShadowRecon";
 
 // ─── In-memory working-set ─────────────────────────────────────────────
@@ -148,19 +150,14 @@ function bucketDay(entry) {
  * the pair on `plugin._dispatcherSubs` so `dispatcherUnsubscribeAll` can
  * drain everything during stop().
  *
- * Per the betterdiscord-assets CLAUDE.md guidance, the most reliable
- * way to acquire the dispatcher is via UserStore._dispatcher; falls
- * back to a getModule filter without optional chaining (which breaks
- * Webpack matching).
+ * Acquisition delegates to the shared 6-tier waterfall in
+ * shared/dispatcher.js (acquireDispatcher) rather than hand-rolling a
+ * subset here.
  */
 function dispatcherSubscribe(plugin, event, handler) {
   try {
-    const Webpack = BdApi?.Webpack;
-    if (!Webpack) return false;
-    const dispatcher =
-      Webpack.Stores?.UserStore?._dispatcher ||
-      Webpack.getModule(function (m) { return m && m.dispatch && m.subscribe; });
-    if (!dispatcher || typeof dispatcher.subscribe !== "function") return false;
+    const dispatcher = acquireDispatcher();
+    if (!dispatcher) return false;
     dispatcher.subscribe(event, handler);
     if (!Array.isArray(plugin._dispatcherSubs)) plugin._dispatcherSubs = [];
     plugin._dispatcherSubs.push({ dispatcher, event, handler });

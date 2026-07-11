@@ -309,6 +309,12 @@ module.exports = {
     delete this._lastHPBarUpdate?.[channelKey];
     delete this._mobCapWarningShown?.[channelKey];
 
+    // Boss-save throttle fraction is keyed by boss.id, which defaults to
+    // `boss_${channelKey}` (storage.js saveBoss()) — prune it here alongside
+    // the other per-channel Maps so it doesn't grow unbounded across the
+    // dungeon lifetime of a long-running session.
+    this.mobBossStorageManager?._lastBossSaveFraction?.delete?.(`boss_${channelKey}`);
+
     // Cancel pending dungeon save timer (prevents ghost saves on stale dungeon objects)
     // and remove from timeout tracking to prevent stale ID accumulation.
     if (this._dungeonSaveTimers?.has?.(channelKey)) {

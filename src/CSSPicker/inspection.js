@@ -677,15 +677,10 @@ export function trySaveReportJson(report) {
     const filePath = path.join(reportsDir, fileName);
     const data = JSON.stringify(report, null, 2);
 
-    // Fire-and-forget: avoid blocking the renderer on a 10–50 KB disk write.
-    // The toast fires independently of write completion so the result is safe
-    // to return immediately.
-    fs.writeFile(filePath, data, { encoding: "utf8" }, (err) => {
-      if (err) {
-        // Non-fatal: user already received the toast; log for debugging only.
-        console.error("[CSSPicker] report write failed:", err.message);
-      }
-    });
+    // Synchronous write: this only runs once per manual capture click (not a
+    // hot path), so the honest success/failure result matters more than the
+    // negligible blocking cost of a 10-50 KB write.
+    fs.writeFileSync(filePath, data, { encoding: "utf8" });
 
     return { ok: true, filePath, fileName, error: null };
   } catch (error) {

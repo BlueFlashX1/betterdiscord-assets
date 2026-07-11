@@ -103,6 +103,7 @@ module.exports = class HSLWheelBridge {
     this._fallbackTimer = null;
     this._fallbackStore = null;
     this._fallbackStoreListener = null;
+    this._reactEngine = null;
     this._toast = createToast();
     this._warnOnce = createWarnOnce();
   }
@@ -120,6 +121,10 @@ module.exports = class HSLWheelBridge {
     if (this._fallbackEngine) {
       this._fallbackEngine.unmount();
       this._fallbackEngine = null;
+    }
+    if (this._reactEngine) {
+      this._reactEngine.unmount();
+      this._reactEngine = null;
     }
     this._engineMounted = false;
     // Clear module-level scroller cache to prevent stale DOM refs across hot-reload
@@ -232,6 +237,7 @@ module.exports = class HSLWheelBridge {
 
         const engine = new WheelBridgeEngine();
         engineRef.current = engine;
+        pluginInstance._reactEngine = engine;
         engine.syncScroller();
 
         // Event-driven scroller re-discovery — replaces the prior 2s
@@ -255,6 +261,7 @@ module.exports = class HSLWheelBridge {
           if (storeUnsub) storeUnsub();
           engine.unmount();
           engineRef.current = null;
+          if (pluginInstance._reactEngine === engine) pluginInstance._reactEngine = null;
         };
       }, []);
 

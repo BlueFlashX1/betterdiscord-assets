@@ -24,8 +24,8 @@
  *   - Resize handles via ::before pseudo-elements
  *   - Wildcard selector fallbacks when Webpack modules unavailable
  *
- * SkillTree integration: rulers_authority active skill → visual Amplified Mode
- *   (pulsing glow on toolbar icon, purple aura effects)
+ * SkillTree integration: rulers_authority_force dungeon combat skill → visual
+ *   Amplified Mode (pulsing glow on toolbar icon) for the skill's debuff window
  */
 
 import {
@@ -37,7 +37,7 @@ import {
 } from "./constants";
 
 const { createToast } = require("../shared/toast");
-const { getSkillTreeLevel } = require("../shared/plugin-bridge");
+const { getSkillTreeLevel, getPluginInstance } = require("../shared/plugin-bridge");
 const { saveSettings: _sharedSaveSettings } = require("../shared/settings");
 const { removeToolbarTooltip: _removeToolbarTooltip } = require("../shared/toolbar-tooltip");
 const { onKeydown } = require("../shared/dom-bus");
@@ -191,8 +191,8 @@ module.exports = class RulersAuthority {
     this._channelsHoverRevealActive = false;
 
     // SkillTree event handlers
-    this._onSkillActivated = null;
-    this._onSkillExpired = null;
+    this._onDungeonCombatSkillStateChanged = null;
+    this._amplifiedExpireTimer = null;
 
     // Animation timers
     this._pushAnimTimer = null;
@@ -338,18 +338,29 @@ module.exports = class RulersAuthority {
     applyDMGripping(this);
     setupDMObserver(this);
 
-    this._onSkillActivated = (e) => {
-      if (e.detail?.skillId !== 'rulers_authority') return;
+    // rulers_authority_force is a DUNGEON COMBAT skill (not an ACTIVE skill —
+    // that event pair only ever fires for stealth_technique), so listen for
+    // the event it actually dispatches. disableAttacksDurationMs on its own
+    // def is the only principled effect-duration figure available (no
+    // per-level scaling of "double_per_level" is computed anywhere in
+    // SkillTree today, so we don't invent that math here — base duration only).
+    this._onDungeonCombatSkillStateChanged = (e) => {
+      if (e.detail?.skillId !== 'rulers_authority_force' || e.detail?.reason !== 'used') return;
+      const skillTree = getPluginInstance('SkillTree');
+      const durationMs = skillTree?.dungeonCombatSkillDefs?.rulers_authority_force?.debuff?.disableAttacksDurationMs || 0;
+      if (!durationMs) return;
       this._amplifiedMode = true;
-      this._amplifiedExpiresAt = e.detail?.expiresAt || 0;
+      this._amplifiedExpiresAt = Date.now() + durationMs;
+      if (this._amplifiedExpireTimer) clearTimeout(this._amplifiedExpireTimer);
+      this._amplifiedExpireTimer = setTimeout(() => {
+        this._amplifiedExpireTimer = null;
+        this._amplifiedMode = false;
+        this._amplifiedExpiresAt = 0;
+        updateToolbarIcon(this);
+      }, durationMs);
+      updateToolbarIcon(this);
     };
-    this._onSkillExpired = (e) => {
-      if (e.detail?.skillId !== 'rulers_authority') return;
-      this._amplifiedMode = false;
-      this._amplifiedExpiresAt = 0;
-    };
-    document.addEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
-    document.addEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
+    document.addEventListener("SkillTree:dungeonCombatSkillStateChanged", this._onDungeonCombatSkillStateChanged);
 
     const desc = level >= 3 ? "Full Authority (sidebar + members)" : "Members control active";
     this._toast(`Ruler's Authority — ${desc}`, "info");
@@ -500,14 +511,16 @@ module.exports = class RulersAuthority {
   }
 
   _detachSkillTreeListeners() {
-    if (this._onSkillActivated) {
-      document.removeEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
-      this._onSkillActivated = null;
+    if (this._onDungeonCombatSkillStateChanged) {
+      document.removeEventListener("SkillTree:dungeonCombatSkillStateChanged", this._onDungeonCombatSkillStateChanged);
+      this._onDungeonCombatSkillStateChanged = null;
     }
-    if (this._onSkillExpired) {
-      document.removeEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
-      this._onSkillExpired = null;
+    if (this._amplifiedExpireTimer) {
+      clearTimeout(this._amplifiedExpireTimer);
+      this._amplifiedExpireTimer = null;
     }
+    this._amplifiedMode = false;
+    this._amplifiedExpiresAt = 0;
   }
 
   _detachStoreListeners() {

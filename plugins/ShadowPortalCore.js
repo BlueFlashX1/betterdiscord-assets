@@ -217,22 +217,38 @@ var require_navigation = __commonJS({
 });
 
 // src/ShadowPortalCore/index.js
-var _gsapLoadPromise = null;
-var _gsapLoaded = false;
-var _gsapLogSent = false;
-var _gsapScriptEls = [];
-var _spiralMaskUrl = null;
-var _spiralMaskReady = false;
-var _spiralMaskLoadedFrom = null;
+function _getPortalCoreState() {
+  if (window.__SL_PortalCore) return window.__SL_PortalCore;
+  window.__SL_PortalCore = {
+    gsapLoadPromise: null,
+    gsapLoaded: false,
+    gsapLogSent: false,
+    // GSAP script elements injected into document.head — cleaned up once the last
+    // consumer stops, to prevent accumulation across BD reloads.
+    gsapScriptEls: [],
+    // CSS Portal spiral mask (PropJockey technique)
+    // Preferred: imgur PNG. Fallback: procedurally generated spiral.
+    spiralMaskUrl: null,
+    spiralMaskReady: false,
+    spiralMaskLoadedFrom: null,
+    // Consumer refcount — applyPortalCoreToClass() increments, stop() decrements.
+    // Only the last active consumer's stop() tears down the shared GSAP/mask cache,
+    // so disabling one of several concurrently-enabled portal-core plugins doesn't
+    // force the remaining ones to re-fetch GSAP from CDN.
+    consumerCount: 0
+  };
+  return window.__SL_PortalCore;
+}
 var SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 function preloadSpiralMask() {
-  if (_spiralMaskLoadedFrom && _spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
-    _spiralMaskUrl = null;
-    _spiralMaskReady = false;
-    _spiralMaskLoadedFrom = null;
+  const core = _getPortalCoreState();
+  if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
+    core.spiralMaskUrl = null;
+    core.spiralMaskReady = false;
+    core.spiralMaskLoadedFrom = null;
   }
-  if (_spiralMaskReady || _spiralMaskUrl) return;
-  _spiralMaskLoadedFrom = SPIRAL_IMG_URL;
+  if (core.spiralMaskReady || core.spiralMaskUrl) return;
+  core.spiralMaskLoadedFrom = SPIRAL_IMG_URL;
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.onload = () => {
@@ -241,15 +257,15 @@ function preloadSpiralMask() {
       c.width = c.height = 512;
       const ctx = c.getContext("2d");
       ctx.drawImage(img, 0, 0, 512, 512);
-      _spiralMaskUrl = c.toDataURL();
+      core.spiralMaskUrl = c.toDataURL();
     } catch (_) {
-      _spiralMaskUrl = generateProceduralSpiral();
+      core.spiralMaskUrl = generateProceduralSpiral();
     }
-    _spiralMaskReady = true;
+    core.spiralMaskReady = true;
   };
   img.onerror = () => {
-    _spiralMaskUrl = generateProceduralSpiral();
-    _spiralMaskReady = true;
+    core.spiralMaskUrl = generateProceduralSpiral();
+    core.spiralMaskReady = true;
   };
   img.src = SPIRAL_IMG_URL;
 }
@@ -283,10 +299,11 @@ function generateProceduralSpiral() {
   return blurred.toDataURL();
 }
 function getSpiralMaskUrl() {
-  if (_spiralMaskUrl) return _spiralMaskUrl;
-  _spiralMaskUrl = generateProceduralSpiral();
-  _spiralMaskReady = true;
-  return _spiralMaskUrl;
+  const core = _getPortalCoreState();
+  if (core.spiralMaskUrl) return core.spiralMaskUrl;
+  core.spiralMaskUrl = generateProceduralSpiral();
+  core.spiralMaskReady = true;
+  return core.spiralMaskUrl;
 }
 var DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
 function getCoreConfig(instance) {
@@ -371,22 +388,39 @@ var methods = {
    * @returns {Promise<object|null>} GSAP instance or null if CDN failed.
    */
   async _ensureGSAP() {
-    if (_gsapLoaded && window.gsap) return window.gsap;
-    if (_gsapLoadPromise) return _gsapLoadPromise;
-    _gsapLoadPromise = (async () => {
+    const core = _getPortalCoreState();
+    if (core.gsapLoaded && window.gsap) return window.gsap;
+    if (core.gsapLoadPromise) return core.gsapLoadPromise;
+    core.gsapLoadPromise = (async () => {
       var _a;
       try {
         const loadScript = (url) => new Promise((resolve, reject) => {
-          if (document.querySelector(`script[src="${url}"]`)) {
-            resolve();
+          const existing = document.querySelector(`script[src="${url}"]`);
+          if (existing) {
+            if (existing.dataset.slLoaded === "1") {
+              resolve();
+              return;
+            }
+            if (existing.dataset.slFailed === "1") {
+              reject(new Error(`Previously failed to load ${url}`));
+              return;
+            }
+            existing.addEventListener("load", () => resolve(), { once: true });
+            existing.addEventListener("error", () => reject(new Error(`Failed to load ${url}`)), { once: true });
             return;
           }
           const el = document.createElement("script");
           el.src = url;
-          el.onload = resolve;
-          el.onerror = reject;
+          el.onload = () => {
+            el.dataset.slLoaded = "1";
+            resolve();
+          };
+          el.onerror = () => {
+            el.dataset.slFailed = "1";
+            reject(new Error(`Failed to load ${url}`));
+          };
           document.head.appendChild(el);
-          _gsapScriptEls.push(el);
+          core.gsapScriptEls.push(el);
         });
         const CDN = "https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0";
         await loadScript(`${CDN}/gsap.min.js`);
@@ -398,9 +432,9 @@ var methods = {
         if (!window.gsap) throw new Error("gsap global not found after script injection");
         if (window.CustomEase) window.gsap.registerPlugin(window.CustomEase);
         if (window.Physics2DPlugin) window.gsap.registerPlugin(window.Physics2DPlugin);
-        _gsapLoaded = true;
-        if (!_gsapLogSent) {
-          _gsapLogSent = true;
+        core.gsapLoaded = true;
+        if (!core.gsapLogSent) {
+          core.gsapLogSent = true;
           if ((_a = this.settings) == null ? void 0 : _a.debugMode) {
             const plugins = [window.CustomEase && "CustomEase", window.Physics2DPlugin && "Physics2D"].filter(Boolean);
             console.log(`[ShadowPortalCore] GSAP v${window.gsap.version} loaded` + (plugins.length ? ` + ${plugins.join(" + ")}` : ""));
@@ -409,12 +443,12 @@ var methods = {
         return window.gsap;
       } catch (err) {
         console.warn("[ShadowPortalCore] GSAP CDN load failed \u2014 vanilla canvas fallback active:", err.message);
-        _gsapLoaded = false;
-        _gsapLoadPromise = null;
+        core.gsapLoaded = false;
+        core.gsapLoadPromise = null;
         return null;
       }
     })();
-    return _gsapLoadPromise;
+    return core.gsapLoadPromise;
   },
   /**
    * Extract a Discord channel ID from a path like /channels/guildId/channelId
@@ -763,7 +797,7 @@ var methods = {
     overlay.style.setProperty("--ss-duration", `${duration}ms`);
     overlay.style.setProperty("--ss-total-duration", `${totalDuration}ms`);
     let cssPortalEl = null;
-    if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
+    if (!prefersReducedMotion && _getPortalCoreState().gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
       const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 3;
       const portalStyleEl = document.createElement("style");
@@ -863,7 +897,7 @@ var methods = {
         { duration: totalDuration, easing: "linear", fill: "forwards" }
       );
       const shardAnims = [];
-      if (_gsapLoaded && window.gsap) {
+      if (_getPortalCoreState().gsapLoaded && window.gsap) {
         for (const shard of shards) {
           const delay = parseFloat(shard.style.getPropertyValue("--ss-delay")) || 0;
           const tx = shard.style.getPropertyValue("--ss-shard-x") || "0px";
@@ -948,7 +982,7 @@ var methods = {
     }, cleanupDelay);
   },
   startPortalCanvasAnimation(canvas, duration, cssPortalEl, perfProfile) {
-    if (_gsapLoaded && window.gsap) {
+    if (_getPortalCoreState().gsapLoaded && window.gsap) {
       return this._startPortalCanvasGSAP(canvas, duration, cssPortalEl, perfProfile);
     }
     if (typeof canvas.transferControlToOffscreen === "function") {
@@ -2196,7 +2230,9 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
       value: fn
     });
   }
-  if (!_gsapLoadPromise && !_gsapLoaded) {
+  const core = _getPortalCoreState();
+  core.consumerCount += 1;
+  if (!core.gsapLoadPromise && !core.gsapLoaded) {
     methods._ensureGSAP.call({}).catch(() => {
     });
   }
@@ -2243,16 +2279,19 @@ function stampTeleportCooldown() {
   return now;
 }
 function stop() {
-  _gsapLoaded = false;
-  _gsapLoadPromise = null;
-  _gsapLogSent = false;
-  _spiralMaskUrl = null;
-  _spiralMaskReady = false;
-  _spiralMaskLoadedFrom = null;
-  for (const el of _gsapScriptEls) {
+  const core = _getPortalCoreState();
+  core.consumerCount = Math.max(0, core.consumerCount - 1);
+  if (core.consumerCount > 0) return;
+  core.gsapLoaded = false;
+  core.gsapLoadPromise = null;
+  core.gsapLogSent = false;
+  core.spiralMaskUrl = null;
+  core.spiralMaskReady = false;
+  core.spiralMaskLoadedFrom = null;
+  for (const el of core.gsapScriptEls) {
     if (el.parentNode) el.parentNode.removeChild(el);
   }
-  _gsapScriptEls = [];
+  core.gsapScriptEls = [];
 }
 module.exports = {
   applyPortalCoreToClass,

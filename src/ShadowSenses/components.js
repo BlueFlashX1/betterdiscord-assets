@@ -429,8 +429,19 @@ function buildComponents(pluginRef) {
     return () => onNavigate(entry);
   }
 
-  // FeedCard
-  function FeedCard({ entry, onNavigate }) {
+  function _applyFeedCardContentStyle(el) {
+    if (!el) return;
+    el.style.setProperty("font-family", "'gg sans', 'Helvetica Neue', system-ui, sans-serif", "important");
+    el.style.setProperty("font-weight", "400", "important");
+    el.style.setProperty("font-size", "14px", "important");
+    el.style.setProperty("line-height", "1.45", "important");
+    el.style.setProperty("color", "#e8e3f5", "important");
+  }
+
+  // FeedCard — memoized below: unchanged rows keep the same entry reference
+  // (senses-engine-feed reuses feed[i]) and key, so memo skips them; burst
+  // merges mint a new messageId → new key → remount regardless of memo.
+  function FeedCardBase({ entry, onNavigate }) {
     const time = new Date(entry.timestamp);
     const timeStr = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}`;
     const rankColor = RANK_COLORS[entry.shadowRank] || "#8a2be2";
@@ -490,19 +501,14 @@ function buildComponents(pluginRef) {
       // values can be poisoned upstream. Inline `!important`
       // declarations are the unambiguous winner per the CSS cascade
       // (highest specificity tier in the author origin).
-      ref: (el) => {
-        if (!el) return;
-        el.style.setProperty("font-family", "'gg sans', 'Helvetica Neue', system-ui, sans-serif", "important");
-        el.style.setProperty("font-weight", "400", "important");
-        el.style.setProperty("font-size", "14px", "important");
-        el.style.setProperty("line-height", "1.45", "important");
-        el.style.setProperty("color", "#e8e3f5", "important");
-      },
+      ref: _applyFeedCardContentStyle,
     }, contentText),
     mediaPreviews,
     firstContent
     );
   }
+
+  const FeedCard = React.memo(FeedCardBase);
 
   // DeploymentRow \u2014 same bulletproof inline-style pattern as FeedCard.
   // CSS class rules keep getting beaten by external theme overrides, so
@@ -747,6 +753,90 @@ function buildComponents(pluginRef) {
   }
 
   // KeywordAlertsTab
+  // Inline-!important style appliers for KeywordAlertsTab — same bulletproof
+  // pattern as Active Feed and Deployments. Each helper attaches via React
+  // ref so the styling wins against any external theme/plugin cascade.
+  // Hoisted to buildComponents scope (they close over nothing per-render) so
+  // re-renders keep stable ref identities instead of tearing down/reapplying
+  // refs across every rendered target card.
+  const applyTargetCard = (el) => {
+    if (!el) return;
+    el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
+    el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.32)", "important");
+    el.style.setProperty("border-radius", "2px", "important");
+    el.style.setProperty("padding", "12px 14px", "important");
+    el.style.setProperty("margin", "0 0 10px 0", "important");
+    el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(138, 43, 226, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
+  };
+  const applyChip = (el) => {
+    if (!el) return;
+    el.style.setProperty("display", "inline-flex", "important");
+    el.style.setProperty("align-items", "center", "important");
+    el.style.setProperty("gap", "6px", "important");
+    el.style.setProperty("background", "rgba(52, 211, 153, 0.14)", "important");
+    el.style.setProperty("color", "#34d399", "important");
+    el.style.setProperty("border", "1px solid rgba(52, 211, 153, 0.35)", "important");
+    el.style.setProperty("border-radius", "2px", "important");
+    el.style.setProperty("padding", "3px 4px 3px 10px", "important");
+    el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+    el.style.setProperty("font-size", "12px", "important");
+    el.style.setProperty("font-weight", "500", "important");
+    el.style.setProperty("line-height", "1.3", "important");
+  };
+  const applyChipRemove = (el) => {
+    if (!el) return;
+    el.style.setProperty("background", "transparent", "important");
+    el.style.setProperty("color", "rgba(52, 211, 153, 0.7)", "important");
+    el.style.setProperty("border", "none", "important");
+    el.style.setProperty("border-radius", "999px", "important");
+    el.style.setProperty("width", "16px", "important");
+    el.style.setProperty("height", "16px", "important");
+    el.style.setProperty("padding", "0", "important");
+    el.style.setProperty("display", "inline-flex", "important");
+    el.style.setProperty("align-items", "center", "important");
+    el.style.setProperty("justify-content", "center", "important");
+    el.style.setProperty("font-size", "13px", "important");
+    el.style.setProperty("font-weight", "700", "important");
+    el.style.setProperty("line-height", "1", "important");
+    el.style.setProperty("cursor", "pointer", "important");
+    el.style.setProperty("outline", "none", "important");
+    el.style.setProperty("box-shadow", "none", "important");
+    el.style.setProperty("transition", "background 0.12s ease, color 0.12s ease", "important");
+  };
+  const applyKwInput = (el) => {
+    if (!el) return;
+    el.style.setProperty("flex", "1", "important");
+    el.style.setProperty("min-width", "0", "important");
+    el.style.setProperty("background", "rgba(20, 14, 36, 0.7)", "important");
+    el.style.setProperty("color", "#e8e3f5", "important");
+    el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.25)", "important");
+    el.style.setProperty("border-radius", "2px", "important");
+    el.style.setProperty("padding", "6px 10px", "important");
+    el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+    el.style.setProperty("font-size", "12px", "important");
+    el.style.setProperty("outline", "none", "important");
+    el.style.setProperty("box-shadow", "none", "important");
+    el.style.setProperty("transition", "border-color 0.15s ease", "important");
+  };
+  const applySmallPill = (color, bg, border) => (el) => {
+    if (!el) return;
+    el.style.setProperty("background", bg, "important");
+    el.style.setProperty("color", color, "important");
+    el.style.setProperty("border", `1px solid ${border}`, "important");
+    el.style.setProperty("border-radius", "2px", "important");
+    el.style.setProperty("padding", "5px 12px", "important");
+    el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+    el.style.setProperty("font-size", "11px", "important");
+    el.style.setProperty("font-weight", "600", "important");
+    el.style.setProperty("letter-spacing", "0.04em", "important");
+    el.style.setProperty("text-transform", "uppercase", "important");
+    el.style.setProperty("cursor", "pointer", "important");
+    el.style.setProperty("outline", "none", "important");
+    el.style.setProperty("box-shadow", "none", "important");
+    el.style.setProperty("white-space", "nowrap", "important");
+    el.style.setProperty("transition", "background 0.15s ease, border-color 0.15s ease", "important");
+  };
+
   function KeywordAlertsTab() {
     const [deployments, setDeployments] = useState([]);
     const [keywordDrafts, setKeywordDrafts] = useState({});
@@ -870,87 +960,6 @@ function buildComponents(pluginRef) {
       setKeywordDrafts((previous) => ({ ...previous, [normalizedUserId]: "" }));
       persistKeywords(normalizedUserId, [], "Cleared keyword alerts");
     }, [persistKeywords]);
-
-    // Inline-!important style appliers — same bulletproof pattern as Active
-    // Feed and Deployments. Each helper attaches via React ref so the
-    // styling wins against any external theme/plugin cascade.
-    const applyTargetCard = (el) => {
-      if (!el) return;
-      el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
-      el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.32)", "important");
-      el.style.setProperty("border-radius", "2px", "important");
-      el.style.setProperty("padding", "12px 14px", "important");
-      el.style.setProperty("margin", "0 0 10px 0", "important");
-      el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(138, 43, 226, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
-    };
-    const applyChip = (el) => {
-      if (!el) return;
-      el.style.setProperty("display", "inline-flex", "important");
-      el.style.setProperty("align-items", "center", "important");
-      el.style.setProperty("gap", "6px", "important");
-      el.style.setProperty("background", "rgba(52, 211, 153, 0.14)", "important");
-      el.style.setProperty("color", "#34d399", "important");
-      el.style.setProperty("border", "1px solid rgba(52, 211, 153, 0.35)", "important");
-      el.style.setProperty("border-radius", "2px", "important");
-      el.style.setProperty("padding", "3px 4px 3px 10px", "important");
-      el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
-      el.style.setProperty("font-size", "12px", "important");
-      el.style.setProperty("font-weight", "500", "important");
-      el.style.setProperty("line-height", "1.3", "important");
-    };
-    const applyChipRemove = (el) => {
-      if (!el) return;
-      el.style.setProperty("background", "transparent", "important");
-      el.style.setProperty("color", "rgba(52, 211, 153, 0.7)", "important");
-      el.style.setProperty("border", "none", "important");
-      el.style.setProperty("border-radius", "999px", "important");
-      el.style.setProperty("width", "16px", "important");
-      el.style.setProperty("height", "16px", "important");
-      el.style.setProperty("padding", "0", "important");
-      el.style.setProperty("display", "inline-flex", "important");
-      el.style.setProperty("align-items", "center", "important");
-      el.style.setProperty("justify-content", "center", "important");
-      el.style.setProperty("font-size", "13px", "important");
-      el.style.setProperty("font-weight", "700", "important");
-      el.style.setProperty("line-height", "1", "important");
-      el.style.setProperty("cursor", "pointer", "important");
-      el.style.setProperty("outline", "none", "important");
-      el.style.setProperty("box-shadow", "none", "important");
-      el.style.setProperty("transition", "background 0.12s ease, color 0.12s ease", "important");
-    };
-    const applyKwInput = (el) => {
-      if (!el) return;
-      el.style.setProperty("flex", "1", "important");
-      el.style.setProperty("min-width", "0", "important");
-      el.style.setProperty("background", "rgba(20, 14, 36, 0.7)", "important");
-      el.style.setProperty("color", "#e8e3f5", "important");
-      el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.25)", "important");
-      el.style.setProperty("border-radius", "2px", "important");
-      el.style.setProperty("padding", "6px 10px", "important");
-      el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
-      el.style.setProperty("font-size", "12px", "important");
-      el.style.setProperty("outline", "none", "important");
-      el.style.setProperty("box-shadow", "none", "important");
-      el.style.setProperty("transition", "border-color 0.15s ease", "important");
-    };
-    const applySmallPill = (color, bg, border) => (el) => {
-      if (!el) return;
-      el.style.setProperty("background", bg, "important");
-      el.style.setProperty("color", color, "important");
-      el.style.setProperty("border", `1px solid ${border}`, "important");
-      el.style.setProperty("border-radius", "2px", "important");
-      el.style.setProperty("padding", "5px 12px", "important");
-      el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
-      el.style.setProperty("font-size", "11px", "important");
-      el.style.setProperty("font-weight", "600", "important");
-      el.style.setProperty("letter-spacing", "0.04em", "important");
-      el.style.setProperty("text-transform", "uppercase", "important");
-      el.style.setProperty("cursor", "pointer", "important");
-      el.style.setProperty("outline", "none", "important");
-      el.style.setProperty("box-shadow", "none", "important");
-      el.style.setProperty("white-space", "nowrap", "important");
-      el.style.setProperty("transition", "background 0.15s ease, border-color 0.15s ease", "important");
-    };
 
     if (deployments.length === 0) {
       return ce("div", { className: "shadow-senses-empty" },

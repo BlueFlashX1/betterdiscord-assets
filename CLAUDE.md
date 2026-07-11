@@ -45,7 +45,7 @@ Output must be a single `.plugin.js` file. `BdApi` is global (no import). Node b
 2. **Build** with `npm run build <PluginName>` or `npm run watch` for live dev
 3. **Test** — Ctrl+R in Discord to reload; symlink picks up output automatically
 4. **Commit** both `src/` source and `plugins/` output — BD needs the built output file
-5. **Settings panels**: solid `#1e1e2e` background, statistics + Debug Mode toggle only
+5. **Settings panels**: `rgba(10, 10, 16, 0.98)` background, statistics + Debug Mode toggle only
 
 ## Reference
 

@@ -307,7 +307,7 @@ class ShadowStorageManager {
         await this.init();
       }
 
-      const migrated = await this.saveShadowsBatch(oldData.shadows);
+      const { completed: migrated } = await this.saveShadowsBatch(oldData.shadows);
 
       this.migrationCompleted = true;
       BdApi.Data.save('ShadowArmy', 'migrationCompleted', true);
@@ -375,7 +375,14 @@ class ShadowStorageManager {
 
           const updateRequest = cursor.update(normalizedShadow);
           updateRequest.onsuccess = () => { localUpdated++; };
-          updateRequest.onerror = () => { localErrors++; };
+          updateRequest.onerror = (event) => {
+            // Prevent the per-record error from bubbling to tx.onerror and
+            // aborting the whole cursor batch (up to 1000 records) — mirrors
+            // the saveShadowsBatch/updateShadowsBatch/deleteShadowsBatch fix.
+            event.preventDefault();
+            event.stopPropagation();
+            localErrors++;
+          };
           if (shouldContinue) cursor.continue();
         };
         request.onerror = () => reject(request.error);
@@ -454,24 +461,34 @@ class ShadowStorageManager {
   }
 
   async saveShadowsBatch(shadows) {
-    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
+      return { completed: 0, failedIndices: [] };
+    }
 
     return this._withStore('readwrite', (store, tx, resolve, reject) => {
       let completed = 0;
+      const failedIndices = [];
 
-      tx.oncomplete = () => resolve(completed);
+      tx.oncomplete = () => resolve({ completed, failedIndices });
       tx.onabort = () => reject(tx.error || new Error('saveShadowsBatch transaction aborted'));
 
       shadows.forEach((shadow, index) => {
         const shadowId = this.getCacheKey(shadow);
         if (!shadow || !shadowId) {
           this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index });
+          failedIndices.push(index);
           return;
         }
         const { shadow: normalizedShadow } = this.ensurePersonalityKey(shadow);
         const request = store.put(normalizedShadow);
         request.onsuccess = () => { completed++; };
-        request.onerror = () => {
+        request.onerror = (event) => {
+          // Prevent the per-item error from bubbling to tx.onerror and
+          // aborting the whole batch — one bad record must not discard
+          // every other successful write in a 50-250 item batch.
+          event.preventDefault();
+          event.stopPropagation();
+          failedIndices.push(index);
           this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, {
             index, id: shadowId, error: request.error,
           });
@@ -485,23 +502,27 @@ class ShadowStorageManager {
    * with event-loop yields between chunks to prevent OOM.
    */
   async saveShadowsChunked(shadows, chunkSize = 10) {
-    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
+      return { completed: 0, failedIndices: [] };
+    }
 
     if (shadows.length <= chunkSize) {
       return this.saveShadowsBatch(shadows);
     }
 
-    let totalSaved = 0;
+    let totalCompleted = 0;
+    const failedIndices = [];
     for (let i = 0; i < shadows.length; i += chunkSize) {
       const chunk = shadows.slice(i, i + chunkSize);
-      const saved = await this.saveShadowsBatch(chunk);
-      totalSaved += saved;
+      const { completed, failedIndices: chunkFailedIndices } = await this.saveShadowsBatch(chunk);
+      totalCompleted += completed;
+      chunkFailedIndices.forEach((idx) => failedIndices.push(i + idx));
 
       if (i + chunkSize < shadows.length) {
         await new Promise(r => setTimeout(r, 0));
       }
     }
-    return totalSaved;
+    return { completed: totalCompleted, failedIndices };
   }
 
   /**
@@ -762,7 +783,11 @@ class ShadowStorageManager {
           if (oldShadow) this.invalidateCache(oldShadow);
           this.updateCache(normalizedShadow, oldShadow);
         };
-        request.onerror = () => {
+        request.onerror = (event) => {
+          // Prevent the per-item error from bubbling to tx.onerror and
+          // aborting the whole batch — see saveShadowsBatch above.
+          event.preventDefault();
+          event.stopPropagation();
           this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
             index, id: this.getCacheKey(normalizedShadow), error: request.error,
           });
@@ -792,7 +817,11 @@ class ShadowStorageManager {
             this.recentCache.delete(id);
           }
         };
-        request.onerror = () => {
+        request.onerror = (event) => {
+          // Prevent the per-item error from bubbling to tx.onerror and
+          // aborting the whole batch — see saveShadowsBatch above.
+          event.preventDefault();
+          event.stopPropagation();
           this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, {
             index, id, error: request.error,
           });
@@ -816,13 +845,19 @@ class ShadowStorageManager {
     const resolveStrength = (shadow) => {
       if (shadow.strength > 0) return shadow.strength;
       if (shadow._c === 2 && shadow.p !== undefined) return shadow.p * 10;
+      // Growth-aware path tried before the raw baseStats fallback below —
+      // baseStats alone is nearly always present, which previously made this
+      // branch unreachable and under-counted leveled shadows (growthStats/
+      // naturalGrowthStats ignored). Falls through to baseStats/decompressed
+      // only when the effective-stats calculation yields no real power.
+      const effectiveStats = this.getShadowEffectiveStats?.(shadow);
+      const effectivePower = effectiveStats ? this.calculateShadowPower(effectiveStats, 1) : 0;
+      if (effectivePower > 0) return effectivePower;
       if (shadow.baseStats) return this.calculateShadowPower(shadow.baseStats, 1);
       const decompressed = this.getShadowData(shadow);
       if (decompressed?.baseStats) return this.calculateShadowPower(decompressed.baseStats, 1);
       if (decompressed?.strength > 0) return decompressed.strength;
       if (decompressed?._c === 2 && decompressed?.p !== undefined) return decompressed.p * 10;
-      const effectiveStats = this.getShadowEffectiveStats?.(shadow);
-      if (effectiveStats) return this.calculateShadowPower(effectiveStats, 1);
       return 0;
     };
 

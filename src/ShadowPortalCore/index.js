@@ -9,18 +9,35 @@
 
 "use strict";
 
-// GSAP CDN loader state (shared across all portal-core consumers)
-let _gsapLoadPromise = null;
-let _gsapLoaded = false;
-let _gsapLogSent = false;
-// GSAP script elements injected into document.head — cleaned up on stop() to prevent accumulation across BD reloads
-let _gsapScriptEls = [];
-
-// CSS Portal spiral mask (PropJockey technique)
-// Preferred: imgur PNG. Fallback: procedurally generated spiral.
-let _spiralMaskUrl = null;
-let _spiralMaskReady = false;
-let _spiralMaskLoadedFrom = null;
+// GSAP CDN loader + spiral-mask cache — GLOBAL singleton via window.__SL_PortalCore.
+//
+// esbuild bundles this module into each plugin (ShadowStep/ShadowExchange/ShadowSenses)
+// separately, so module-level state is NOT shared cross-plugin; only globals are. This
+// hosts the cache on window.__SL_PortalCore (same first-wins pattern as
+// shared/event-bus.js / shared/dom-bus.js) so all three plugins share ONE GSAP CDN load
+// and ONE spiral-mask preload instead of racing three independent copies.
+function _getPortalCoreState() {
+  if (window.__SL_PortalCore) return window.__SL_PortalCore;
+  window.__SL_PortalCore = {
+    gsapLoadPromise: null,
+    gsapLoaded: false,
+    gsapLogSent: false,
+    // GSAP script elements injected into document.head — cleaned up once the last
+    // consumer stops, to prevent accumulation across BD reloads.
+    gsapScriptEls: [],
+    // CSS Portal spiral mask (PropJockey technique)
+    // Preferred: imgur PNG. Fallback: procedurally generated spiral.
+    spiralMaskUrl: null,
+    spiralMaskReady: false,
+    spiralMaskLoadedFrom: null,
+    // Consumer refcount — applyPortalCoreToClass() increments, stop() decrements.
+    // Only the last active consumer's stop() tears down the shared GSAP/mask cache,
+    // so disabling one of several concurrently-enabled portal-core plugins doesn't
+    // force the remaining ones to re-fetch GSAP from CDN.
+    consumerCount: 0,
+  };
+  return window.__SL_PortalCore;
+}
 
 const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 
@@ -31,14 +48,15 @@ const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/b
  * Called fire-and-forget during applyPortalCoreToClass.
  */
 function preloadSpiralMask() {
+  const core = _getPortalCoreState();
   // Re-fetch if URL changed (e.g. mask image swapped between plugin versions)
-  if (_spiralMaskLoadedFrom && _spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
-    _spiralMaskUrl = null;
-    _spiralMaskReady = false;
-    _spiralMaskLoadedFrom = null;
+  if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
+    core.spiralMaskUrl = null;
+    core.spiralMaskReady = false;
+    core.spiralMaskLoadedFrom = null;
   }
-  if (_spiralMaskReady || _spiralMaskUrl) return;
-  _spiralMaskLoadedFrom = SPIRAL_IMG_URL;
+  if (core.spiralMaskReady || core.spiralMaskUrl) return;
+  core.spiralMaskLoadedFrom = SPIRAL_IMG_URL;
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.onload = () => {
@@ -47,16 +65,16 @@ function preloadSpiralMask() {
       c.width = c.height = 512;
       const ctx = c.getContext("2d");
       ctx.drawImage(img, 0, 0, 512, 512);
-      _spiralMaskUrl = c.toDataURL();
+      core.spiralMaskUrl = c.toDataURL();
     } catch (_) {
       // CORS tainted canvas — fall back to procedural
-      _spiralMaskUrl = generateProceduralSpiral();
+      core.spiralMaskUrl = generateProceduralSpiral();
     }
-    _spiralMaskReady = true;
+    core.spiralMaskReady = true;
   };
   img.onerror = () => {
-    _spiralMaskUrl = generateProceduralSpiral();
-    _spiralMaskReady = true;
+    core.spiralMaskUrl = generateProceduralSpiral();
+    core.spiralMaskReady = true;
   };
   img.src = SPIRAL_IMG_URL;
 }
@@ -94,11 +112,12 @@ function generateProceduralSpiral() {
 
 /** Get the spiral mask URL (imgur data URL preferred, procedural fallback). */
 function getSpiralMaskUrl() {
-  if (_spiralMaskUrl) return _spiralMaskUrl;
+  const core = _getPortalCoreState();
+  if (core.spiralMaskUrl) return core.spiralMaskUrl;
   // If preload hasn't completed yet, generate procedural synchronously
-  _spiralMaskUrl = generateProceduralSpiral();
-  _spiralMaskReady = true;
-  return _spiralMaskUrl;
+  core.spiralMaskUrl = generateProceduralSpiral();
+  core.spiralMaskReady = true;
+  return core.spiralMaskUrl;
 }
 
 const DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
@@ -200,20 +219,31 @@ const methods = {
    * @returns {Promise<object|null>} GSAP instance or null if CDN failed.
    */
   async _ensureGSAP() {
-    if (_gsapLoaded && window.gsap) return window.gsap;
-    if (_gsapLoadPromise) return _gsapLoadPromise;
+    const core = _getPortalCoreState();
+    if (core.gsapLoaded && window.gsap) return window.gsap;
+    if (core.gsapLoadPromise) return core.gsapLoadPromise;
 
-    _gsapLoadPromise = (async () => {
+    core.gsapLoadPromise = (async () => {
       try {
         const loadScript = (url) => new Promise((resolve, reject) => {
-          // Dedup: don't inject same script twice
-          if (document.querySelector(`script[src="${url}"]`)) { resolve(); return; }
+          // Dedup: if a matching <script> tag already exists (e.g. injected by a
+          // sibling plugin bundle that raced us here), don't inject a second one —
+          // await that tag's own completion instead of resolving on tag-presence
+          // alone, since the tag may still be mid-load.
+          const existing = document.querySelector(`script[src="${url}"]`);
+          if (existing) {
+            if (existing.dataset.slLoaded === "1") { resolve(); return; }
+            if (existing.dataset.slFailed === "1") { reject(new Error(`Previously failed to load ${url}`)); return; }
+            existing.addEventListener("load", () => resolve(), { once: true });
+            existing.addEventListener("error", () => reject(new Error(`Failed to load ${url}`)), { once: true });
+            return;
+          }
           const el = document.createElement("script");
           el.src = url;
-          el.onload = resolve;
-          el.onerror = reject;
+          el.onload = () => { el.dataset.slLoaded = "1"; resolve(); };
+          el.onerror = () => { el.dataset.slFailed = "1"; reject(new Error(`Failed to load ${url}`)); };
           document.head.appendChild(el);
-          _gsapScriptEls.push(el);
+          core.gsapScriptEls.push(el);
         });
 
         const CDN = "https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0";
@@ -232,9 +262,9 @@ const methods = {
         if (window.CustomEase) window.gsap.registerPlugin(window.CustomEase);
         if (window.Physics2DPlugin) window.gsap.registerPlugin(window.Physics2DPlugin);
 
-        _gsapLoaded = true;
-        if (!_gsapLogSent) {
-          _gsapLogSent = true;
+        core.gsapLoaded = true;
+        if (!core.gsapLogSent) {
+          core.gsapLogSent = true;
           if (this.settings?.debugMode) {
             const plugins = [window.CustomEase && "CustomEase", window.Physics2DPlugin && "Physics2D"].filter(Boolean);
             console.log(`[ShadowPortalCore] GSAP v${window.gsap.version} loaded` + (plugins.length ? ` + ${plugins.join(" + ")}` : ""));
@@ -243,13 +273,13 @@ const methods = {
         return window.gsap;
       } catch (err) {
         console.warn("[ShadowPortalCore] GSAP CDN load failed — vanilla canvas fallback active:", err.message);
-        _gsapLoaded = false;
-        _gsapLoadPromise = null;
+        core.gsapLoaded = false;
+        core.gsapLoadPromise = null;
         return null;
       }
     })();
 
-    return _gsapLoadPromise;
+    return core.gsapLoadPromise;
   },
 
   /**
@@ -648,7 +678,7 @@ const methods = {
     // CSS Portal (PropJockey spiral-mask counter-rotation technique)
     // Appended BEFORE canvas so canvas (dark overlay + aperture punch) stacks on top.
     let cssPortalEl = null;
-    if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
+    if (!prefersReducedMotion && _getPortalCoreState().gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
       const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 3.0;
 
@@ -769,7 +799,7 @@ const methods = {
 
       // Phase 3: GSAP shard animation with back.out(2) for explosive pop, or WAAPI fallback
       const shardAnims = [];
-      if (_gsapLoaded && window.gsap) {
+      if (_getPortalCoreState().gsapLoaded && window.gsap) {
         for (const shard of shards) {
           const delay = parseFloat(shard.style.getPropertyValue("--ss-delay")) || 0;
           const tx = shard.style.getPropertyValue("--ss-shard-x") || "0px";
@@ -870,7 +900,7 @@ const methods = {
 
   startPortalCanvasAnimation(canvas, duration, cssPortalEl, perfProfile) {
     // GSAP-enhanced path — uses main-thread canvas only (GSAP depends on DOM)
-    if (_gsapLoaded && window.gsap) {
+    if (_getPortalCoreState().gsapLoaded && window.gsap) {
       return this._startPortalCanvasGSAP(canvas, duration, cssPortalEl, perfProfile);
     }
 
@@ -2207,9 +2237,14 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
     });
   }
 
+  // Track this consumer against the shared cache so stop() only tears down
+  // window.__SL_PortalCore once every registered consumer has stopped.
+  const core = _getPortalCoreState();
+  core.consumerCount += 1;
+
   // Fire-and-forget GSAP preload so it's ready by first portal animation.
   // Safe no-op if CDN is blocked — vanilla canvas path will be used instead.
-  if (!_gsapLoadPromise && !_gsapLoaded) {
+  if (!core.gsapLoadPromise && !core.gsapLoaded) {
     methods._ensureGSAP.call({}).catch(() => {});
   }
 
@@ -2279,22 +2314,30 @@ function stampTeleportCooldown() {
 }
 
 /**
- * Reset all module-level state accumulated during a plugin session.
- * Call from the host plugin's stop() method so BetterDiscord hot-reloads
- * start with a clean slate (GSAP load promise, spiral mask cache, etc.).
+ * Decrement this consumer's hold on the shared window.__SL_PortalCore cache.
+ * Call from the host plugin's stop() method. Since ShadowStep, ShadowExchange,
+ * and ShadowSenses all depend on the SAME cached GSAP load / spiral mask, the
+ * destructive reset (clearing the cache, removing injected <script> tags) only
+ * runs once the LAST active consumer stops — otherwise disabling one of several
+ * concurrently-enabled portal-core plugins would force the others to re-fetch
+ * GSAP from CDN and briefly lose their portal styling.
  */
 function stop() {
-  _gsapLoaded = false;
-  _gsapLoadPromise = null;
-  _gsapLogSent = false;
-  _spiralMaskUrl = null;
-  _spiralMaskReady = false;
-  _spiralMaskLoadedFrom = null;
+  const core = _getPortalCoreState();
+  core.consumerCount = Math.max(0, core.consumerCount - 1);
+  if (core.consumerCount > 0) return;
+
+  core.gsapLoaded = false;
+  core.gsapLoadPromise = null;
+  core.gsapLogSent = false;
+  core.spiralMaskUrl = null;
+  core.spiralMaskReady = false;
+  core.spiralMaskLoadedFrom = null;
   // Remove GSAP script tags injected during this session to prevent accumulation across BD reloads
-  for (const el of _gsapScriptEls) {
+  for (const el of core.gsapScriptEls) {
     if (el.parentNode) el.parentNode.removeChild(el);
   }
-  _gsapScriptEls = [];
+  core.gsapScriptEls = [];
 }
 
 module.exports = {

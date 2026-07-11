@@ -387,18 +387,11 @@ module.exports = {
         .filter(({ compressionLevel }) => compressionLevel !== 1)
         .map(({ shadow, compressionLevel }) => {
           const oldShadow = { ...shadow };
-          let compressedShadow = null;
 
-          // Use live shadow._c to avoid acting on stale cached compressionLevel
-          const liveLevel = shadow._c || 0;
-          if (liveLevel === 2) {
-            const decompressed = this.decompressShadowUltra(shadow);
-            compressedShadow = decompressed ? this.compressShadow(decompressed) : null;
-          } else if (shadow._c === 1 || shadow._c === 2) {
-            compressedShadow = shadow;
-          } else {
-            compressedShadow = this.compressShadow(shadow);
-          }
+          // shadow is always pre-decompressed here (processShadowCompression
+          // maps { shadow: decompressed } before building warmToCompress), so
+          // it never carries a live _c marker — compress directly.
+          const compressedShadow = this.compressShadow(shadow);
 
           if (compressedShadow && compressedShadow !== shadow) {
             this._invalidateShadowStateCaches(oldShadow);

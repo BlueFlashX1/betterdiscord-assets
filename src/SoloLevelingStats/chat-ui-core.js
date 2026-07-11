@@ -467,14 +467,16 @@ module.exports = {
   },
 
   removeChatUI() {
-    this.debugLog('REMOVE_CHAT_UI', 'removeChatUI() called', {
-      hadPanel: !!this.chatUIPanel,
-      panelConnected: this.chatUIPanel?.isConnected ?? null,
-      hadRoot: !!this._chatUIRoot,
-      hadObserver: !!this.chatUIObserver,
-      inGuildText: this._isGuildTextChannel(),
-      caller: new Error().stack?.split('\n')[2]?.trim() || 'unknown',
-    });
+    if (this.settings?.debugMode) {
+      this.debugLog('REMOVE_CHAT_UI', 'removeChatUI() called', {
+        hadPanel: !!this.chatUIPanel,
+        panelConnected: this.chatUIPanel?.isConnected ?? null,
+        hadRoot: !!this._chatUIRoot,
+        hadObserver: !!this.chatUIObserver,
+        inGuildText: this._isGuildTextChannel(),
+        caller: new Error().stack?.split('\n')[2]?.trim() || 'unknown',
+      });
+    }
     // Clear creation mutex (prevent stale lock)
     this._isCreatingUI = false;
     // Unmount React root if using createRoot fallback (v3.0.0)

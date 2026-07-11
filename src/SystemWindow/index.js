@@ -270,7 +270,10 @@ module.exports = class SystemWindow {
         fiber = fiber.return;
       }
     } catch (_) {}
-    article.setAttribute('data-sw-author', authorId || '');
+    // Only cache on a successful lookup — caching the empty-string "miss"
+    // sentinel would permanently freeze a transient fiber-walk failure
+    // (e.g. pre-commit render state) for the lifetime of this element.
+    if (authorId) article.setAttribute('data-sw-author', authorId);
     return authorId;
   }
 

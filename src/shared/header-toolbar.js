@@ -76,18 +76,10 @@ function getAllChannelHeaderToolbars() {
   return out;
 }
 
+const { acquireDispatcher } = require('./dispatcher');
+
 function _resolveDispatcher() {
-  const Webpack = BdApi.Webpack;
-  if (!Webpack) return null;
-  const fromStore = Webpack.Stores?.UserStore?._dispatcher;
-  if (fromStore && typeof fromStore.subscribe === 'function') return fromStore;
-  if (typeof Webpack.getModule === 'function') {
-    try {
-      const mod = Webpack.getModule((m) => m && typeof m.dispatch === 'function' && typeof m.subscribe === 'function');
-      if (mod && typeof mod.subscribe === 'function') return mod;
-    } catch (_) {}
-  }
-  return null;
+  return acquireDispatcher();
 }
 
 /**

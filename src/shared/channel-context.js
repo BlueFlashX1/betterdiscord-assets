@@ -17,6 +17,8 @@
  *   16 GUILD_MEDIA
  */
 
+const { acquireDispatcher } = require('./dispatcher');
+
 function _getStores() {
   try {
     const Webpack = BdApi?.Webpack;
@@ -324,11 +326,8 @@ function installVoiceChatBodyAttr() {
 
     // Fast reactive update: subscribe to CHANNEL_SELECT dispatcher action.
     try {
-      const Webpack = BdApi?.Webpack;
-      const dispatcher =
-        Webpack?.Stores?.UserStore?._dispatcher ||
-        Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
-      if (dispatcher && typeof dispatcher.subscribe === "function") {
+      const dispatcher = acquireDispatcher();
+      if (dispatcher) {
         const handler = () => _writeVcAttribute();
         dispatcher.subscribe("CHANNEL_SELECT", handler);
         dispatcher.subscribe("VOICE_STATE_UPDATES", handler);

@@ -298,32 +298,7 @@ module.exports = class LevelProgressBar {
     this.startReconUpdates();
     this.subscribeToEvents();
     if (this.eventUnsubscribers.length === 0) {
-      this._setTrackedTimeout(() => {
-        this.subscribeToEvents();
-        if (this.eventUnsubscribers.length === 0) {
-          this._trace('START', 'Events not available after retry, using fallback polling');
-          this.startUpdating();
-          // Re-attempt subscription when SoloLevelingStats loads late
-          if (this._pluginLoadedHandler && typeof BdApi?.Events?.off === 'function') {
-            BdApi.Events.off('plugin-loaded', this._pluginLoadedHandler);
-          }
-          this._pluginLoadedHandler = (pluginName) => {
-            if (pluginName === 'SoloLevelingStats' && this.eventUnsubscribers.length === 0) {
-              const subscribed = this.subscribeToEvents();
-              if (subscribed) {
-                this.stopUpdating();
-                if (typeof BdApi?.Events?.off === 'function') {
-                  BdApi.Events.off('plugin-loaded', this._pluginLoadedHandler);
-                }
-                this._pluginLoadedHandler = null;
-              }
-            }
-          };
-          if (typeof BdApi?.Events?.on === 'function') {
-            BdApi.Events.on('plugin-loaded', this._pluginLoadedHandler);
-          }
-        }
-      }, 1000);
+      this._scheduleSubscribeRetry(1);
     }
     this._trace('START', 'Plugin started', {
       enabled: this.settings.enabled,
@@ -337,10 +312,8 @@ module.exports = class LevelProgressBar {
     this._isStopped = true;
     this._trace('STOP', 'Plugin stopping');
     this.debugLog('STOP', 'Plugin stopping');
-    if (this._pluginLoadedHandler) {
-      const h = this._pluginLoadedHandler;
-      this._pluginLoadedHandler = null;
-      if (typeof BdApi?.Events?.off === 'function') BdApi.Events.off('plugin-loaded', h);
+    if (this._subscribeRetryTimeout) {
+      this._subscribeRetryTimeout = null;
     }
     this.unsubscribeFromEvents();
     this.stopReconUpdates();
@@ -860,6 +833,23 @@ module.exports = class LevelProgressBar {
   }
   updateProgressText(rank, level, xp, xpRequired) { return this._invokeRuntimeHelper('updateProgressText', rank, level, xp, xpRequired); }
   // === Event Wiring + Polling ===
+  _scheduleSubscribeRetry(attempt) {
+    const MAX_SUBSCRIBE_RETRY_ATTEMPTS = 10;
+    const SUBSCRIBE_RETRY_DELAY_MS = 4000;
+    if (this._isStopped || attempt > MAX_SUBSCRIBE_RETRY_ATTEMPTS) {
+      if (attempt > MAX_SUBSCRIBE_RETRY_ATTEMPTS) {
+        this._trace('START', 'Giving up on event subscription after max retries', {
+          attempts: MAX_SUBSCRIBE_RETRY_ATTEMPTS,
+        });
+      }
+      return;
+    }
+    this._subscribeRetryTimeout = this._setTrackedTimeout(() => {
+      if (this._isStopped || this.eventUnsubscribers.length > 0) return;
+      const subscribed = this.subscribeToEvents();
+      if (!subscribed) this._scheduleSubscribeRetry(attempt + 1);
+    }, SUBSCRIBE_RETRY_DELAY_MS);
+  }
   subscribeToEvents() {
     if (this.eventUnsubscribers.length > 0) {
       this.debugLog('SUBSCRIBE_EVENTS', 'Already subscribed to events');

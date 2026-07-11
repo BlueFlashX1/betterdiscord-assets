@@ -188,7 +188,7 @@ module.exports = class SoloLevelingTheme {
 
   getSettingsPanel() {
     const panel = document.createElement('div');
-    panel.style.cssText = 'padding: 16px; font-family: var(--font-primary); color: #e0e0e0;';
+    panel.style.cssText = 'padding: 16px; font-family: "gg sans", "Noto Sans", sans-serif; color: #e0e0e0;';
 
     const title = document.createElement('h2');
     title.textContent = 'Theme Modules';

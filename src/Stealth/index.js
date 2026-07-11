@@ -72,15 +72,6 @@ module.exports = class Stealth {
       readReceipts: 0,
     };
 
-    this._suppressEventLog = {
-      typing: 0,
-      activities: 0,
-      telemetry: 0,
-      idle: 0,
-      silent: 0,
-      readReceipts: 0,
-    };
-
     this._warningTimestamps = new Map();
     this._protoUtils = null;
     this._sentryDisabled = false;
@@ -482,19 +473,16 @@ module.exports = class Stealth {
     const events = {
       IDLE: () => {
         if (!this._canSuppress("suppressIdle")) return;
-        this._recordSuppressed("idle");
         if (this._canSuppress("invisibleStatus")) this._ensureInvisibleStatus();
       },
 
       AFK: () => {
         if (!this._canSuppress("suppressIdle")) return;
-        this._recordSuppressed("idle");
         if (this._canSuppress("invisibleStatus")) this._ensureInvisibleStatus();
       },
 
       TRACK: () => {
         if (!this._canSuppress("suppressTelemetry")) return;
-        this._recordSuppressed("telemetry");
       },
 
       CONNECTION_OPEN: () => {
@@ -577,7 +565,6 @@ module.exports = class Stealth {
           "startTyping",
           (ctx, args, original) => {
             if (this._canSuppress("suppressTyping")) {
-              this._recordSuppressed("typing");
               return undefined;
             }
             return original.apply(ctx, args);
@@ -622,7 +609,6 @@ module.exports = class Stealth {
       fnNames,
       keyCombos,
       shouldBlock: () => this._canSuppress("suppressTyping"),
-      onBlocked: () => this._recordSuppressed("typing"),
       tag: "typing",
       blockedReturnValue: undefined,
     });
@@ -653,7 +639,6 @@ module.exports = class Stealth {
       fnNames,
       keyCombos,
       shouldBlock: () => this._canSuppress("suppressActivities"),
-      onBlocked: () => this._recordSuppressed("activities"),
       tag: "activities",
       blockedReturnValue: undefined,
     });
@@ -673,7 +658,6 @@ module.exports = class Stealth {
           "track",
           (ctx, args, original) => {
             if (this._canSuppress("suppressTelemetry")) {
-              this._recordSuppressed("telemetry");
               return undefined;
             }
             return original.apply(ctx, args);
@@ -729,7 +713,6 @@ module.exports = class Stealth {
           const content = message.content.trimStart();
           if (!content || content.startsWith("@silent") || content.startsWith("/")) return;
           message.content = `@silent ${message.content}`;
-          this._recordSuppressed("silent");
         });
         patched += 1;
       }
@@ -756,7 +739,6 @@ module.exports = class Stealth {
       fnNames: ackFnNames,
       keyCombos: ackKeyCombos,
       shouldBlock: () => this._canSuppress("suppressReadReceipts"),
-      onBlocked: () => this._recordSuppressed("readReceipts"),
       tag: "readReceipts",
       blockedReturnValue: Promise.resolve(),
     });
@@ -775,7 +757,6 @@ module.exports = class Stealth {
               fn,
               (ctx, args, original) => {
                 if (this._canSuppress("suppressReadReceipts")) {
-                  this._recordSuppressed("readReceipts");
                   return Promise.resolve();
                 }
                 return original.apply(ctx, args);
@@ -912,7 +893,7 @@ module.exports = class Stealth {
     this._patchMetrics.process = Math.max(this._patchMetrics.process, patched);
   }
 
-  _patchFunctions({ fnNames, keyCombos, shouldBlock, onBlocked, tag, blockedReturnValue }) {
+  _patchFunctions({ fnNames, keyCombos, shouldBlock, tag, blockedReturnValue }) {
     const modules = this._collectModules(fnNames, keyCombos);
     let patchedCount = 0;
 
@@ -922,7 +903,6 @@ module.exports = class Stealth {
 
         BdApi.Patcher.instead(STEALTH_PLUGIN_ID, mod, fn, (ctx, args, original) => {
           if (shouldBlock()) {
-            onBlocked();
             return blockedReturnValue;
           }
 
@@ -1035,16 +1015,6 @@ module.exports = class Stealth {
     // Trim only after a warning passes through AND map is large
     if (this._warningTimestamps.size > 256) this._trimWarningTimestamps(now);
     this._printWarning(scope, message, error);
-  }
-
-  _recordSuppressed(kind) {
-    const now = Date.now();
-    const last = this._suppressEventLog[kind] || 0;
-
-    // Throttle logs/toasts for suppressed events.
-    if (now - last < 3000) return;
-
-    this._suppressEventLog[kind] = now;
   }
 
   _isStatusPolicySetting(key) {

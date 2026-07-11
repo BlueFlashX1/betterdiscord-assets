@@ -112,7 +112,14 @@ function readFileBackup(plugin) {
 
 function writeFileBackup(plugin, data) {
   if (!plugin.fileBackupPath) return;
-  if (plugin._writeInFlight) { plugin._writePending = true; return; }
+  if (plugin._writeInFlight) {
+    // A write is already in flight — stash the latest payload instead of
+    // discarding it, so the completion re-invoke below writes the newest
+    // settings rather than replaying this call's now-stale `data`.
+    plugin._writePending = true;
+    plugin._pendingWriteData = data;
+    return;
+  }
   plugin._writeInFlight = true;
   try {
     const fs = require("fs");
@@ -120,7 +127,12 @@ function writeFileBackup(plugin, data) {
 
     fs.writeFile(plugin.fileBackupPath, json, "utf8", (err) => {
       plugin._writeInFlight = false;
-      if (plugin._writePending) { plugin._writePending = false; writeFileBackup(plugin, data); }
+      if (plugin._writePending) {
+        plugin._writePending = false;
+        const pendingData = plugin._pendingWriteData;
+        plugin._pendingWriteData = null;
+        writeFileBackup(plugin, pendingData);
+      }
       if (err) {
         console.error("[ShadowExchange] File backup write failed:", err);
         return;

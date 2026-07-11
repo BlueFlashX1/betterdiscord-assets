@@ -104,25 +104,6 @@
  * VERSION HISTORY
  * ============================================================================
  *
- * @changelog v2.4.0 (2025-12-06) - ADVANCED BETTERDISCORD INTEGRATION
- * ADVANCED FEATURES:
- * - Added Webpack module access (MessageStore, UserStore, ChannelStore, MessageActions)
- * - Implemented function patching for reliable message tracking
- * - Added React injection for UI panel (better Discord integration)
- * - Enhanced React fiber traversal with better error handling
- * - Improved compatibility with multiple React fiber key patterns
- *
- * PERFORMANCE IMPROVEMENTS:
- * - Message tracking: ~30-50% faster via webpack modules vs DOM
- * - User ID detection: More reliable via UserStore vs fiber traversal
- * - UI updates: Better integration with Discord's React tree
- *
- * RELIABILITY:
- * - More reliable message detection (webpack patches vs DOM observation)
- * - Better error handling in React fiber traversal
- * - Graceful fallbacks if webpack/React unavailable
- * - All existing functionality preserved (backward compatible)
- *
  * @changelog v2.3.0 (2025-12-04) - CODE ORGANIZATION & STRUCTURE
  * ORGANIZATION IMPROVEMENTS:
  * - Added clear 4-section structure with navigation markers
@@ -389,14 +370,9 @@ const SoloLevelingStats = class SoloLevelingStats {
   
     // Webpack modules (for advanced Discord integration)
     this.webpackModules = {
-      MessageStore: null,
       UserStore: null,
       ChannelStore: null,
-      MessageActions: null,
     };
-    this.webpackModuleAccess = false; // Track if webpack modules are available
-    this.messageStorePatch = null; // Track message store patch for cleanup
-    this.reactInjectionActive = false; // Track if React injection is active
   
     // (Legacy domCache + initDOMCache removed — the React UI migration in
     // v3.0.0 replaced all direct DOM manipulation with React components

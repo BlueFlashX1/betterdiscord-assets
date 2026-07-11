@@ -22,6 +22,7 @@ import { applyChannelContextMenuPatch } from "./context-menu-helpers";
 import dc from "../shared/discord-classes";
 import { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } from "../shared/toolbar-tooltip";
 const { onResize } = require("../shared/dom-bus");
+const { acquireDispatcher } = require("../shared/dispatcher");
 // Helper: find channel sidebar element
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
@@ -413,7 +414,7 @@ export function pushChannel(ctx, guildId, channelId, channelName) {
   const guildData = getGuildData(ctx, guildId);
   if (guildData.hiddenChannels.some((c) => c.id === channelId)) return;
   guildData.hiddenChannels.push({ id: channelId, name: channelName });
-  guildData._hiddenIdSet = null; // invalidate cache
+  _hiddenIdSetCache.delete(guildId); // invalidate cache
   applyChannelHiding(ctx, guildId);
   ctx.saveSettings();
   ctx.debugLog("PushChannel", `Pushed #${channelName} in ${guildId}`);
@@ -422,7 +423,7 @@ export function pushChannel(ctx, guildId, channelId, channelName) {
 export function recallChannel(ctx, guildId, channelId) {
   const guildData = getGuildData(ctx, guildId);
   guildData.hiddenChannels = guildData.hiddenChannels.filter((c) => c.id !== channelId);
-  guildData._hiddenIdSet = null; // invalidate cache
+  _hiddenIdSetCache.delete(guildId); // invalidate cache
   const el = document.querySelector(`[data-list-item-id="channels___${channelId}"]`);
   if (el) {
     el.style.display = "";
@@ -477,14 +478,28 @@ function getEffectiveGuildId(ctx, guildId) {
   return guildId || currentGuildId || null;
 }
 
-function resolveHiddenIdSet(guildData) {
+// Non-persisted cache, keyed by guildId — NEVER hang this on the persisted
+// guildData object. An earlier version stored the live Set directly as
+// guildData._hiddenIdSet; ctx.saveSettings() JSON-serializes guildData
+// (JSON.stringify(new Set) -> {}), so on the next session the guard below
+// saw a truthy {} and returned it as-is, and hiddenIds.has() then threw,
+// silently breaking channel-hiding until the cache was reset by a push/recall.
+const _hiddenIdSetCache = new Map();
+
+function resolveHiddenIdSet(guildData, guildId) {
   if (!guildData) return new Set();
-  if (!guildData._hiddenIdSet) {
-    guildData._hiddenIdSet = new Set(
-      (guildData.hiddenChannels || []).map((entry) => String(entry.id))
-    );
+  // Recover already-corrupted saves from the prior (buggy) implementation:
+  // a leftover plain-object _hiddenIdSet on the persisted guildData is dead
+  // weight now — drop it so it stops round-tripping through saveSettings().
+  if (guildData._hiddenIdSet !== undefined && !(guildData._hiddenIdSet instanceof Set)) {
+    delete guildData._hiddenIdSet;
   }
-  return guildData._hiddenIdSet;
+  let hiddenIds = _hiddenIdSetCache.get(guildId);
+  if (!hiddenIds) {
+    hiddenIds = new Set((guildData.hiddenChannels || []).map((entry) => String(entry.id)));
+    _hiddenIdSetCache.set(guildId, hiddenIds);
+  }
+  return hiddenIds;
 }
 
 function clearStalePushedChannelMarkers(scope, hiddenIds) {
@@ -518,7 +533,7 @@ export function applyChannelHiding(ctx, guildId) {
   const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
-  const hiddenIds = resolveHiddenIdSet(guildData);
+  const hiddenIds = resolveHiddenIdSet(guildData, effectiveGuildId);
 
   const sidebar = findChannelSidebar();
   const scope = sidebar || document;
@@ -905,10 +920,7 @@ export function setupToolbarObserver(ctx) {
   // Without these we'd wait up to 250ms for the layout bus to notice; this
   // makes the hide/show feel snappy.
   try {
-    const Webpack = BdApi?.Webpack;
-    const dispatcher =
-      Webpack?.Stores?.UserStore?._dispatcher ||
-      Webpack?.getModule((m) => m && m.dispatch && m.subscribe);
+    const dispatcher = acquireDispatcher();
     if (dispatcher && typeof dispatcher.subscribe === "function") {
       const handler = () => scheduleIconReinject(ctx, 0);
       // Drop any prior subscription first — setupToolbarObserver can re-run

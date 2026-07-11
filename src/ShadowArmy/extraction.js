@@ -565,29 +565,6 @@ module.exports = {
 
             this.saveSettings();
 
-            // Force recalculation of aggregated power
-            if (
-              this.storageManager &&
-              typeof this.storageManager.getAggregatedPower === 'function'
-            ) {
-              try {
-                const soloData = this.getSoloLevelingData();
-                const resolvedRank = soloData?.rank || 'E';
-                this.debugLog('TOTAL_POWER_UPDATE', 'Forcing aggregated power recalculation after shadow extraction', {
-                  resolvedRank, shadowRanks: this.shadowRanks,
-                });
-                const result = await this.storageManager.getAggregatedPower(
-                  resolvedRank, this.shadowRanks
-                );
-                this.debugLog('TOTAL_POWER_UPDATE', 'Aggregated power recalculation completed', {
-                  totalPower: result?.totalPower || 0,
-                  totalCount: result?.totalCount || 0,
-                });
-              } catch (error) {
-                this.debugError('TOTAL_POWER_UPDATE', 'Failed to recalculate aggregated power', error);
-              }
-            }
-
             // Invalidate shadow power cache for this specific shadow
             if (this._shadowPowerCache) {
               this.invalidateShadowPowerCache(shadowToSave);
@@ -880,18 +857,29 @@ module.exports = {
       // Persist this chunk's successes in tiny IDB write batches
       if (chunkShadows.length > 0 && this.storageManager && this._isSkillTreeSkillUnlocked('shadow_preservation')) {
         try {
-          let savedCount = 0;
+          let saveResult;
           if (typeof this.storageManager.saveShadowsChunked === 'function') {
-            savedCount = await this.storageManager.saveShadowsChunked(
+            saveResult = await this.storageManager.saveShadowsChunked(
               chunkShadows, WRITE_CHUNK_SIZE
             );
           } else {
-            savedCount = await this.storageManager.saveShadowsBatch(chunkShadows);
+            saveResult = await this.storageManager.saveShadowsBatch(chunkShadows);
           }
 
-          const effectiveSavedCount = Number.isFinite(savedCount) ? savedCount : chunkShadows.length;
+          // saveShadowsBatch/saveShadowsChunked now report which indices
+          // failed instead of an all-or-nothing count, so partial saves are
+          // attributed to the correct shadows instead of assuming the first
+          // N in the chunk succeeded.
+          const failedIndices = new Set(
+            Array.isArray(saveResult?.failedIndices) ? saveResult.failedIndices : []
+          );
+          const effectiveSavedCount = Number.isFinite(saveResult?.completed)
+            ? saveResult.completed
+            : Math.max(0, chunkShadows.length - failedIndices.size);
           totalExtracted += effectiveSavedCount;
-          const savedShadows = chunkShadows.slice(0, effectiveSavedCount);
+          const savedShadows = failedIndices.size > 0
+            ? chunkShadows.filter((_, idx) => !failedIndices.has(idx))
+            : chunkShadows;
           for (const savedShadow of savedShadows) {
             totalPowerDelta += (savedShadow.strength || savedShadow.s || 0);
             const r = savedShadow.rank || savedShadow.r || '?';

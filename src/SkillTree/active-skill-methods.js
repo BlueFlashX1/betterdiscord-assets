@@ -425,9 +425,7 @@ const ActiveSkillMethods = {
     } else if (def.sustain) {
       durationText = "Sustained";
     }
-    if (BdApi?.UI?.showToast) {
-      this._toast(`${def.name} activated! (${durationText})`, "success", 3000);
-    }
+    this._toast(`${def.name} activated! (${durationText})`, "success", 3000);
 
     document.dispatchEvent(
       new CustomEvent("SkillTree:activeSkillActivated", {
@@ -482,7 +480,7 @@ const ActiveSkillMethods = {
     this.saveSettings();
 
     const def = this.activeSkillDefs[skillId];
-    if (BdApi?.UI?.showToast && def) {
+    if (def) {
       let toastText = `${def.name} expired.`;
       if (reason === "manual") toastText = `${def.name} deactivated.`;
       if (reason === "mana_depleted") toastText = `${def.name} ended (Mana depleted).`;

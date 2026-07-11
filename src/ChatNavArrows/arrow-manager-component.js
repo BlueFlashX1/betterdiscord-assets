@@ -1,26 +1,5 @@
-const dc = require('../shared/discord-classes');
+const { getScrollerPair, createArrowElement } = require('./dom-helpers');
 const EDGE_THRESHOLD = 100;
-
-function findScrollerElements() {
-  const wrapper =
-    document.querySelector(`div${dc.sel.messagesWrapper}`) ||
-    document.querySelector('div[class*="messagesWrapper-"]') ||
-    document.querySelector(`main${dc.sel.chatContent} > div > div${dc.sel.scroller}`)?.parentElement;
-  const scroller =
-    wrapper?.querySelector(`div${dc.sel.scroller}`) ||
-    wrapper?.querySelector('div[class*="scroller-"]') ||
-    wrapper?.querySelector(dc.sel.scrollerInner)?.parentElement;
-  return { wrapper: wrapper || null, scroller: scroller || null };
-}
-
-function createArrowElement(className, title, pathD, clickHandler) {
-  const el = document.createElement("div");
-  el.className = className;
-  el.title = title;
-  el.innerHTML = `<svg viewBox="0 0 24 24"><path d="${pathD}"></path></svg>`;
-  el.addEventListener("click", clickHandler);
-  return el;
-}
 
 function removeDomArrows(domArrowsRef) {
   const arrows = domArrowsRef.current;
@@ -105,7 +84,7 @@ function useScrollerBinding(React, options) {
 
     const findAndBind = () => {
       if (currentScroller?.isConnected) return;
-      const { wrapper, scroller } = findScrollerElements();
+      const { wrapper, scroller } = getScrollerPair();
       dbg("findScroller:", {
         wrapper: wrapper ? `<${wrapper.tagName} class="${(wrapper.className || "").slice(0, 60)}">` : null,
         scroller: scroller ? `<${scroller.tagName} class="${(scroller.className || "").slice(0, 60)}">` : null,
