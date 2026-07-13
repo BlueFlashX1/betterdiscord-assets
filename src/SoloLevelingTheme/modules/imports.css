@@ -30,7 +30,7 @@
   --HSL-server-alignment: flex-start;
 
   /* Core brand colors (used throughout — purple Solo Leveling palette) */
-  --main-color: #8a2be2;
+  --main-color: var(--sl-color-primary);
   --hover-color: #a855f7;
   --success-color: #00ff88;
   --danger-color: #ff4444;
@@ -39,17 +39,17 @@
   --sl-color-primary-rgb: 138, 43, 226;
 
   /* Surface backgrounds (dark popup/surface palette) */
-  --sl-bg-popup: rgba(10, 10, 16, 0.98);
-  --sl-bg-surface: rgba(8, 10, 20, 0.98);
-  --sl-bg-dock: rgba(8, 10, 20, 0.94);
+  --sl-bg-popup: var(--sl-color-bg-popup-alpha-98);
+  --sl-bg-surface: var(--sl-color-bg-deep-alpha-98);
+  --sl-bg-dock: var(--sl-color-bg-deep-alpha-94);
 
   /* Override Discord's native background variables to match our theme */
-  --background-base-lower: rgba(8, 10, 20, 0.98);
+  --background-base-lower: var(--sl-color-bg-deep-alpha-98);
   --background-base-low: rgba(10, 10, 20, 0.95);
   --background-base-default: rgba(12, 12, 24, 0.95);
   --background-base-high: rgba(18, 18, 32, 0.95);
   --background-base-higher: rgba(24, 24, 40, 0.95);
-  --sl-bg-overlay: rgba(0, 0, 0, 0.1);
+  --sl-bg-overlay: var(--sl-color-black-alpha-10);
 
   /* Border radius */
   --sl-radius: 2px;
@@ -58,11 +58,11 @@
   /* Border accent */
   --sl-border-primary: 2px solid rgba(138, 43, 226, 0.55);
   --sl-border-primary-strong: 2px solid rgba(138, 43, 226, 0.75);
-  --sl-border-subtle: 1px solid rgba(138, 43, 226, 0.35);
+  --sl-border-subtle: 1px solid var(--sl-color-primary-alpha-35);
 
   /* Shadow */
-  --sl-shadow-popup: 0 8px 20px rgba(0, 0, 0, 0.5);
-  --sl-shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --sl-shadow-popup: 0 8px 20px var(--sl-color-black-alpha-50);
+  --sl-shadow-elevated: 0 4px 12px var(--sl-color-black-alpha-40);
 
   /* Typography — Friend or Foe BB (Blambot) */
   --font-primary: 'Friend or Foe BB', sans-serif;

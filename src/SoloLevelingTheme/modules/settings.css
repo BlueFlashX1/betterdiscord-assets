@@ -80,16 +80,16 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([clas
 /* Hover state: channel-hover SVG (enhanced purple + dark fills) + glow */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]):hover {
   background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
-  filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
-          drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
+  filter: drop-shadow(0 0 3px var(--sl-color-primary-alpha-30))
+          drop-shadow(0 0 1px var(--sl-color-primary-alpha-20)) !important;
 }
 
 /* Selected/active state: Selected_channel SVG (organic dark strokes + purple edges) + glow
    active_ class is on the ITEM (div[role=listitem]) itself, confirmed via CSS Picker. */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="active_"] {
   background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
-  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
-          drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
+  filter: drop-shadow(0 0 4px var(--sl-color-primary-alpha-35))
+          drop-shadow(0 0 1px var(--sl-color-primary-alpha-25)) !important;
 }
 
 /* §10c — Settings content area (right panel): solid dark bg
@@ -244,8 +244,8 @@ div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"] 
     rgba(100, 20, 180, 0.6)
   ) 1 !important;
   box-shadow: 0 0 14px rgba(var(--sl-color-primary-rgb), 0.25),
-    inset 0 0 8px rgba(138, 43, 226, 0.08) !important;
-  color: #ffffff !important;
+    inset 0 0 8px var(--sl-color-primary-alpha-8) !important;
+  color: var(--sl-color-white) !important;
 }
 
 /* Selected + hover: brighter purple border glow */

@@ -77,6 +77,6 @@ body::after {
    query. No JS changes required — SoloLevelingTheme already calls
    installVoiceChatBodyAttr() in start(). */
 body[data-sl-in-forum-or-thread="true"]:not([data-sl-in-voice-chat="true"])::after {
-  background: rgba(0, 0, 0, 1) !important;
+  background: var(--sl-color-black) !important;
   transition: background 0.2s ease !important;
 }

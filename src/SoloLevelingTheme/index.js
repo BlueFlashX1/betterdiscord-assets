@@ -12,6 +12,21 @@
 // the channel sidebar background to match the VC main-area dark background.
 const { installVoiceChatBodyAttr } = require('../shared/channel-context');
 
+// Design tokens — themes/variables/ modular CSS custom-property system.
+// esbuild's text loader doesn't resolve @import, so variables.css (the aggregator)
+// can't be required directly — its partials are required individually here in the
+// same dependency order variables.css itself declares, then concatenated below.
+const cssTokenColors     = require('../../themes/variables/_colors.css');
+const cssTokenEffects    = require('../../themes/variables/_effects.css');
+const cssTokenTypography = require('../../themes/variables/_typography.css');
+const cssTokenSpacing    = require('../../themes/variables/_spacing.css');
+const cssTokenComponents = require('../../themes/variables/_components.css');
+const cssTokenUtilities  = require('../../themes/variables/_utilities.css');
+const cssTokens = [
+  cssTokenColors, cssTokenEffects, cssTokenTypography,
+  cssTokenSpacing, cssTokenComponents, cssTokenUtilities,
+].join('\n');
+
 // CSS modules imported as text strings by esbuild (loader: { ".css": "text" })
 const cssImports       = require('./modules/imports.css');
 const cssWallpaper     = require('./modules/wallpaper.css');
@@ -48,6 +63,7 @@ const cssImportsClean = cssImports.replace(/@import\s+url\([^)]+\)\s*;?\s*/g, ''
 
 // Module registry — order matters (specificity cascade)
 const CSS_MODULES = [
+  { id: 'tokens',          label: 'Design Tokens',            css: cssTokens,        locked: true },
   { id: 'imports',        label: 'Variables & Fonts',         css: cssImportsClean },
   { id: 'wallpaper',      label: 'Animated Wallpaper',       css: cssWallpaper,     locked: true },
   { id: 'home',           label: 'Home & Friends',           css: cssHome },

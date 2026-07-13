@@ -30,26 +30,26 @@ div[class^="bar_"] {
    - Active Now (right): the aside container with activity cards */
 main[aria-label="Friends"] div[class^="peopleColumn_"],
 div[class^="sidebar_"].theme-dark {
-  background: rgba(0, 0, 0, 0.3) !important;
+  background: var(--sl-color-black-alpha-30) !important;
   background-image: none !important;
 }
 
 main[aria-label="Friends"] aside[class^="container_"],
 main[aria-label="Friends"] aside.refresh-active-now {
-  background: rgba(0, 0, 0, 0.3) !important;
+  background: var(--sl-color-black-alpha-30) !important;
   background-image: none !important;
 }
 
 /* Server/group-DM member list (right panel) — full dark wash on panel */
 .members_c8ffbb,
 div[class^="membersWrap_"] {
-  background: rgba(0, 0, 0, 1.0) !important;
+  background: var(--sl-color-black) !important;
   background-image: none !important;
 }
 
 /* Boxed member rows — each user entry gets a subtle card look */
 div[class^="members_"] div[class^="member_"] {
-  background: rgba(0, 0, 0, 0.5) !important;
+  background: var(--sl-color-black-alpha-50) !important;
   border-radius: 2px !important;
   margin: 10px 8px !important;
   padding: 8px 8px !important;
@@ -59,7 +59,7 @@ div[class^="members_"] div[class^="member_"] {
 
 /* Disable white highlight on hover, add purple border instead */
 div[class^="members_"] div[class^="member_"]:hover {
-  background: rgba(0, 0, 0, 0.5) !important;
+  background: var(--sl-color-black-alpha-50) !important;
   border-color: rgba(var(--sl-color-primary-rgb), 0.55) !important;
 }
 
@@ -156,7 +156,7 @@ div[class*="userPopoutOuter_"] {
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
   border-radius: 2px !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 8px 20px var(--sl-color-black-alpha-50) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -210,7 +210,7 @@ div[role="menu"],
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
   border-radius: 2px !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 8px 20px var(--sl-color-black-alpha-50) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -221,7 +221,7 @@ div[class^="reactionTooltip_"] {
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
   border-radius: 2px !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 8px 20px var(--sl-color-black-alpha-50) !important;
 }
 
 /* Global: all interactive items inside any popup/menu get consistent inset highlight */
@@ -258,6 +258,6 @@ div[class^="popout_"] div[class^="item_"][class*="focused"],
    Prevents wallpaper from bleeding through the card surface */
 main[aria-label="Friends"] div[class^="itemCard_"][role="button"],
 .refresh-active-now div[class^="itemCard_"] {
-  background: #000000 !important;
+  background: var(--sl-color-black) !important;
   background-image: none !important;
 }

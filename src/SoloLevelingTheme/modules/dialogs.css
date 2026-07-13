@@ -18,7 +18,7 @@ div[class*="bd-error-modal" i] {
   background: var(--sl-bg-popup) !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.42) !important;
   border-radius: 2px !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
+  box-shadow: 0 8px 20px var(--sl-color-black-alpha-55) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
@@ -51,7 +51,7 @@ div[class^="layer_"]:has(div[class*="bd-error-modal" i]) {
 .bd-modal-root:has(details.bd-addon-error) {
   border: none !important;
   outline: none !important;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
+  box-shadow: 0 8px 20px var(--sl-color-black-alpha-55) !important;
 }
 
 .bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
@@ -205,7 +205,7 @@ div[class^="root_"][class*="rootWithShadow_"] {
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 2px !important;
   overflow: hidden !important;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 4px 24px var(--sl-color-black-alpha-50) !important;
 }
 /* §6g (continued) — Header area: solid bg, inherit top border-radius */
 div[class^="root_"][class*="rootWithShadow_"] div[class^="header_"] {

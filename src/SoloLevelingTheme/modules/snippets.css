@@ -142,7 +142,7 @@ div[class*="containerDefault_"] + div[class^="container_"]:hover {
 [class^="message_"] [class^="contents_"] [class^="anchor_"]:hover,
 [class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]:hover {
   background-color: var(--sl-color-primary, #7b2cbf) !important;
-  color: #fff !important;
+  color: var(--sl-color-white) !important;
 }
 
 /* §14h — Simplified Edited Icon
@@ -170,7 +170,7 @@ div[class^="buttonsInner_"][class*="popover_"] {
 /* §14j — BD Toast Style
    Force all BetterDiscord toast notifications to use white text + sharp corners. */
 .bd-toast {
-  color: #ffffff !important;
+  color: var(--sl-color-white) !important;
   border-radius: 0 !important;
 }
 
@@ -273,8 +273,8 @@ div[class*="scrollerBase_"]::-webkit-scrollbar-corner {
   background: rgba(8, 8, 13, 0.55);
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.38) 100%);
-  border: 1px solid rgba(138, 43, 226, 0.35);
+  background: linear-gradient(180deg, var(--sl-color-primary-alpha-60) 0%, rgba(138, 43, 226, 0.38) 100%);
+  border: 1px solid var(--sl-color-primary-alpha-35);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {

@@ -30,7 +30,7 @@ div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[
    or forum thread sidebar (chatLayerWrapper_).
    channelTextArea_ is the actual input container with border + box-shadow. */
 div[class^="page_"] div[class^="channelTextArea_"] {
-  background: rgba(0, 0, 0, 1.0) !important;
+  background: var(--sl-color-black) !important;
   background-image: none !important;
   border: 1px solid var(--sl-color-primary) !important;
   box-shadow: none !important;
@@ -64,7 +64,7 @@ div[class^="channelTextArea_"] div[aria-label="Open sticker picker"],
 div[class^="channelTextArea_"] div[class*="emojiButton_"],
 div[class^="channelTextArea_"] button[class*="emojiButton_"],
 div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button {
-  background: rgba(8, 10, 20, 0.96) !important;
+  background: var(--sl-color-bg-deep-alpha-96) !important;
   border: 1px solid var(--sl-color-primary) !important;
   border-radius: 2px !important;
   padding: 4px !important;
@@ -89,7 +89,7 @@ div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button:hover {
    a centered 20px svg and would crowd. */
 div[class^="buttons_"] .tm-title-button,
 div[class^="channelTextArea_"] .tm-title-button {
-  background: rgba(8, 10, 20, 0.96) !important;
+  background: var(--sl-color-bg-deep-alpha-96) !important;
   border: 1px solid var(--sl-color-primary) !important;
   border-radius: 2px !important;
   /* Match the native GIF/sticker/emoji buttons exactly (measured 32x32, padding 4px,
@@ -267,8 +267,8 @@ ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover
   background-repeat: no-repeat !important;
   background-position: center !important;
   box-shadow: none !important;
-  filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
-          drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
+  filter: drop-shadow(0 0 3px var(--sl-color-primary-alpha-30))
+          drop-shadow(0 0 1px var(--sl-color-primary-alpha-20)) !important;
 }
 ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover {
   background-image: none !important;
@@ -303,8 +303,8 @@ ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"]::before {
 ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"],
 ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"] {
   background: transparent url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
-  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
-          drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
+  filter: drop-shadow(0 0 4px var(--sl-color-primary-alpha-35))
+          drop-shadow(0 0 1px var(--sl-color-primary-alpha-25)) !important;
 }
 
 /* §9f+i — Hide channel icons (hash #, speaker, etc.) — banner replaces them */
@@ -392,7 +392,7 @@ div[class^="resizeHandle_"] {
    Apply 0.7 wash directly on chatLayerWrapper_ itself.
    Children stay transparent to prevent double-stacking */
 div[class^="chatLayerWrapper_"] {
-  background: rgba(0, 0, 0, 0.7) !important;
+  background: var(--sl-color-black-alpha-70) !important;
   background-image: none !important;
 }
 div[class^="chatLayerWrapper_"] div[class^="container_"],
@@ -405,7 +405,7 @@ div[class^="chatLayerWrapper_"] div[class^="chat_"] {
 /* §9i (continued) — Forum post list (left panel with thread cards)
    0.1 opacity — very light wash to let wallpaper show through */
 div[class^="chat_"][class*="threadSidebarOpen_"] {
-  background: rgba(0, 0, 0, 0.1) !important;
+  background: var(--sl-color-black-alpha-10) !important;
   background-image: none !important;
 }
 div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"],
@@ -418,7 +418,7 @@ div[data-list-id^="forum-channel-list"] > div[class^="container_"] {
 /* §9i (continued) — Forum post cards: sharp corners + solid background */
 div[data-list-id^="forum-channel-list"] div[class^="mainCard_"] {
   border-radius: 0 !important;
-  background: rgba(0, 0, 0, 0.5) !important;
+  background: var(--sl-color-black-alpha-50) !important;
 }
 
 /* §9i (continued) — Sharp corners on forum header bars
@@ -461,7 +461,7 @@ div[class^="chatLayerWrapper_"] div[class^="thin_"]::-webkit-scrollbar {
 /* Only callContainer_ itself gets solid bg — everything inside stays transparent
    so video feeds, screen shares, and webcams are visible */
 div[class^="callContainer_"] {
-  background: rgba(0, 0, 0, 1.0) !important;
+  background: var(--sl-color-black) !important;
   background-image: none !important;
   border-radius: 0 !important;
 }
@@ -482,7 +482,7 @@ div[class^="channelChatWrapper_"] main[class^="chatContent_"],
 div[class^="channelChatWrapper_"] div[class^="scroller_"],
 div[class^="channelChatWrapper_"] div[class^="scrollerContent_"],
 div[class^="channelChatWrapper_"] ol[class^="scrollerInner_"] {
-  background: rgba(0, 0, 0, 1.0) !important;
+  background: var(--sl-color-black) !important;
   background-image: none !important;
   border-radius: 0 !important;
 }
@@ -509,7 +509,7 @@ div[class^="callContainer_"] div[class^="scroller_"]::-webkit-scrollbar {
    The nametag box is styled by UserPanelDockMover plugin — this only targets the
    voice/connection wrapper (first direct child div[class^="wrapper_"]) and its contents. */
 section[aria-label="User status and settings"] > div[class^="wrapper_"] {
-  background: rgba(8, 10, 20, 0.96) !important;
+  background: var(--sl-color-bg-deep-alpha-96) !important;
   background-image: none !important;
   border-radius: 2px !important;
   border: none !important;
@@ -519,7 +519,7 @@ section[aria-label="User status and settings"] > div[class^="wrapper_"] {
   left: -40px !important;
 }
 section[aria-label="User status and settings"] > div[class^="wrapper_"] > div[class^="container_"] {
-  background: rgba(8, 10, 20, 0.96) !important;
+  background: var(--sl-color-bg-deep-alpha-96) !important;
   background-image: none !important;
   border-radius: 2px !important;
   border: none !important;
@@ -595,9 +595,9 @@ div[role="dialog"] div[class^="body_"][class*="scrollerBase_"]::-webkit-scrollba
 div[class^="chat_"] div[class^="notice_"],
 div[class^="channelChatWrapper_"] div[class^="notice_"] {
   background: rgba(8, 10, 20, 0.95) !important;
-  border: 1px solid rgba(138, 43, 226, 0.35) !important;
-  border-bottom: 2px solid rgba(138, 43, 226, 0.6) !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4),
+  border: 1px solid var(--sl-color-primary-alpha-35) !important;
+  border-bottom: 2px solid var(--sl-color-primary-alpha-60) !important;
+  box-shadow: 0 2px 10px var(--sl-color-black-alpha-40),
     inset 0 0 12px rgba(138, 43, 226, 0.06) !important;
 }
 div[class^="chat_"] div[class^="notice_"],
@@ -615,8 +615,8 @@ div[class^="channelChatWrapper_"] div[class^="notice_"] button {
 }
 div[class^="chat_"] div[class^="notice_"] button:hover,
 div[class^="channelChatWrapper_"] div[class^="notice_"] button:hover {
-  color: #ffffff !important;
-  border-color: #ffffff !important;
+  color: var(--sl-color-white) !important;
+  border-color: var(--sl-color-white) !important;
   background: rgba(var(--sl-color-primary-rgb), 0.4) !important;
 }
 div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"] svg,
@@ -630,8 +630,8 @@ div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"]:hover svg,
 div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"]:hover path,
 div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"]:hover svg,
 div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"]:hover path {
-  color: #ffffff !important;
-  fill: #ffffff !important;
+  color: var(--sl-color-white) !important;
+  fill: var(--sl-color-white) !important;
 }
 /* Strip inner card border inside notice to avoid double-border */
 div[class^="chat_"] div[class^="notice_"] div[class^="preview_"],
@@ -650,15 +650,15 @@ div[class^="channelChatWrapper_"] div[class^="notice_"] div[class*="card_"] {
    Applies to server hover tooltips, button tooltips, etc. */
 div[class^="tooltip_"] {
   background: rgb(10, 10, 15) !important;
-  border: 1px solid rgba(138, 43, 226, 0.4) !important;
+  border: 1px solid var(--sl-color-primary-alpha-40) !important;
   border-radius: 2px !important;
-  box-shadow: 0 2px 12px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.08) !important;
-  color: #fff !important;
+  box-shadow: 0 2px 12px var(--sl-color-primary-alpha-25), 0 0 20px var(--sl-color-primary-alpha-8) !important;
+  color: var(--sl-color-white) !important;
   font-weight: 600 !important;
   letter-spacing: 0.3px !important;
 }
 div[class^="tooltip_"] div[class^="tooltipPointer_"] {
-  border-top-color: rgba(138, 43, 226, 0.4) !important;
+  border-top-color: var(--sl-color-primary-alpha-40) !important;
 }
 
 /* §9z — VC-mode sidebar background.
@@ -742,7 +742,7 @@ body:has(div[class^="chatLayerWrapper_"]) aside[class^="membersWrap_"] {
    slit showing the wallpaper. */
 div[class^="chatLayerWrapper_"] {
   margin-left: -3px !important;
-  border-left: 1px solid rgba(138, 43, 226, 0.35) !important;
+  border-left: 1px solid var(--sl-color-primary-alpha-35) !important;
   transition: border-color 0.15s ease !important;
 }
 

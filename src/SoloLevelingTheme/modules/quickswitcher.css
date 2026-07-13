@@ -50,7 +50,7 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[
 div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="name_"],
 div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="contentDefault_"],
 div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="contentDefault_"] {
-  color: #ffffff !important;
+  color: var(--sl-color-white) !important;
 }
 
 div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="misc_"],
