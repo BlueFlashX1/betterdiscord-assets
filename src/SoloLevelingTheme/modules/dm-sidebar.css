@@ -55,9 +55,13 @@ main[aria-label="Friends"] aside div[class^="scroller_"]::-webkit-scrollbar {
 }
 
 /* §5d — DM sidebar: dark wash matching server guild sidebar
-   Targets ONLY the DM sidebar by requiring a "Private channels" nav descendant.
+   Targets ONLY the DM sidebar via the body context attributes written by
+   shared/channel-context.js — the Private-channels sidebar is what mounts
+   in DM view AND on Home/Friends. Replaces the previous
+   `:has(nav[aria-label="Private channels"])` guard (perf-audit 2026-07-13).
    Same opacity as server sidebar (0.7) for visual harmony */
-div[class^="sidebar_"][class*="theme-dark"]:has(nav[aria-label="Private channels"]) {
+body[data-sl-in-dm="true"] div[class^="sidebar_"][class*="theme-dark"],
+body[data-sl-in-home="true"] div[class^="sidebar_"][class*="theme-dark"] {
   background: var(--sl-color-black-alpha-70) !important;
   background-image: none !important;
 }

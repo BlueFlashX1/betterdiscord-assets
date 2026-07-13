@@ -12,6 +12,11 @@
 // the channel sidebar background to match the VC main-area dark background.
 const { installVoiceChatBodyAttr } = require('../shared/channel-context');
 
+// Shared toolbar child tagger — stamps data-sl-tb="…" on toolbar children so
+// modules/toolbar-org.css can use attribute-equality selectors instead of
+// :has() / [aria-label*= i] substring matching (perf-audit 2026-07-13).
+const { installToolbarTags } = require('../shared/toolbar-tags');
+
 // Design tokens — themes/variables/ modular CSS custom-property system.
 // esbuild's text loader doesn't resolve @import, so variables.css (the aggregator)
 // can't be required directly — its partials are required individually here in the
@@ -114,6 +119,14 @@ module.exports = class SoloLevelingTheme {
     } catch (_) {
       this._uninstallVcBodyAttr = null;
     }
+
+    // Install the toolbar child tagger (data-sl-tb attributes consumed by
+    // modules/toolbar-org.css). Refcounted like the body-attr watcher.
+    try {
+      this._uninstallToolbarTags = installToolbarTags();
+    } catch (_) {
+      this._uninstallToolbarTags = null;
+    }
   }
 
   stop() {
@@ -121,6 +134,13 @@ module.exports = class SoloLevelingTheme {
     if (typeof this._uninstallVcBodyAttr === 'function') {
       try { this._uninstallVcBodyAttr(); } catch (_) {}
       this._uninstallVcBodyAttr = null;
+    }
+
+    // Release the toolbar tagger refcount (last consumer out removes the
+    // data-sl-tb attributes so the CSS degrades to its #id fallbacks).
+    if (typeof this._uninstallToolbarTags === 'function') {
+      try { this._uninstallToolbarTags(); } catch (_) {}
+      this._uninstallToolbarTags = null;
     }
 
     // Remove all injected style tags

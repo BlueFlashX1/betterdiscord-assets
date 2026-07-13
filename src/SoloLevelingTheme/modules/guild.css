@@ -175,10 +175,13 @@ div[class^="positionContainer_"] div[class*="scroller_"]::-webkit-scrollbar {
    popup is now hidden entirely by §14i */
 
 /* §9c — Server channel list sidebar: transparent with light dark overlay
-   Targets ONLY the server guild sidebar by requiring a Channels list descendant.
-   The DM sidebar uses aria-label="Private channels", not "Channels", so this
-   won't match it. 0.4 opacity keeps GIF wallpaper visible, matches chatbox */
-div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
+   Targets ONLY the server guild sidebar via the body context attributes
+   written by shared/channel-context.js — not-DM and not-Home means a guild
+   view, where the only mounted sidebar_ is the channel list. Replaces the
+   previous `:has(ul[aria-label="Channels"])` guard (perf-audit 2026-07-13:
+   :has() argument checks ran during style invalidation on ordinary DOM
+   churn). 0.4 opacity keeps GIF wallpaper visible, matches chatbox */
+body[data-sl-in-dm="false"][data-sl-in-home="false"] div[class^="sidebar_"][class*="theme-dark"] {
   background: rgba(0, 0, 0, 0.24) !important;
   background-image: none !important;
 }
@@ -313,16 +316,18 @@ ul[aria-label="Channels"] [class^="iconContainer_"] {
 }
 
 /* §9g — Hide scrollbar on server channel list (keep scroll functional)
-   Targets the #channels scroller wrapper that contains the channel list */
+   Targets the #channels scroller wrapper that contains the channel list.
+   Guild-sidebar scoping via body context attrs (see §9c) instead of the
+   previous `:has(ul[aria-label="Channels"])` guard (perf-audit 2026-07-13) */
 #channels,
-div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="scroller_"],
-div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="thin_"] {
+body[data-sl-in-dm="false"][data-sl-in-home="false"] div[class^="sidebar_"] div[class^="scroller_"],
+body[data-sl-in-dm="false"][data-sl-in-home="false"] div[class^="sidebar_"] div[class^="thin_"] {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
 #channels::-webkit-scrollbar,
-div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="scroller_"]::-webkit-scrollbar,
-div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="thin_"]::-webkit-scrollbar {
+body[data-sl-in-dm="false"][data-sl-in-home="false"] div[class^="sidebar_"] div[class^="scroller_"]::-webkit-scrollbar,
+body[data-sl-in-dm="false"][data-sl-in-home="false"] div[class^="sidebar_"] div[class^="thin_"]::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
   display: none !important;
@@ -672,7 +677,10 @@ div[class^="tooltip_"] div[class^="tooltipPointer_"] {
    on different elements (the .link_ rows themselves carry the SVGs, not
    the sidebar container), so this only swaps the OUTER sidebar fill —
    channel decorations stay intact. */
-body[data-sl-in-voice-chat="true"] div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
+body[data-sl-in-voice-chat="true"] div[class^="sidebar_"][class*="theme-dark"] {
+  /* No :has(ul[aria-label="Channels"]) guard needed: data-sl-in-voice-chat
+     is only "true" for guild voice/stage channels (types 2/13), so the
+     mounted sidebar_ is always the guild channel list here. */
   background: rgba(0, 0, 0, 0.92) !important;
   background-image: none !important;
   transition: background 0.2s ease !important;

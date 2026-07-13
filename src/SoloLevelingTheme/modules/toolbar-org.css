@@ -18,10 +18,18 @@
    children (Equipment, ItemVault, Dungeons, ShadowExchange, RA all
    appendChild into the toolbar) but a few may also be wrapped.
 
-   Solution: every group rule uses TWO comma-separated selectors:
-     > #icon-id              direct-child case (most SL icons)
-     > :has(#icon-id)        wrapped case (Discord natives)
-   That way whichever element is the actual flex child gets the order.
+   Solution (perf-audit 2026-07-13): every group rule uses TWO
+   comma-separated selectors:
+     > #icon-id                direct-child case (most SL icons); also
+                               the no-JS fallback — ID matching is cheap
+     > [data-sl-tb="…"]        wrapped case — shared/toolbar-tags.js
+                               stamps the identity on the actual flex
+                               child once per toolbar render
+   The previous wrapped-case forms — `> :has(#icon-id)` and
+   `> :has([aria-label*="…" i])` — were the theme's most expensive
+   selectors: universal child anchors plus substring arguments that the
+   style engine re-checked during invalidation on ordinary DOM churn.
+   The JS tagger does that matching once per render instead.
 
    Group layout (left → right):
 
@@ -106,7 +114,7 @@ section[aria-label="Channel header"] [class*="toolbar_"] [role="button"] {
    Sits before everything so the call-collapse toggle is the first
    thing the user sees and can't be visually buried by other icons. */
 section[aria-label="Channel header"] [class*="toolbar_"] > #cbg-toggle-button,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#cbg-toggle-button) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="cbg"] {
   order: 1 !important;
 }
 
@@ -122,71 +130,61 @@ section[aria-label="Channel header"] [class*="toolbar_"] > :has(#cbg-toggle-butt
    (current Discord build) and aria-label deeper inside a wrapping
    flex container (defensive against future re-wraps). */
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label="Start Voice Call"],
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(> [aria-label="Start Voice Call"]) {
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="voice-call"] {
   order: 2 !important;
 }
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label="Start Video Call"],
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(> [aria-label="Start Video Call"]) {
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="video-call"] {
   order: 3 !important;
 }
 
 /* Group 1: Stats */
 section[aria-label="Channel header"] [class*="toolbar_"] > #sls-header-stats-button,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#sls-header-stats-button) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="sls"] {
   order: 10 !important;
 }
 
 /* Group 2: Gameplay */
 section[aria-label="Channel header"] [class*="toolbar_"] > #shadow-senses-header-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-header-icon) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="senses"] {
   order: 20 !important;
 }
 section[aria-label="Channel header"] [class*="toolbar_"] > #dungeons-header-widget,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#dungeons-header-widget) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="dungeons"] {
   order: 21 !important;
 }
 
 /* Group 3: Inventory / Economy */
 section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="eq"] {
   order: 30 !important;
 }
 section[aria-label="Channel header"] [class*="toolbar_"] > #itemvault-header-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#itemvault-header-icon) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="itemvault"] {
   order: 31 !important;
 }
 section[aria-label="Channel header"] [class*="toolbar_"] > #se-swirl-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#se-swirl-icon) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="se"] {
   order: 32 !important;
 }
 
-/* Group 4: Discord native — matched by case-insensitive aria-label
-   substring. Selector form: direct child of toolbar that CONTAINS the
-   aria-labeled element anywhere underneath. Discord's native toolbar
-   icons are always wrapped in a container div, so :has() targets the
-   wrapper div which is the actual flex child. */
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="hread" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" i] {
+/* Group 4: Discord native — identified by shared/toolbar-tags.js, which
+   scans each toolbar child's aria-labels (own + descendants) once per
+   toolbar render and stamps the identity on the actual flex child.
+   Replaces per-mutation [aria-label*="…" i] substring matching. */
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="threads"] {
   order: 40 !important;
 }
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="otification" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="nmute" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="ute Channel" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="otification" i],
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="nmute" i] {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="notifications"] {
   order: 41 !important;
 }
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="inned" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="inned" i] {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="pins"] {
   order: 42 !important;
 }
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="ember List" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="how Members" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="ember List" i] {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="members"] {
   order: 43 !important;
 }
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="earch" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="earch" i] {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="search"] {
   order: 44 !important;
 }
 
@@ -196,7 +194,7 @@ section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="earch" 
    of the SL icons. Order 33 places it right after ShadowExchange (32), as the
    last SL icon before the Discord natives (40+), so it reads as one cluster. */
 section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="ra"] {
   order: 33 !important;
 }
 
@@ -207,11 +205,10 @@ section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon
    border so it works whether the SL icon is direct or wrapped, and
    for Discord natives it always lands on the wrapper. */
 section[aria-label="Channel header"] [class*="toolbar_"] > #shadow-senses-header-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-header-icon),
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="senses"],
 section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
-section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon),
-section[aria-label="Channel header"] [class*="toolbar_"] > :has([aria-label*="hread" i]),
-section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" i] {
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="eq"],
+section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="threads"] {
   border-left: 1px solid rgba(167, 139, 250, 0.3) !important;
   padding-left: 6px !important;
   margin-left: 6px !important;
@@ -233,28 +230,29 @@ section[aria-label="Channel header"] [class*="toolbar_"] > [aria-label*="hread" 
    surfacing there. The body[data-sl-in-home="true"] gate now
    suppresses it everywhere outside an actual channel view. */
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #sls-header-stats-button,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#sls-header-stats-button),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="sls"],
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #shadow-senses-header-icon,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#shadow-senses-header-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="senses"],
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #dungeons-header-widget,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#dungeons-header-widget),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="dungeons"],
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #eq-header-icon,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#eq-header-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="eq"],
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #itemvault-header-icon,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#itemvault-header-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="itemvault"],
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #se-swirl-icon,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#se-swirl-icon),
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="se"],
 body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > #ra-toolbar-icon,
-body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > :has(#ra-toolbar-icon) {
+body[data-sl-in-dm="true"] section[aria-label="Channel header"] [class*="toolbar_"] > [data-sl-tb="ra"] {
   display: none !important;
 }
 
 /* Hide the RA icon ANYWHERE on the page when in Home / Friends / non-
    channel view. RA's TOOLBAR_FALLBACKS include `header [class*="toolbar_"]`
-   which can match Discord's Friends-page header — so we use a broad
-   selector unscoped to section[aria-label="Channel header"] for this
-   specific rule. */
+   which can match Discord's Friends-page header — so this rule stays
+   unscoped to section[aria-label="Channel header"]. The tagger covers the
+   same TOOLBAR_FALLBACKS list, so a wrapped RA icon carries data-sl-tb="ra";
+   the direct #ra-toolbar-icon form hides the icon itself as fallback. */
 body[data-sl-in-home="true"] #ra-toolbar-icon,
-body[data-sl-in-home="true"] :has(> #ra-toolbar-icon) {
+body[data-sl-in-home="true"] [data-sl-tb="ra"] {
   display: none !important;
 }
