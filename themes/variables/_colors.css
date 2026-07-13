@@ -24,6 +24,11 @@
   --sl-color-primary-alpha-55: rgba(var(--sl-color-primary-rgb), 0.55);
   --sl-color-primary-alpha-80: rgba(var(--sl-color-primary-rgb), 0.8);
   --sl-color-primary-alpha-90: rgba(var(--sl-color-primary-rgb), 0.9);
+  --sl-color-primary-alpha-8: rgba(var(--sl-color-primary-rgb), 0.08);
+  --sl-color-primary-alpha-20: rgba(var(--sl-color-primary-rgb), 0.2);
+  --sl-color-primary-alpha-25: rgba(var(--sl-color-primary-rgb), 0.25);
+  --sl-color-primary-alpha-30: rgba(var(--sl-color-primary-rgb), 0.3);
+  --sl-color-primary-alpha-40: rgba(var(--sl-color-primary-rgb), 0.4);
 
   /* ===== ACCENT COLORS ===== */
   /* Supporting colors for highlights and emphasis */
@@ -152,6 +157,14 @@
   --sl-color-bg-panel-rgb: 18, 12, 30;
   --sl-color-bg-panel-alpha-72: rgba(var(--sl-color-bg-panel-rgb), 0.72);
 
+  --sl-color-bg-deep-rgb: 8, 10, 20;
+  --sl-color-bg-deep-alpha-94: rgba(var(--sl-color-bg-deep-rgb), 0.94);
+  --sl-color-bg-deep-alpha-96: rgba(var(--sl-color-bg-deep-rgb), 0.96);
+  --sl-color-bg-deep-alpha-98: rgba(var(--sl-color-bg-deep-rgb), 0.98);
+
+  --sl-color-bg-popup-rgb: 10, 10, 16;
+  --sl-color-bg-popup-alpha-98: rgba(var(--sl-color-bg-popup-rgb), 0.98);
+
   --sl-color-bg-slate-a-rgb: 10, 10, 20;
   --sl-color-bg-slate-b-rgb: 15, 10, 25;
   --sl-color-bg-slate-a-alpha-60: rgba(var(--sl-color-bg-slate-a-rgb), 0.6);
@@ -251,6 +264,7 @@
 
   /* ===== BLACK GRADATIONS (FOR SHADOWS) ===== */
   /* Black with varying opacity for shadows and overlays */
+  --sl-color-black-alpha-10: rgba(0, 0, 0, 0.1);
   --sl-color-black-alpha-15: rgba(0, 0, 0, 0.15);
   --sl-color-black-alpha-20: rgba(0, 0, 0, 0.2);
   --sl-color-black-alpha-26: rgba(0, 0, 0, 0.26);
@@ -260,10 +274,13 @@
   --sl-color-black-alpha-34: rgba(0, 0, 0, 0.34);
   --sl-color-black-alpha-35: rgba(0, 0, 0, 0.35);
   --sl-color-black-alpha-38: rgba(0, 0, 0, 0.38);
+  --sl-color-black-alpha-40: rgba(0, 0, 0, 0.4);
   --sl-color-black-alpha-42: rgba(0, 0, 0, 0.42);
   --sl-color-black-alpha-44: rgba(0, 0, 0, 0.44);
   --sl-color-black-alpha-45: rgba(0, 0, 0, 0.45);
   --sl-color-black-alpha-46: rgba(0, 0, 0, 0.46);
+  --sl-color-black-alpha-50: rgba(0, 0, 0, 0.5);
   --sl-color-black-alpha-55: rgba(0, 0, 0, 0.55);
   --sl-color-black-alpha-60: rgba(0, 0, 0, 0.6);
+  --sl-color-black-alpha-70: rgba(0, 0, 0, 0.7);
 }
