@@ -284,7 +284,7 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
   }
 }
 
-function showMentionToast({ userId, userName, label, detail, accent, deployment, onClick }) {
+function showMentionToast({ userId, userName, label, detail, accent, deployment, onClick, imageUrl }) {
   if (this._toastEngine) {
     const avatarUrl = this._resolveUserAvatarUrl(userId)
       || "https://cdn.discordapp.com/embed/avatars/0.png";
@@ -298,6 +298,9 @@ function showMentionToast({ userId, userName, label, detail, accent, deployment,
       callerId: "shadowSenses-mention",
       maxPerMinute: 30,
       onClick: typeof onClick === "function" ? onClick : undefined,
+      // Inline media preview (image attachment / GIF still) when the
+      // triggering message carried one (2026-07-13).
+      imageUrl: imageUrl || undefined,
     });
   } else {
     BdApi.UI.showToast(`${userName} ${label}`, { type: "info" });

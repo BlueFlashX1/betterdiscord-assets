@@ -863,6 +863,21 @@ module.exports = class SoloLevelingToasts {
       content.appendChild(detailEl);
     }
 
+    // Optional inline media preview (image attachment / GIF still).
+    // Errors remove the whole block so a dead URL never leaves an empty box.
+    if (opts.imageUrl && typeof opts.imageUrl === "string") {
+      const mediaWrap = document.createElement("div");
+      mediaWrap.className = "sl-toast-card-media";
+      const mediaImg = document.createElement("img");
+      mediaImg.className = "sl-toast-card-media-img";
+      mediaImg.src = opts.imageUrl;
+      mediaImg.alt = "";
+      mediaImg.loading = "lazy";
+      mediaImg.onerror = () => mediaWrap.remove();
+      mediaWrap.appendChild(mediaImg);
+      content.appendChild(mediaWrap);
+    }
+
     inner.appendChild(content);
     toast.appendChild(inner);
 

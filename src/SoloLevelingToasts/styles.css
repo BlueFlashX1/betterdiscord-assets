@@ -358,6 +358,23 @@
   text-overflow: ellipsis;
 }
 
+/* Inline media preview (ShadowSenses message reports — image attachments,
+   Tenor GIF stills). Bounded so a huge image can't blow up the card. */
+.sl-toast-card-media {
+  margin-top: 6px;
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 220px;
+  border: 1px solid color-mix(in srgb, var(--sl-card-accent, #8a2be2) 35%, transparent);
+}
+
+.sl-toast-card-media-img {
+  display: block;
+  width: 100%;
+  max-height: 110px;
+  object-fit: cover;
+}
+
 .sl-toast.sl-toast-card::before {
   display: none;
 }

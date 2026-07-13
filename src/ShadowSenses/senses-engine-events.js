@@ -11,14 +11,38 @@ const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 
 // Navigate Discord to a channel (or specific message inside it). Used as the
 // onClick handler for typing/sent toast cards so clicking jumps to the chat.
+// MessageActions module (jumpToMessage) — memoized; the module reference is
+// stable for the life of the client session.
+let _messageActionsModule = null;
+function _getMessageActions() {
+  if (_messageActionsModule?.jumpToMessage) return _messageActionsModule;
+  try {
+    _messageActionsModule = BdApi.Webpack.getModule(
+      (m) => typeof m?.jumpToMessage === "function" && typeof m?.fetchMessages === "function"
+    ) || null;
+  } catch (_) {
+    _messageActionsModule = null;
+  }
+  return _messageActionsModule;
+}
+
 function navigateToChannel(guildId, channelId, messageId) {
-  // Channel-only navigation via NavigationUtils.transitionTo. The
-  // previous experiment with MessageActions.jumpToMessage to trigger
-  // Discord's scroll-to-message + flash-highlight animation was
-  // unreliable across Discord builds and was removed per user request.
-  // This helper now just lands the user in the target channel — the
-  // URL includes the messageId segment so Discord shows the message
-  // hash in the path, but no scroll/flash animation is attempted.
+  // Click-to-jump (2026-07-13, reinstated): primary path is
+  // MessageActions.jumpToMessage — the same API Discord's own message links
+  // use — which scrolls to the message and flash-highlights it. An earlier
+  // attempt was removed as unreliable, but plain transitionTo only lands in
+  // the channel (the messageId URL segment alone doesn't trigger the
+  // scroll), which made "Click to view message" toasts feel broken. The
+  // transitionTo path below remains as the fallback if resolution fails.
+  if (channelId && messageId) {
+    try {
+      const actions = _getMessageActions();
+      if (actions) {
+        actions.jumpToMessage({ channelId, messageId, flash: true });
+        return true;
+      }
+    } catch (_) {}
+  }
   try {
     const nav = getNavigationUtils();
     if (!nav?.transitionTo || !channelId) return false;
@@ -29,6 +53,24 @@ function navigateToChannel(guildId, channelId, messageId) {
   } catch (_) {
     return false;
   }
+}
+
+// First renderable thumbnail for a toast card: image attachments win (their
+// CDN url renders directly, GIF attachments animate), then embed stills
+// (Tenor gifv thumbnails et al). Videos have no <img>-renderable url — skip.
+function pickToastThumbnail(entry) {
+  if (!entry) return undefined;
+  if (Array.isArray(entry.attachments)) {
+    for (const a of entry.attachments) {
+      if (a?.url && String(a.contentType || "").startsWith("image/")) return a.url;
+    }
+  }
+  if (Array.isArray(entry.embeds)) {
+    for (const e of entry.embeds) {
+      if (e?.thumbnailUrl) return e.thumbnailUrl;
+    }
+  }
+  return undefined;
 }
 const MAX_ACTIVITY_SEED_SCAN_ENTRIES = 6000;
 const LAST_SEEN_FALLBACK_MS = 24 * 60 * 60 * 1000;
@@ -166,7 +208,9 @@ function showActivityToast(ctx, options) {
       header: `[${deployment.shadowRank}] ${deployment.shadowName}`,
       body,
       detail,
-      duration: 5000,
+      // BUGFIX (2026-07-13): was `duration:` — showCardToast reads `timeout`,
+      // so these activity toasts silently used the default instead of 5s.
+      timeout: 5000,
     });
     return;
   }
@@ -463,6 +507,8 @@ function showMatchReasonToast(ctx, params) {
   // so clicking the toast should navigate to that exact message. Captured
   // by closure so the IDs stay stable even if `entry` is later mutated.
   const jumpClick = () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId);
+  // Inline preview when the message carried an image / GIF (2026-07-13).
+  const imageUrl = pickToastThumbnail(entry);
 
   if (entry.matchReason === "mention") {
     ctx._showMentionToast({
@@ -473,6 +519,7 @@ function showMatchReasonToast(ctx, params) {
       accent: "#ef4444",
       deployment,
       onClick: jumpClick,
+      imageUrl,
     });
     return "mention";
   }
@@ -486,6 +533,7 @@ function showMatchReasonToast(ctx, params) {
       accent: "#ec4899",
       deployment,
       onClick: jumpClick,
+      imageUrl,
     });
     return "name";
   }
@@ -502,6 +550,7 @@ function showMatchReasonToast(ctx, params) {
     accent: "#34d399",
     deployment,
     onClick: jumpClick,
+    imageUrl,
   });
   return "keyword";
 }
@@ -549,6 +598,7 @@ function applyPresenceToastAndLastSeen(ctx, params) {
       // Click-to-jump — navigate to the exact message that triggered
       // this toast, same as the match-reason toasts above.
       onClick: () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId),
+      imageUrl: pickToastThumbnail(entry),
     });
     syncLastSeenCount(ctx, guildId);
     return;
@@ -1044,6 +1094,7 @@ function onMessageCreate(payload) {
             // SAME replaceKey as the typing toast so this dismisses it.
             replaceKey: `shadowsenses-typing:${authorId}`,
             onClick: () => navigateToChannel(guildId, message.channel_id, message.id),
+            imageUrl: pickToastThumbnail(entry),
           });
         }
       }
