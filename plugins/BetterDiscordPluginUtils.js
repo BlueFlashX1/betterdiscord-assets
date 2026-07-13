@@ -20,6 +20,25 @@
 // ── Toast ────────────────────────────────────────────────────────────────────
 // Routes through SoloLevelingToasts engine when available, falls back to BdApi.
 
+// PERF (2026-07-13): every plugin's every toast paid a BdApi.Plugins.get()
+// registry lookup. 5s TTL cache mirrors the engine's own internal
+// _resolveSoloLevelingInstance pattern; short enough that enabling/disabling
+// SoloLevelingToasts is picked up within seconds (fallback covers the gap).
+let _toastEngineCache = null;
+let _toastEngineCacheAt = 0;
+function _getToastEngine() {
+  const now = Date.now();
+  if (now - _toastEngineCacheAt < 5000) return _toastEngineCache;
+  _toastEngineCacheAt = now;
+  try {
+    const engine = BdApi.Plugins.get("SoloLevelingToasts")?.instance;
+    _toastEngineCache = engine?.toastEngineVersion >= 2 ? engine : null;
+  } catch (_) {
+    _toastEngineCache = null;
+  }
+  return _toastEngineCache;
+}
+
 /**
  * Show a toast notification using the unified toast engine (preferred) or BdApi fallback.
  * @param {string} message
@@ -28,9 +47,10 @@
 function showToast(message, options = {}) {
   const { type = "info", timeout, callerId, ...rest } = options;
   try {
-    const p = BdApi.Plugins.get("SoloLevelingToasts");
-    const engine = p?.instance;
-    if (engine?.toastEngineVersion >= 2) {
+    // _isStopped guard: a cached instance may have been disabled inside the
+    // TTL window — fall through to BdApi instead of silently dropping.
+    const engine = _getToastEngine();
+    if (engine && !engine._isStopped) {
       engine.showToast(message, type, timeout ?? null, callerId ? { callerId } : undefined);
       return;
     }

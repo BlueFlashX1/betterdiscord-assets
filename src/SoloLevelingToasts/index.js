@@ -213,6 +213,14 @@ module.exports = class SoloLevelingToasts {
     this.removeToastContainer();
     this.removeCSS();
 
+    // LEAK FIX (2026-07-13): particle wrappers self-remove via a TRACKED
+    // 1.5s timeout — which _clearTrackedTimeouts() above just cancelled.
+    // Without this sweep, stopping within 1.5s of a particle burst orphans
+    // the wrapper divs on document.body permanently.
+    try {
+      for (const el of document.querySelectorAll(".sl-toast-particle-batch")) el.remove();
+    } catch (_) {}
+
     // Clear message groups
     this.messageGroups.forEach((group) => {
       if (group.timeoutId && group.timeoutId !== true) {
@@ -321,6 +329,11 @@ module.exports = class SoloLevelingToasts {
   createParticles(toastElement, count) {
     if (this._isStopped) return;
     if (!this.settings.showParticles) return;
+
+    // BURST CAP (2026-07-13): each batch is up to ~20 animating divs with no
+    // suite-wide limit — a 10-group burst meant ~200 concurrent particles.
+    // Cap live batches at 3; later toasts in a burst simply skip particles.
+    if (document.getElementsByClassName("sl-toast-particle-batch").length >= 3) return;
 
     const rect = toastElement.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
