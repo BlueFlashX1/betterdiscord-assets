@@ -17,6 +17,11 @@ const { installVoiceChatBodyAttr } = require('../shared/channel-context');
 // :has() / [aria-label*= i] substring matching (perf-audit 2026-07-13).
 const { installToolbarTags } = require('../shared/toolbar-tags');
 
+// Shared class substitution — swaps [class*="stem_"] substring selectors for
+// exact hash-fast classes resolved from the running client's webpack registry
+// (dual-gated: offline-verified allowlist + runtime uniqueness re-check).
+const { resolveUniqueClasses, substituteClasses } = require('../shared/class-substitution');
+
 // Design tokens — themes/variables/ modular CSS custom-property system.
 // esbuild's text loader doesn't resolve @import, so variables.css (the aggregator)
 // can't be required directly — its partials are required individually here in the
@@ -127,9 +132,37 @@ module.exports = class SoloLevelingTheme {
     } catch (_) {
       this._uninstallToolbarTags = null;
     }
+
+    // Class substitution runs OFF the critical path: substring CSS is
+    // already injected and correct; once the webpack sweep resolves the
+    // unique class map, every injected style is rewritten in place to
+    // exact selectors. One-time recalc per style element, then the style
+    // engine matches hash-indexed classes instead of substring scans.
+    this._classMap = null;
+    this._substTimer = setTimeout(() => {
+      this._substTimer = null;
+      try {
+        const map = resolveUniqueClasses();
+        if (!map) return;
+        this._classMap = map;
+        for (const [modId, styleEl] of this._injectedStyles) {
+          const mod = CSS_MODULES.find(m => m.id === modId);
+          if (!mod || !styleEl?.isConnected) continue;
+          const next = substituteClasses(mod.css, map);
+          if (next !== styleEl.textContent) styleEl.textContent = next;
+        }
+      } catch (_) {}
+    }, 2000);
   }
 
   stop() {
+    // Cancel a pending class-substitution sweep.
+    if (this._substTimer) {
+      clearTimeout(this._substTimer);
+      this._substTimer = null;
+    }
+    this._classMap = null;
+
     // Release the body-attr watcher refcount.
     if (typeof this._uninstallVcBodyAttr === 'function') {
       try { this._uninstallVcBodyAttr(); } catch (_) {}
@@ -183,7 +216,9 @@ module.exports = class SoloLevelingTheme {
     const style = document.createElement('style');
     style.id = styleId;
     style.setAttribute('data-sl-module', mod.id);
-    style.textContent = mod.css;
+    // Use exact-class CSS when the substitution map has already resolved
+    // (module re-enabled from settings after startup); raw CSS otherwise.
+    style.textContent = this._classMap ? substituteClasses(mod.css, this._classMap) : mod.css;
     document.head.appendChild(style);
     this._injectedStyles.set(mod.id, style);
   }

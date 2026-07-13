@@ -197,6 +197,47 @@ const VC_BODY_ATTR = "data-sl-in-voice-chat";
 const FORUM_THREAD_BODY_ATTR = "data-sl-in-forum-or-thread";
 const DM_BODY_ATTR = "data-sl-in-dm";
 const HOME_BODY_ATTR = "data-sl-in-home";
+const READONLY_BODY_ATTR = "data-sl-channel-readonly";
+
+// Memoized SEND_MESSAGES permission bit — the constants module never
+// changes within a client session. Resolved lazily on first readonly check.
+let _sendMessagesBit = null;
+function _getSendMessagesBit() {
+  if (_sendMessagesBit !== null) return _sendMessagesBit;
+  try {
+    const Webpack = BdApi?.Webpack;
+    const bits =
+      Webpack.getModule(m => m && typeof m === "object" && m.ADMINISTRATOR && m.VIEW_CHANNEL, { searchExports: true }) ||
+      Webpack.getByKeys("ADMINISTRATOR", "VIEW_CHANNEL");
+    _sendMessagesBit = bits?.SEND_MESSAGES || 0n;
+  } catch (_) {
+    _sendMessagesBit = 0n;
+  }
+  return _sendMessagesBit;
+}
+
+// True when the current channel is a guild channel the user cannot send
+// messages in (Discord renders the disabled textarea there). DMs/GDMs are
+// always treated as sendable — theme styling only cares about the guild
+// read-only case. Used for body[data-sl-channel-readonly] which gates the
+// §14d disabled-textarea restyle in SoloLevelingTheme snippets.css.
+// Known limit: fires on CHANNEL_SELECT, so a permission change while the
+// channel is already open isn't reflected until the next switch — the
+// affected styling is purely cosmetic.
+function isChannelReadonly() {
+  try {
+    const ch = getCurrentChannel();
+    if (!ch) return false;
+    const t = Number(ch.type);
+    if (t === 1 || t === 3) return false;
+    const PermissionStore = BdApi?.Webpack?.getStore("PermissionStore");
+    const SEND = _getSendMessagesBit();
+    if (!PermissionStore?.can || !SEND) return false;
+    return !PermissionStore.can(SEND, ch);
+  } catch (_) {
+    return false;
+  }
+}
 
 // True when the user is currently in a DM or group DM. URL takes the
 // shape /channels/@me/<channelId>; we cross-check via ChannelStore so
@@ -307,6 +348,10 @@ function _writeVcAttribute() {
     if (document.body.getAttribute(HOME_BODY_ATTR) !== homeValue) {
       document.body.setAttribute(HOME_BODY_ATTR, homeValue);
     }
+    const roValue = isChannelReadonly() ? "true" : "false";
+    if (document.body.getAttribute(READONLY_BODY_ATTR) !== roValue) {
+      document.body.setAttribute(READONLY_BODY_ATTR, roValue);
+    }
   } catch (_) {}
 }
 
@@ -390,6 +435,7 @@ function installVoiceChatBodyAttr() {
           document.body.removeAttribute(FORUM_THREAD_BODY_ATTR);
           document.body.removeAttribute(DM_BODY_ATTR);
           document.body.removeAttribute(HOME_BODY_ATTR);
+          document.body.removeAttribute(READONLY_BODY_ATTR);
         }
       } catch (_) {}
       // Only remove the shared CSS when the cross-bundle counter hits zero.
@@ -408,10 +454,12 @@ module.exports = {
   isForumOrThreadChannel,
   isDmChannel,
   isHomeView,
+  isChannelReadonly,
   debugVoiceChannelChat,
   installVoiceChatBodyAttr,
   VC_BODY_ATTR,
   FORUM_THREAD_BODY_ATTR,
   DM_BODY_ATTR,
   HOME_BODY_ATTR,
+  READONLY_BODY_ATTR,
 };

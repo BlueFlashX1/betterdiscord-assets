@@ -77,9 +77,15 @@ ul[aria-label="Channels"] div[aria-label="Open Chat"] {
 
 /* §14d — Disabled Channel Textarea Redesign
    Cleaner look for read-only channels (no send permission).
-   Converted to attribute selectors for hash resilience.
+   Gated on body[data-sl-channel-readonly="true"] written by
+   shared/channel-context.js (PermissionStore SEND_MESSAGES check) instead
+   of the previous `div[class*="form_"]:has(div[class*=
+   "channelTextAreaDisabled_"])` — a substring anchor wrapping a substring
+   :has() argument in the hot chat-form region (perf-audit wave 3,
+   2026-07-13). channelTextAreaDisabled_ is a verified-unique stem, so the
+   inner selectors get exact-class substitution at inject time.
    Credit: Aurora (2025-02-16) */
-div[class*="form_"]:has(div[class*="channelTextAreaDisabled_"]) {
+body[data-sl-channel-readonly="true"] div[class*="form_"] {
   border-top: 2px solid var(--app-border-frame);
   height: 50px;
   background-color: var(--background-primary);
