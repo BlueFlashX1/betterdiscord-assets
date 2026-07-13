@@ -282,54 +282,7 @@ module.exports = {
           // it's on a child div. Check both the element and its children.
           const pendingMsgId = messageElement.getAttribute?.('data-message-id') ||
             messageElement.querySelector?.('[data-message-id]')?.getAttribute('data-message-id');
-          // Always clean up pending animation entry to prevent stale buildup,
-          // then only process if message hasn't been handled yet
-          const pendingAnim = pendingMsgId ? this._pendingAnimations?.get(pendingMsgId) : null;
-          if (pendingMsgId) this._pendingAnimations?.delete(pendingMsgId);
-          if (pendingAnim && !this.processedMessages.has(pendingMsgId)) {
-            // CRITICAL: Stats/history/processedMessages intentionally deferred from _onMessageCreate
-            // so this observer path can find the element and trigger animation properly.
-            // MEMORY FIX: was `processedMessages.add(...)` — direct add
-            // bypassed `processedMessagesOrder` push, so this entry was
-            // never eligible for LRU eviction → unbounded growth.
-            // `markAsProcessed` funnels through the LRU bookkeeping.
-            this.markAsProcessed(pendingMsgId);
-            this.stats.totalMessages++;
-            this.stats.totalCrits++;
-            this.updateStats();
-            this.addToHistory({
-              messageId: pendingMsgId,
-              authorId: pendingAnim.authorId,
-              channelId: pendingAnim.channelId,
-              guildId: pendingAnim.guildId,
-              timestamp: Date.now(),
-              isCrit: true,
-              critSettings: pendingAnim.critSettings,
-              messageContent: pendingAnim.messageContent || '',
-              author: pendingAnim.author || '',
-            });
-
-            messageElement.classList.add('bd-crit-hit');
-            messageElement.setAttribute('data-bd-crit-locked', '1');
-            this.critMessages.add(messageElement);
-
-            // Trigger animation (combo + floating text)
-            const userId = this.getUserId(messageElement) || pendingAnim.authorId || this.currentUserId;
-            const combo = this._syncBurstComboForMessage({
-              messageId: pendingMsgId,
-              messageElement,
-              userId,
-            });
-            this._markComboUpdated(pendingMsgId);
-
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                if (messageElement.isConnected) {
-                  this.showAnimation(messageElement, pendingMsgId, combo);
-                }
-              });
-            });
-          }
+          if (pendingMsgId) this._consumePendingCritAnimation(pendingMsgId, messageElement);
           // PERF (2026-07-13): processNode() call removed for non-pending nodes.
           // FluxDispatcher (_onMessageCreate) is the sole crit-roll path — it already
           // filters to own messages in the current channel and queues _pendingAnimations.
@@ -410,4 +363,70 @@ module.exports = {
   },
 
   // Message send hook removed in v3.6.0 — replaced by FluxDispatcher MESSAGE_CREATE
+
+  /**
+   * Consume a queued pending-crit entry for a mounted message element:
+   * stats + history + style lock + combo + animation. Shared by BOTH
+   * consumers — the MutationObserver (element mounts AFTER the dispatch)
+   * and the dispatcher's immediate-consume (Discord rendered the own
+   * message optimistically BEFORE MESSAGE_CREATE fired, so no childList
+   * mutation will ever come for it). processedMessages guarantees exactly
+   * one consumer wins. Returns true if this call consumed the entry.
+   */
+  _consumePendingCritAnimation(messageId, messageElement) {
+    if (!messageId || !this._pendingAnimations) return false;
+    // Always remove the entry (stale-buildup cleanup), even when the guards
+    // below decline to process it.
+    const pendingAnim = this._pendingAnimations.get(messageId);
+    if (pendingAnim) this._pendingAnimations.delete(messageId);
+    if (!pendingAnim || this.processedMessages.has(messageId)) return false;
+    if (!messageElement || !messageElement.isConnected) {
+      // Element vanished between lookup and consume — requeue so the other
+      // consumer path can still claim it before the trim cap expires it.
+      this._pendingAnimations.set(messageId, pendingAnim);
+      return false;
+    }
+
+    // CRITICAL: Stats/history/processedMessages intentionally deferred from
+    // _onMessageCreate so a consumer with the element in hand can trigger
+    // the animation properly. markAsProcessed funnels through LRU
+    // bookkeeping (direct .add bypassed eviction — old memory fix).
+    this.markAsProcessed(messageId);
+    this.stats.totalMessages++;
+    this.stats.totalCrits++;
+    this.updateStats();
+    this.addToHistory({
+      messageId,
+      authorId: pendingAnim.authorId,
+      channelId: pendingAnim.channelId,
+      guildId: pendingAnim.guildId,
+      timestamp: Date.now(),
+      isCrit: true,
+      critSettings: pendingAnim.critSettings,
+      messageContent: pendingAnim.messageContent || '',
+      author: pendingAnim.author || '',
+    });
+
+    messageElement.classList.add('bd-crit-hit');
+    messageElement.setAttribute('data-bd-crit-locked', '1');
+    this.critMessages.add(messageElement);
+
+    // Trigger animation (combo + floating text)
+    const userId = this.getUserId(messageElement) || pendingAnim.authorId || this.currentUserId;
+    const combo = this._syncBurstComboForMessage({
+      messageId,
+      messageElement,
+      userId,
+    });
+    this._markComboUpdated(messageId);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (messageElement.isConnected) {
+          this.showAnimation(messageElement, messageId, combo);
+        }
+      });
+    });
+    return true;
+  },
 };

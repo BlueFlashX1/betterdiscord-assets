@@ -80,6 +80,28 @@ module.exports = {
           }
         }
 
+        // TIMING FIX (2026-07-13): Discord renders OWN messages
+        // optimistically at send time — usually BEFORE this MESSAGE_CREATE
+        // dispatch. The observer then saw the childList addition with an
+        // empty pending queue, and no further childList mutation ever comes
+        // (React swaps data-message-id in place) — so the entry queued above
+        // could never be consumed: colored message (CSS matches by id) but
+        // no CRITICAL HIT! animation and no combo. Consume directly if the
+        // element is already mounted; the observer path still covers
+        // mount-after-dispatch, and processedMessages inside the consumer
+        // guarantees exactly one path wins.
+        const tryImmediateConsume = () => {
+          if (!this._pendingAnimations?.has(msg.id)) return;
+          const idEl = document.querySelector(`[data-message-id="${msg.id}"]`);
+          if (!idEl) return;
+          const messageEl = idEl.closest('li[class*="messageListItem"]') || idEl;
+          this._consumePendingCritAnimation(msg.id, messageEl);
+        };
+        requestAnimationFrame(() => requestAnimationFrame(tryImmediateConsume));
+        // Straggler net: covers the id-attribute swap landing a few frames
+        // after the dispatch (slow renders). Harmless if already consumed.
+        this._setTrackedTimeout(tryImmediateConsume, 400);
+
         this.diagLog('DISPATCHER_CRIT', 'Crit via FluxDispatcher', {
           messageId: msg.id,
           roll,
