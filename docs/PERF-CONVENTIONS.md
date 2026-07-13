@@ -150,6 +150,33 @@ Incidental discovery (wave 4): ShadowArmy `deleteShadowsBatch` currently has ZER
 callers (dead code today; left in place, defensively write-gen-bumped — the batch API is
 sound and likely to be wired up by a future exchange/conversion feature).
 
+Fixed 2026-07-13 (waves: theme selectors, portal trio, toast engine, senses):
+CriticalHit debug-arg cache-thrash + restore-only observer + single-scan
+restoration; RA instant hover + focus guardrail; channel-context poll→15s
+dispatcher-fallback + 5th body attr data-sl-channel-readonly; wallpaper
+animated→static data URI (both paths); toolbar-org/sidebar :has() →
+shared/toolbar-tags.js data-sl-tb + body-attr guards (~30 rules); exact-class
+substitution shared/class-substitution.js (dual gate: DiscordClasses offline
+uniqueness ∩ live webpack re-verify; 62 stems); HSLDock bottom-edge instant
+reveal + dock-rect TTL cache + far-above fast-path; portal transition CSS
+dedup into ShadowPortalCore/transition-css.js via consumer refcount (was 3
+identical permanent copies) + dead plume/abyss/mist rules deleted + SE panel
+backdrop-blur removed; toast engine particle-wrapper stop() sweep + 3-batch
+particle cap + PluginUtils 5s-TTL engine cache w/ _isStopped guard; toast
+noise (Stealth one-per-state-change, SA extractionToasts default-off,
+Dungeons level/rank toasts debug-gated); Senses jumpToMessage click-to-jump +
+card imageUrl media + duration→timeout fix; extractPresenceUpdates redundant
+direct-fallback deleted; FeedTab 300ms debounce; guild-feed batch trim.
+
+Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
+ambiguity: container_=693 hashes — use class-substitution allowlist instead);
+portal canvas gradient bucket-caching (radii oscillate per frame by design);
+guild.css body:has(chatLayerWrapper_) → JS observer (≈zero net win; candidate
+pure-CSS replacement threadSidebarOpen_ NEEDS LIVE DOM CHECK); profile.css
+note-:has() drop (orphans visible header); SE getWaypointListRevision
+memoization (in-place mutation makes identity-memo stale); RA width-transition
+→ transform (push layout must resize chat; user keeps the 250ms slide).
+
 ## 5. Dispatch template (copy for each subagent)
 
 ```
