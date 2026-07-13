@@ -266,22 +266,9 @@ module.exports = {
     //   S-rank: National emergency — Jeju Island had 4,000+ ants (~10,000)
     //   SS+: Demon Castle scale, 100 floors (~20,000-50,000)
     //   Monarch+: Full army invasions (~100,000+)
-    const MOB_COUNT_BY_RANK = {
-      'E': 50,
-      'D': 150,
-      'C': 400,
-      'B': 1200,
-      'A': 4000,
-      'S': 10000,
-      'SS': 25000,
-      'SSS': 50000,
-      'SSS+': 75000,
-      'NH': 100000,
-      'Monarch': 250000,
-      'Monarch+': 500000,
-      'Shadow Monarch': 1000000,
-    };
-    const baseMobCount = MOB_COUNT_BY_RANK[rank] || (50 * Math.pow(2.5, rankIndex));
+    // Table centralized in constants.js:DUNGEON_MOB_CAPACITY_BY_RANK (wave 9, 2026-07-12) --
+    // single source of truth shared with deploy-target + pool-warming calculations.
+    const baseMobCount = C.DUNGEON_MOB_CAPACITY_BY_RANK[rank] || (50 * Math.pow(2.5, rankIndex));
     const biomeMultiplier = dungeonBiome.mobMultiplier || 1.0;
     const totalMobCount = Math.floor(
       Math.max(50, baseMobCount * biomeMultiplier)

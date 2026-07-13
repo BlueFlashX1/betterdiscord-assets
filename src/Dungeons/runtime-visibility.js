@@ -347,6 +347,24 @@ module.exports = {
           return;
         }
       }
+
+      // POST-PASS CLAMP: the synthetic clock above can leave _phaseShieldExpiresAt set to a
+      // point in the real-time FUTURE -- a threshold crossed on a late chunk arms the shield at
+      // simulatedNow + shieldMs, and simulatedNow can be tens of minutes (or longer, for a
+      // long-backgrounded session) ahead of Date.now(). Left uncorrected, every LIVE
+      // applyDamageToBoss call after resume (which reads real Date.now(), nowOverride null)
+      // would find _phaseShieldExpiresAt still in the future and silently absorb 100% of live
+      // damage until wall-clock catches up -- wedging the dungeon indefinitely. By the time this
+      // synchronous pass finishes, the real background window has already fully elapsed, so any
+      // shield the boss "earned" mid-pass has already run its course in real time -- clamp to
+      // Date.now() (fully expired) rather than Date.now() + leftover-sim-time, which would just
+      // reintroduce a smaller version of the same future-dated bug. Math.min so this only ever
+      // clamps DOWN -- a shield that's still legitimately active from real live combat right
+      // before backgrounding (rare, sub-shieldMs edge case) is left alone if it's already <=
+      // Date.now() by clamp time, and only ever shortened, never extended.
+      if (dungeon.boss._phaseShieldExpiresAt) {
+        dungeon.boss._phaseShieldExpiresAt = Math.min(dungeon.boss._phaseShieldExpiresAt, Date.now());
+      }
     }
 
     // Apply mob damage (distribute across alive mobs)

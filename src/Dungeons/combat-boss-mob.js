@@ -843,6 +843,20 @@ module.exports = {
     // Boss durability pipeline (prevents one-shots):
 
     // 1) PHASE SHIELD — brief invulnerability at HP thresholds (75%, 50%, 25%)
+    if (nowOverride == null) {
+      // WATCHDOG (live-combat checks only -- a catch-up pass legitimately arms the shield
+      // against a synthetic future clock mid-pass, see the post-pass clamp in
+      // runtime-visibility.js's simulateShadowAttacks). If real Date.now() is more than
+      // shieldMs behind _phaseShieldExpiresAt during a LIVE check, the shield was armed
+      // against a clock that outran that clamp (stale/persisted state from before this
+      // fix, or a pass that threw before reaching the clamp) -- self-heal here so a
+      // wedged dungeon becomes damage-able again without waiting on the clamp path.
+      const shieldMsGuard = C.BOSS_PHASE_SHIELD_MS || 2500;
+      if (dungeon.boss._phaseShieldExpiresAt && dungeon.boss._phaseShieldExpiresAt > now + shieldMsGuard) {
+        this.debugLog?.(`BOSS PHASE SHIELD watchdog: expiresAt was ${dungeon.boss._phaseShieldExpiresAt - now}ms ahead of real time (impossible) -- resetting`);
+        dungeon.boss._phaseShieldExpiresAt = 0;
+      }
+    }
     if (dungeon.boss._phaseShieldExpiresAt && phaseShieldNow < dungeon.boss._phaseShieldExpiresAt) {
       return; // Boss is in phase shield — all damage absorbed
     }

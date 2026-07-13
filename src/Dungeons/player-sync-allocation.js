@@ -1,4 +1,22 @@
+const C = require('./constants');
+
 module.exports = {
+  // Shared by _scheduleSpawnRankStarterWarm (below) and player-flow.js's cold-cache
+  // recovery warm calls -- previously each computed this independently (one via a
+  // WARM_MOB_CAP_BY_RANK local copy, the others via a flat _deployStarterShadowCap
+  // fallback that ignored dungeon rank entirely). Centralizing here means every warm
+  // call fetches enough candidates for the ACTUAL rank-scaled deploy target, not just
+  // the generic 240-shadow starter floor.
+  _getDeployWarmTarget(dungeonRank) {
+    const rankIdx = dungeonRank ? Math.max(0, this.getRankIndexValue(dungeonRank)) : 0;
+    const mobCap = (dungeonRank && C.DUNGEON_MOB_CAPACITY_BY_RANK[dungeonRank])
+      || Math.round(50 * Math.pow(2.5, rankIdx));
+    return Math.max(
+      this._deployStarterShadowCap || 240,
+      Math.ceil(mobCap * (C.DEPLOY_MOB_RATIO || 1.5))
+    );
+  },
+
   syncHPFromStats() {
     if (!this.soloLevelingStats?.settings) return false;
     if (
@@ -307,16 +325,20 @@ module.exports = {
     const shadowStorage = this.shadowArmy.storageManager;
     if (!shadowStorage?.getShadowsByRankLimited) return 0;
 
+    // Budgets scale with targetCount (raised cap wave 9, 2026-07-12: was clamped to 2000/500
+    // regardless of how large targetCount had grown, undersizing this last-resort pool for
+    // high-rank dungeons). Still R1-bounded -- every fetch below goes through
+    // getShadowsByRankLimited's indexed getAll(rank, limit), never a full-store scan.
     const desiredCount = this.clampNumber(
       Math.max(200, Math.floor((Number.isFinite(targetCount) ? targetCount : this._deployStarterShadowCap || 240) * 4)),
       200,
-      2000
+      100000
     );
     const rankOrder = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : [];
     const rankHintIndex =
       dungeonRank && rankOrder.length > 0 ? this.getRankIndexValue(dungeonRank, rankOrder) : -1;
     const rankOffsets = [0, 1, -1, 2, -2, 3, -3];
-    const perRankLimit = this.clampNumber(Math.ceil(desiredCount / rankOffsets.length), 80, 500);
+    const perRankLimit = this.clampNumber(Math.ceil(desiredCount / rankOffsets.length), 80, 4000);
 
     const candidates = [];
     const seenIds = new Set();
@@ -381,20 +403,9 @@ module.exports = {
 
     // Warm the pool to the actual expected deploy count (mob × 1.5) so rank-appropriate
     // shadows from IDB are fetched instead of just the top-240 elites.
-    // Must match _buildDeployStarterAllocation's MOB_CAP_BY_RANK + DEPLOY_MOB_RATIO.
-    const WARM_MOB_CAP_BY_RANK = {
-      E: 50, D: 150, C: 400, B: 1200, A: 4000, S: 10000, SS: 25000,
-      SSS: 50000, 'SSS+': 75000, NH: 100000, Monarch: 250000,
-      'Monarch+': 500000, 'Shadow Monarch': 1000000,
-    };
-    const WARM_DEPLOY_MOB_RATIO = 1.5;
-    const rankIdx = dungeonRank ? Math.max(0, this.getRankIndexValue(dungeonRank)) : 0;
-    const mobCap = (dungeonRank && WARM_MOB_CAP_BY_RANK[dungeonRank])
-      || Math.round(50 * Math.pow(2.5, rankIdx));
-    const warmTarget = Math.max(
-      this._deployStarterShadowCap || 240,
-      Math.ceil(mobCap * WARM_DEPLOY_MOB_RATIO)
-    );
+    // Table + ratio centralized in constants.js (wave 9) -- see _getDeployWarmTarget above,
+    // which _buildDeployStarterAllocation's own targetCount math also derives from.
+    const warmTarget = this._getDeployWarmTarget(dungeonRank);
 
     this._setTrackedTimeout(() => {
       Promise.resolve()
@@ -422,25 +433,38 @@ module.exports = {
   },
 
   _buildDeployStarterAllocation(channelKey, dungeon) {
-    // Deploy target scales with mob capacity (rank-rebalance, 2026-06-08):
+    // Deploy target scales with mob capacity (rank-rebalance, 2026-06-08; table +
+    // ceiling centralized + raised, wave 9, 2026-07-12):
     // - DEPLOY_MOB_RATIO: deploy ~1.5× the dungeon's mob capacity (overwhelming but not OP)
     // - armyAvailableCap: hard upper bound (25% reserve, split by active dungeons)
     // - MAX_OVERRANK: shadows more than this many ranks ABOVE the dungeon are withheld
     //   (prevents Monarchs flooding an S dungeon; they deploy only as absolute last resort)
-    const MOB_CAP_BY_RANK = {
-      E: 50, D: 150, C: 400, B: 1200, A: 4000, S: 10000, SS: 25000,
-      SSS: 50000, 'SSS+': 75000, NH: 100000, Monarch: 250000,
-      'Monarch+': 500000, 'Shadow Monarch': 1000000,
-    };
+    // MOB_CAP_BY_RANK / DEPLOY_MOB_RATIO / DEFAULT_DEPLOY_CEIL now read from constants.js --
+    // see DUNGEON_MOB_CAPACITY_BY_RANK / DEPLOY_MOB_RATIO / DEPLOY_CEILING_ABSOLUTE for the
+    // full curve + cost-model rationale (single source of truth shared with spawn-core.js
+    // and the pool-warming helper above).
+    const MOB_CAP_BY_RANK = C.DUNGEON_MOB_CAPACITY_BY_RANK;
     // --- Tunable constants (rank-rebalance, 2026-06-08) ---
     const RESERVE_FRACTION  = 0.25; // keep 25% of army as reserve across all active dungeons
-    const DEPLOY_MOB_RATIO  = 1.5;  // target ≈ 1.5× mob capacity (overwhelming, not OP)
+    const DEPLOY_MOB_RATIO  = C.DEPLOY_MOB_RATIO || 1.5;  // target ≈ 1.5× mob capacity (overwhelming, not OP)
     const MAX_OVERRANK      = 1;    // max ranks ABOVE dungeon a shadow may be deployed (anti-overkill)
-    // deployCeiling: safe with rotating-subset combat (O(TICK_BUDGET) per tick)
-    const DEFAULT_DEPLOY_CEIL = 50000;
+    // deployCeiling: safe with rotating-subset combat (O(TICK_BUDGET) per tick) --
+    // see constants.js:DEPLOY_CEILING_ABSOLUTE for the full cost-model writeup.
+    const DEFAULT_DEPLOY_CEIL = C.DEPLOY_CEILING_ABSOLUTE || 200000;
     const userCap = Number(this.settings?.deployStarterShadowCap);
     const hasUserCap = Number.isFinite(userCap) && userCap > 0;
-    const deployCeiling = hasUserCap ? this.clampNumber(Math.floor(userCap), 24, 50000) : DEFAULT_DEPLOY_CEIL;
+    const deployCeiling = hasUserCap
+      ? this.clampNumber(Math.floor(userCap), 24, DEFAULT_DEPLOY_CEIL)
+      : DEFAULT_DEPLOY_CEIL;
+    // deployScale: optional user-facing multiplier (settings-only, no UI convention exists
+    // in Dungeons -- mirrors the deployStarterShadowCap precedent above). Default 1.0 = the
+    // curve as tuned; 0.5-3x lets a player scale the whole rank curve up or down without
+    // touching individual rank numbers. Applied to the target BEFORE reserve/ceiling clamps
+    // so it never bypasses the army-reserve or perf-safety limits, only scales within them.
+    const scaleRaw = Number(this.settings?.deployScale);
+    const deployScale = (Number.isFinite(scaleRaw) && scaleRaw > 0)
+      ? this.clampNumber(scaleRaw, 0.1, 5)
+      : 1;
 
     const deployedDungeonCount = Math.max(
       1,
@@ -461,6 +485,8 @@ module.exports = {
     let targetCount;
     if (dungeon._isDemonCastle && knownShadowCount > 0) {
       // Demon Castle: deploy a floor-scaled fraction, still reserve + perf-bounded.
+      // Intentionally NOT scaled by deployScale -- its fraction curve (story-constants.js)
+      // is tuned per-floor independently of the rank-mobCap curve below.
       const DC = require('./story-constants');
       const fraction = DC.getDeployFraction(dungeon._dcFloor || 1);
       targetCount = this.clampNumber(
@@ -469,17 +495,17 @@ module.exports = {
         deployCeiling
       );
     } else {
-      // Target = ceil(mobCap × DEPLOY_MOB_RATIO), capped by available army and ceiling.
-      // Use the dungeon's LIVE mob capacity (what the UI shows, e.g. 12,000) so the
-      // 1.5× tracks the actual dungeon; fall back to the static rank table pre-spawn.
-      // S dungeon @ 12,000 cap → target = ceil(12000 × 1.5) = 18,000.
+      // Target = ceil(mobCap × DEPLOY_MOB_RATIO × deployScale), capped by available army
+      // and ceiling. Use the dungeon's LIVE mob capacity (what the UI shows, e.g. 12,000)
+      // so the ratio tracks the actual dungeon; fall back to the static rank table pre-spawn.
+      // S dungeon @ 12,000 cap → target = ceil(12000 × 1.5) = 18,000 (before deployScale).
       // Small armies are still capped by armyAvailableCap so the reserve is honored.
       const rankIdx = Math.max(0, this.getRankIndexValue(dungeon.rank));
       const liveMobCap = Number(dungeon.mobs?.mobCapacity);
       const mobCap = (Number.isFinite(liveMobCap) && liveMobCap > 0)
         ? liveMobCap
         : (MOB_CAP_BY_RANK[dungeon.rank] || Math.round(50 * Math.pow(2.5, rankIdx)));
-      const mobTarget = Math.ceil(mobCap * DEPLOY_MOB_RATIO);
+      const mobTarget = Math.ceil(mobCap * DEPLOY_MOB_RATIO * deployScale);
       targetCount = this.clampNumber(
         Math.min(mobTarget, armyAvailableCap),
         24,

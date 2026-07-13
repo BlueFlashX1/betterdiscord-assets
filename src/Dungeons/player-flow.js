@@ -272,11 +272,15 @@ module.exports = {
     if (starterAllocationCount === 0) {
       this.debugLog('DEPLOY', 'Starter allocation returned 0 — attempting recovery warmup', { channelKey });
       try {
+        // Rank-aware warm target (wave 9, 2026-07-12): was a flat 240-shadow fallback
+        // regardless of dungeon rank, undersizing the recovery pool for high-rank dungeons
+        // whose real deploy target (via _getDeployWarmTarget) is far larger than 240.
+        const recoveryWarmTarget = this._getDeployWarmTarget(dungeon.rank);
         const warmedPoolCount = await this._warmDeployStarterPool(
           {
             dungeonRank: dungeon.rank,
-            targetCount: this._deployStarterShadowCap || 240,
-            sampleLimit: Math.max(400, Math.floor((this._deployStarterShadowCap || 240) * 4)),
+            targetCount: recoveryWarmTarget,
+            sampleLimit: Math.max(400, Math.floor(recoveryWarmTarget * 4)),
           }
         );
         // Race guard: recall may have fired during async IDB read
@@ -299,8 +303,8 @@ module.exports = {
         if (starterAllocationCount === 0) {
           const refreshedPoolCount = await this._warmDeployStarterPool({
             dungeonRank: dungeon.rank,
-            targetCount: this._deployStarterShadowCap || 240,
-            sampleLimit: Math.max(1200, Math.floor((this._deployStarterShadowCap || 240) * 8)),
+            targetCount: recoveryWarmTarget,
+            sampleLimit: Math.max(1200, Math.floor(recoveryWarmTarget * 8)),
             forceRefresh: true,
           });
           if (refreshedPoolCount > 0) {
@@ -315,7 +319,7 @@ module.exports = {
         // See player-sync-allocation.js:_lastResortRankBoundedStarterPool for the bounded
         // getShadowsByRankLimited pattern (mirrors ShadowSenses' deploy bounded query).
         if (starterAllocationCount === 0) {
-          const lastResortPoolCount = await this._lastResortRankBoundedStarterPool(dungeon.rank);
+          const lastResortPoolCount = await this._lastResortRankBoundedStarterPool(dungeon.rank, recoveryWarmTarget);
           if (lastResortPoolCount > 0) {
             this.debugLog('DEPLOY', `Last-resort bounded pool warmed: ${lastResortPoolCount} shadows found — retrying allocation`, { channelKey });
             const retryShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
