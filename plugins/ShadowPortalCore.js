@@ -10,6 +10,85 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/ShadowPortalCore/transition-css.js
+var require_transition_css = __commonJS({
+  "src/ShadowPortalCore/transition-css.js"(exports2, module2) {
+    var PORTAL_TRANSITION_STYLE_ID2 = "sl-portal-transition-css";
+    var PORTAL_TRANSITION_CSS2 = `
+@keyframes ss-mist-css-overlay {
+  0% { opacity: 0; }
+  14% { opacity: 0.98; }
+  56% { opacity: 1; }
+  74% { opacity: 0.82; }
+  100% { opacity: 0; }
+}
+
+@keyframes ss-mist-css-shard {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(0.3); opacity: 0; }
+  22% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); opacity: 0.72; }
+  100% {
+    transform: translate3d(var(--ss-shard-x, 0px), var(--ss-shard-y, -80px), 0) rotate(var(--ss-shard-r, 0deg)) scale(0.2);
+    opacity: 0;
+  }
+}
+
+.ss-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  background: transparent;
+  will-change: opacity;
+}
+
+.ss-transition-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 1;
+}
+
+.ss-shard {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 999px;
+  transform-origin: center;
+  background: linear-gradient(180deg, rgba(204, 188, 166, 0.78) 0%, rgba(96, 72, 54, 0.54) 52%, rgba(16, 10, 8, 0) 100%);
+  box-shadow: 0 0 6px rgba(110, 82, 56, 0.28);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.ss-transition-overlay--waapi .ss-shard {
+  animation: none !important;
+}
+
+.ss-transition-overlay--css {
+  background: radial-gradient(120% 95% at 50% 50%, rgba(8, 8, 12, 0.7) 30%, rgba(0, 0, 0, 0.88) 100%);
+  animation: ss-mist-css-overlay var(--ss-total-duration, 1000ms) cubic-bezier(.2,.58,.2,1) forwards;
+}
+
+.ss-transition-overlay--css .ss-shard {
+  animation: ss-mist-css-shard 900ms cubic-bezier(.22,.61,.36,1) forwards;
+  animation-delay: var(--ss-delay, 0ms);
+}
+
+.ss-transition-overlay--reduced {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.ss-transition-overlay--reduced .ss-shard {
+  display: none;
+}
+`;
+    module2.exports = { PORTAL_TRANSITION_STYLE_ID: PORTAL_TRANSITION_STYLE_ID2, PORTAL_TRANSITION_CSS: PORTAL_TRANSITION_CSS2 };
+  }
+});
+
 // src/shared/discord-classes.js
 var require_discord_classes = __commonJS({
   "src/shared/discord-classes.js"(exports2, module2) {
@@ -217,6 +296,7 @@ var require_navigation = __commonJS({
 });
 
 // src/ShadowPortalCore/index.js
+var { PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS } = require_transition_css();
 function _getPortalCoreState() {
   if (window.__SL_PortalCore) {
     if (!(window.__SL_PortalCore.consumers instanceof Set)) {
@@ -2213,10 +2293,14 @@ function startDrawLoop() {
    * once per instance, and safe to call from a class that never releases.
    */
   _portalCoreAcquire() {
-    var _a;
+    var _a, _b;
     const core = _getPortalCoreState();
     const key = ((_a = this == null ? void 0 : this.constructor) == null ? void 0 : _a.name) || "UnknownPortalCoreConsumer";
     core.consumers.add(key);
+    try {
+      if ((_b = BdApi == null ? void 0 : BdApi.DOM) == null ? void 0 : _b.addStyle) BdApi.DOM.addStyle(PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS);
+    } catch (_) {
+    }
   },
   /**
    * Release this instance's hold on the shared window.__SL_PortalCore cache.
@@ -2226,7 +2310,7 @@ function startDrawLoop() {
    * every genuinely-active consumer has released.
    */
   _portalCoreRelease() {
-    var _a;
+    var _a, _b;
     const core = _getPortalCoreState();
     const key = ((_a = this == null ? void 0 : this.constructor) == null ? void 0 : _a.name) || "UnknownPortalCoreConsumer";
     const held = core.consumers.delete(key);
@@ -2237,6 +2321,10 @@ function startDrawLoop() {
     core.spiralMaskUrl = null;
     core.spiralMaskReady = false;
     core.spiralMaskLoadedFrom = null;
+    try {
+      if ((_b = BdApi == null ? void 0 : BdApi.DOM) == null ? void 0 : _b.removeStyle) BdApi.DOM.removeStyle(PORTAL_TRANSITION_STYLE_ID);
+    } catch (_) {
+    }
     for (const el of core.gsapScriptEls) {
       if (el.parentNode) el.parentNode.removeChild(el);
     }
