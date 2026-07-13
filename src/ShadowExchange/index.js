@@ -67,7 +67,8 @@ const { createToast } = require("../shared/toast");
 const { getNavigationUtils } = require("../shared/navigation");
 const { buildPanelComponents } = require("./panel-components");
 const { getShadowExchangeCss } = require("./styles");
-const { PORTAL_TRANSITION_CSS } = require("./portal-transition-css");
+// Portal transition CSS is injected once by ShadowPortalCore's consumer
+// refcount (transition-css.js) — no longer concatenated per-plugin.
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
 const { onResize } = require("../shared/dom-bus");
 const { isVoiceChannelChat } = require("../shared/channel-context");
@@ -1155,7 +1156,7 @@ module.exports = class ShadowExchange {
 
   injectCSS() {
     ensureTooltipCSS();
-    const css = getShadowExchangeCss(PORTAL_TRANSITION_CSS);
+    const css = getShadowExchangeCss();
 
     try {
       BdApi.DOM.addStyle(SE_STYLE_ID, css);

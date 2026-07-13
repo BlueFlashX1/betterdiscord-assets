@@ -9,6 +9,11 @@
 
 "use strict";
 
+// Shared portal-transition CSS (overlay/canvas/shard rules) — injected once
+// via the consumer refcount below instead of being duplicated into every
+// consumer plugin's permanent style tag (perf-audit 2026-07-13).
+const { PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS } = require("./transition-css");
+
 // GSAP CDN loader + spiral-mask cache — GLOBAL singleton via window.__SL_PortalCore.
 //
 // esbuild bundles this module into each plugin (ShadowStep/ShadowExchange/ShadowSenses)
@@ -2222,6 +2227,12 @@ function startDrawLoop() {
     const core = _getPortalCoreState();
     const key = this?.constructor?.name || "UnknownPortalCoreConsumer";
     core.consumers.add(key);
+    // Inject the shared transition CSS on first acquire. addStyle with the
+    // same id is replace-idempotent, so a second consumer (each bundles its
+    // own copy of this module) can safely re-add the identical rules.
+    try {
+      if (BdApi?.DOM?.addStyle) BdApi.DOM.addStyle(PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS);
+    } catch (_) {}
   },
 
   /**
@@ -2248,6 +2259,10 @@ function startDrawLoop() {
     core.spiralMaskUrl = null;
     core.spiralMaskReady = false;
     core.spiralMaskLoadedFrom = null;
+    // Last consumer out — remove the shared transition CSS.
+    try {
+      if (BdApi?.DOM?.removeStyle) BdApi.DOM.removeStyle(PORTAL_TRANSITION_STYLE_ID);
+    } catch (_) {}
     // Remove GSAP script tags injected during this session to prevent accumulation across BD reloads
     for (const el of core.gsapScriptEls) {
       if (el.parentNode) el.parentNode.removeChild(el);

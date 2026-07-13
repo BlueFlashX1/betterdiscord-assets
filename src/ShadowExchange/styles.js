@@ -1,6 +1,7 @@
-function getShadowExchangeCss(portalTransitionCss) {
+function getShadowExchangeCss() {
   return `
-${portalTransitionCss}
+      /* Portal transition CSS moved to ShadowPortalCore/transition-css.js —
+         injected once via the portal-core consumer refcount (2026-07-13). */
 
       /* ── Font Override ───────────────────────────────────────────── */
       .se-panel-overlay,
@@ -44,8 +45,11 @@ ${portalTransitionCss}
       .se-panel-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.85);
-        backdrop-filter: blur(5px);
+        /* PERF (2026-07-13): backdrop-filter: blur(5px) removed — it re-blurred
+           everything behind the overlay on every repaint for as long as the
+           panel stayed open (user-bounded, not transition-bounded). A slightly
+           deeper wash reads near-identically at a fraction of the cost. */
+        background: rgba(0, 0, 0, 0.92);
         z-index: 100001;
         display: flex;
         align-items: center;
