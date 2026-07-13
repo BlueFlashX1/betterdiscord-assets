@@ -863,8 +863,17 @@ module.exports = {
     }
 
     try {
-      // Get shadows from IndexedDB only (no fallback to old storage)
-      const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
+      // Get shadows from IndexedDB only (no fallback to old storage).
+      // PERF (2026-07-13, ledger open item): getShadows({}, 0, Infinity) is
+      // the documented FULL-WALK TRAP at 281k-shadow scale — the filtered
+      // path opens an open-ended cursor with per-record filter + sort. The
+      // wave-3 replacement getAllShadowsRaw() streams the store in indexed
+      // batches with no wasted sort. Same result set; this branch only runs
+      // when ShadowArmy's snapshot cache is cold (e.g. first combat tick
+      // after a restart) — exactly when the stall was worst.
+      const shadows = typeof this.shadowArmy.storageManager.getAllShadowsRaw === 'function'
+        ? await this.shadowArmy.storageManager.getAllShadowsRaw()
+        : await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
       if (!shadows || !Array.isArray(shadows)) {
         this.debugLog('GET_ALL_SHADOWS', 'No shadows returned from storageManager');
         return [];

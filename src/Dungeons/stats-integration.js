@@ -66,9 +66,14 @@ module.exports = {
       if (typeof this.shadowArmy.storageManager.getTotalCount === 'function') {
         count = await this.shadowArmy.storageManager.getTotalCount();
       } else {
-        // Fallback: fetch all and count (legacy storageManager without getTotalCount)
-        const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
-        count = Array.isArray(shadows) ? shadows.length : 0;
+        // PERF (2026-07-13): the old fallback here full-walked the entire
+        // store (getShadows({}, 0, Infinity)) just to COUNT records — a
+        // multi-second stall at 281k-shadow scale for a number the cache
+        // already approximates. getTotalCount has existed since wave 3; a
+        // storageManager without it is effectively unreachable. Surface
+        // loudly and reuse the cached count instead of stalling.
+        this.errorLog('CRITICAL', 'storageManager.getTotalCount missing — using cached shadow count');
+        count = this._shadowCountCache?.count ?? 0;
       }
 
       // Cache in both systems (centralized + legacy)
