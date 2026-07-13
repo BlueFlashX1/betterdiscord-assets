@@ -376,6 +376,13 @@ export function setupHoverHandlers(ctx) {
   // Read settings dynamically inside handler so changes take effect immediately
   const handler = ctx._throttle((e) => {
     if (!ctx._controller) return; // Guard: plugin stopped
+    // FOCUS GUARDRAIL (2026-07-13): never reveal while the Discord window
+    // isn't focused — mousemove still fires when the cursor passes over an
+    // unfocused window, and with instant (0ms) reveal that would flash panels.
+    if (!document.hasFocus()) {
+      clearAllHoverStates(ctx);
+      return;
+    }
     if (document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) {
       clearAllHoverStates(ctx);
       return;
@@ -399,6 +406,20 @@ export function setupHoverHandlers(ctx) {
     passive: true,
     signal: ctx._controller.signal,
   });
+
+  // FOCUS GUARDRAIL (2026-07-13): replaces the old reveal/hide delay guardrails.
+  // The moment the user switches to a different window, hide every surface
+  // RulersAuthority reveals (sidebar / members / profile hover panels and
+  // hidden-channel reveals) — instantly, no timers. clearAllHoverStates also
+  // cancels any pending reveal/hide timers so nothing pops open while unfocused.
+  window.addEventListener(
+    "blur",
+    () => {
+      if (!ctx._controller) return;
+      clearAllHoverStates(ctx);
+    },
+    { signal: ctx._controller.signal }
+  );
 }
 
 export function getGuildData(ctx, guildId) {

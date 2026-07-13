@@ -119,22 +119,19 @@ function ensurePanelSettingsShape(settings) {
 }
 
 function normalizeHoverDelays(settings) {
-  if (settings.hoverRevealDelayMs === 120 || settings.hoverRevealDelayMs === 500) {
-    settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
-  }
-  if (settings.hoverHideDelayMs === 0 || settings.hoverHideDelayMs === 300 || settings.hoverHideDelayMs === 1000) {
-    settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
-  }
+  // 2026-07-13: timing guardrails removed — reveal/hide are instant (0ms) by
+  // default and any saved legacy delay is migrated to instant. The guardrail
+  // against stuck-open panels is now focus-based: window blur hides all
+  // RA-revealed surfaces immediately (setupHoverHandlers in panels.js).
   if (!Number.isFinite(settings.hoverRevealDelayMs) || settings.hoverRevealDelayMs < 0) {
     settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
   }
   if (!Number.isFinite(settings.hoverHideDelayMs) || settings.hoverHideDelayMs < 0) {
     settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
   }
-  // Keep delayed auto-show for all hover reveals.
-  settings.hoverRevealDelayMs = Math.max(DEFAULT_SETTINGS.hoverRevealDelayMs, settings.hoverRevealDelayMs);
-  // Keep a fixed 500ms hide delay for all hover reveals.
-  settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
+  // Migrate the previously-forced legacy defaults (1000/500) to instant.
+  if (settings.hoverRevealDelayMs === 1000) settings.hoverRevealDelayMs = 0;
+  if (settings.hoverHideDelayMs === 500) settings.hoverHideDelayMs = 0;
 }
 
 function sanitizeLoadedSettings(saved, deepMerge) {
