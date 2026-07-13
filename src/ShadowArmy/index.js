@@ -531,6 +531,11 @@ const ShadowArmy = class ShadowArmy {
     const gradePromoteInterval = this.settings?.shadowEssence?.autoPromoteIntervalMs ?? 30000;
     this._gradePromoteInterval = setInterval(() => {
       if (this._isStopped) return;
+      // PERF (2026-07-13): don't run promotion IDB read/write cycles while the
+      // window is hidden — essence accumulates and promotions catch up on the
+      // first visible tick. (autoPromoteGrades already early-exits when essence
+      // is 0, so visible idle ticks stay cheap.)
+      if (document.hidden) return;
       this.autoPromoteGrades().catch((error) => {
         this.debugError('GRADE', 'Auto-promote cycle failed', error);
       });

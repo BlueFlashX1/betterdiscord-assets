@@ -352,9 +352,18 @@ function installVoiceChatBodyAttr() {
       }
     } catch (_) {}
 
-    // Slow safety-net poll in case the dispatcher subscription misses an
-    // edge case. 1s is fast enough for UX, slow enough not to matter.
-    _vcWatchInterval = setInterval(_writeVcAttribute, 1000);
+    // PERF (2026-07-13): the poll is a fallback, not a companion. When the
+    // dispatcher subscription is live it already fires on CHANNEL_SELECT +
+    // VOICE_STATE_UPDATES — the 1s poll on top of it was redundant DOM work
+    // running 24/7 in every bundle that imports this module. Install the poll
+    // ONLY when the dispatcher couldn't be acquired, slower, and never while
+    // the window is hidden.
+    if (!_vcDispatcherUnsub) {
+      _vcWatchInterval = setInterval(() => {
+        if (document.hidden) return;
+        _writeVcAttribute();
+      }, 15000);
+    }
   }
 
   return function uninstallVoiceChatBodyAttr() {

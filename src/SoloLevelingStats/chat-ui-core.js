@@ -217,7 +217,12 @@ module.exports = {
 
   ensureChatUIUpdateInterval(onlyWhenDirty = false) {
     if (this.chatUIUpdateInterval) return;
-  
+
+    // PERF (2026-07-13): 2000 → 4000ms. This tick is only a watchdog (panel
+    // self-heal, header button check) plus a dirty-flag flush — all meaningful
+    // state changes (rank, achievements, equipment, stat allocation) call
+    // updateChatUI() directly and stay instant. Halving the cadence halves the
+    // steady-state DOM-check cost with no visible responsiveness loss.
     this.chatUIUpdateInterval = setInterval(() => {
       if (document.hidden) return; // PERF: Skip when window not visible
   
@@ -251,7 +256,7 @@ module.exports = {
       if (onlyWhenDirty && !this._chatUIDirty) return;
       this._chatUIDirty = false;
       this.updateChatUI();
-    }, 2000);
+    }, 4000);
   },
 
   createChatUI() {
