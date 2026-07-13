@@ -553,6 +553,7 @@ module.exports = class SoloLevelingToasts {
       progressBar.style.height = "2px";
       progressBar.style.background =
         "linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent)";
+      progressBar.style.transformOrigin = "left";
       progressBar.style.animation = `sl-toast-progress ${toastTimeout}ms linear forwards`;
       toast.appendChild(progressBar);
 

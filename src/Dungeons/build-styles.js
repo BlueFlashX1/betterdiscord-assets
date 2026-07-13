@@ -24,11 +24,6 @@ function buildCSS() {
   font-family: 'Friend or Foe BB', sans-serif !important;
 }
 
-@keyframes dungeonPulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.1); }
-}
-
 /* ARISE Animation Keyframes */
 @keyframes pulse-glow {
   0%, 100% {

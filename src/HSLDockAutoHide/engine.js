@@ -471,12 +471,26 @@ class DockEngine {
       this.ensureDockTargetClass();
       this.mountRailToDock();
       this.refreshPointerState();
-      this.enforceStartupLock();
-      this.enforceAutoHideState();
-      this.applyDockStateInline();
+
+      // PERF (safeTick reflow hoist): read all geometry-dependent state
+      // (dock height, alert-node offsetParent usability, rail-follow rect)
+      // BEFORE the show/hide state-machine writes below. enforceStartupLock/
+      // enforceAutoHideState toggle sl-dock-hidden/sl-dock-visible, which
+      // invalidates style and forces a synchronous layout flush on the next
+      // geometry read — reading first collapses that to at most one flush
+      // instead of two. Safe to read pre-write here: show/hide moves the
+      // dock via CSS translate only, which doesn't change the dock's own
+      // height or any alert-node's offsetParent; rail geometry is
+      // re-measured a frame later by the startRailFollow() rAF loop that
+      // showDock()/hideDock() themselves kick off, so the one-tick-stale
+      // rail read here is self-corrected before it's ever visible.
       this.updateDockHeightVar();
       this.updateAlertState();
       this.updateRailGeometry();
+
+      this.enforceStartupLock();
+      this.enforceAutoHideState();
+      this.applyDockStateInline();
 
       this.debug("tick:end", { tick: this.tickCount });
     } catch (err) {
@@ -876,10 +890,18 @@ class DockEngine {
       `height: ${this.railHeightPx}px`, "pointer-events: none", "opacity: 0", "z-index: 40",
       "background: linear-gradient(90deg, rgba(138,43,226,0.96), rgba(167,139,250,0.96))",
       "box-shadow: 0 0 18px rgba(138,43,226,0.68), 0 0 34px rgba(138,43,226,0.42)",
-      "transform: none",
-      "transition: opacity 180ms ease, top 120ms cubic-bezier(0.2, 0.75, 0.25, 1)",
+      "transform: translate3d(0px, 0px, 0)",
+      // PERF: position via transform (compositor-only) instead of left/top
+      // (layout-triggering); transition target moved from top -> transform
+      // to preserve the same easing on the same property being animated.
+      "transition: opacity 180ms ease, transform 120ms cubic-bezier(0.2, 0.75, 0.25, 1)",
     ].join(";");
     this.rail = rail;
+    // Reset the width cache — a fresh element starts at the "width: 0px"
+    // above, so the next updateRailGeometry() must be free to write it
+    // even if it happens to match a stale value cached from a prior
+    // (now-removed) rail instance.
+    this._lastRailWidth = null;
   }
 
   mountRailToDock() {
@@ -950,9 +972,16 @@ class DockEngine {
     let width = Math.max(1, Math.round(rect.width));
     const maxWidth = Math.max(1, window.innerWidth - left);
     if (width > maxWidth) width = maxWidth;
-    this.rail.style.left = `${left}px`;
-    this.rail.style.top = `${top}px`;
-    this.rail.style.width = `${width}px`;
+    // PERF: compositor-only positioning (transform) instead of left/top —
+    // same coordinate math as before, expressed as a translate against the
+    // rail's fixed left:0/top:0 anchor. Width is layout-affecting but
+    // rarely changes frame to frame (only on resize / dock-width change),
+    // so it's cached and only written when it actually differs.
+    this.rail.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+    if (this._lastRailWidth !== width) {
+      this._lastRailWidth = width;
+      this.rail.style.width = `${width}px`;
+    }
   }
 
   _isAlertNodeUsable(el) {

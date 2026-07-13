@@ -858,6 +858,164 @@ class ShadowStorageManager {
     });
   }
 
+  /**
+   * Merge-on-write batch transform — chunked readwrite transactions where
+   * each id is `get`-ed FRESH inside the transaction, passed to `transformFn`,
+   * and the returned record is `put` back in the SAME transaction. Fixes the
+   * ShadowArmy lost-update class (self-heal / hourly compression tiering /
+   * autoPromoteGrades / XP grant-flush all used to read one full-army
+   * snapshot, mutate in memory across several `await`s, then batch-`put`
+   * stale full records — silently reverting whatever any other pass wrote
+   * to the same shadow in between). See
+   * memory/scratch/arch-sa-concurrency-2026-07-12.md for the audit.
+   *
+   * `transformFn` MUST be synchronous — no `await` inside it. IndexedDB
+   * transactions auto-commit once the microtask queue empties; an `await`
+   * inside transformFn yields control back to the event loop, the browser
+   * closes the transaction underneath the pending `get`/`put` calls, and
+   * every subsequent request in that chunk fails with
+   * TransactionInactiveError. Do all async work (fetching related data,
+   * yielding between chunks) OUTSIDE transformFn, before calling this.
+   *
+   * @param {Array<string>} ids - primary keys ('id') to transform.
+   * @param {(freshRecord: object) => (object|null|undefined)} transformFn -
+   *   receives the FRESH record read inside this transaction. Return the
+   *   record to `put()`, or null/undefined to skip the write for that id
+   *   (e.g. the id no longer exists, or nothing changed).
+   * @param {Object} [opts]
+   * @param {number} [opts.chunkSize=200] - ids per IDB readwrite transaction.
+   * @returns {Promise<{completed: number, skipped: number, failedIds: Array<string>}>}
+   *
+   * Field ownership (which pass writes which field — audited 2026-07-12,
+   * memory/scratch/arch-sa-concurrency-2026-07-12.md). Callers rewired to
+   * this primitive derive every written field from the FRESH record passed
+   * into transformFn, never from a captured snapshot, so this table only
+   * needs to call out fields two DIFFERENT passes both touch:
+   *   beastType, beastFamily          -> self-heal only (role-derived)
+   *   baseStats                       -> self-heal only (full recompute)
+   *   growthStats                     -> self-heal (init-if-missing only),
+   *                                       progression (level-up append)
+   *   naturalGrowthStats              -> self-heal (init-if-missing only)
+   *   level, xp                       -> self-heal (init-if-missing only),
+   *                                       progression (grant/level-up/rank carry)
+   *   rank                            -> progression (attemptAutoRankUp) only
+   *   strength                        -> self-heal (recalc from fresh
+   *                                       base+growth stats) AND progression
+   *                                       (level/rank-up recalc) — the one
+   *                                       TRUE same-field race, but both
+   *                                       derive strength from the SAME fresh
+   *                                       baseStats/growthStats via
+   *                                       getShadowEffectiveStats(), so
+   *                                       whichever write lands last is still
+   *                                       self-consistent with what's on the
+   *                                       record at that moment
+   *   grade / gr                      -> compression.autoPromoteGrades only;
+   *                                       self-heal and compression-tiering
+   *                                       pass it through unchanged from the
+   *                                       fresh record
+   *   _c + compressed representation  -> compression tiering only (self-heal,
+   *                                       when it heals a dirty record, always
+   *                                       writes an uncompressed record
+   *                                       regardless of prior tier —
+   *                                       pre-existing behavior, unchanged)
+   *   _healV / hv                     -> self-heal only (always stamped);
+   *                                       compression/progression carry the
+   *                                       existing value through unchanged
+   *   totalCombatTime, lastNaturalGrowth,
+   *   growthVarianceSeed, roleName    -> self-heal (init-if-missing only)
+   *
+   * migrations.js (Phase-1 backfill/recalc) is deliberately NOT rewired to
+   * this primitive — those passes are one-time, version-gated (run once per
+   * install/upgrade, never concurrently with themselves or with each other),
+   * lower priority than the four recurring passes above. They still
+   * snapshot-then-batch-put; tolerated because nothing else runs
+   * concurrently during a one-time migration gate.
+   */
+  async transformShadowsBatch(ids, transformFn, opts = {}) {
+    if (!Array.isArray(ids) || ids.length === 0) return { completed: 0, skipped: 0, failedIds: [] };
+    if (typeof transformFn !== 'function') {
+      throw new Error('transformShadowsBatch requires a synchronous transformFn');
+    }
+
+    const chunkSize = Math.max(1, Math.floor(opts.chunkSize) || 200);
+    let completed = 0;
+    let skipped = 0;
+    const failedIds = [];
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const rawChunk = ids.slice(i, i + chunkSize);
+      const uniqueChunkIds = Array.from(
+        new Set(rawChunk.map((id) => (id === null || id === undefined ? '' : String(id))).filter(Boolean))
+      );
+
+      if (uniqueChunkIds.length > 0) {
+        try {
+          await this._withStore('readwrite', (store, tx, resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onabort = () => reject(tx.error || new Error('transformShadowsBatch transaction aborted'));
+
+            uniqueChunkIds.forEach((id) => {
+              const getRequest = store.get(id);
+              getRequest.onsuccess = () => {
+                const freshRecord = getRequest.result;
+                if (!freshRecord) { skipped++; return; }
+
+                let transformed;
+                try {
+                  transformed = transformFn(freshRecord);
+                } catch (error) {
+                  this.debugError('TRANSFORM_BATCH', `transformFn threw for id ${id}`, error);
+                  failedIds.push(id);
+                  return;
+                }
+
+                if (transformed === null || transformed === undefined) { skipped++; return; }
+
+                const { shadow: normalizedShadow } = this.ensurePersonalityKey(transformed);
+                const putRequest = store.put(normalizedShadow);
+                putRequest.onsuccess = () => {
+                  completed++;
+                  const oldShadow = this.recentCache.get(this.getCacheKey(normalizedShadow));
+                  if (oldShadow) this.invalidateCache(oldShadow);
+                  this.updateCache(normalizedShadow, oldShadow);
+                };
+                putRequest.onerror = (event) => {
+                  // R8: per-item onerror must preventDefault()+stopPropagation()
+                  // or one bad record aborts the whole chunk transaction.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  failedIds.push(id);
+                  this.debugError('TRANSFORM_BATCH', `Failed to put transformed record ${id}`, {
+                    error: putRequest.error,
+                  });
+                };
+              };
+              getRequest.onerror = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                failedIds.push(id);
+                this.debugError('TRANSFORM_BATCH', `Failed to get record ${id} for transform`, {
+                  error: getRequest.error,
+                });
+              };
+            });
+          });
+        } catch (error) {
+          // onabort path — the whole chunk's writes were rolled back; report
+          // every id in the chunk as failed rather than silently losing them.
+          uniqueChunkIds.forEach((id) => failedIds.push(id));
+          this.debugError('TRANSFORM_BATCH', `Chunk transaction aborted (${uniqueChunkIds.length} ids)`, error);
+        }
+      }
+
+      if (i + chunkSize < ids.length) {
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+
+    return { completed, skipped, failedIds };
+  }
+
   async deleteShadowsBatch(shadowIds) {
     if (!shadowIds || !Array.isArray(shadowIds) || shadowIds.length === 0) return 0;
 

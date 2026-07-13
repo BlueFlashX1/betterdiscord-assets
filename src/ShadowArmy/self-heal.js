@@ -91,6 +91,148 @@ module.exports = {
   },
 
   /**
+   * Pure per-record heal computation. Shared by the snapshot scan below
+   * (which decides WHICH ids are candidates for healing — a cheap
+   * version-check hint) and the merge-on-write transform passed to
+   * storageManager.transformShadowsBatch() (which re-runs this against the
+   * FRESH record at write time). Re-deriving from the fresh record — not
+   * the stale snapshot `shadow` — means a concurrent XP grant, rank-up, or
+   * grade promotion landing mid-pass is preserved: self-heal never touches
+   * rank/grade, only initializes level/xp/growthStats/naturalGrowthStats
+   * when MISSING (never overwrites an existing value), and recalculates
+   * strength from whatever baseStats/growthStats are on the fresh record
+   * (so a concurrent level-up's growth contribution is included, not lost).
+   * @param {object} rawShadow - possibly-compressed record as stored in IDB.
+   * @param {number|null} healVersion - skip if _healV/hv >= this. null = heal everything (Phase 1).
+   * @returns {{record: object|null, healed: boolean, skip: boolean}|null}
+   *   null = shadow missing/malformed, do not write.
+   *   {skip: true} = already healed at this version, do not write.
+   *   {record, healed: true} = dirty, healed, write this record.
+   *   {record, healed: false} = not dirty, only the heal-version stamp changed.
+   */
+  _computeHealedShadow(rawShadow, healVersion) {
+    if (!rawShadow) return null;
+
+    try {
+      if (healVersion !== null) {
+        // Uncompressed: _healV; compressed (_c:1/_c:2): hv
+        const rawHealV = rawShadow._healV ?? rawShadow.hv ?? null;
+        if (rawHealV != null && rawHealV >= healVersion) {
+          return { record: null, healed: false, skip: true };
+        }
+      }
+
+      // Decompress if needed
+      let working;
+      if (rawShadow._c === 2) {
+        working = this.decompressShadowUltra(rawShadow);
+      } else if (rawShadow._c === 1) {
+        working = this.decompressShadow(rawShadow);
+      } else {
+        working = rawShadow;
+      }
+
+      if (!working || !working.id) return null;
+
+      // Fast-path for decompressed shadows
+      if (healVersion !== null && working._healV >= healVersion) {
+        return { record: null, healed: false, skip: true };
+      }
+
+      let dirty = false;
+      const roleKey = working.role || 'knight';
+      const role = this.shadowRoles[roleKey];
+
+      // --- FIX 1: Add beastType/beastFamily if missing ---
+      if (!working.beastType && role?.isMagicBeast) {
+        working.beastType = roleKey;
+        working.beastFamily = role.family || null;
+        dirty = true;
+      }
+      if (working.beastType === undefined) {
+        working.beastType = null;
+        dirty = true;
+      }
+      if (working.beastFamily === undefined) {
+        working.beastFamily = null;
+        dirty = true;
+      }
+
+      // --- FIX 2: Recalculate baseStats with corrected species weights ---
+      const shadowRank = working.rank || 'E';
+      const rankMultiplier = this.rankStatMultipliers?.[shadowRank] || 1.0;
+      const roleWeights = this.shadowRoleStatWeights?.[roleKey] || this.shadowRoleStatWeights?.knight;
+      const rankBaseline = this.getRankBaselineStats?.(shadowRank, rankMultiplier);
+
+      if (rankBaseline && roleWeights && working.baseStats) {
+        const statKeys = C.STAT_KEYS;
+        const seed = working.growthVarianceSeed || 0.5;
+        const newBaseStats = {};
+
+        for (let s = 0; s < statKeys.length; s++) {
+          const stat = statKeys[s];
+          const roleWeight = roleWeights[stat] || 1.0;
+          // Deterministic per-stat variance from seed (0.9-1.1 range)
+          const statVariance = 0.9 + ((seed * 7 + s * 13) % 100) / 500;
+          newBaseStats[stat] = Math.max(1, Math.round(rankBaseline[stat] * roleWeight * statVariance));
+        }
+
+        working.baseStats = newBaseStats;
+        dirty = true;
+      }
+
+      // --- FIX 3: Recalculate strength from effective stats ---
+      if (dirty && working.baseStats) {
+        if (!working.growthStats) {
+          working.growthStats = C.STAT_KEYS.reduce((o, k) => { o[k] = 0; return o; }, {});
+        }
+        if (!working.naturalGrowthStats) {
+          working.naturalGrowthStats = C.STAT_KEYS.reduce((o, k) => { o[k] = 0; return o; }, {});
+        }
+
+        const effectiveStats = this.getShadowEffectiveStats?.(working);
+        if (effectiveStats) {
+          if (typeof this.calculateShadowStrength === 'function') {
+            working.strength = this.calculateShadowStrength(effectiveStats, 1);
+          } else {
+            this.debugError?.('SELF-HEAL', 'calculateShadowStrength missing — strength not recalculated');
+          }
+        }
+      }
+
+      // --- FIX 4: Ensure required fields (init-if-missing only — never
+      // overwrites an existing value, so a concurrent XP grant's level/xp
+      // is preserved when this runs against the fresh record) ---
+      if (!working.level || working.level < 1) { working.level = 1; dirty = true; }
+      if (working.xp === undefined || working.xp === null) { working.xp = 0; dirty = true; }
+      if (!working.totalCombatTime && working.totalCombatTime !== 0) { working.totalCombatTime = 0; dirty = true; }
+      if (!working.lastNaturalGrowth) { working.lastNaturalGrowth = working.extractedAt || Date.now(); dirty = true; }
+      if (!working.growthVarianceSeed) { working.growthVarianceSeed = Math.random(); dirty = true; }
+      if (!working.roleName && role) { working.roleName = role.name; dirty = true; }
+
+      // Stamp heal version so Phase 2 skips this shadow next time
+      working._healV = HEAL_VERSION;
+
+      if (dirty) {
+        const toSave = this.prepareShadowForSave(working);
+        return toSave ? { record: toSave, healed: true, skip: false } : null;
+      }
+
+      // Nothing broken — just stamp _healV to skip next time. Carries the
+      // FRESH rawShadow's compressed fields forward (not the possibly-stale
+      // snapshot), so a compression-tier change that landed between scan and
+      // write isn't reverted by this lightweight stamp-only save.
+      const stamped = rawShadow._c
+        ? { ...rawShadow, hv: HEAL_VERSION }
+        : this.prepareShadowForSave(working);
+      return { record: stamped, healed: false, skip: false };
+    } catch (error) {
+      this.debugError('SELF-HEAL', `Error healing shadow ${rawShadow.id || rawShadow.i}`, error);
+      return null;
+    }
+  },
+
+  /**
    * Core heal logic shared by Phase 1 and Phase 2.
    * @param {number|null} healVersion - If set, skip shadows where _healV >= this value.
    *                                    If null, heal everything (Phase 1).
@@ -102,17 +244,36 @@ module.exports = {
     if (allShadows.length === 0) return result;
 
     const batchSize = 50;
-    const saveBatch = [];
+    let idBatch = [];
+
+    // Merge-on-write flush: transformShadowsBatch re-reads each id FRESH
+    // inside its own transaction and re-runs _computeHealedShadow against
+    // that fresh record — see the primitive's doc comment in storage.js for
+    // why this closes the self-heal-vs-{compression,XP-grant,rank-up,grade
+    // promotion} lost-update races.
+    const flushIdBatch = async () => {
+      if (idBatch.length === 0) return;
+      const ids = idBatch;
+      idBatch = [];
+      const { failedIds } = await this.storageManager.transformShadowsBatch(
+        ids,
+        (freshRecord) => {
+          const outcome = this._computeHealedShadow(freshRecord, healVersion);
+          if (!outcome || outcome.skip) { result.skipped++; return null; }
+          if (outcome.healed) result.healed++; else result.skipped++;
+          return outcome.record;
+        },
+        { chunkSize: batchSize }
+      );
+      if (failedIds.length > 0) {
+        this.debugError('SELF-HEAL', `transformShadowsBatch: ${failedIds.length} record(s) failed to heal`, { failedIds });
+      }
+    };
 
     for (let i = 0; i < allShadows.length; i += batchSize) {
       if (this._isStopped || this._selfHealAborted) {
         this.debugLog('SELF-HEAL', `Aborted (${this._isStopped ? 'plugin stopped' : 'deployment requested IDB'})`);
-        // Flush any pending saves before aborting
-        if (saveBatch.length > 0) {
-          const { failed } = await this._flushHealBatch(saveBatch);
-          if (failed > 0) result.healed = Math.max(0, result.healed - failed);
-          saveBatch.length = 0;
-        }
+        await flushIdBatch();
         result.aborted = true;
         return result;
       }
@@ -121,148 +282,37 @@ module.exports = {
 
       for (const shadow of batch) {
         if (this._isStopped || this._selfHealAborted) {
-          // Flush any healed-but-unsaved shadows before aborting — mirrors
-          // the outer batch-window abort above. Without this, healed shadows
-          // accumulated in saveBatch during this inner pass were dropped
-          // silently (re-healed next pass since _healV was never stamped,
-          // but wasted work + result.healed overcounted vs what was saved).
-          if (saveBatch.length > 0) {
-            const { failed } = await this._flushHealBatch(saveBatch);
-            if (failed > 0) result.healed = Math.max(0, result.healed - failed);
-            saveBatch.length = 0;
-          }
+          await flushIdBatch();
           result.aborted = true;
           return result;
         }
 
-        try {
-          // Phase 2 fast-path: skip already-healed shadows
-          if (healVersion !== null) {
-            // Uncompressed: _healV; compressed (_c:1/_c:2): hv
-            const rawHealV = shadow._healV ?? shadow.hv ?? null;
-            if (rawHealV != null && rawHealV >= healVersion) {
-              result.skipped++;
-              continue;
-            }
-          }
-
-          // Decompress if needed
-          let working;
-          if (shadow._c === 2) {
-            working = this.decompressShadowUltra(shadow);
-          } else if (shadow._c === 1) {
-            working = this.decompressShadow(shadow);
-          } else {
-            working = shadow;
-          }
-
-          if (!working || !working.id) {
-            result.skipped++;
-            continue;
-          }
-
-          // Phase 2 fast-path for decompressed shadows
-          if (healVersion !== null && working._healV >= healVersion) {
-            result.skipped++;
-            continue;
-          }
-
-          let dirty = false;
-          const roleKey = working.role || 'knight';
-          const role = this.shadowRoles[roleKey];
-
-          // --- FIX 1: Add beastType/beastFamily if missing ---
-          if (!working.beastType && role?.isMagicBeast) {
-            working.beastType = roleKey;
-            working.beastFamily = role.family || null;
-            dirty = true;
-          }
-          if (working.beastType === undefined) {
-            working.beastType = null;
-            dirty = true;
-          }
-          if (working.beastFamily === undefined) {
-            working.beastFamily = null;
-            dirty = true;
-          }
-
-          // --- FIX 2: Recalculate baseStats with corrected species weights ---
-          const shadowRank = working.rank || 'E';
-          const rankMultiplier = this.rankStatMultipliers?.[shadowRank] || 1.0;
-          const roleWeights = this.shadowRoleStatWeights?.[roleKey] || this.shadowRoleStatWeights?.knight;
-          const rankBaseline = this.getRankBaselineStats?.(shadowRank, rankMultiplier);
-
-          if (rankBaseline && roleWeights && working.baseStats) {
-            const statKeys = C.STAT_KEYS;
-            const seed = working.growthVarianceSeed || 0.5;
-            const newBaseStats = {};
-
-            for (let s = 0; s < statKeys.length; s++) {
-              const stat = statKeys[s];
-              const roleWeight = roleWeights[stat] || 1.0;
-              // Deterministic per-stat variance from seed (0.9-1.1 range)
-              const statVariance = 0.9 + ((seed * 7 + s * 13) % 100) / 500;
-              newBaseStats[stat] = Math.max(1, Math.round(rankBaseline[stat] * roleWeight * statVariance));
-            }
-
-            working.baseStats = newBaseStats;
-            dirty = true;
-          }
-
-          // --- FIX 3: Recalculate strength from effective stats ---
-          if (dirty && working.baseStats) {
-            if (!working.growthStats) {
-              working.growthStats = C.STAT_KEYS.reduce((o, k) => { o[k] = 0; return o; }, {});
-            }
-            if (!working.naturalGrowthStats) {
-              working.naturalGrowthStats = C.STAT_KEYS.reduce((o, k) => { o[k] = 0; return o; }, {});
-            }
-
-            const effectiveStats = this.getShadowEffectiveStats?.(working);
-            if (effectiveStats) {
-              if (typeof this.calculateShadowStrength === 'function') {
-                working.strength = this.calculateShadowStrength(effectiveStats, 1);
-              } else {
-                this.debugError?.('SELF-HEAL', 'calculateShadowStrength missing — strength not recalculated');
-              }
-            }
-          }
-
-          // --- FIX 4: Ensure required fields ---
-          if (!working.level || working.level < 1) { working.level = 1; dirty = true; }
-          if (working.xp === undefined || working.xp === null) { working.xp = 0; dirty = true; }
-          if (!working.totalCombatTime && working.totalCombatTime !== 0) { working.totalCombatTime = 0; dirty = true; }
-          if (!working.lastNaturalGrowth) { working.lastNaturalGrowth = working.extractedAt || Date.now(); dirty = true; }
-          if (!working.growthVarianceSeed) { working.growthVarianceSeed = Math.random(); dirty = true; }
-          if (!working.roleName && role) { working.roleName = role.name; dirty = true; }
-
-          // Stamp heal version so Phase 2 skips this shadow next time
-          working._healV = HEAL_VERSION;
-
-          if (dirty) {
-            const toSave = this.prepareShadowForSave(working);
-            if (toSave) {
-              saveBatch.push(toSave);
-              result.healed++;
-            }
-          } else {
-            // Nothing broken — just stamp _healV to skip next time (lightweight save)
-            saveBatch.push(shadow._c
-              ? { ...shadow, hv: HEAL_VERSION }
-              : this.prepareShadowForSave(working));
-            result.skipped++;
-          }
-        } catch (error) {
-          this.debugError('SELF-HEAL', `Error healing shadow ${shadow.id || shadow.i}`, error);
+        const id = shadow?.id || shadow?.i;
+        if (!id) {
           result.skipped++;
+          continue;
         }
+
+        // Cheap scan-time pre-filter (mirrors _computeHealedShadow's own
+        // version check): avoids queuing an id for a fresh re-read+write
+        // when the snapshot already shows it healed. This is a HINT only —
+        // the authoritative dirty/heal decision happens against the FRESH
+        // record inside _computeHealedShadow above, so this pre-filter can
+        // only ever cause an extra (harmless) re-check, never a missed heal.
+        if (healVersion !== null) {
+          const rawHealV = shadow._healV ?? shadow.hv ?? null;
+          if (rawHealV != null && rawHealV >= healVersion) {
+            result.skipped++;
+            continue;
+          }
+        }
+
+        idBatch.push(id);
       }
 
       // Flush batch to IDB periodically
-      if (saveBatch.length >= batchSize) {
-        const { failed } = await this._flushHealBatch(saveBatch);
-        if (failed > 0) result.healed = Math.max(0, result.healed - failed);
-        saveBatch.length = 0;
+      if (idBatch.length >= batchSize) {
+        await flushIdBatch();
         // Yield to event loop between batches — prevents IDB write storms from
         // starving concurrent reads (e.g., Dungeons deployment shadow lookups)
         await new Promise((r) => setTimeout(r, 50));
@@ -281,10 +331,7 @@ module.exports = {
     }
 
     // Flush remaining
-    if (saveBatch.length > 0) {
-      const { failed } = await this._flushHealBatch(saveBatch);
-      if (failed > 0) result.healed = Math.max(0, result.healed - failed);
-    }
+    await flushIdBatch();
 
     // Invalidate caches if anything changed
     if (result.healed > 0) {
@@ -326,30 +373,5 @@ module.exports = {
         this.debugError?.('SELF-HEAL', 'Resumed self-heal failed', error);
       });
     }, delayMs);
-  },
-
-  async _flushHealBatch(batch) {
-    if (!batch || batch.length === 0) return { saved: 0, failed: 0 };
-    try {
-      await this.storageManager.saveShadowsBatch(batch);
-      return { saved: batch.length, failed: 0 };
-    } catch (error) {
-      this.debugError('SELF-HEAL', `Batch save failed (${batch.length} shadows), falling back to individual saves`, error);
-      let saved = 0;
-      let failed = 0;
-      for (const s of batch) {
-        try {
-          await this.storageManager.saveShadow(s);
-          saved += 1;
-        } catch (err) {
-          failed += 1;
-          this.debugError('SELF-HEAL', 'Individual fallback save failed', { id: s?.id || s?.i, error: err });
-        }
-      }
-      if (failed > 0) {
-        this.debugError('SELF-HEAL', `Fallback saves: ${saved} saved, ${failed} failed`);
-      }
-      return { saved, failed };
-    }
   },
 };

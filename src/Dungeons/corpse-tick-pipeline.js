@@ -70,6 +70,16 @@ module.exports = {
       }
     }
 
+    // Zombie guard: re-check the LIVE this.shadowArmy (not the captured local) after the
+    // cap-check await above -- if ShadowArmy was disabled/reloaded mid-extraction, the
+    // toggle handler nulls this.shadowArmy promptly, but the captured local reference
+    // would otherwise keep calling methods on a torn-down instance.
+    if (!this.shadowArmy || this.shadowArmy._isStopped) {
+      this.debugLog('ARISE', `ShadowArmy torn down before extraction could start — ${pile.length} corpses discarded (${channelKey})`);
+      if (dungeon) dungeon.corpsePile = [];
+      return { extracted: 0, attempted: 0 };
+    }
+
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
     const userLevel = this.soloLevelingStats?.settings?.level || 1;
     const userStats = this.soloLevelingStats?.getTotalEffectiveStats?.() || {};
@@ -102,6 +112,13 @@ module.exports = {
     if (attempted === 0 && extracted === 0) {
       const BATCH_SIZE = 12; // Lower concurrency to minimize memory spikes in fallback mode
       for (let i = 0; i < total; i += BATCH_SIZE) {
+        // Zombie guard: re-check before each batch -- the previous batch's awaits
+        // (Promise.allSettled + the inter-batch setTimeout) are new async gaps where
+        // ShadowArmy could have torn down since the last check.
+        if (!this.shadowArmy || this.shadowArmy._isStopped) {
+          this.debugLog('ARISE', `ShadowArmy torn down mid-fallback-batch — ${total - attempted} remaining corpses discarded (${channelKey})`);
+          break;
+        }
         const batch = pile.slice(i, i + BATCH_SIZE);
         attempted += batch.length;
 

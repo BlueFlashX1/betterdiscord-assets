@@ -100,7 +100,6 @@ module.exports = {
 
     if (baseAmount <= 0 && !perShadowAmounts) return { updatedShadows: [] };
 
-    let shadowsToGrant = [];
     let hasPersistedUpdates = false;
     const allUpdatedShadows = [];
     const targetShadowIds =
@@ -113,66 +112,82 @@ module.exports = {
     const MAX_LEVEL = 9999;
     const perShadow = baseAmount;
 
-    const processXpBatch = async (batchShadows) => {
-      if (!Array.isArray(batchShadows) || batchShadows.length === 0) return 0;
-
-      const updatedShadows = [];
-      for (const shadow of batchShadows) {
-        const shadowId = shadow?.id || shadow?.i;
-        const xpOverride = perShadowAmounts && shadowId != null
-          ? Number(perShadowAmounts[String(shadowId)]) || 0
-          : null;
-        const xpGrant = xpOverride != null ? xpOverride : perShadow;
-        if (!(xpGrant > 0)) continue;
-
-        shadow.xp = (shadow.xp || 0) + xpGrant;
-        let level = shadow.level || 1;
-
-        const shadowRank = shadow.rank || 'E';
-        let leveledUp = false;
-        while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank) && level < MAX_LEVEL) {
-          shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
-          level += 1;
-          shadow.level = level;
-          this.applyShadowLevelUpStats(shadow);
-          leveledUp = true;
-          const effectiveStats = this.getShadowEffectiveStats(shadow);
-          shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
-        }
-
-        if (leveledUp) {
-          const rankUpResult = this.attemptAutoRankUp(shadow);
-          if (rankUpResult.success) {
-            this.debugLog(
-              'RANK_UP',
-              `AUTO RANK-UP: ${shadow.roleName || shadow.role || shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${rankUpResult.newRank}!`
-            );
-          }
-        }
-
-        this.invalidateShadowPowerCache(shadow);
-        updatedShadows.push(this.prepareShadowForSave(shadow));
-      }
-
-      if (!this.storageManager || updatedShadows.length === 0) return 0;
-
-      try {
-        if (this.storageManager.updateShadowsBatch) {
-          await this.storageManager.updateShadowsBatch(updatedShadows);
-        } else {
-          await Promise.all(updatedShadows.map((s) => this.storageManager.saveShadow(s)));
-        }
-        hasPersistedUpdates = true;
-        // Plain loop, not push(...spread): spreading a Monarch-sized batch
-        // (>~65k shadows) overflows the call stack — and since the IDB write
-        // above already succeeded, the RangeError made this return 0 and
-        // under-report persisted updates (seen 14x in debug.log since June).
-        for (const s of updatedShadows) allUpdatedShadows.push(s);
-        return updatedShadows.length;
-      } catch (error) {
-        this.debugError('STORAGE', 'Failed to batch-save shadow XP updates to IndexedDB', error);
+    // Merge-on-write: processXpBatch takes IDS (not pre-fetched shadow
+    // objects) and applies grantShadowXP/level-up/rank-up against the FRESH
+    // record read inside storageManager.transformShadowsBatch's own
+    // transaction. This closes the "army-wide shared flush reads one
+    // getAllShadows() snapshot, then batch-puts stale full records" lost
+    // update — self-heal, compression tiering, and autoPromoteGrades can
+    // now land between this grant's decision and its write without either
+    // side reverting the other's fields (see storage.js:transformShadowsBatch
+    // field-ownership table).
+    const processXpBatch = async (ids) => {
+      if (!Array.isArray(ids) || ids.length === 0) return 0;
+      if (!this.storageManager?.transformShadowsBatch) {
+        this.debugError('STORAGE', 'grantShadowXP: transformShadowsBatch unavailable — skipping batch', null);
         return 0;
       }
+
+      const chunkUpdated = [];
+      const { completed, failedIds } = await this.storageManager.transformShadowsBatch(
+        ids,
+        (freshRecord) => {
+          const shadow = this.getShadowData(freshRecord);
+          if (!shadow) return null;
+
+          const shadowId = shadow.id || shadow.i;
+          const xpOverride = perShadowAmounts && shadowId != null
+            ? Number(perShadowAmounts[String(shadowId)]) || 0
+            : null;
+          const xpGrant = xpOverride != null ? xpOverride : perShadow;
+          if (!(xpGrant > 0)) return null;
+
+          shadow.xp = (shadow.xp || 0) + xpGrant;
+          let level = shadow.level || 1;
+
+          const shadowRank = shadow.rank || 'E';
+          let leveledUp = false;
+          while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank) && level < MAX_LEVEL) {
+            shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
+            level += 1;
+            shadow.level = level;
+            this.applyShadowLevelUpStats(shadow);
+            leveledUp = true;
+            const effectiveStats = this.getShadowEffectiveStats(shadow);
+            shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+          }
+
+          if (leveledUp) {
+            const rankUpResult = this.attemptAutoRankUp(shadow);
+            if (rankUpResult.success) {
+              this.debugLog(
+                'RANK_UP',
+                `AUTO RANK-UP: ${shadow.roleName || shadow.role || shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${rankUpResult.newRank}!`
+              );
+            }
+          }
+
+          this.invalidateShadowPowerCache(shadow);
+          const toSave = this.prepareShadowForSave(shadow);
+          if (toSave) chunkUpdated.push(toSave);
+          return toSave;
+        },
+        { chunkSize: ids.length }
+      );
+
+      if (failedIds.length > 0) {
+        this.debugError('STORAGE', `Failed to batch-save shadow XP updates to IndexedDB (${failedIds.length} ids)`, { failedIds });
+        const failedSet = new Set(failedIds.map((id) => String(id)));
+        for (const s of chunkUpdated) {
+          const sid = String(s.id || s.i || '');
+          if (!failedSet.has(sid)) allUpdatedShadows.push(s);
+        }
+      } else {
+        for (const s of chunkUpdated) allUpdatedShadows.push(s);
+      }
+
+      if (completed > 0) hasPersistedUpdates = true;
+      return completed;
     };
 
     this._batchXpInProgress = true;
@@ -189,36 +204,47 @@ module.exports = {
 
         for (let i = 0; i < uniqueTargetIds.length; i += targetFetchChunkSize) {
           const idChunk = uniqueTargetIds.slice(i, i + targetFetchChunkSize);
-          let shadowsChunk = await this.storageManager.getShadowsByIds(idChunk, {
-            chunkSize: idChunk.length,
-          });
-          if (this.getShadowData && shadowsChunk.length > 0) {
-            shadowsChunk = shadowsChunk.map((s) => this.getShadowData(s));
-          }
-          await processXpBatch(shadowsChunk);
+          await processXpBatch(idChunk);
 
           if (i + targetFetchChunkSize < uniqueTargetIds.length) {
             await new Promise((r) => setTimeout(r, 0));
           }
         }
       } else {
+        // Army-wide grant (no target ids) or getShadowsByIds unavailable —
+        // enumerate ids via the bounded batch cursor (getAllShadowsRaw, no
+        // decompression needed just to read ids) instead of getAllShadows()
+        // (which decompresses every record AND refreshes the cross-plugin
+        // snapshot cache with data that _invalidateSnapshot() below discards
+        // moments later — both wasted work for an id-only enumeration).
+        let allIds = [];
+        try {
+          const allShadowsRaw = await this.storageManager?.getAllShadowsRaw();
+          allIds = (allShadowsRaw || []).map((s) => this.storageManager?.getCacheKey(s)).filter(Boolean);
+        } catch (error) {
+          this.debugError('STORAGE', 'Failed to enumerate shadow ids for XP grant', error);
+          return { updatedShadows: [] };
+        }
+
         if (targetShadowIds && targetShadowIds.length > 0) {
           if (!this._getShadowsByIdsFallbackWarned) {
             this._getShadowsByIdsFallbackWarned = true;
             this.debugError('XP_PERF', 'grantShadowXP: getShadowsByIds unavailable, falling back to full IDB scan — check storageManager wiring', null);
           }
           const targetIds = new Set(targetShadowIds.map((id) => String(id)));
-          const allShadows = await this.getAllShadows();
-          shadowsToGrant = allShadows.filter((s) => {
-            const sid = s?.id || s?.i;
-            return sid && targetIds.has(String(sid));
-          });
-        } else {
-          shadowsToGrant = await this.getAllShadows();
+          allIds = allIds.filter((id) => targetIds.has(String(id)));
         }
 
-        if (!shadowsToGrant.length) return { updatedShadows: [] };
-        await processXpBatch(shadowsToGrant);
+        if (!allIds.length) return { updatedShadows: [] };
+
+        for (let i = 0; i < allIds.length; i += targetFetchChunkSize) {
+          const idChunk = allIds.slice(i, i + targetFetchChunkSize);
+          await processXpBatch(idChunk);
+
+          if (i + targetFetchChunkSize < allIds.length) {
+            await new Promise((r) => setTimeout(r, 0));
+          }
+        }
       }
     } finally {
       this._batchXpInProgress = false;

@@ -180,10 +180,10 @@
 
 @keyframes sl-toast-progress {
   from {
-    width: 100%;
+    transform: scaleX(1);
   }
   to {
-    width: 0%;
+    transform: scaleX(0);
   }
 }
 
@@ -368,6 +368,7 @@
   left: 0;
   right: 0;
   height: 2px;
+  transform-origin: left;
   background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);
   animation: sl-toast-progress linear forwards;
 }

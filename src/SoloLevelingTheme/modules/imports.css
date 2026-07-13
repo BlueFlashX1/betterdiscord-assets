@@ -71,7 +71,7 @@
   --font-code: 'Consolas', 'Courier New', monospace;
 
   /* Animated wallpaper controls */
-  --sl-bg-gif: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-gif: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/91a45d9a2d355f393f29ea85c1960e636a768f19/themes/SLEndingBest.webp');
   /* --sl-bg-overlay defined above at 0.75 — adjust there to control wallpaper dimming */
   --sl-bg-opacity: 1.0;
   --background-position: center 0%;

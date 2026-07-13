@@ -16,13 +16,13 @@ import {
   SEARCH_FALLBACKS,
   TOOLBAR_FALLBACKS,
   DM_LIST_FALLBACKS,
-  _PluginUtils,
 } from "./constants";
 import { applyChannelContextMenuPatch } from "./context-menu-helpers";
 import dc from "../shared/discord-classes";
 import { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } from "../shared/toolbar-tooltip";
 const { onResize } = require("../shared/dom-bus");
 const { acquireDispatcher } = require("../shared/dispatcher");
+const { watchToolbar } = require("../shared/header-toolbar");
 // Helper: find channel sidebar element
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
@@ -718,6 +718,10 @@ export function setupDMObserver(ctx) {
     applyDMGripping(ctx);
   }, RA_OBSERVER_THROTTLE_MS);
   const throttledGrip = function (...args) {
+    // Reentrancy guard: applyDMGripping's insertBefore below is itself a
+    // childList mutation this same observer watches — ignore mutations we
+    // triggered ourselves instead of burning a throttled cycle on a no-op.
+    if (ctx._dmApplyInProgress) return;
     // Record that the throttle may have set an internal timer; clear our ref
     // on each invocation so a stale id is never cancelled twice.
     timerRef.id = null;
@@ -737,24 +741,35 @@ export function applyDMGripping(ctx) {
                  dmList.querySelector("h2");
   const insertAfterEl = header?.closest(dc.sel.listItem) || header?.parentElement || null;
 
-  for (const { channelId } of [...ctx.settings.grippedDMs].reverse()) {
-    const dmEl = dmList.querySelector(`[data-list-item-id*="${channelId}"]`) ||
-                 dmList.querySelector(`a[href="/channels/@me/${channelId}"]`)?.closest("[data-list-item-id]");
-    if (!dmEl) continue;
+  // Reentrancy guard: the insertBefore calls below are childList mutations
+  // that _dmObserver watches via the same throttled callback that invokes
+  // this function. Set before mutating, clear on a microtask — the
+  // MutationObserver's own callback is queued at the moment of mutation
+  // (ahead of this clear in the microtask queue), so it still sees the flag
+  // set and no-ops via throttledGrip's guard above.
+  ctx._dmApplyInProgress = true;
+  try {
+    for (const { channelId } of [...ctx.settings.grippedDMs].reverse()) {
+      const dmEl = dmList.querySelector(`[data-list-item-id*="${channelId}"]`) ||
+                   dmList.querySelector(`a[href="/channels/@me/${channelId}"]`)?.closest("[data-list-item-id]");
+      if (!dmEl) continue;
 
-    if (!dmEl.querySelector(".ra-grip-indicator")) {
-      const indicator = document.createElement("div");
-      indicator.className = "ra-grip-indicator";
-      indicator.title = "Telekinetic Grip";
-      dmEl.style.position = "relative";
-      dmEl.appendChild(indicator);
-    }
+      if (!dmEl.querySelector(".ra-grip-indicator")) {
+        const indicator = document.createElement("div");
+        indicator.className = "ra-grip-indicator";
+        indicator.title = "Telekinetic Grip";
+        dmEl.style.position = "relative";
+        dmEl.appendChild(indicator);
+      }
 
-    if (insertAfterEl && insertAfterEl.nextSibling !== dmEl) {
-      dmList.insertBefore(dmEl, insertAfterEl.nextSibling);
-    } else if (!insertAfterEl && dmList.firstChild !== dmEl) {
-      dmList.insertBefore(dmEl, dmList.firstChild);
+      if (insertAfterEl && insertAfterEl.nextSibling !== dmEl) {
+        dmList.insertBefore(dmEl, insertAfterEl.nextSibling);
+      } else if (!insertAfterEl && dmList.firstChild !== dmEl) {
+        dmList.insertBefore(dmEl, dmList.firstChild);
+      }
     }
+  } finally {
+    Promise.resolve().then(() => { ctx._dmApplyInProgress = false; });
   }
 }
 
@@ -904,23 +919,25 @@ export function scheduleIconReinject(ctx, delayMs = RA_ICON_REINJECT_DELAY_MS) {
 }
 
 export function setupToolbarObserver(ctx) {
-  if (ctx._layoutBusUnsub) return;
+  if (ctx._toolbarUnwatch) return;
 
-  // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
-  if (_PluginUtils?.LayoutObserverBus) {
-    ctx._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('RulersAuthority', () => {
-      const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-      const toolbar = getChannelHeaderToolbar(ctx);
-      // Skip layout-driven reinject while we're in a hide state —
-      // injectToolbarIcon already handles the hide path; we don't want a
-      // stale layout tick to pull the icon back to the toolbar between
-      // dispatcher events.
-      if (_shouldHideRaIcon()) return;
-      if (!icon || !toolbar || icon.parentElement !== toolbar) {
-        scheduleIconReinject(ctx);
-      }
-    }, 250);
-  }
+  // PERF: shared header-toolbar hub (event-driven CHANNEL_SELECT /
+  // VOICE_STATE_UPDATES + a narrow, document.hidden-gated MutationObserver,
+  // rAF-coalesced) replaces the broader, non-hidden-gated LayoutObserverBus
+  // subscription — this plugin's own pre-extraction toolbar-lookup logic is
+  // what the hub was adapted from; migrating onto it closes that gap.
+  ctx._toolbarUnwatch = watchToolbar(() => {
+    const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+    const toolbar = getChannelHeaderToolbar(ctx);
+    // Skip layout-driven reinject while we're in a hide state —
+    // injectToolbarIcon already handles the hide path; we don't want a
+    // stale layout tick to pull the icon back to the toolbar between
+    // dispatcher events.
+    if (_shouldHideRaIcon()) return;
+    if (!icon || !toolbar || icon.parentElement !== toolbar) {
+      scheduleIconReinject(ctx);
+    }
+  });
 
   // Dispatcher subscriptions — instant reaction to:
   //   VOICE_STATE_UPDATES : user joins/leaves a voice channel
@@ -934,7 +951,7 @@ export function setupToolbarObserver(ctx) {
       const handler = () => scheduleIconReinject(ctx, 0);
       // Drop any prior subscription first — setupToolbarObserver can re-run
       // (e.g. on skill-level change) and would otherwise leak a handler pair
-      // each time, since the _layoutBusUnsub guard doesn't cover these.
+      // each time, since the _toolbarUnwatch guard doesn't cover these.
       if (typeof ctx._voiceStateUnsub === "function") {
         try { ctx._voiceStateUnsub(); } catch (_) {}
         ctx._voiceStateUnsub = null;
@@ -954,10 +971,10 @@ export function setupToolbarObserver(ctx) {
 }
 
 export function teardownToolbarObserver(ctx) {
-  // PERF(P5-4): Unsubscribe from shared LayoutObserverBus
-  if (ctx._layoutBusUnsub) {
-    ctx._layoutBusUnsub();
-    ctx._layoutBusUnsub = null;
+  // PERF: unsubscribe from the shared header-toolbar hub
+  if (ctx._toolbarUnwatch) {
+    ctx._toolbarUnwatch();
+    ctx._toolbarUnwatch = null;
   }
   if (typeof ctx._voiceStateUnsub === "function") {
     try { ctx._voiceStateUnsub(); } catch (_) {}

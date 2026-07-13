@@ -273,12 +273,16 @@ module.exports = {
     // Check cache first
     const now = Date.now();
     const cacheKey = `${pluginName}_${instanceProperty || 'none'}`;
+    const cachedInstance = this._cache.pluginInstances[cacheKey];
     if (
-      this._cache.pluginInstances[cacheKey] &&
+      cachedInstance &&
+      // Zombie protection (matches shared/plugin-bridge.js:getPluginInstance) -- never
+      // serve a cached instance that has begun tearing down since it was cached.
+      !(cachedInstance._stopped || cachedInstance._isStopped) &&
       this._cache.pluginInstancesTime[cacheKey] &&
       now - this._cache.pluginInstancesTime[cacheKey] < this._cache.pluginInstancesTTL
     ) {
-      return this._cache.pluginInstances[cacheKey];
+      return cachedInstance;
     }
 
     if (!BdApi.Plugins.isEnabled(pluginName)) {
@@ -289,6 +293,13 @@ module.exports = {
     const plugin = BdApi.Plugins.get(pluginName);
     if (!plugin?.instance) {
       this.debugLogOnce(`PLUGIN_MISSING:${pluginName}`, `Plugin ${pluginName} not available`);
+      this._cache.pluginInstances[cacheKey] = null;
+      this._cache.pluginInstancesTime[cacheKey] = now;
+      return null;
+    }
+    if (plugin.instance._stopped || plugin.instance._isStopped) {
+      // Zombie protection: refuse to serve/cache an instance that is already stopped.
+      this.debugLogOnce(`PLUGIN_STOPPED:${pluginName}`, `Plugin ${pluginName} is stopped — refusing stale reference`);
       this._cache.pluginInstances[cacheKey] = null;
       this._cache.pluginInstancesTime[cacheKey] = now;
       return null;

@@ -216,7 +216,7 @@ AI MAINTENANCE RULES
   --font-code: 'Consolas', 'Courier New', monospace;
 
   /* Animated wallpaper controls */
-  --sl-bg-gif: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-gif: url('https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/91a45d9a2d355f393f29ea85c1960e636a768f19/themes/SLEndingBest.webp');
   --sl-bg-overlay: rgba(0, 0, 0, 0);
   --sl-bg-opacity: 1.0;
   --background-position: center 0%;
@@ -1311,20 +1311,24 @@ div[class*="contentWrapper_"] nav[class*="nav_"] {
 }
 
 /* §9b (continued) — Hide scrollbars in GIF/Stickers/Emoji picker popups
-   Nuclear approach: hide scrollbars on ALL scrollable elements inside the picker */
-div[class^="emojiPicker_"] *,
-section[class^="stickerPicker_"] *,
-div[class*="gifPicker_"] *,
-div[class^="positionContainer_"] div[class^="contentWrapper_"] *,
-div[class^="positionContainer_"] * {
+   Scoped to scrollable containers inside pickers (not all descendants) */
+div[class^="emojiPicker_"] div[class*="scroller_"],
+div[class^="emojiPicker_"] div[class*="listItems_"],
+div[class^="emojiPicker_"] div[class*="inspector_"],
+section[class^="stickerPicker_"] div[class*="scroller_"],
+section[class^="stickerPicker_"] div[class*="listItems_"],
+div[class*="gifPicker_"] div[class*="scroller_"],
+div[class*="gifPicker_"] div[class*="results_"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"],
+div[class^="positionContainer_"] div[class*="scroller_"] {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
-div[class^="emojiPicker_"] *::-webkit-scrollbar,
-section[class^="stickerPicker_"] *::-webkit-scrollbar,
-div[class*="gifPicker_"] *::-webkit-scrollbar,
-div[class^="positionContainer_"] div[class^="contentWrapper_"] *::-webkit-scrollbar,
-div[class^="positionContainer_"] *::-webkit-scrollbar {
+div[class^="emojiPicker_"] div[class*="scroller_"]::-webkit-scrollbar,
+div[class^="emojiPicker_"] div[class*="listItems_"]::-webkit-scrollbar,
+section[class^="stickerPicker_"] div[class*="scroller_"]::-webkit-scrollbar,
+div[class*="gifPicker_"] div[class*="scroller_"]::-webkit-scrollbar,
+div[class^="positionContainer_"] div[class*="scroller_"]::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
   display: none !important;
@@ -2194,8 +2198,9 @@ div[class^="headerBarInner_"] div[class^="tabBarItem_"]::after {
 
 /* §10a — Settings backdrop: dimmed overlay behind the modal
    The outerContainer_ fills the viewport and acts as a dark scrim.
-   Keep it semi-transparent so the GIF background still peeks through. */
-div[class^="outerContainer_"] {
+   Keep it semi-transparent so the GIF background still peeks through.
+   Scoped to layer_ parent so it does not bleed into quickswitcher or other contexts. */
+div[class^="layer_"] > div[class^="outerContainer_"] {
   background: rgba(0, 0, 0, 0.75) !important;
   background-image: none !important;
 }

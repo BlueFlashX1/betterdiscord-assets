@@ -763,7 +763,30 @@ module.exports = {
         this.debugLog('ARISE', `ARISE STREAM aborted: plugin stopped at chunk ${Math.floor(i / CORPSE_CHUNK_SIZE) + 1}`);
         break;
       }
-      const chunk = corpsePile.slice(i, Math.min(i + CORPSE_CHUNK_SIZE, total));
+      // Re-check remaining capacity FRESH before each chunk (narrows the cap
+      // TOCTOU window from "checked once at the start of a potentially
+      // multi-second, multi-chunk stream" to "checked before every chunk").
+      // checkShadowArmyCap() is cheap here — its 5s cache is invalidated by
+      // this function's own chunk-save invalidation below, so this mostly
+      // reads the cache synchronously except right after a write. A
+      // concurrent extraction (chat-triggered, or a second dungeon's own
+      // bulkDungeonExtraction) that lands mid-pass and pushes the army to
+      // cap is now caught on the NEXT chunk instead of only at the very
+      // start — same "cap the pile to remaining slots" semantics as the
+      // upfront check above (lines ~710-725), just re-applied per chunk.
+      const chunkCapStatus = await this.checkShadowArmyCap();
+      if (chunkCapStatus.atCap) {
+        this.debugLog('ARISE', `ARISE STREAM stopped early: army reached capacity mid-pass at chunk ${Math.floor(i / CORPSE_CHUNK_SIZE) + 1}`, chunkCapStatus);
+        break;
+      }
+      const chunkRemainingSlots = chunkCapStatus.cap === Infinity
+        ? Infinity
+        : Math.max(0, chunkCapStatus.cap - chunkCapStatus.currentCount);
+      const chunkEnd = Number.isFinite(chunkRemainingSlots)
+        ? Math.min(i + CORPSE_CHUNK_SIZE, total, i + chunkRemainingSlots)
+        : Math.min(i + CORPSE_CHUNK_SIZE, total);
+      const chunk = corpsePile.slice(i, chunkEnd);
+      if (chunk.length === 0) break; // no headroom left, nothing more to extract this pass
       const chunkShadows = [];
 
       // RNG + shadow generation for this chunk (pure JS, no IDB)
@@ -884,6 +907,16 @@ module.exports = {
             ? saveResult.completed
             : Math.max(0, chunkShadows.length - failedIndices.size);
           totalExtracted += effectiveSavedCount;
+          // Invalidate the cap-count cache after this chunk's writes land —
+          // mirrors the single-extraction path (extraction.js: the
+          // attemptExtractionWithRetries save-success block, which calls
+          // this right after saveShadow()). Without this, checkShadowArmyCap()
+          // called by the NEXT chunk's fresh re-check above (or by any
+          // concurrent extraction path) could read a stale pre-write count
+          // for up to 5s, allowing the army to overshoot its cap.
+          if (effectiveSavedCount > 0) {
+            this._invalidateCapCountCache?.();
+          }
           const savedShadows = failedIndices.size > 0
             ? chunkShadows.filter((_, idx) => !failedIndices.has(idx))
             : chunkShadows;

@@ -83,6 +83,41 @@ down only when a HELD key empties the Set (release-without-acquire is a full no-
 cold-start self-call can't wipe the require-time preload); module-level stop() is a deprecated
 warn-once no-op.
 
+Fixed 2026-07-12 (wave 6 — SA↔Dungeons architecture study + rendering audit): ShadowArmy
+transformShadowsBatch merge-on-write primitive (storage.js) — self-heal, compression tiering,
+autoPromoteGrades, and grantShadowXP all rewired to transform FRESH records inside the write
+transaction (lost-update class closed; field-ownership table lives on the primitive);
+autoPromoteGrades essence delta-write (concurrent awards preserved); _lastCompressionGen only
+advances on fully-successful tier writes; bulkDungeonExtraction cap-cache invalidation +
+per-chunk cap re-check/clamp. Dungeons: catch-up boss damage uses a synthetic per-chunk clock
+for the phase-shield window (restores "mirrors live combat" — real Date.now() made post-
+threshold chunks 100% shield-absorbed); deployShadows abort/resume now try/finally-paired
+(stranded aborts disabled self-heal all session); corpse-pipeline re-validates shadowArmy
+across awaits; validatePluginReference rejects stopped instances. Rendering: 49MB background
+GIF re-encoded to 9.6MB animated WebP (SHA-pinned raw URLs in both delivery paths);
+RulersAuthority migrated to shared watchToolbar() hub; LayoutObserverBus document.hidden gate
++ visibilitychange catch-up dispatch (4 subscriber plugins silenced while backgrounded);
+HSLDockAutoHide safeTick reads-before-writes + alert-rail translate3d (was ~40 layout frames
+per hover); RA DM-grip observer reentrancy guard; toast progress strip width→scaleX; standalone
+theme.css scrollbar-wildcard + outerContainer_ scoping ported from plugin modules (March-audit
+parity); dead src/Dungeons/styles.css + dungeonPulse keyframe removed.
+
+Also refuted (wave 6 — do NOT re-attempt): boss HP-bar width→scaleX (fill carries fixed-px
+box-shadow/border-radius that squish under scaleX, worst at low HP; track-element/counter-scale/
+clip-path all regress visuals or aren't compositor-only); guild.css:730 body:has(chatLayerWrapper_)
+→ data-attr conversion (thread-sidebar overlay mounts WITHOUT any dispatcher event — only a 1s
+poll could feed the attr, a visible member-list staleness regression; :has() is the only
+synchronous signal short of a new dedicated observer); ARISE glow drop-shadow keyframes and
+bossHpPulse/gateTimerPulse (bounded, small-area, signature visuals — accepted cost); HSLDock
+permanent will-change (re-promotion per hover would cost more).
+
+Parked (wave 6 additions): bulk-vs-bulk same-event-loop-tick cap overshoot sliver (needs atomic
+slot reservation — extraction redesign for a grandfathered-anyway edge); themes/variables/ token
+system adoption (built, never @imported, 100+ hardcoded rgba repeats — dedicated refactor wave);
+dead 71MB+28MB GIFs deletion, MyTheme.theme.css scaffold removal, Tier-2 video-element
+background (USER DECISIONS pending); combat-allocation 45-60s staleness after mid-dungeon
+rank-up (deliberate tradeoff — leave).
+
 Parked (refreshed wave 5): Dungeons mobs `extracted` flag — DESIGN DECISION NEEDED: the mobs
 IDB store is write-only at runtime (only batchSaveMobs writes it; nothing ever reads), every
 write hardcodes extracted:false, and normal completion already deletes via deleteMobsByDungeon

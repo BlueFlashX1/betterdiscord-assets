@@ -380,6 +380,17 @@ const LayoutObserverBus = (() => {
     }, RETRY_MS);
   }
 
+  let visibilityListener = null;
+
+  function _dispatch() {
+    const now = Date.now();
+    subscribers.forEach((sub) => {
+      if (now - sub.lastFired < sub.throttleMs) return;
+      sub.lastFired = now;
+      try { sub.callback(); } catch (_) { /* subscriber error isolation */ }
+    });
+  }
+
   function ensure() {
     if (observer && target?.isConnected) return true;
     if (observer && !target?.isConnected) {
@@ -396,14 +407,20 @@ const LayoutObserverBus = (() => {
     stopRetry();
 
     observer = new MutationObserver(() => {
-      const now = Date.now();
-      subscribers.forEach((sub) => {
-        if (now - sub.lastFired < sub.throttleMs) return;
-        sub.lastFired = now;
-        try { sub.callback(); } catch (_) { /* subscriber error isolation */ }
-      });
+      // PERF (R7): no work while the tab is hidden/backgrounded (mirrors
+      // shared/header-toolbar.js's hub gate). Subscribers here re-derive
+      // current state rather than process mutation records incrementally,
+      // so the visibilitychange catch-up below is equivalent to replaying
+      // every mutation dropped while hidden.
+      if (document.hidden) return;
+      _dispatch();
     });
     observer.observe(target, { childList: true, subtree: true });
+
+    if (!visibilityListener) {
+      visibilityListener = () => { if (!document.hidden) _dispatch(); };
+      document.addEventListener('visibilitychange', visibilityListener);
+    }
     return true;
   }
 
@@ -421,6 +438,10 @@ const LayoutObserverBus = (() => {
           observer.disconnect();
           observer = null;
           target = null;
+        }
+        if (visibilityListener) {
+          document.removeEventListener('visibilitychange', visibilityListener);
+          visibilityListener = null;
         }
         if (typeof window !== 'undefined') {
           delete window.__BD_LayoutObserverBus;

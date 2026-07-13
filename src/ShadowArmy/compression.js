@@ -386,56 +386,81 @@ module.exports = {
       const cold = shadowsWithPower.slice(warmThreshold);
 
       const counters = { compressed: 0, ultraCompressed: 0, decompressed: 0 };
+      // Tracks whether every attempted tier write actually landed — gates
+      // whether _lastCompressionGen may advance below (item 3b: a transient
+      // IDB failure must NOT be recorded as "pass complete", or the retry
+      // never happens until an unrelated future mutation bumps the gen).
+      let anyTierWriteFailed = false;
+
+      // Tier CLASSIFICATION (which id belongs in which tier) is inherently
+      // a whole-army-relative ranking decision from this pass's snapshot —
+      // it can't be recomputed per-record in isolation, and re-deciding it
+      // fresh every hourly pass is by design (a shadow's rank in the power
+      // ordering naturally drifts). What must NOT come from the snapshot is
+      // the VALUE written for each id: every transform below re-decompresses
+      // and re-serializes from the FRESH record via transformShadowsBatch,
+      // so a concurrent XP grant / rank-up / grade promotion / self-heal fix
+      // landing between this snapshot and the write is carried through
+      // instead of silently reverted.
 
       // --- Cold tier: ultra-compress ---
-      const coldToUpdate = cold
+      const coldIds = cold
         .filter(({ compressionLevel }) => compressionLevel !== 2)
-        .map(({ shadow }) => {
-          if (shadow._c === 2) return shadow;
-          const oldShadow = { ...shadow };
-          const ultraCompressedShadow = this.compressShadowUltra(shadow);
-          if (ultraCompressedShadow) {
-            this._invalidateShadowStateCaches(oldShadow);
-          }
-          return ultraCompressedShadow;
-        })
-        .filter((shadow) => shadow !== null && this.getCacheKey(shadow));
+        .map(({ shadow }) => this.getCacheKey(shadow))
+        .filter(Boolean);
 
       let coldUpdated = 0;
-      if (coldToUpdate.length > 0 && this.storageManager?.updateShadowsBatch) {
+      if (coldIds.length > 0 && this.storageManager?.transformShadowsBatch) {
         try {
-          coldUpdated = await this.storageManager.updateShadowsBatch(coldToUpdate);
+          const { completed, failedIds } = await this.storageManager.transformShadowsBatch(
+            coldIds,
+            (freshRecord) => {
+              if (freshRecord._c === 2) return null; // already ultra since snapshot, no-op
+              const decompressedFresh = this.getShadowData(freshRecord);
+              if (!decompressedFresh) return null;
+              const oldShadow = { ...freshRecord };
+              const ultraCompressedShadow = this.compressShadowUltra(decompressedFresh);
+              if (!ultraCompressedShadow || !this.getCacheKey(ultraCompressedShadow)) return null;
+              this._invalidateShadowStateCaches(oldShadow);
+              return ultraCompressedShadow;
+            }
+          );
+          coldUpdated = completed;
+          if (failedIds.length > 0) anyTierWriteFailed = true;
         } catch (error) {
-          this.debugError('COMPRESSION', 'Ultra-compression: Batch update error', error);
+          this.debugError('COMPRESSION', 'Ultra-compression: batch transform error', error);
+          anyTierWriteFailed = true;
         }
       }
       counters.ultraCompressed = coldUpdated;
 
       // --- Warm tier: regular compress ---
-      const warmToCompress = warm
+      const warmIds = warm
         .filter(({ compressionLevel }) => compressionLevel !== 1)
-        .map(({ shadow, compressionLevel }) => {
-          const oldShadow = { ...shadow };
-
-          // shadow is always pre-decompressed here (processShadowCompression
-          // maps { shadow: decompressed } before building warmToCompress), so
-          // it never carries a live _c marker — compress directly.
-          const compressedShadow = this.compressShadow(shadow);
-
-          if (compressedShadow && compressedShadow !== shadow) {
-            this._invalidateShadowStateCaches(oldShadow);
-          }
-
-          return compressedShadow;
-        })
-        .filter((shadow) => shadow !== null && this.getCacheKey(shadow));
+        .map(({ shadow }) => this.getCacheKey(shadow))
+        .filter(Boolean);
 
       let warmUpdated = 0;
-      if (warmToCompress.length > 0 && this.storageManager?.updateShadowsBatch) {
+      if (warmIds.length > 0 && this.storageManager?.transformShadowsBatch) {
         try {
-          warmUpdated = await this.storageManager.updateShadowsBatch(warmToCompress);
+          const { completed, failedIds } = await this.storageManager.transformShadowsBatch(
+            warmIds,
+            (freshRecord) => {
+              if (freshRecord._c === 1) return null; // already regular-compressed since snapshot, no-op
+              const decompressedFresh = this.getShadowData(freshRecord);
+              if (!decompressedFresh) return null;
+              const oldShadow = { ...freshRecord };
+              const compressedShadow = this.compressShadow(decompressedFresh);
+              if (!compressedShadow || !this.getCacheKey(compressedShadow)) return null;
+              this._invalidateShadowStateCaches(oldShadow);
+              return compressedShadow;
+            }
+          );
+          warmUpdated = completed;
+          if (failedIds.length > 0) anyTierWriteFailed = true;
         } catch (error) {
-          this.debugError('COMPRESSION', 'Compression: Batch update error', error);
+          this.debugError('COMPRESSION', 'Compression: batch transform error', error);
+          anyTierWriteFailed = true;
         }
       }
 
@@ -444,24 +469,30 @@ module.exports = {
       counters.ultraCompressed -= downgradeCount;
 
       // --- Elite tier: decompress if needed ---
-      const elitesToDecompress = elites
+      const eliteIds = elites
         .filter(({ compressionLevel }) => compressionLevel !== 0)
-        .map(({ shadow }) => {
-          const oldShadow = { ...shadow };
-          const decompressed = this.prepareShadowForSave(shadow);
-          if (decompressed) {
-            this._invalidateShadowStateCaches(oldShadow);
-          }
-          return decompressed;
-        })
-        .filter((shadow) => shadow !== null && this.getCacheKey(shadow));
+        .map(({ shadow }) => this.getCacheKey(shadow))
+        .filter(Boolean);
 
       let elitesUpdated = 0;
-      if (elitesToDecompress.length > 0 && this.storageManager?.updateShadowsBatch) {
+      if (eliteIds.length > 0 && this.storageManager?.transformShadowsBatch) {
         try {
-          elitesUpdated = await this.storageManager.updateShadowsBatch(elitesToDecompress);
+          const { completed, failedIds } = await this.storageManager.transformShadowsBatch(
+            eliteIds,
+            (freshRecord) => {
+              if (!freshRecord._c) return null; // already full/uncompressed since snapshot, no-op
+              const oldShadow = { ...freshRecord };
+              const decompressedForSave = this.prepareShadowForSave(this.getShadowData(freshRecord));
+              if (!decompressedForSave || !this.getCacheKey(decompressedForSave)) return null;
+              this._invalidateShadowStateCaches(oldShadow);
+              return decompressedForSave;
+            }
+          );
+          elitesUpdated = completed;
+          if (failedIds.length > 0) anyTierWriteFailed = true;
         } catch (error) {
-          this.debugError('COMPRESSION', 'Decompression: Batch update error', error);
+          this.debugError('COMPRESSION', 'Decompression: batch transform error', error);
+          anyTierWriteFailed = true;
         }
       }
       counters.decompressed = elitesUpdated;
@@ -480,12 +511,21 @@ module.exports = {
       this.settings.shadowCompression.lastCompressionTime = Date.now();
       this.saveSettings();
 
-      // Record completion. Re-read this._armyWriteGen fresh (not the
-      // currentGen captured at the top) in case a real mutation landed
-      // mid-pass (e.g. a concurrent extraction while getAllShadowsRaw() was
-      // awaited) — recording the newer value means next tick still detects
-      // that change instead of masking it.
-      this._lastCompressionGen = this._armyWriteGen || 0;
+      // Record completion — but ONLY if every tier's writes actually landed
+      // (item 3b). A transient IDB failure mid-pass must leave
+      // _lastCompressionGen stale so the NEXT tick's gen-compare still sees
+      // "changed" and retries the tiering that failed, instead of silently
+      // skipping it until an unrelated future mutation bumps the write-gen.
+      // Re-read this._armyWriteGen fresh (not the currentGen captured at the
+      // top) in case a real mutation landed mid-pass (e.g. a concurrent
+      // extraction while getAllShadowsRaw() was awaited) — recording the
+      // newer value means next tick still detects that change instead of
+      // masking it.
+      if (!anyTierWriteFailed) {
+        this._lastCompressionGen = this._armyWriteGen || 0;
+      } else {
+        this.debugLog('COMPRESSION', 'One or more tier writes failed — _lastCompressionGen NOT advanced, next tick will retry');
+      }
 
       if (compressed > 0 || ultraCompressed > 0 || decompressed > 0) {
         this.debugLog(
@@ -630,7 +670,16 @@ module.exports = {
     let promoted = 0;
     let essenceSpent = 0;
     let remainingEssence = currentEssence;
-    const saveBatch = [];
+    // Essence-budget decisions (who gets promoted, to what grade, at what
+    // cost) stay computed here from the snapshot — this is a single
+    // synchronous JS loop with no awaits, so it's race-free by construction
+    // (nothing else can run between iterations). Only the FIELD WRITE is
+    // deferred to a merge-on-write transform below: idsToPromote records
+    // "this id should advance one grade step"; the transform re-derives
+    // the actual nextGrade from the FRESH record's CURRENT grade so it's
+    // self-consistent even if something else touched the record's grade
+    // between this snapshot and the write landing.
+    const idsToPromote = [];
 
     for (let i = 0; i < promotable.length && promoted < batchSize; i++) {
       const entry = promotable[i];
@@ -647,20 +696,20 @@ module.exports = {
       essenceSpent += cost;
       promoted++;
 
-      // Update the shadow's grade on the raw record (saved below).
-      const rawShadow = entry.raw;
-      if (rawShadow._c) {
-        // Compressed: update gr field directly
-        rawShadow.gr = nextGrade;
-      } else {
-        rawShadow.grade = nextGrade;
-      }
-      saveBatch.push(rawShadow);
+      const id = this.getCacheKey?.(entry.raw) || entry.raw?.id || entry.raw?.i;
+      if (id) idsToPromote.push(id);
     }
 
     if (promoted > 0) {
-      // Persist essence deduction
-      essenceConfig.essence = Math.max(0, remainingEssence);
+      // Persist essence deduction as a DELTA against the CURRENT value, not
+      // an absolute overwrite of the stale `remainingEssence` captured
+      // before the two awaits above (getTotalCount/getShadowsByKeyPage).
+      // If Dungeons:awardEssence's synchronous handler landed during either
+      // await, it already applied `essenceConfig.essence += essenceGain` in
+      // isolation — reading essenceConfig.essence fresh here and subtracting
+      // only what THIS cycle spent preserves that concurrent award instead
+      // of discarding it via an absolute Math.max(0, remainingEssence) write.
+      essenceConfig.essence = Math.max(0, (essenceConfig.essence || 0) - essenceSpent);
 
       // Mirror essence spend to ItemVault audit trail. The pre-check above caps
       // essenceSpent to the real vault balance, so this should always succeed —
@@ -691,34 +740,31 @@ module.exports = {
       // for the entire promote cycle in one tick.
       await new Promise((r) => setTimeout(r, 0));
 
-      // PERF (2026-04-12): Batch-save promoted shadows in a single IDB
-      // transaction instead of N sequential awaits. The prior implementation
-      // did up to 50 sequential `await saveShadow()` calls per cycle, each
-      // crossing the renderer→main IPC boundary. With autoPromoteGrades
-      // running every 30s, that's a recurring burst of ~50 IPC roundtrips +
-      // 50 IDB transactions every 30s — visible in top as a cyclical
-      // ~10-15s heavy / ~15-20s quiet pattern in both Discord renderer
-      // (await scheduling) AND Discord main (IPC + IDB).
-      if (this.storageManager?.saveShadowsBatch && saveBatch.length > 0) {
-        try {
-          await this.storageManager.saveShadowsBatch(saveBatch);
-        } catch (error) {
-          this.debugError('GRADE', 'Batch save failed, falling back to individual saves', error);
-          for (const shadow of saveBatch) {
-            try {
-              await this.storageManager.saveShadow(shadow);
-            } catch (innerError) {
-              this.debugError('GRADE', 'Failed to save promoted shadow (fallback)', innerError);
+      // Merge-on-write: each id's grade advance is re-derived from the FRESH
+      // record at write time (not the stale `nextGrade` decided above),
+      // so self-heal or compression tiering rewriting the rest of the
+      // record around the same time can never revert this promotion —
+      // and this promotion can never stomp a concurrent structural change
+      // to the record, since only the grade/gr field is touched.
+      if (this.storageManager?.transformShadowsBatch && idsToPromote.length > 0) {
+        const { failedIds } = await this.storageManager.transformShadowsBatch(
+          idsToPromote,
+          (freshRecord) => {
+            const isCompressed = !!freshRecord._c;
+            const freshGrade = isCompressed ? (freshRecord.gr || 'Common') : (freshRecord.grade || 'Common');
+            const freshGradeIndex = gradeOrder.indexOf(freshGrade);
+            if (freshGradeIndex < 0 || freshGradeIndex >= maxGradeIndex) return null; // already maxed / unknown, skip
+            const freshNextGrade = gradeOrder[freshGradeIndex + 1];
+            if (isCompressed) {
+              freshRecord.gr = freshNextGrade;
+            } else {
+              freshRecord.grade = freshNextGrade;
             }
+            return freshRecord;
           }
-        }
-      } else if (this.storageManager?.saveShadow) {
-        for (const shadow of saveBatch) {
-          try {
-            await this.storageManager.saveShadow(shadow);
-          } catch (error) {
-            this.debugError('GRADE', 'Failed to save promoted shadow', error);
-          }
+        );
+        if (failedIds.length > 0) {
+          this.debugError('GRADE', `transformShadowsBatch: ${failedIds.length} promoted shadow(s) failed to save`, { failedIds });
         }
       }
       this._invalidateSnapshot?.();

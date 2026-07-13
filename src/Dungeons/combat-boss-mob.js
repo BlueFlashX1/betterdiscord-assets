@@ -812,10 +812,15 @@ module.exports = {
     }
   },
 
-  async applyDamageToBoss(channelKey, damage, source, shadowId = null, isCritical = false) {
+  async applyDamageToBoss(channelKey, damage, source, shadowId = null, isCritical = false, nowOverride = null) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
     const now = Date.now();
+    // Catch-up simulation passes a synthetic nowOverride so the phase-shield subsystem
+    // (read below + the paired write further down) sees chunks as spaced across real
+    // elapsed time, matching live combat's cadence. Scoped to phase-shield only -- the
+    // status-adjusted-damage call below keeps real Date.now() unchanged.
+    const phaseShieldNow = nowOverride != null ? nowOverride : now;
     const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
     if (!bossUnlocked) {
       dungeon.shadowsDeployed && this.ensureDeployedSpawnPipeline(channelKey, 'boss_damage_blocked');
@@ -838,7 +843,7 @@ module.exports = {
     // Boss durability pipeline (prevents one-shots):
 
     // 1) PHASE SHIELD — brief invulnerability at HP thresholds (75%, 50%, 25%)
-    if (dungeon.boss._phaseShieldExpiresAt && now < dungeon.boss._phaseShieldExpiresAt) {
+    if (dungeon.boss._phaseShieldExpiresAt && phaseShieldNow < dungeon.boss._phaseShieldExpiresAt) {
       return; // Boss is in phase shield — all damage absorbed
     }
 
@@ -872,7 +877,7 @@ module.exports = {
       const thresholdHp = maxHp * threshold;
       if (hpBefore > thresholdHp && dungeon.boss.hp <= thresholdHp && dungeon.boss.hp > 0) {
         dungeon.boss._phasesTriggered.push(threshold);
-        dungeon.boss._phaseShieldExpiresAt = now + shieldMs;
+        dungeon.boss._phaseShieldExpiresAt = phaseShieldNow + shieldMs;
         this.debugLog?.(`BOSS PHASE SHIELD triggered at ${Math.round(threshold * 100)}% HP — ${shieldMs}ms invulnerability`);
         break; // Only one phase per damage application
       }

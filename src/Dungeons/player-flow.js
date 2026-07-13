@@ -248,9 +248,15 @@ module.exports = {
     //
     // PRIORITY: Abort ShadowArmy self-heal before IDB reads — self-heal writes thousands of
     // records that starve the IDB read queue, making each warmup await take minutes.
+    let selfHealAborted = false;
     if (starterAllocationCount === 0 && this.shadowArmy?.abortSelfHeal) {
       this.shadowArmy.abortSelfHeal();
+      selfHealAborted = true;
     }
+    // GUARANTEED RESUME: every early return / thrown error between here and the end of
+    // deploy must still resume self-heal if it was aborted above -- a stranded abort
+    // otherwise disables ShadowArmy self-heal for the rest of the session.
+    try {
     if (starterAllocationCount === 0) {
       this.debugLog('DEPLOY', 'Starter allocation returned 0 — attempting recovery warmup', { channelKey });
       try {
@@ -450,10 +456,14 @@ module.exports = {
 
     dungeon._deployPendingFullAllocation = true;
     this._scheduleDeployRebalance(channelKey, deployStartedAt);
-
-    // Resume self-heal after deployment + early combat settle (30s delay)
-    if (this.shadowArmy?.resumeSelfHeal) {
-      this.shadowArmy.resumeSelfHeal(30000);
+    } finally {
+      // Resume self-heal after deployment + early combat settle (30s delay) -- fires on
+      // every return path (not just the happy-path tail) and only when self-heal was
+      // actually aborted above; unconditional resume would incorrectly schedule heal
+      // passes that were never suspended.
+      if (selfHealAborted && this.shadowArmy?.resumeSelfHeal) {
+        this.shadowArmy.resumeSelfHeal(30000);
+      }
     }
   },
 

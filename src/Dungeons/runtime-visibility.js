@@ -231,7 +231,7 @@ module.exports = {
     this._pausedIntervals.clear();
   },
 
-  async simulateShadowAttacks(channelKey, cycles) {
+  async simulateShadowAttacks(channelKey, cycles, attackIntervalMs = 3000) {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) return;
 
@@ -318,6 +318,17 @@ module.exports = {
       const baseDamagePerApplication = Math.floor(totalBossDamageOverTime / numBossDamageApplications);
       let remainingBossDamage = totalBossDamageOverTime;
 
+      // Synthetic clock for the phase-shield check inside applyDamageToBoss: this loop
+      // runs synchronously (no real time passes between chunks), but each chunk represents
+      // `cycles / numBossDamageApplications` real shadow-attack cycles worth of elapsed
+      // time. Advancing a synthetic "now" by that same span per chunk makes the 2500ms
+      // phase-shield window expire between chunks exactly as it would have if these
+      // attacks had actually happened spaced out in real time -- instead of every
+      // post-threshold chunk in this pass silently hitting the still-active shield.
+      const catchUpStartNow = Date.now();
+      const simulatedChunkSpanMs =
+        numBossDamageApplications > 0 ? (attackIntervalMs * cycles) / numBossDamageApplications : 0;
+
       for (let i = 0; i < numBossDamageApplications; i++) {
         const isLastApplication = i === numBossDamageApplications - 1;
         const damageThisApplication = isLastApplication
@@ -326,7 +337,8 @@ module.exports = {
         remainingBossDamage -= damageThisApplication;
         if (damageThisApplication <= 0) continue;
 
-        await this.applyDamageToBoss(channelKey, damageThisApplication, 'shadow-simulated');
+        const simulatedNow = catchUpStartNow + i * simulatedChunkSpanMs;
+        await this.applyDamageToBoss(channelKey, damageThisApplication, 'shadow-simulated', null, false, simulatedNow);
 
         const liveDungeon = this._getActiveDungeon(channelKey);
         if (!liveDungeon || liveDungeon.completed || liveDungeon.failed || liveDungeon.boss.hp <= 0) {
@@ -711,7 +723,7 @@ module.exports = {
 
     // Simulate shadow attacks (damage to boss and mobs) - ONE batch calculation
     if (shadowCycles > 0) {
-      await this.simulateShadowAttacks(channelKey, shadowCycles);
+      await this.simulateShadowAttacks(channelKey, shadowCycles, shadowInterval);
       const postShadowDungeon = this._getActiveDungeon(channelKey);
       if (!postShadowDungeon || postShadowDungeon.completed || postShadowDungeon.failed) return;
     }
