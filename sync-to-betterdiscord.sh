@@ -58,8 +58,12 @@ echo "✅ Theme copied"
 # Copy template theme (optional)
 echo ""
 echo "📄 Copying modular template theme..."
-cp "$SOURCE_DIR/SoloLeveling-Modular.theme.css" "$BETTERDISCORD_THEMES/"
-echo "✅ Template copied"
+if [ -f "$SOURCE_DIR/SoloLeveling-Modular.theme.css" ]; then
+    cp "$SOURCE_DIR/SoloLeveling-Modular.theme.css" "$BETTERDISCORD_THEMES/"
+    echo "✅ Template copied"
+else
+    echo "⚠️  Template file not found, skipping..."
+fi
 
 # Verify
 echo ""
@@ -68,11 +72,11 @@ if [ -f "$BETTERDISCORD_THEMES/SoloLeveling-ClearVision.theme.css" ] && \
    [ -d "$BETTERDISCORD_THEMES/variables" ]; then
     echo "✅ All files present"
 
-    # Check for import statement
-    if grep -q "@import url('./variables/variables.css')" "$BETTERDISCORD_THEMES/SoloLeveling-ClearVision.theme.css"; then
-        echo "✅ Modular import present"
+    # Check for variables import (local path or pinned GitHub raw URL)
+    if grep -q "variables/variables.css" "$BETTERDISCORD_THEMES/SoloLeveling-ClearVision.theme.css"; then
+        echo "✅ Variables import present"
     else
-        echo "⚠️  Import statement not found (this shouldn't happen)"
+        echo "⚠️  Variables import not found (this shouldn't happen)"
     fi
 
     # Count modular tokens
