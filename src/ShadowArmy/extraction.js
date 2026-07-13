@@ -542,10 +542,17 @@ module.exports = {
               }
             }
 
-            this._toast(
-              `Shadow Extracted: ${shadow.rank}-Rank ${shadow.roleName || shadow.role}`,
-              "success"
-            );
+            // TOAST NOISE (2026-07-13): per-extraction toasts fire for every
+            // single extraction — the most frequent toast in the suite — and
+            // the army widget already reflects the count in real time.
+            // Default OFF; re-enable via settings.extractionToasts. The ARISE
+            // bulk summary, capacity warnings, and errors still always toast.
+            if (this.settings.extractionToasts) {
+              this._toast(
+                `Shadow Extracted: ${shadow.rank}-Rank ${shadow.roleName || shadow.role}`,
+                "success"
+              );
+            }
 
             // PERF: Coalesced widget refresh
             this._widgetDirty = true;

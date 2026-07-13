@@ -375,19 +375,27 @@ module.exports = class Stealth {
       prevState === STEALTH_GATE_STATES.ACTIVE &&
       nextState !== STEALTH_GATE_STATES.ACTIVE;
 
+    // TOAST CONSOLIDATION (2026-07-13): one toast per user-visible state
+    // change. The "start" and "settings" paths already emit their own
+    // engaged/armed/disengaged toast, so the gate-transition toast fired a
+    // SECOND time on plugin start and on every settings toggle. Transition
+    // toasts now fire only for genuine runtime gate changes (skill events,
+    // legacy activation/expiry, manual refresh).
+    const silentReason = reason === "poll" || reason === "start" || reason === "settings";
+
     if (stoppedBeingActive) {
       if (this.settings.restoreStatusOnStop) {
         this._restoreOriginalStatus();
       }
       this._forcedInvisible = false;
-      if (reason !== "poll" && this.settings.enabled) {
+      if (!silentReason && this.settings.enabled) {
         this._toast("Stealth Technique ended. Suppression paused.", "info", 2200);
       }
     }
 
     if (becameActive) {
       this._applyStealthHardening();
-      if (reason !== "poll") {
+      if (!silentReason) {
         this._toast("Stealth Technique active. Suppression engaged.", "success", 2200);
       }
     }

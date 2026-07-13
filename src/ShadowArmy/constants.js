@@ -61,6 +61,10 @@ const ARISE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 781 405"
 
 const DEFAULT_SETTINGS = {
   enabled: true,
+  // Per-extraction "Shadow Extracted" toasts. Default OFF (2026-07-13) —
+  // they fire on every extraction and the army widget already shows the
+  // live count. ARISE summaries / warnings / errors toast regardless.
+  extractionToasts: false,
   shadows: [], // DEPRECATED: Shadows stored in IndexedDB, kept for migration compat
   totalShadowsExtracted: 0,
   lastExtractionTime: null,

@@ -246,10 +246,13 @@ module.exports = {
         `growthSaved=${growthSaved} | ${elapsedMs}ms`
       );
 
-      if (leveledUpShadows.length > 0) {
+      // TOAST NOISE (2026-07-13): routine progression counts are visible in
+      // the ShadowArmy widget; these two fired after every dungeon on top of
+      // the resurrection-completion summary. Debug-only now.
+      if (this.settings.debug && leveledUpShadows.length > 0) {
         this.showToast(`${leveledUpShadows.length} shadows leveled up after dungeon XP`, 'success');
       }
-      if (rankedUpShadows.length > 0) {
+      if (this.settings.debug && rankedUpShadows.length > 0) {
         this.showToast(`${rankedUpShadows.length} shadows ranked up after dungeon XP`, 'success');
       }
     } finally {
