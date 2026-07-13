@@ -19,6 +19,28 @@ function buildCSS() {
   // dc.sel is a lazy Proxy — first access triggers the Webpack lookups.
   const messageListItem = dc.sel.messageListItem; // e.g. ".messageListItem_a1b2" or '[class*="messageListItem_"]'
   const mentioned       = dc.sel.mentioned;       // e.g. ".mentioned_x9y8"       or '[class*="mentioned_"]'
+
+  // PERF (2026-07-13): the mentioned PRE-style needs :has() on message-list
+  // items — the hottest childList region in Discord, where every mutation
+  // re-checks :has() arguments. That's tolerable with an exact resolved
+  // class argument (hash-filterable) but NOT with the substring fallback.
+  // When webpack resolution failed, skip the pre-style entirely: the JS
+  // classify pass applies li.sw-mentioned within ~150ms anyway, so the only
+  // cost is a brief blue→gold flash on mentions in that degraded mode.
+  const mentionedPreStyle = dc.cls.mentioned ? `
+/* Mentioned messages pre-style (CSS-only, exact-class :has argument) */
+li${messageListItem}:has(div${mentioned}) {
+  border-left-color: rgba(251, 191, 36, 0.7) !important;
+  border-right-color: rgba(251, 191, 36, 0.25) !important;
+  border-top-color: rgba(251, 191, 36, 0.25) !important;
+  border-bottom-color: rgba(251, 191, 36, 0.25) !important;
+  background: rgba(251, 191, 36, 0.08) !important;
+}
+` : `
+/* Mentioned pre-style SKIPPED: webpack lookup fell back to a substring
+   selector — a substring :has() argument on the message list is too
+   expensive. JS classification (li.sw-mentioned) covers mentions. */
+`;
   const avatar          = dc.sel.avatar;          // e.g. ".avatar_c3d4"           or '[class*="avatar_"]'
   const username        = dc.sel.username;        // e.g. ".username_e5f6"         or '[class*="username_"]'
   const timestamp       = dc.sel.timestamp;       // e.g. ".timestamp_g7h8"        or '[class*="timestamp_"]'
@@ -57,20 +79,45 @@ li${messageListItem} {
   margin-top: 4px !important;
   margin-bottom: 4px !important;
   padding: 4px 12px 8px 8px !important;
-  /* PERF: box-shadow only (hover glow). border-color is JS-driven on every
-     classify pass; animating it caused paint waves across many LIs on scroll
-     and channel switch — apply border-color changes instantly instead. */
-  transition: box-shadow 200ms ease !important;
+  /* PERF (2026-07-13): no transition on the li itself. The hover glow now
+     lives on a ::after overlay whose OPACITY transitions (compositor-only)
+     — transitioning box-shadow here repainted the full 40px glow region
+     every frame for 200ms on every hover enter/leave while reading. */
 }
 
-/* Mentioned messages pre-style (CSS-only) */
-li${messageListItem}:has(div${mentioned}) {
-  border-left-color: rgba(251, 191, 36, 0.7) !important;
-  border-right-color: rgba(251, 191, 36, 0.25) !important;
-  border-top-color: rgba(251, 191, 36, 0.25) !important;
-  border-bottom-color: rgba(251, 191, 36, 0.25) !important;
-  background: rgba(251, 191, 36, 0.08) !important;
+/* Hover glow overlay: shadow is pre-declared, invisible at opacity 0, and
+   only the opacity animates — compositor-only, zero paint per frame.
+   z-index:-1 keeps it behind the li's own background; pointer-events:none
+   keeps hover targeting unchanged. The old barely-visible inset component
+   (0.1 alpha) is dropped — an overlay can't render inside-glow without
+   tinting the content. */
+li${messageListItem}::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: -1px !important;
+  border-radius: inherit !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+  opacity: 0 !important;
+  transition: opacity 200ms ease !important;
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.45),
+              0 0 40px rgba(59, 130, 246, 0.15) !important;
 }
+
+li.sw-self::after {
+  box-shadow: 0 0 20px rgba(138, 43, 226, 0.6),
+              0 0 45px rgba(138, 43, 226, 0.25) !important;
+}
+
+li.sw-mentioned::after {
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.5),
+              0 0 40px rgba(251, 191, 36, 0.2) !important;
+}
+
+li${messageListItem}:hover::after {
+  opacity: 1 !important;
+}
+${mentionedPreStyle}
 
 /* ════════════════════════════════════════════
    BASE: Classified messages (JS-applied)
@@ -87,8 +134,7 @@ li.sw-group-end {
   margin-left: 48px !important;
   margin-right: 96px !important;
   padding: 4px 12px 8px 8px !important;
-  /* PERF: see note above — box-shadow (hover) only, no border-color animation. */
-  transition: box-shadow 200ms ease !important;
+  /* PERF: see note above — hover glow lives on the ::after overlay. */
 }
 
 /* ════════════════════════════════════════════
@@ -164,13 +210,13 @@ li.sw-self.sw-group-end {
    HOVER: Glow on the codeblock
    ════════════════════════════════════════════ */
 
+/* Glow itself comes from the ::after overlay (opacity transition, defined
+   in the pre-style section — it covers classified groups too since they're
+   the same li elements). Here: only the instant border accent. */
 li.sw-group-solo:hover,
 li.sw-group-start:hover,
 li.sw-group-middle:hover,
 li.sw-group-end:hover {
-  box-shadow: 0 0 18px rgba(59, 130, 246, 0.45),
-              0 0 40px rgba(59, 130, 246, 0.15),
-              inset 0 0 12px rgba(59, 130, 246, 0.1) !important;
   border-left-color: rgba(59, 130, 246, 1) !important;
 }
 
@@ -178,9 +224,6 @@ li.sw-self.sw-group-solo:hover,
 li.sw-self.sw-group-start:hover,
 li.sw-self.sw-group-middle:hover,
 li.sw-self.sw-group-end:hover {
-  box-shadow: 0 0 20px rgba(138, 43, 226, 0.6),
-              0 0 45px rgba(138, 43, 226, 0.25),
-              inset 0 0 12px rgba(138, 43, 226, 0.1) !important;
   border-left-color: rgba(138, 43, 226, 1) !important;
 }
 
@@ -307,14 +350,11 @@ li.sw-group-end div[role="article"]:hover {
   background: transparent !important;
 }
 
-/* Mentioned hover: crimson glow */
+/* Mentioned hover: gold border accent (glow via ::after overlay). */
 li.sw-mentioned.sw-group-solo:hover,
 li.sw-mentioned.sw-group-start:hover,
 li.sw-mentioned.sw-group-middle:hover,
 li.sw-mentioned.sw-group-end:hover {
-  box-shadow: 0 0 18px rgba(251, 191, 36, 0.5),
-              0 0 40px rgba(251, 191, 36, 0.2),
-              inset 0 0 12px rgba(251, 191, 36, 0.1) !important;
   border-left-color: rgba(251, 191, 36, 1) !important;
 }
 `;
