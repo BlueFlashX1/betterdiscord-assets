@@ -312,6 +312,7 @@ class DockEngine {
     this.dockMoveTarget = nextDock;
     this.pointerOverDock = false;
     this._dockHeightDirty = true;
+    this._invalidateDockRect();
 
     if (!this.dock) return;
     if (this.dockMoveTarget) this.dockMoveTarget.classList.add("sl-hsl-dock-target");
@@ -514,6 +515,7 @@ class DockEngine {
     this.stateTarget.classList.remove("sl-dock-hidden");
     this.revealHoldUntil = trigger === "reveal-zone-hover" ? Date.now() + this.revealHoldMs : 0;
     this.debug("dock:show-applied", { trigger, revealHoldUntil: this.revealHoldUntil }, true);
+    this._invalidateDockRect(); // translate change moves the dock rect
     this.applyDockStateInline();
     this.startRailFollow(620);
   }
@@ -526,6 +528,7 @@ class DockEngine {
     this.stateTarget.classList.add("sl-dock-hidden");
     this.stateTarget.classList.remove("sl-dock-visible");
     this.debug("dock:hide-applied", {}, true);
+    this._invalidateDockRect(); // translate change moves the dock rect
     this.applyDockStateInline();
     this.startRailFollow(620);
   }
@@ -655,9 +658,19 @@ class DockEngine {
       return;
     }
 
+    // PERF fast-path (2026-07-13): the dock lives at the bottom edge. When
+    // the cursor is well above the dock band (dock height + reveal strip +
+    // slack), skip the rect read AND the elementFromPoint hit-test — that's
+    // the overwhelming majority of mousemoves (cursor in chat). All state
+    // updates below still run, so hide scheduling stays correct.
+    const dockH = parseInt(this._lastDockHeight, 10) || 80;
+    const farAboveDock =
+      this.lastMouseY < window.innerHeight - dockH - this.revealZonePx - 48;
+
     // Keep pointer-over state fresh per mouse event (safeTick refresh can be stale
     // during fast movements, which can otherwise cause premature hides).
     const cursorOnDock =
+      !farAboveDock &&
       this.isCursorInsideDockRect(this.lastMouseX, this.lastMouseY) &&
       this.isPointerOnDockHitTarget(this.lastMouseX, this.lastMouseY);
     this.pointerOverDock = cursorOnDock;
@@ -667,12 +680,23 @@ class DockEngine {
   
     }
 
-    const nearBottom = this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
+    const nearBottom = !farAboveDock && this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
     const hidden = Boolean(this.stateTarget?.classList?.contains("sl-dock-hidden"));
     const shouldReveal = hidden && nearBottom && !this.pointerOverDock && !this.isOpenSuppressed() && this.isRecentMouseMove(1200);
 
     if (shouldReveal) {
-      this.scheduleRevealShow("reveal-zone-hover");
+      // RESPONSIVENESS (2026-07-13): two-tier reveal. The wide strip (~93px)
+      // overlaps the composer's bottom edge, so it keeps revealConfirmMs as
+      // an accidental-trigger filter — but slamming the cursor to the true
+      // bottom edge (the visible peek band) is unambiguous intent: reveal
+      // instantly. The 240ms slide animation is unchanged either way.
+      const atBottomEdge = this.lastMouseY >= window.innerHeight - Math.max(16, this.peekPx + 8);
+      if (atBottomEdge) {
+        this.clearRevealTimer("bottom-edge-instant");
+        this.showDock("reveal-zone-hover");
+      } else {
+        this.scheduleRevealShow("reveal-zone-hover");
+      }
     } else {
       this.clearRevealTimer("reveal-zone-exit");
     }
@@ -711,6 +735,7 @@ class DockEngine {
 
   onResize() {
     this._dockHeightDirty = true;
+    this._invalidateDockRect();
     this.startRailFollow(700);
     // PERF: Debounce resize → safeTick via RAF to avoid redundant layout during drag-resize
     if (this._resizeRafPending) return;
@@ -821,14 +846,35 @@ class DockEngine {
 
   // Cursor Geometry
 
+  // PERF (2026-07-13): getBoundingClientRect forces layout, and the strip /
+  // dock-rect checks run on every moved frame. Cache the rect with a short
+  // TTL plus explicit invalidation on show/hide (the translate moves the
+  // rect), dock swap, and resize. Worst-case staleness is 350ms, bounded
+  // further by the invalidation hooks at every geometry-changing event.
+  _getDockRect() {
+    const now = Date.now();
+    if (this._dockRectCache && now - (this._dockRectCacheAt || 0) < 350) {
+      return this._dockRectCache;
+    }
+    if (!this.dock || !this.dock.getBoundingClientRect) return null;
+    this._dockRectCache = this.dock.getBoundingClientRect();
+    this._dockRectCacheAt = now;
+    return this._dockRectCache;
+  }
+
+  _invalidateDockRect() {
+    this._dockRectCache = null;
+    this._dockRectCacheAt = 0;
+  }
+
   isCursorInRevealStrip(x = this.lastMouseX, y = this.lastMouseY) {
     if (typeof x !== "number" || typeof y !== "number") return false;
     if (x < 0 || y < 0) return false;
     if (x > window.innerWidth || y > window.innerHeight) return false;
-    if (!this.dock || !this.dock.getBoundingClientRect) {
+    const rect = this._getDockRect();
+    if (!rect) {
       return y >= window.innerHeight - this.revealZonePx;
     }
-    const rect = this.dock.getBoundingClientRect();
     const zoneTop = Math.max(0, rect.top - this.revealZonePx);
     const zoneBottom = Math.min(window.innerHeight, rect.bottom + 2);
     return y >= zoneTop && y <= zoneBottom;
@@ -840,10 +886,10 @@ class DockEngine {
   }
 
   isCursorInsideDockRect(x = this.lastMouseX, y = this.lastMouseY) {
-    if (!this.dock || !this.dock.getBoundingClientRect) return false;
     if (typeof x !== "number" || typeof y !== "number") return false;
     if (x < 0 || y < 0) return false;
-    const rect = this.dock.getBoundingClientRect();
+    const rect = this._getDockRect();
+    if (!rect) return false;
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
   }
 
