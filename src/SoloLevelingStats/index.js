@@ -315,7 +315,6 @@ const SoloLevelingStats = class SoloLevelingStats {
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
-    this._pendingSendFallback = null;
     this.processedMessageIds = new Set();
     // Track recently processed messages to prevent duplicates
     // Must be a Map (hashKey -> timestamp). Some older versions used Set; guard in processMessageSent.
