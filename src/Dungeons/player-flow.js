@@ -388,7 +388,11 @@ module.exports = {
     }
 
     const now = Date.now();
-    if (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0) {
+    // HARDENING (2026-07-12 addendum): guard the read AND the assignment target — a bare
+    // `dungeon.boss?.lastAttackTime` on the read alone would still throw on the write below
+    // if boss were ever missing (property-set on undefined). Boss is always constructed at
+    // spawn, so this is defensive for the uncaught-exception region above, not a live bug.
+    if (dungeon.boss && (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0)) {
       dungeon.boss.lastAttackTime = now;
     }
     if (dungeon.mobs?.activeMobs) {
