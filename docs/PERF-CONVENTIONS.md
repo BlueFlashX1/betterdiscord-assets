@@ -56,18 +56,45 @@ Refuted (do NOT touch): SoloLevelingToasts messageGroups (eviction exists); Syst
 visibilitychange (correct as-is); ShadowPortalCore breathing tweens; ShadowArmy storage
 onabort handlers; CSSPicker ESM/CJS mix; plugin-bridge cache; toolbar-tooltip fallback;
 Dungeons usedIds sentinel; EquipmentManager bonus cache; SoloLevelingTheme hashed classes.
+Also refuted (wave 5): CriticalHit CSS_STYLE_IDS "dead constants" (all 6 keys refs>=2; the
+stop()-side defensive removeStyle is legitimate cleanup); SLS activityTracker 60s hidden-gate
+(R7(a)-exempt — pure arithmetic feeding away/idle grace-period accounting; gating would change
+semantics).
 
 Fixed 2026-07 wave 3 (R1-R10 conformance sweep): ShadowSenses onTypingStart monitored-check
 ordering; Dungeons handleMessage dedup-before-DOM-query + R8 preventDefault on 3 mob/dungeon
 store sites; ShadowArmy getAllShadowsRaw() (indexed stream, no wasted sort) rewiring
 compression/migrations/getAllShadows + getShadowsByIds onerror preventDefault.
 
-Parked (small, grab-bag for a future round): Dungeons mobs `extracted` never set true (GC
-branch no-op); CriticalHit content-hash restoration fallback unreachable under LEAN schema +
-dead CSS_STYLE_IDS constants + uncapped startObserving retry; SoloLevelingToasts debug-payload
-built before debugLog gate; debug-logging signature unification (6+ variants); ShadowAwayBridge
-stale committed runtime.js (NEEDS USER DECISION); Dungeons header-widget loop never self-stops
-(near-zero cost); SLS activityTracker 60s no hidden-gate (trivial arithmetic).
+Fixed 2026-07-12 (wave 5): ItemVault flush per-put onerror isolation (failed item re-dirtied,
+persisted siblings stay cleared); EquipmentManager SM-rank poll skipped/self-stopped once grant
+flag persists + popup tick hidden-gated; SkillTree dead blur/focus listeners + dead composer
+helpers removed, sustain-tick re-render isolated to ActiveSkillsSection via _manaTickForceUpdate
+(passive/innate/blessing sections out of the per-tick render path); CriticalHit startObserving
+retry capped (OBSERVER_MAX_RETRIES=20) + provably-unreachable content-hash restoration fallback
+removed (LEAN schema never populates messageContent/author); Dungeons header-widget loop
+self-stops when no dungeons/story/popup (restart hooks in spawn-core/restore-gc-toast/
+story-mode-core); SoloLevelingToasts debug-payload construction gated behind debugMode;
+ShadowPortalCore consumer refcount REBUILT — raw counter (require-time +1, every stop() −1
+incl. start()'s restart-safety self-call) drained to 0 during ordinary startup and tore the
+shared GSAP/mask cache down under active consumers, re-enable never re-acquired. Now: consumers
+Set keyed by class name, _portalCoreAcquire() on genuine activation, _portalCoreRelease() tears
+down only when a HELD key empties the Set (release-without-acquire is a full no-op so the
+cold-start self-call can't wipe the require-time preload); module-level stop() is a deprecated
+warn-once no-op.
+
+Parked (refreshed wave 5): Dungeons mobs `extracted` flag — DESIGN DECISION NEEDED: the mobs
+IDB store is write-only at runtime (only batchSaveMobs writes it; nothing ever reads), every
+write hardcodes extracted:false, and normal completion already deletes via deleteMobsByDungeon
+— the GC branch only matters for abandoned/crashed sessions. Options: (a) mark-on-death (adds
+hot-combat IDB read-modify-write — R1/R7 cost for a rare orphan case), (b) drop mob persistence
+entirely, (c) leave the GC branch as a harmless no-op. Debug-logging signature unification
+(6+ variants); ShadowAwayBridge stale committed runtime.js (NEEDS USER DECISION);
+EquipmentManager storage.js flush abort-on-error — deliberate referential-integrity design,
+dormant risk (all meta fields primitive today); add pre-transaction record validation only if
+non-primitive meta ever lands. Cosmetics (zero cost, not worth churn): ChatNavArrows
+dom-fallback.js unused createTrackedTimers instance; HSLDockAutoHide dead poller constructor
+fields; TitleModal 300ms sort-save debounce not cleared on unmount.
 
 HIGH items — RESOLVED 2026-07-11 with user approval (wave 4):
 - Self-heal every-start scan: FIXED — shadows stamped `_healV` (persists as `hv` through

@@ -218,24 +218,33 @@ var require_navigation = __commonJS({
 
 // src/ShadowPortalCore/index.js
 function _getPortalCoreState() {
-  if (window.__SL_PortalCore) return window.__SL_PortalCore;
+  if (window.__SL_PortalCore) {
+    if (!(window.__SL_PortalCore.consumers instanceof Set)) {
+      window.__SL_PortalCore.consumers = /* @__PURE__ */ new Set();
+    }
+    return window.__SL_PortalCore;
+  }
   window.__SL_PortalCore = {
     gsapLoadPromise: null,
     gsapLoaded: false,
     gsapLogSent: false,
     // GSAP script elements injected into document.head — cleaned up once the last
-    // consumer stops, to prevent accumulation across BD reloads.
+    // consumer releases, to prevent accumulation across BD reloads.
     gsapScriptEls: [],
     // CSS Portal spiral mask (PropJockey technique)
     // Preferred: imgur PNG. Fallback: procedurally generated spiral.
     spiralMaskUrl: null,
     spiralMaskReady: false,
     spiralMaskLoadedFrom: null,
-    // Consumer refcount — applyPortalCoreToClass() increments, stop() decrements.
-    // Only the last active consumer's stop() tears down the shared GSAP/mask cache,
-    // so disabling one of several concurrently-enabled portal-core plugins doesn't
-    // force the remaining ones to re-fetch GSAP from CDN.
-    consumerCount: 0
+    // Consumer hold set, keyed by stable class name — populated by the
+    // _portalCoreAcquire()/_portalCoreRelease() prototype methods (installed via
+    // applyPortalCoreToClass). Set semantics make acquire/release idempotent: a
+    // class's restart-safety self-call (start() -> stop(false) -> release) can
+    // never double-count or under-count against genuine activation, and the shared
+    // GSAP/mask cache only tears down once every genuinely-active consumer has
+    // released — so disabling one of several concurrently-enabled portal-core
+    // plugins doesn't force the remaining ones to re-fetch GSAP from CDN.
+    consumers: /* @__PURE__ */ new Set()
   };
   return window.__SL_PortalCore;
 }
@@ -2197,6 +2206,41 @@ function startDrawLoop() {
         }
       }, 50);
     };
+  },
+  /**
+   * Register this instance's genuine activation as a hold on the shared
+   * window.__SL_PortalCore cache. Idempotent (Set.add) — safe to call more than
+   * once per instance, and safe to call from a class that never releases.
+   */
+  _portalCoreAcquire() {
+    var _a;
+    const core = _getPortalCoreState();
+    const key = ((_a = this == null ? void 0 : this.constructor) == null ? void 0 : _a.name) || "UnknownPortalCoreConsumer";
+    core.consumers.add(key);
+  },
+  /**
+   * Release this instance's hold on the shared window.__SL_PortalCore cache.
+   * Idempotent (Set.delete) — a class that never acquired (e.g. the
+   * start() -> stop(false) restart-safety self-call) is a harmless no-op. Only
+   * tears down the shared GSAP/mask cache once the hold set is empty, i.e. once
+   * every genuinely-active consumer has released.
+   */
+  _portalCoreRelease() {
+    var _a;
+    const core = _getPortalCoreState();
+    const key = ((_a = this == null ? void 0 : this.constructor) == null ? void 0 : _a.name) || "UnknownPortalCoreConsumer";
+    const held = core.consumers.delete(key);
+    if (!held || core.consumers.size > 0) return;
+    core.gsapLoaded = false;
+    core.gsapLoadPromise = null;
+    core.gsapLogSent = false;
+    core.spiralMaskUrl = null;
+    core.spiralMaskReady = false;
+    core.spiralMaskLoadedFrom = null;
+    for (const el of core.gsapScriptEls) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    core.gsapScriptEls = [];
   }
 };
 function applyPortalCoreToClass(PluginClass, config = {}) {
@@ -2231,7 +2275,6 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
     });
   }
   const core = _getPortalCoreState();
-  core.consumerCount += 1;
   if (!core.gsapLoadPromise && !core.gsapLoaded) {
     methods._ensureGSAP.call({}).catch(() => {
     });
@@ -2278,20 +2321,14 @@ function stampTeleportCooldown() {
   BdApi.Data.save(SHARED_COOLDOWN_KEY, SHARED_COOLDOWN_DATA_KEY, now);
   return now;
 }
+var _stopDeprecationWarned = false;
 function stop() {
-  const core = _getPortalCoreState();
-  core.consumerCount = Math.max(0, core.consumerCount - 1);
-  if (core.consumerCount > 0) return;
-  core.gsapLoaded = false;
-  core.gsapLoadPromise = null;
-  core.gsapLogSent = false;
-  core.spiralMaskUrl = null;
-  core.spiralMaskReady = false;
-  core.spiralMaskLoadedFrom = null;
-  for (const el of core.gsapScriptEls) {
-    if (el.parentNode) el.parentNode.removeChild(el);
+  if (!_stopDeprecationWarned) {
+    _stopDeprecationWarned = true;
+    console.warn(
+      "[ShadowPortalCore] stop() is deprecated and is now a no-op \u2014 use the instance _portalCoreRelease() method installed by applyPortalCoreToClass."
+    );
   }
-  core.gsapScriptEls = [];
 }
 module.exports = {
   applyPortalCoreToClass,

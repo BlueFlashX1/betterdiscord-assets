@@ -314,6 +314,7 @@ module.exports = {
 
           this.activeDungeons.set(dungeon.channelKey, dungeon);
           this.startHPBarRestoration(); // PERF: restart if auto-stopped (idempotent)
+          this._ensureDungeonHeaderWidgetLoop(); // PERF (R7): restart if auto-stopped (idempotent)
           const channelInfo = { channelId: dungeon.channelId, guildId: dungeon.guildId };
           this.showDungeonIndicator(dungeon.channelKey, channelInfo);
           // Combat intervals are started AFTER shadow allocation below

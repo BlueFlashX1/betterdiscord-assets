@@ -122,6 +122,10 @@ module.exports = class ShadowStep {
   _activateStepResources() {
     if (this._stepResourcesActive) return;
     this._stepResourcesActive = true;
+    // Genuine activation — this is what should hold the shared ShadowPortalCore
+    // cache open, not module-require-time class registration (see PortalCore's
+    // applyPortalCoreToClass). Idempotent, so re-entering this guard is harmless.
+    this._portalCoreAcquire?.();
     this.loadSettings();
     this.initWebpack();
     this._components = buildComponents(BdApi, this);
@@ -141,8 +145,9 @@ module.exports = class ShadowStep {
 
   _teardownStepRuntime() {
     this.closePanel();
-    const _portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
-    _portalCore?.stop?.();
+    // Idempotent release — a no-op if this instance never acquired (e.g. the
+    // start() -> stop(false) restart-safety self-call below never activated).
+    this._portalCoreRelease?.();
     if (this._unpatchContextMenu) {
       try { this._unpatchContextMenu(); } catch (_) {}
       this._unpatchContextMenu = null;

@@ -368,6 +368,10 @@ module.exports = class EquipmentManager {
         this._popupTickLoop = null;
         return;
       }
+      // R7(a): skip re-render work while the tab is hidden. Does not
+      // self-stop here — popup UI is invisible but should resume ticking
+      // immediately when the tab regains visibility, no state accumulates.
+      if (document.hidden) return;
       if (this.storage.version === this._lastPopupVersion) return;
       const scrollTop = p.scrollTop;
       this._renderPopupContent(p);

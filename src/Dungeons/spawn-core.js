@@ -437,6 +437,7 @@ module.exports = {
 
     this.activeDungeons.set(channelKey, dungeon);
     this.startHPBarRestoration(); // PERF: restart if auto-stopped (idempotent)
+    this._ensureDungeonHeaderWidgetLoop(); // PERF (R7): restart if auto-stopped (idempotent)
 
     // Channel remains locked while dungeon is active (one occupied dungeon per channel).
 

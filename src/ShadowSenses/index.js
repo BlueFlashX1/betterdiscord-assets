@@ -547,6 +547,9 @@ module.exports = class ShadowSenses {
   _activateSensesResources() {
     if (this._sensesResourcesActive) return;
     this._sensesResourcesActive = true;
+    // Genuine activation — holds the shared ShadowPortalCore cache open. Idempotent,
+    // so re-entering this guard (skill re-unlock) is harmless.
+    this._portalCoreAcquire?.();
 
     this.deploymentManager = new DeploymentManager(
       (...args) => this.debugLog(...args),
@@ -666,8 +669,8 @@ module.exports = class ShadowSenses {
       // Tear down resources if active
       this._sensesResourcesActive = true; // ensure guard passes
       this._deactivateSensesResources();
-      const _portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
-      _portalCore?.stop?.();
+      // Idempotent release — a no-op if this instance never acquired.
+      this._portalCoreRelease?.();
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }

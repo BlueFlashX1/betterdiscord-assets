@@ -285,6 +285,9 @@ module.exports = class ShadowExchange {
   _activateExchangeResources() {
     if (this._exchangeResourcesActive) return;
     this._exchangeResourcesActive = true;
+    // Genuine activation — holds the shared ShadowPortalCore cache open. Idempotent,
+    // so re-entering this guard (skill re-unlock) is harmless.
+    this._portalCoreAcquire?.();
 
     this.initWebpack();
     this.initBackupPath();
@@ -329,8 +332,8 @@ module.exports = class ShadowExchange {
     } catch (err) {
       console.error("[ShadowExchange] stop() failed:", err);
     }
-    const _portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
-    _portalCore?.stop?.();
+    // Idempotent release — a no-op if this instance never acquired.
+    this._portalCoreRelease?.();
   }
 
   // Webpack Modules

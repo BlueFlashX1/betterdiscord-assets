@@ -214,6 +214,23 @@ function buildActiveSkillAction(ce, options) {
   }
 
   function ActiveSkillsSection({ onActivate, onDeactivate }) {
+    // PERF: sustain-tick mana updates bump only this section's own reducer
+    // (registered as pluginInstance._manaTickForceUpdate) instead of the
+    // whole-modal reducer, so PassiveSkillList/InnatePassivesSection/
+    // HiddenBlessingsSection stay out of the re-render path during a tick.
+    // manaInfo below is still recomputed every render of this section, so
+    // ActiveSkillCard's canActivate gating never goes stale.
+    const [, forceManaUpdate] = React.useReducer((x) => x + 1, 0);
+
+    React.useEffect(() => {
+      pluginInstance._manaTickForceUpdate = forceManaUpdate;
+      return () => {
+        if (pluginInstance._manaTickForceUpdate === forceManaUpdate) {
+          pluginInstance._manaTickForceUpdate = null;
+        }
+      };
+    }, [forceManaUpdate]);
+
     const manaInfo = pluginInstance.getManaInfo();
     return ce("div", { className: "skilltree-active-section" },
       ce("div", { className: "skilltree-active-section-header" }, ce("span", null, "Active Skills")),

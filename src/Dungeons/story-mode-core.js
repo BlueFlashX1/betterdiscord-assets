@@ -81,6 +81,7 @@ module.exports = {
       this.errorLog('STORY', 'Failed to deploy shadows in Demon Castle', error);
     }
 
+    this._ensureDungeonHeaderWidgetLoop();
     this.ensureDungeonHeaderWidget();
     this.renderDungeonHeaderPopup?.();
     this._saveDemonCastleState();

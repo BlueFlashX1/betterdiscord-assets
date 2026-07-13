@@ -364,9 +364,11 @@ const ActiveSkillMethods = {
       }
 
       // Only trigger a React reconcile when the displayed value actually changed.
-      if (typeof this._modalForceUpdate === "function" && remainingMana !== _lastDisplayedMana) {
+      // Scoped to ActiveSkillsSection's own reducer, not the whole modal —
+      // see components.js ActiveSkillsSection.
+      if (typeof this._manaTickForceUpdate === "function" && remainingMana !== _lastDisplayedMana) {
         _lastDisplayedMana = remainingMana;
-        this._modalForceUpdate();
+        this._manaTickForceUpdate();
       }
     }, tickMs);
   },

@@ -1,9 +1,12 @@
 /**
  * CriticalHit — string-hash utilities.
  *
- * Consolidates three previously-duplicate djb2 implementations:
+ * Consolidates what were three previously-duplicate djb2 implementations:
  *   - crit-engine.js `simpleHash`
- *   - restoration.js `_createSimpleContentHash`
+ *   - restoration.js `_createSimpleContentHash` (removed — fed a content-hash
+ *     match against messageHistory that was unreachable under the LEAN schema,
+ *     see history.js:415; prefixedContentHash is now unused but kept exported
+ *     as a general-purpose utility)
  *   - id-extraction.js `calculateContentHash`
  *
  * Single source of truth means a future change to the hash function

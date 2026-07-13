@@ -147,6 +147,7 @@ module.exports = class SkillTree {
     this._modalContainer = null;
     this._modalReactRoot = null;
     this._modalForceUpdate = null;
+    this._manaTickForceUpdate = null;
     this._components = null;
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
@@ -508,7 +509,6 @@ module.exports = class SkillTree {
     const handlers = this._settingsPanelHandlers;
     if (root && handlers) {
       root.removeEventListener('change', handlers.onChange);
-      root.removeEventListener('click', handlers.onClick);
     }
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;

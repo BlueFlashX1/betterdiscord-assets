@@ -6,7 +6,6 @@
 
 const C = require('./constants');
 const dc = require('../shared/discord-classes');
-const { prefixedContentHash } = require('./hash');
 
 module.exports = {
   // Core Restoration
@@ -97,30 +96,6 @@ module.exports = {
     return false;
   },
 
-  // Content Hash Matching
-
-  _createSimpleContentHash(content) {
-    // Delegates to the shared prefixedContentHash util in ./hash.js —
-    // previously duplicated across crit-engine.js, restoration.js,
-    // id-extraction.js.
-    return prefixedContentHash(content);
-  },
-
-  _matchesByContentHash(entry, contentHash) {
-    if (!entry.messageContent || !entry.author) return false;
-    // PERF: cache the computed hash on the entry so repeat calls (multiple
-    // checkForRestoration invocations scanning the same history array) don't
-    // re-hash the same entry's content every time. Entries are replaced
-    // wholesale, never mutated in place, when their content changes (see
-    // addToHistory in history.js), so a cached hash never goes stale.
-    if (entry._contentHash === undefined) {
-      const entryContent = entry.messageContent.substring(0, 100);
-      const entryHashContent = `${entry.author}:${entryContent}:${entry.timestamp || ''}`;
-      entry._contentHash = this._createSimpleContentHash(entryHashContent);
-    }
-    return entry._contentHash === contentHash;
-  },
-
   // History Entry Matching
 
   _createHistoryEntryFromPending(normalizedMsgId, pendingCrit) {
@@ -159,14 +134,6 @@ module.exports = {
     return entry;
   },
 
-  _findEntryByContentHash(channelCrits, contentHash) {
-    return channelCrits.find((entry) => {
-      const entryId = String(entry.messageId).trim();
-      if (entryId.startsWith('hash_')) return false;
-      return this._matchesByContentHash(entry, contentHash);
-    });
-  },
-
   /**
    * PERF: ID-based lookups (pendingCrits Map + O(1) _historyMap) are tried
    * first and are cheap. textContent extraction + calculateContentHash are
@@ -179,7 +146,6 @@ module.exports = {
   findHistoryEntryForRestoration(
     normalizedMsgId,
     pureMessageId,
-    channelCrits,
     messageElement
   ) {
     if (!this.isValidDiscordId(normalizedMsgId)) return { entry: null, contentHash: null };
@@ -196,6 +162,12 @@ module.exports = {
     const idEntry = this._findEntryByHistoryMap(normalizedMsgId, pureMessageId);
     if (idEntry) return { entry: idEntry, contentHash: null };
 
+    // No content-hash match against messageHistory here: history.js:415's LEAN
+    // schema never populates entry.messageContent/entry.author (unconditional,
+    // not config-gated), so a content-based match against history entries can
+    // never succeed. contentHash is still computed and returned — the caller
+    // (checkForRestoration) uses it as a pendingCrits hash-hint, which IS a
+    // live, hash-keyed lookup unrelated to the dead history-entry match.
     const messageContent = messageElement?.textContent?.trim() || '';
     const author =
       dc.query(messageElement, 'username')?.textContent?.trim() ||
@@ -204,24 +176,7 @@ module.exports = {
     const timestamp = messageElement?.querySelector?.('time')?.getAttribute('datetime') || '';
     const contentHash = this.calculateContentHash(author, messageContent, timestamp);
 
-    let hashEntry = null;
-    if (contentHash && messageContent && author) {
-      hashEntry = this._findEntryByContentHash(channelCrits, contentHash);
-
-      if (hashEntry) {
-        this.debugLog(
-          'CHECK_FOR_RESTORATION',
-          'Found match by content hash (reprocessed message)',
-          {
-            msgId: normalizedMsgId,
-            matchedId: hashEntry.messageId,
-            contentHash,
-          }
-        );
-      }
-    }
-
-    return { entry: hashEntry, contentHash };
+    return { entry: null, contentHash };
   },
 
   // Visual State Checks
@@ -466,7 +421,6 @@ module.exports = {
         const { entry: historyEntry, contentHash } = this.findHistoryEntryForRestoration(
           normalizedMsgId,
           pureMessageId,
-          channelCrits,
           messageElement
         );
 

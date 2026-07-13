@@ -1,45 +1,6 @@
 const { _PluginUtils } = require("./shared-utils");
-const dc = require('../shared/discord-classes');
 
 const SkillTreeUiMethods = {
-  _getComposerRoot() {
-    const primaryChat = this._getPrimaryChatContainer();
-    const roots = [
-      ...(primaryChat?.querySelectorAll?.(dc.sel.channelTextArea) || []),
-      ...document.querySelectorAll(dc.sel.channelTextArea),
-    ];
-
-    const uniqueRoots = Array.from(new Set(roots));
-    for (const root of uniqueRoots) {
-      if (!this._isElementVisible(root)) continue;
-      const formRoot = root.closest("form") || root;
-      const editor = formRoot.querySelector(
-        `[role="textbox"], textarea, [contenteditable="true"], ${dc.sel.slateTextArea}`
-      );
-      if (!editor) continue;
-      return formRoot;
-    }
-
-    return null;
-  },
-
-  _getPrimaryChatContainer() {
-    const cc = dc.sel.chatContent;
-    return (
-      document.querySelector(`main${cc}`) ||
-      document.querySelector(`section${cc}[role="main"]`) ||
-      document.querySelector(`section${cc}:not([role="complementary"])`) ||
-      document.querySelector(`div${cc}:not([role="complementary"])`)
-    );
-  },
-
-  _isElementVisible(element) {
-    if (!element || !element.isConnected) return false;
-    if (element.getAttribute("aria-hidden") === "true") return false;
-    const rects = element.getClientRects?.();
-    return !!(rects && rects.length > 0);
-  },
-
   /**
    * Update button text with current SP count
    */
@@ -124,6 +85,7 @@ const SkillTreeUiMethods = {
     }
     this._modalContainer = null;
     this._modalForceUpdate = null;
+    this._manaTickForceUpdate = null;
   },
 
   /**
@@ -182,28 +144,19 @@ const SkillTreeUiMethods = {
       this._windowFocusCleanup = null;
     }
 
-    this._boundHandleBlur = this._handleWindowBlur.bind(this);
-    this._boundHandleFocus = this._handleWindowFocus.bind(this);
     this._boundHandleVisibilityChange = () => {
       if (this._isStopped || document.hidden) return;
       // React patcher handles button persistence — just update tooltip
       this._setTrackedTimeout(() => this.updateButtonText(), 300);
     };
 
-    window.addEventListener("blur", this._boundHandleBlur);
-    window.addEventListener("focus", this._boundHandleFocus);
     document.addEventListener("visibilitychange", this._boundHandleVisibilityChange);
 
     // Store cleanup function
     this._windowFocusCleanup = () => {
-      window.removeEventListener("blur", this._boundHandleBlur);
-      window.removeEventListener("focus", this._boundHandleFocus);
       document.removeEventListener("visibilitychange", this._boundHandleVisibilityChange);
     };
   },
-
-  _handleWindowBlur() {},
-  _handleWindowFocus() {},
 };
 
 module.exports = { SkillTreeUiMethods };

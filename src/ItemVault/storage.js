@@ -180,7 +180,17 @@ class ItemVaultStorage {
         for (const itemId of toWrite) {
           const record = this._cache.get(itemId);
           if (record) {
-            store.put(record);
+            const putReq = store.put(record);
+            putReq.onerror = (e) => {
+              // Prevent one malformed record from aborting the whole batch
+              // transaction and wedging currency persistence for every
+              // other item (R8). Only the failed item goes back into dirty
+              // — items that already succeeded stay cleared.
+              e.preventDefault();
+              e.stopPropagation();
+              console.error('[ItemVault] flush: put failed for item', itemId, e.target.error);
+              this._dirty.add(itemId);
+            };
           }
         }
 

@@ -70,6 +70,11 @@ const CHANNEL_CHANGE_DELAY = 500;
 const OBSERVER_RETRY_DELAY_MS = 500;
 const LOAD_OBSERVER_TIMEOUT_MS = 5000;
 const OBSERVER_ERROR_RETRY_DELAY_MS = 1000;
+// PERF (R7): bound startObserving()'s self-retry — a channel with no message
+// container should give up rather than retry forever. 20 * 500ms = 10s container-
+// not-found budget; 20 * 1000ms = 20s observe()-threw budget. Mirrors
+// SystemWindow/index.js:_findAndObserve's retryCount<10 bounded-retry pattern.
+const OBSERVER_MAX_RETRIES = 20;
 
 const PERIODIC_CLEANUP_INTERVAL_MS = 30 * 60 * 1000;
 const DEFAULT_HISTORY_RETENTION_DAYS = 30;
@@ -163,6 +168,7 @@ module.exports = {
   OBSERVER_RETRY_DELAY_MS,
   LOAD_OBSERVER_TIMEOUT_MS,
   OBSERVER_ERROR_RETRY_DELAY_MS,
+  OBSERVER_MAX_RETRIES,
   PERIODIC_CLEANUP_INTERVAL_MS,
   DEFAULT_HISTORY_RETENTION_DAYS,
   MESSAGE_CONTAINER_CACHE_TTL_MS,

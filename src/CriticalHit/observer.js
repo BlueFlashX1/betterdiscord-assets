@@ -115,7 +115,7 @@ module.exports = {
 
   // Observer Setup
 
-  startObserving() {
+  startObserving(retryCount = 0) {
     if (this._isStopped) return;
     if (this.messageObserver) {
       this.messageObserver.disconnect();
@@ -125,11 +125,20 @@ module.exports = {
     const messageContainer = this._findMessageContainer();
 
     if (!messageContainer) {
+      // PERF (R7): bounded retry — a channel/context that never produces a message
+      // container (e.g. torn-down UI, unsupported channel type) must not retry forever.
+      if (retryCount >= C.OBSERVER_MAX_RETRIES) {
+        this.debugError('START_OBSERVING', 'Message container not found after max retries — giving up until next explicit startObserving() call', {
+          retries: retryCount,
+        });
+        return;
+      }
       this.debug?.verbose &&
         this.debugLog('START_OBSERVING', 'Message container not found - retrying', {
           retryDelayMs: C.OBSERVER_RETRY_DELAY_MS,
+          retryCount,
         });
-      this._setTrackedTimeout(() => this.startObserving(), C.OBSERVER_RETRY_DELAY_MS);
+      this._setTrackedTimeout(() => this.startObserving(retryCount + 1), C.OBSERVER_RETRY_DELAY_MS);
       return;
     }
 
@@ -340,7 +349,14 @@ module.exports = {
         hasObserver: !!this.messageObserver,
         hasContainer: !!messageContainer,
       });
-      this._setTrackedTimeout(() => this.startObserving(), C.OBSERVER_ERROR_RETRY_DELAY_MS);
+      // PERF (R7): bounded retry — same cap as the container-not-found path above.
+      if (retryCount >= C.OBSERVER_MAX_RETRIES) {
+        this.debugError('START_OBSERVING', 'observe() kept throwing after max retries — giving up until next explicit startObserving() call', {
+          retries: retryCount,
+        });
+        return;
+      }
+      this._setTrackedTimeout(() => this.startObserving(retryCount + 1), C.OBSERVER_ERROR_RETRY_DELAY_MS);
       return;
     }
 

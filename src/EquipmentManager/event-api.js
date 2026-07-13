@@ -62,11 +62,15 @@ module.exports = {
 
     // Shadow Monarch rank-change detection: check on startup, then poll
     // every 30 s. Guarded by a persisted once-flag so items are granted
-    // exactly once even across plugin reloads or Discord restarts.
+    // exactly once even across plugin reloads or Discord restarts. Skip
+    // starting the poll entirely if the grant was already persisted in a
+    // prior session — the interval only exists to catch the rank-up.
     this._checkShadowMonarchGrant();
-    this._smRankPollInterval = setInterval(() => {
-      this._checkShadowMonarchGrant();
-    }, 30_000);
+    if (!BdApi.Data.load(PLUGIN_NAME, SM_GRANT_FLAG_KEY)) {
+      this._smRankPollInterval = setInterval(() => {
+        this._checkShadowMonarchGrant();
+      }, 30_000);
+    }
   },
 
   _unmountEventListeners() {
@@ -118,6 +122,12 @@ module.exports = {
 
       // 4. Persist the once-flag so this never runs again.
       BdApi.Data.save(PLUGIN_NAME, SM_GRANT_FLAG_KEY, true);
+
+      // Grant is now permanent — stop the poll, it has nothing left to check.
+      if (this._smRankPollInterval) {
+        clearInterval(this._smRankPollInterval);
+        this._smRankPollInterval = null;
+      }
 
       // 5. Notify the player and refresh the popup if open.
       BdApi.UI.showToast(

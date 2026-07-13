@@ -17,24 +17,36 @@
 // shared/event-bus.js / shared/dom-bus.js) so all three plugins share ONE GSAP CDN load
 // and ONE spiral-mask preload instead of racing three independent copies.
 function _getPortalCoreState() {
-  if (window.__SL_PortalCore) return window.__SL_PortalCore;
+  if (window.__SL_PortalCore) {
+    // Back-compat: a live global left over from a pre-Set build (old integer
+    // `consumerCount` refcount) survives a BD reload without this field. Add it
+    // without disturbing the rest of the cached state (GSAP load / mask stay warm).
+    if (!(window.__SL_PortalCore.consumers instanceof Set)) {
+      window.__SL_PortalCore.consumers = new Set();
+    }
+    return window.__SL_PortalCore;
+  }
   window.__SL_PortalCore = {
     gsapLoadPromise: null,
     gsapLoaded: false,
     gsapLogSent: false,
     // GSAP script elements injected into document.head — cleaned up once the last
-    // consumer stops, to prevent accumulation across BD reloads.
+    // consumer releases, to prevent accumulation across BD reloads.
     gsapScriptEls: [],
     // CSS Portal spiral mask (PropJockey technique)
     // Preferred: imgur PNG. Fallback: procedurally generated spiral.
     spiralMaskUrl: null,
     spiralMaskReady: false,
     spiralMaskLoadedFrom: null,
-    // Consumer refcount — applyPortalCoreToClass() increments, stop() decrements.
-    // Only the last active consumer's stop() tears down the shared GSAP/mask cache,
-    // so disabling one of several concurrently-enabled portal-core plugins doesn't
-    // force the remaining ones to re-fetch GSAP from CDN.
-    consumerCount: 0,
+    // Consumer hold set, keyed by stable class name — populated by the
+    // _portalCoreAcquire()/_portalCoreRelease() prototype methods (installed via
+    // applyPortalCoreToClass). Set semantics make acquire/release idempotent: a
+    // class's restart-safety self-call (start() -> stop(false) -> release) can
+    // never double-count or under-count against genuine activation, and the shared
+    // GSAP/mask cache only tears down once every genuinely-active consumer has
+    // released — so disabling one of several concurrently-enabled portal-core
+    // plugins doesn't force the remaining ones to re-fetch GSAP from CDN.
+    consumers: new Set(),
   };
   return window.__SL_PortalCore;
 }
@@ -2200,6 +2212,48 @@ function startDrawLoop() {
       setTimeout(() => { try { worker.terminate(); } catch (_) {} }, 50);
     };
   },
+
+  /**
+   * Register this instance's genuine activation as a hold on the shared
+   * window.__SL_PortalCore cache. Idempotent (Set.add) — safe to call more than
+   * once per instance, and safe to call from a class that never releases.
+   */
+  _portalCoreAcquire() {
+    const core = _getPortalCoreState();
+    const key = this?.constructor?.name || "UnknownPortalCoreConsumer";
+    core.consumers.add(key);
+  },
+
+  /**
+   * Release this instance's hold on the shared window.__SL_PortalCore cache.
+   * Idempotent (Set.delete) — a class that never acquired (e.g. the
+   * start() -> stop(false) restart-safety self-call) is a harmless no-op. Only
+   * tears down the shared GSAP/mask cache once the hold set is empty, i.e. once
+   * every genuinely-active consumer has released.
+   */
+  _portalCoreRelease() {
+    const core = _getPortalCoreState();
+    const key = this?.constructor?.name || "UnknownPortalCoreConsumer";
+    // Only a genuine hold being released may trigger teardown. A release with
+    // no prior acquire (the start() -> stop(false) restart-safety self-call,
+    // which fires BEFORE first activation) must be a full no-op — otherwise
+    // the cold-start self-call finds an empty Set and wipes the require-time
+    // GSAP/mask preload before the first consumer ever acquires.
+    const held = core.consumers.delete(key);
+    if (!held || core.consumers.size > 0) return;
+
+    core.gsapLoaded = false;
+    core.gsapLoadPromise = null;
+    core.gsapLogSent = false;
+    core.spiralMaskUrl = null;
+    core.spiralMaskReady = false;
+    core.spiralMaskLoadedFrom = null;
+    // Remove GSAP script tags injected during this session to prevent accumulation across BD reloads
+    for (const el of core.gsapScriptEls) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+    core.gsapScriptEls = [];
+  },
 };
 
 function applyPortalCoreToClass(PluginClass, config = {}) {
@@ -2237,10 +2291,11 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
     });
   }
 
-  // Track this consumer against the shared cache so stop() only tears down
-  // window.__SL_PortalCore once every registered consumer has stopped.
+  // Ensure the shared cache (and its consumers Set) exists so the preloads below
+  // have somewhere to land. Registration no longer holds the cache open by itself —
+  // genuine activation does that via the _portalCoreAcquire() method installed
+  // above, called from the consumer's real activation path (not from start()).
   const core = _getPortalCoreState();
-  core.consumerCount += 1;
 
   // Fire-and-forget GSAP preload so it's ready by first portal animation.
   // Safe no-op if CDN is blocked — vanilla canvas path will be used instead.
@@ -2314,30 +2369,26 @@ function stampTeleportCooldown() {
 }
 
 /**
- * Decrement this consumer's hold on the shared window.__SL_PortalCore cache.
- * Call from the host plugin's stop() method. Since ShadowStep, ShadowExchange,
- * and ShadowSenses all depend on the SAME cached GSAP load / spiral mask, the
- * destructive reset (clearing the cache, removing injected <script> tags) only
- * runs once the LAST active consumer stops — otherwise disabling one of several
- * concurrently-enabled portal-core plugins would force the others to re-fetch
- * GSAP from CDN and briefly lose their portal styling.
+ * Deprecated. The consumerCount-integer refcount this decremented was replaced by
+ * the consumers Set (see _getPortalCoreState) plus the instance-level
+ * _portalCoreAcquire()/_portalCoreRelease() prototype methods installed by
+ * applyPortalCoreToClass — those track genuine per-instance activation instead of
+ * one-decrement-per-stop()-call, which drained the old refcount to 0 during
+ * ordinary startup (every consumer's start() self-calls stop()).
+ *
+ * No known src/ callers remain as of this change. Kept as a no-op (rather than
+ * removed) so a stale external caller can't rip the shared cache out from under
+ * active siblings by driving a real decrement.
  */
+let _stopDeprecationWarned = false;
 function stop() {
-  const core = _getPortalCoreState();
-  core.consumerCount = Math.max(0, core.consumerCount - 1);
-  if (core.consumerCount > 0) return;
-
-  core.gsapLoaded = false;
-  core.gsapLoadPromise = null;
-  core.gsapLogSent = false;
-  core.spiralMaskUrl = null;
-  core.spiralMaskReady = false;
-  core.spiralMaskLoadedFrom = null;
-  // Remove GSAP script tags injected during this session to prevent accumulation across BD reloads
-  for (const el of core.gsapScriptEls) {
-    if (el.parentNode) el.parentNode.removeChild(el);
+  if (!_stopDeprecationWarned) {
+    _stopDeprecationWarned = true;
+    console.warn(
+      "[ShadowPortalCore] stop() is deprecated and is now a no-op — use the " +
+      "instance _portalCoreRelease() method installed by applyPortalCoreToClass."
+    );
   }
-  core.gsapScriptEls = [];
 }
 
 module.exports = {

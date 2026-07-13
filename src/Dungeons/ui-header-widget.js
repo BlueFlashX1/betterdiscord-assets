@@ -38,13 +38,34 @@ module.exports = {
       this.ensureDungeonHeaderWidget();
     });
 
+    this._ensureDungeonHeaderWidgetLoop();
+  },
+
+  // PERF (R7): idempotent — safe to call from any site that may bring the widget
+  // back to life (dungeon creation, story mode entry) after the loop self-stopped.
+  // Mirrors runtime-visibility.js:startHPBarRestoration's restart-on-demand pattern.
+  _ensureDungeonHeaderWidgetLoop() {
+    if (this._dungeonHeaderWidgetLoop) return;
+
     // Popup content refresh: keep a lightweight interval ONLY for re-rendering the
-    // open popup and badge when it's visible. Toolbar placement is now event-driven
-    // above, so this loop no longer calls ensureDungeonHeaderWidget().
+    // open popup and badge when it's visible. Toolbar placement is event-driven
+    // (watchToolbar above), so this loop no longer calls ensureDungeonHeaderWidget().
     const popupTick = () => {
       if (!this.started) return;
+
+      // PERF (R7b): self-stop when there's nothing left to poll for — no active
+      // dungeons, no story mode, and no open popup. Restarted by
+      // _ensureDungeonHeaderWidgetLoop() calls at dungeon/story-mode start sites.
+      const hasActiveDungeons = this.activeDungeons && this.activeDungeons.size > 0;
+      const hasStoryMode = this._storyModeActive || this._demonCastle != null;
+      const popupOpen = this._dungeonHeaderPopup?.isConnected;
+      if (!hasActiveDungeons && !hasStoryMode && !popupOpen) {
+        this._stopDungeonHeaderWidgetLoop();
+        return;
+      }
+
       if (document.hidden) return; // PERF: Skip DOM work when window not visible
-      if (this._dungeonHeaderPopup?.isConnected) {
+      if (popupOpen) {
         this.renderDungeonHeaderPopup();
         this.queueDungeonHeaderPopupPosition();
       } else {
@@ -56,16 +77,20 @@ module.exports = {
     this._intervals.add(this._dungeonHeaderWidgetLoop);
   },
 
-  stopDungeonHeaderWidget() {
-    if (this._unwatchToolbar) {
-      this._unwatchToolbar();
-      this._unwatchToolbar = null;
-    }
+  _stopDungeonHeaderWidgetLoop() {
     if (this._dungeonHeaderWidgetLoop) {
       clearInterval(this._dungeonHeaderWidgetLoop);
       this._intervals.delete(this._dungeonHeaderWidgetLoop);
       this._dungeonHeaderWidgetLoop = null;
     }
+  },
+
+  stopDungeonHeaderWidget() {
+    if (this._unwatchToolbar) {
+      this._unwatchToolbar();
+      this._unwatchToolbar = null;
+    }
+    this._stopDungeonHeaderWidgetLoop();
 
     this.closeDungeonHeaderPopup();
 

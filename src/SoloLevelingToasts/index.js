@@ -480,13 +480,18 @@ module.exports = class SoloLevelingToasts {
   _showToastInternal(message, type = "info", timeout = null, options = {}) {
     if (this._isStopped) return;
 
-    this.debugLog("SHOW_TOAST", "Toast request received", {
-      message: message?.substring(0, 100),
-      type,
-      timeout,
-      enabled: this.settings.enabled,
-      activeToasts: this.activeToasts.length,
-    });
+    // PERF (R3): guard payload construction at the call site — debugLog()
+    // itself gates on this.debugMode, but the object literal (incl. the
+    // .substring() call) was being built on every single toast regardless.
+    if (this.debugMode) {
+      this.debugLog("SHOW_TOAST", "Toast request received", {
+        message: message?.substring(0, 100),
+        type,
+        timeout,
+        enabled: this.settings.enabled,
+        activeToasts: this.activeToasts.length,
+      });
+    }
 
     if (!this.settings.enabled) {
       this.debugLog("SHOW_TOAST", "Plugin disabled, using fallback toast");
@@ -584,12 +589,15 @@ module.exports = class SoloLevelingToasts {
 
       this._scheduleToastFadeOut(toast, toastTimeout);
 
-      this.debugLog("SHOW_TOAST", "Toast created and displayed", {
-        toastType,
-        timeout: toastTimeout,
-        activeToasts: this.activeToasts.length,
-        containerExists: !!this.toastContainer,
-      });
+      // PERF (R3): same call-site guard as above.
+      if (this.debugMode) {
+        this.debugLog("SHOW_TOAST", "Toast created and displayed", {
+          toastType,
+          timeout: toastTimeout,
+          activeToasts: this.activeToasts.length,
+          containerExists: !!this.toastContainer,
+        });
+      }
     } catch (error) {
       this.debugError("SHOW_TOAST", error, {
         message: message?.substring(0, 100),
