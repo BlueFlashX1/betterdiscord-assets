@@ -248,6 +248,7 @@ module.exports = {
       const rankOrder = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : [];
       const rankHintIndex =
         dungeonRank && rankOrder.length > 0 ? this.getRankIndexValue(dungeonRank, rankOrder) : -1;
+      const triedRankIndices = new Set();
       if (rankHintIndex >= 0) {
         const rankOffsets = [0, 1, -1, 2, -2, 3, -3];
         const perRankLimit = this.clampNumber(
@@ -258,14 +259,60 @@ module.exports = {
         for (let i = 0; i < rankOffsets.length && candidates.length < desiredCount; i++) {
           const rankIdx = rankHintIndex + rankOffsets[i];
           if (rankIdx < 0 || rankIdx >= rankOrder.length) continue;
+          triedRankIndices.add(rankIdx);
           const rank = rankOrder[rankIdx];
-          const rows = await shadowStorage.getShadows({ rank }, 0, perRankLimit);
+          // BOUNDED FETCH (wave 9c, 2026-07-13): getShadows({rank}) looks filtered but opens
+          // the rank index with NO key range -- it cursor-walks the entire 281k store, JS-
+          // filters, and for a populous rank materializes + sorts the whole bucket before
+          // slicing (the 45s-stall class hiding behind a filtered-looking call). Use the
+          // genuinely index-bounded getAll(rank, limit) primitive instead; only semantic
+          // delta is within-rank selection order (index order vs recency), immaterial to the
+          // tiered bucket picker downstream and already the order the wave-9b cascade uses.
+          const rows = shadowStorage.getShadowsByRankLimited
+            ? await shadowStorage.getShadowsByRankLimited(rank, perRankLimit)
+            : await shadowStorage.getShadows({ rank }, 0, perRankLimit);
           pushCandidates(rows);
           rankQueryCount++;
           if (rankQueryCount % 2 === 0) {
             await this._yieldToEventLoop();
             if (!this.started) return 0;
           }
+        }
+
+        // FILL-DOWN CASCADE (wave 9b, 2026-07-12): the ±3 offset window above can be
+        // entirely empty on a bottom-heavy army (mass of low-rank shadows, few high-rank)
+        // for a high-rank dungeon. Walk DOWN the rest of the ladder toward E, fetching
+        // just enough per rank to cover what's still needed (limit = remaining need, not
+        // a small constant). Uses getShadowsByRankLimited (index('rank').getAll(rank,
+        // limit)) -- a genuinely bounded indexed lookup, unlike the unfiltered-scan-shaped
+        // getShadows({rank}) call above -- so this doesn't add scan cost, only targeted reads.
+        if (candidates.length < desiredCount && shadowStorage.getShadowsByRankLimited) {
+          const lowestTried = Math.min(rankHintIndex, ...Array.from(triedRankIndices));
+          let cascadeSteps = 0;
+          for (let rankIdx = lowestTried - 1; rankIdx >= 0 && candidates.length < desiredCount; rankIdx--) {
+            if (triedRankIndices.has(rankIdx)) continue;
+            triedRankIndices.add(rankIdx);
+            const rank = rankOrder[rankIdx];
+            if (!rank) continue;
+            const remaining = desiredCount - candidates.length;
+            try {
+              const rows = await shadowStorage.getShadowsByRankLimited(
+                rank,
+                this.clampNumber(remaining, 80, 100000)
+              );
+              pushCandidates(rows);
+            } catch (error) {
+              this.errorLog('DEPLOY', 'Warm-pool fill-down cascade query failed', { rank, error });
+            }
+            cascadeSteps++;
+            if (cascadeSteps % 2 === 0) {
+              await this._yieldToEventLoop();
+              if (!this.started) return 0;
+            }
+          }
+          this.settings.debug && cascadeSteps > 0 && this.debugLog('DEPLOY', 'Warm-pool fill-down cascade ran', {
+            dungeonRank, desiredCount, candidatesAfterCascade: candidates.length, cascadeSteps,
+          });
         }
       }
 
@@ -342,20 +389,16 @@ module.exports = {
 
     const candidates = [];
     const seenIds = new Set();
-    for (let i = 0; i < rankOffsets.length && candidates.length < desiredCount; i++) {
-      const rankIdx = rankHintIndex >= 0 ? rankHintIndex + rankOffsets[i] : -1;
-      const rank = rankIdx >= 0 && rankIdx < rankOrder.length ? rankOrder[rankIdx] : null;
-      if (!rank) continue;
-
+    const triedRankIndices = new Set();
+    const fetchRank = async (rank, limit) => {
       let rows;
       try {
-        rows = await shadowStorage.getShadowsByRankLimited(rank, perRankLimit);
+        rows = await shadowStorage.getShadowsByRankLimited(rank, limit);
       } catch (error) {
         this.errorLog('DEPLOY', 'Last-resort bounded rank query failed', { rank, error });
-        continue;
+        return;
       }
-      if (!Array.isArray(rows) || rows.length === 0) continue;
-
+      if (!Array.isArray(rows) || rows.length === 0) return;
       for (let j = 0; j < rows.length; j++) {
         let normalized = this.normalizeShadowId(rows[j]);
         if ((!normalized || !this.getShadowIdValue(normalized)) && this.shadowArmy.getShadowData) {
@@ -372,11 +415,49 @@ module.exports = {
         seenIds.add(idKey);
         candidates.push(normalized);
       }
+    };
+
+    for (let i = 0; i < rankOffsets.length && candidates.length < desiredCount; i++) {
+      const rankIdx = rankHintIndex >= 0 ? rankHintIndex + rankOffsets[i] : -1;
+      const rank = rankIdx >= 0 && rankIdx < rankOrder.length ? rankOrder[rankIdx] : null;
+      if (!rank) continue;
+      triedRankIndices.add(rankIdx);
+      await fetchRank(rank, perRankLimit);
 
       if (i % 2 === 1) {
         await this._yieldToEventLoop();
         if (!this.started) return 0;
       }
+    }
+
+    // FILL-DOWN CASCADE (wave 9b, 2026-07-12): the offset window above only reaches
+    // dungeonRank ± 3 -- on a bottom-heavy army (mass of low-rank shadows, few high-rank),
+    // a Monarch-tier dungeon's window (SSS..Shadow Monarch) can be genuinely empty while
+    // hundreds of thousands of E/D/C shadows sit untouched. Walk DOWN the rest of the
+    // ladder, lowest-tried-rank-minus-one down to E, fetching just enough per rank to
+    // cover what's still needed (limit = remaining need, not a small constant -- the
+    // E-tier fetch on a bottom-heavy army may need to supply most of the target).
+    // Still fully R1-bounded: every call goes through getShadowsByRankLimited's indexed
+    // getAll(rank, limit), never an unbounded/full-store scan.
+    if (candidates.length < desiredCount && rankHintIndex >= 0 && rankOrder.length > 0) {
+      const lowestTried = Math.min(rankHintIndex, ...Array.from(triedRankIndices));
+      let cascadeSteps = 0;
+      for (let rankIdx = lowestTried - 1; rankIdx >= 0 && candidates.length < desiredCount; rankIdx--) {
+        if (triedRankIndices.has(rankIdx)) continue;
+        triedRankIndices.add(rankIdx);
+        const rank = rankOrder[rankIdx];
+        if (!rank) continue;
+        const remaining = desiredCount - candidates.length;
+        await fetchRank(rank, this.clampNumber(remaining, perRankLimit, 100000));
+        cascadeSteps++;
+        if (cascadeSteps % 2 === 0) {
+          await this._yieldToEventLoop();
+          if (!this.started) return 0;
+        }
+      }
+      this.settings.debug && candidates.length > 0 && this.debugLog('DEPLOY', 'Last-resort fill-down cascade ran', {
+        dungeonRank, desiredCount, candidatesAfterCascade: candidates.length, cascadeSteps,
+      });
     }
 
     if (candidates.length === 0) return 0;
@@ -749,6 +830,35 @@ module.exports = {
         blockedSetSize: blockedIds.size,
         exchangeBlockedSetSize: exchangeBlockedIds.size,
         sensesBlockedSetSize: sensesBlockedIds.size,
+      });
+    }
+
+    // Composition visibility (wave 9b, 2026-07-12): with the fill-down cascade now able
+    // to pull deep under-ranked shadows to meet high-rank targets, surface what actually
+    // got deployed so a bottom-heavy-army player can see fill-down working rather than
+    // just a final count. Example: "Deployed 150,000: E:120k D:20k C:8k S:2k".
+    if (this.settings.debug && picked.length > 0) {
+      const rankTally = new Map();
+      for (let i = 0; i < picked.length; i++) {
+        const r = picked[i]?.rank || 'E';
+        rankTally.set(r, (rankTally.get(r) || 0) + 1);
+      }
+      const rankOrderForLog = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : [];
+      const formatCount = (n) => {
+        if (n >= 1000000) return (n % 1000000 === 0 ? n / 1000000 : (n / 1000000).toFixed(1)) + 'M';
+        if (n >= 1000) return (n % 1000 === 0 ? n / 1000 : (n / 1000).toFixed(1)) + 'k';
+        return String(n);
+      };
+      const orderedRanks = rankOrderForLog.length > 0
+        ? rankOrderForLog.filter((r) => rankTally.has(r))
+        : Array.from(rankTally.keys());
+      const composition = orderedRanks.map((r) => `${r}:${formatCount(rankTally.get(r))}`).join(' ');
+      this.debugLog('DEPLOY', `Deployed ${picked.length.toLocaleString()}: ${composition}`, {
+        channelKey,
+        dungeonRank: dungeon?.rank,
+        targetCount,
+        pickedCount: picked.length,
+        rankBreakdown: Object.fromEntries(rankTally),
       });
     }
 
