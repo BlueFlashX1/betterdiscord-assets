@@ -368,11 +368,11 @@ function extractPresenceUpdates(payload, monitoredIds) {
     }
   }
 
-  const directUserId = resolvePresenceUpdateUserId(payload);
-  if (directUserId && (!monitoredIds || monitoredIds.has(directUserId))) {
-    const directStatus = resolvePresenceUpdateStatus(payload, normalizer);
-    upsertUpdate(directUserId, directStatus);
-  }
+  // PERF (2026-07-13): the former "direct payload" fallback here was fully
+  // redundant — updateGroups[0] IS the payload, and the flattener pushes any
+  // object with a resolvable user id (the single-update form included), so
+  // the fallback just re-resolved the same id and status a second/third
+  // time on EVERY gateway PRESENCE_UPDATE while anyone was monitored.
 
   return Array.from(updatesByUserId.values());
 }

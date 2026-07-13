@@ -642,13 +642,27 @@ function buildComponents(pluginRef) {
           setFeed(engine.getActiveFeed());
         } catch (err) { pluginRef.debugLog?.("REACT", "Feed refresh error", err); }
       };
+      // PERF (2026-07-13): debounce the change events. Every detection bumps
+      // _feedVersion, and each bump re-ran getActiveFeed's full entries+sort
+      // (up to the global cap) while the panel was open. A 300ms trailing
+      // debounce collapses detection bursts into one recompute; the panel is
+      // a monitoring surface — 300ms staleness is imperceptible.
+      let debounceTimer = null;
+      const scheduleRefresh = () => {
+        if (document.hidden || debounceTimer) return;
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null;
+          refresh();
+        }, 300);
+      };
       // Initial paint
       try {
         setFeed(engine.getActiveFeed());
       } catch (err) { pluginRef.debugLog?.("REACT", "Feed initial load error", err); }
-      if (engine._feedBus) engine._feedBus.addEventListener("change", refresh);
+      if (engine._feedBus) engine._feedBus.addEventListener("change", scheduleRefresh);
       return () => {
-        if (engine._feedBus) engine._feedBus.removeEventListener("change", refresh);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        if (engine._feedBus) engine._feedBus.removeEventListener("change", scheduleRefresh);
       };
     }, []);
 

@@ -22,8 +22,12 @@ function clearGuildBurstEntries(ctx, guildId) {
 function enforceGuildFeedCap(ctx, guildId) {
   const feed = ctx._guildFeeds[guildId];
   if (!feed || feed.length <= GUILD_FEED_CAP) return;
-  feed.shift();
-  ctx._totalFeedEntries--;
+  // PERF (2026-07-13): batch-trim 10% like the global cap's slice() instead
+  // of an O(n) shift() per overflow message — at cap in a busy guild that
+  // shift ran on every single detection.
+  const removeCount = Math.max(1, Math.floor(GUILD_FEED_CAP * 0.1));
+  const removed = feed.splice(0, Math.min(removeCount, feed.length - 1));
+  ctx._totalFeedEntries -= removed.length;
   clearGuildBurstEntries(ctx, guildId);
 }
 
