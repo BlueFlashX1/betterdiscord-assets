@@ -374,6 +374,20 @@ module.exports = {
 
   checkForRestoration(node) {
     if (!this.currentChannelId || this.isLoadingChannel) return;
+    // PERF (2026-07-13): gate on the (previously decorative) enabled toggle.
+    if (this.settings?.enabled === false) return;
+
+    // PERF (2026-07-13): fast path — if this channel has no own-crit history and
+    // nothing is pending, no node can ever need restoration. getCritHistory is
+    // 5s-cached with the same channel key used below, so this is a cache hit on
+    // every observer tick. Skips getMessageIdentifier entirely for channels where
+    // the user has never critted (i.e. most foreign-message traffic).
+    if (
+      this.getCritHistory(this.currentChannelId).length === 0 &&
+      (!this.pendingCrits || this.pendingCrits.size === 0)
+    ) {
+      return;
+    }
 
     const messageElement = this.findMessageElementForRestoration(node);
     if (messageElement) {

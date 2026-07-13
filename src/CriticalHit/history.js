@@ -537,20 +537,26 @@ module.exports = {
         this._throttledSaveHistory(false); // Queue save for non-crits (throttled)
       }
 
-      const finalCritCount = this.getCritHistory().length;
-      this.debugLog(
-        'ADD_TO_HISTORY',
-        isCrit ? 'SUCCESS: Crit message added to history' : 'Message added to history',
-        {
-          historySize: this.messageHistory.length,
-          totalCritCount: finalCritCount,
-          isCrit: historyEntry.isCrit,
-          hasCritSettings: !!historyEntry.critSettings,
-          messageId: messageData.messageId,
-          authorId: messageData.authorId,
-          channelId: messageData.channelId,
-        }
-      );
+      // PERF (2026-07-13): getCritHistory() here was computed unconditionally as a
+      // debug-log argument. Beyond the wasted filter pass, calling it with no
+      // channelId (key 'all') CLOBBERED the single-slot cache keyed to the current
+      // channel — so every own message sent invalidated the cache that
+      // checkForRestoration relies on. Only compute when debug logging is on.
+      if (this.debug?.enabled) {
+        this.debugLog(
+          'ADD_TO_HISTORY',
+          isCrit ? 'SUCCESS: Crit message added to history' : 'Message added to history',
+          {
+            historySize: this.messageHistory.length,
+            totalCritCount: this.getCritHistory().length,
+            isCrit: historyEntry.isCrit,
+            hasCritSettings: !!historyEntry.critSettings,
+            messageId: messageData.messageId,
+            authorId: messageData.authorId,
+            channelId: messageData.channelId,
+          }
+        );
+      }
     } catch (error) {
       this.debugError('ADD_TO_HISTORY', error, {
         messageId: messageData?.messageId,
@@ -597,6 +603,8 @@ module.exports = {
    */
   restoreChannelCrits(channelId, retryCount = 0) {
     if (this._isStopped) return;
+    // PERF (2026-07-13): gate on the (previously decorative) enabled toggle.
+    if (this.settings?.enabled === false) return;
 
     const targetChannelId = channelId || this.currentChannelId || this._getCurrentChannelId();
     if (!targetChannelId) {
@@ -607,40 +615,44 @@ module.exports = {
     const channelCrits = this.getCritHistory(targetChannelId);
     if (!channelCrits.length) return;
 
-    this.debugLog('RESTORE_CHANNEL_CRITS', `Restoring ${channelCrits.length} crits (Targeted Lookup)`, {
-      channelId: targetChannelId,
-      retryCount,
-    });
-
-    const CHUNK_SIZE = 50; // Process in chunks to prevent frame drops on large history
-
-    const processChunk = (startIndex) => {
+    // PERF (2026-07-13): intersect stored crits with what is actually RENDERED,
+    // instead of document.querySelector-ing once per stored crit. History can hold
+    // hundreds of entries per channel ("crits from 4k messages ago"), but Discord
+    // only renders ~50-100 messages. One DOM scan builds the id→element map; crits
+    // whose messages aren't on screen cost nothing. Scroll-back restoration of
+    // off-screen crits is handled by checkForRestoration as nodes are added.
+    requestIdleCallback(() => {
       if (this._isStopped) return;
-      // Abort if channel changed since starting (unless it's a specific channelId request)
+      // Abort if channel changed since scheduling (unless a specific channelId request)
       if (channelId && this.currentChannelId !== targetChannelId) return;
 
-      const limit = Math.min(channelCrits.length, startIndex + CHUNK_SIZE);
+      const rendered = new Map();
+      const nodes = document.querySelectorAll('[data-message-id]');
+      for (let i = 0; i < nodes.length; i++) {
+        rendered.set(nodes[i].getAttribute('data-message-id'), nodes[i]);
+      }
 
-      for (let i = startIndex; i < limit; i++) {
+      let restoredCount = 0;
+      for (let i = 0; i < channelCrits.length; i++) {
         const crit = channelCrits[i];
         if (!crit || !crit.messageId) continue;
 
         const normalizedId = this.normalizeId(crit.messageId);
-        const messageElement = document.querySelector(`[data-message-id="${normalizedId}"]`);
+        const messageElement = rendered.get(normalizedId);
 
         if (messageElement) {
           this.restoreSingleCrit(messageElement, crit, normalizedId, retryCount);
+          restoredCount++;
         }
       }
 
-      if (limit < channelCrits.length) {
-        requestIdleCallback(() => processChunk(limit), { timeout: 1000 });
-      } else {
-        this.debugLog('RESTORE_COMPLETE', 'Targeted restoration complete', { total: channelCrits.length });
-      }
-    };
-
-    requestIdleCallback(() => processChunk(0), { timeout: 1000 });
+      this.debug?.verbose &&
+        this.debugLog('RESTORE_COMPLETE', 'Targeted restoration complete', {
+          stored: channelCrits.length,
+          rendered: rendered.size,
+          restored: restoredCount,
+        });
+    }, { timeout: 1000 });
   },
 
 };

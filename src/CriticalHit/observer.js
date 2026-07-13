@@ -223,6 +223,10 @@ module.exports = {
     }
 
     this.messageObserver = new MutationObserver((mutations) => {
+      // PERF (2026-07-13): settings.enabled was previously read only for a debug log —
+      // the toggle did nothing. Gate all observer work on it.
+      if (this.settings?.enabled === false) return;
+
       // PERF: Prune disconnected DOM refs from critMessages every 100 additions
       if (this.critMessages.size > 100) this.pruneCritMessages();
 
@@ -325,9 +329,14 @@ module.exports = {
                 }
               });
             });
-          } else {
-            this.processNode(messageElement);
           }
+          // PERF (2026-07-13): processNode() call removed for non-pending nodes.
+          // FluxDispatcher (_onMessageCreate) is the sole crit-roll path — it already
+          // filters to own messages in the current channel and queues _pendingAnimations.
+          // The observer's only jobs now: apply pending crit animations (above) and
+          // restore styling on own historical crits (below). This eliminates the
+          // per-message getMessageIdentifier + react-fiber getAuthorId walk that ran
+          // for EVERY author's messages in busy channels.
           this.checkForRestoration(messageElement);
         });
       });

@@ -18,6 +18,8 @@ module.exports = {
   _onMessageCreate(payload) {
     try {
       if (this._isStopped) return;
+      // PERF (2026-07-13): make the enabled toggle actually stop work.
+      if (this.settings?.enabled === false) return;
 
       const msg = payload?.message;
       if (!msg?.id || !msg?.author?.id || !msg?.channel_id) return;
@@ -89,6 +91,13 @@ module.exports = {
         // consistent so eviction can reclaim oldest entries.
         this.markAsProcessed(msg.id);
         this.stats.totalMessages++;
+
+        // PERF (2026-07-13): combo reset moved here from the observer path
+        // (checkForCrit historyEntry branch) — the Flux handler is now the sole
+        // processor of own new messages, so the non-crit combo break lives here.
+        if (this.isValidDiscordId(authorId)) {
+          this.updateUserCombo(authorId, 0, 0);
+        }
 
         this.addToHistory({
           messageId: msg.id,

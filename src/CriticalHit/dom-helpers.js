@@ -229,22 +229,27 @@ module.exports = {
 
     // Save current session data before navigating
     if (this.currentChannelId) {
-      const critCount = this.getCritHistory().length;
-      this.debugLog(
-        'CHANNEL_CHANGE',
-        'CRITICAL: Channel changing - saving history before navigation',
-        {
+      // PERF (2026-07-13): both getCritHistory() calls here existed only as debug-log
+      // arguments — two full filter passes over the history per channel switch, and
+      // the no-arg call ('all' key) clobbered the single-slot cache keyed to the
+      // channel right before restoreChannelCrits needs it. Compute only when debugging.
+      if (this.debug?.enabled) {
+        this.debugLog(
+          'CHANNEL_CHANGE',
+          'CRITICAL: Channel changing - saving history before navigation',
+          {
+            channelId: this.currentChannelId,
+            historySize: this.messageHistory.length,
+            critsInChannel: this.getCritHistory(this.currentChannelId).length,
+          }
+        );
+      }
+      this._throttledSaveHistory(false);
+      this.debug?.enabled &&
+        this.debugLog('CHANNEL_CHANGE', 'SUCCESS: History saved before navigation', {
           channelId: this.currentChannelId,
           historySize: this.messageHistory.length,
-          critCount: critCount,
-          critsInChannel: this.getCritHistory(this.currentChannelId).length,
-        }
-      );
-      this._throttledSaveHistory(false);
-      this.debugLog('CHANNEL_CHANGE', 'SUCCESS: History saved before navigation', {
-        channelId: this.currentChannelId,
-        historySize: this.messageHistory.length,
-      });
+        });
     }
 
     const oldProcessedCount = this.processedMessages.size;
