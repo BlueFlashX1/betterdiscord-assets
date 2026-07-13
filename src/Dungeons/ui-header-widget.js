@@ -371,7 +371,7 @@ module.exports = {
     // deploy/join flags, active tab, and row count. Build it before any DOM work.
     const popupVersionKey = activeTab + '|' + rows.map(([ck, d]) => {
       const { aliveMobs, queuedMobs, mobsKilled, mobsSpawned } = this._getWidgetMobMetrics(ck, d);
-      return `${ck}:${Math.floor(d?.boss?.hp || 0)}:${aliveMobs}:${queuedMobs}:${mobsKilled}:${mobsSpawned}:${d.shadowsDeployed ? 1 : 0}:${d.userParticipating ? 1 : 0}`;
+      return `${ck}:${Math.floor(d?.boss?.hp || 0)}:${aliveMobs}:${queuedMobs}:${mobsKilled}:${mobsSpawned}:${d.shadowsDeployed ? 1 : 0}:${d.userParticipating ? 1 : 0}:${d._deploying ? 1 : 0}`;
     }).join('|');
     if (popupVersionKey === this._lastPopupVersionKey) return;
     this._lastPopupVersionKey = popupVersionKey;
@@ -401,6 +401,7 @@ module.exports = {
       const dungeonRank = escapeHtml(dungeon.rank || '?');
       const guildName = escapeHtml(dungeon.guildName || 'Unknown Guild');
       const deployed = Boolean(dungeon.shadowsDeployed);
+      const deploying = Boolean(dungeon._deploying);
       const joined = Boolean(dungeon.userParticipating);
       const bossHp = Math.max(0, Math.floor(Number(dungeon?.boss?.hp) || 0)).toLocaleString();
       const {
@@ -434,8 +435,8 @@ module.exports = {
             <span>Spawned ${spawnLine}</span>
             <span>•</span>
             <span>Killed ${mobKillLine}</span>
-            <span class="dungeons-header-popup-state ${deployed ? 'is-deployed' : 'is-waiting'}">
-              ${deployed ? 'DEPLOYED' : 'WAITING'}
+            <span class="dungeons-header-popup-state ${deploying ? 'is-deploying' : deployed ? 'is-deployed' : 'is-waiting'}">
+              ${deploying ? 'DEPLOYING' : deployed ? 'DEPLOYED' : 'WAITING'}
             </span>
             <span class="dungeons-header-popup-state ${joined ? 'is-joined' : 'is-not-joined'}">
               ${joined ? 'JOINED' : 'NOT JOINED'}
@@ -445,8 +446,8 @@ module.exports = {
             <button class="dungeon-widget-action action-go" type="button" data-dungeon-action="goto" data-channel-key="${channelKey}">
               GO
             </button>
-            <button class="dungeon-widget-action action-deploy" type="button" data-dungeon-action="${deployed ? 'recall' : 'deploy'}" data-channel-key="${channelKey}">
-              ${deployed ? 'RECALL' : 'DEPLOY'}
+            <button class="dungeon-widget-action action-deploy${deploying ? ' is-deploying' : ''}" type="button" data-dungeon-action="${deployed ? 'recall' : 'deploy'}" data-channel-key="${channelKey}"${deploying ? ' disabled' : ''}>
+              ${deploying ? 'DEPLOYING…' : deployed ? 'RECALL' : 'DEPLOY'}
             </button>
             <button class="dungeon-widget-action action-join" type="button" data-dungeon-action="${joined ? 'leave' : 'join'}" data-channel-key="${channelKey}">
               ${joined ? 'LEAVE' : 'JOIN'}

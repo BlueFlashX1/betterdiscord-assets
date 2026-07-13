@@ -348,6 +348,11 @@ function buildCSS() {
   color: #5de89a;
 }
 
+.dungeons-header-popup-state.is-deploying {
+  background: rgba(255, 204, 114, 0.2);
+  color: #ffcc72;
+}
+
 .dungeons-header-popup-state.is-waiting {
   background: rgba(250, 166, 26, 0.2);
   color: #ffcc72;
@@ -395,6 +400,16 @@ function buildCSS() {
 
 .dungeon-widget-action.action-deploy {
   color: #5de89a;
+}
+
+.dungeon-widget-action.action-deploy.is-deploying {
+  color: #ffcc72;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.dungeon-widget-action.action-deploy.is-deploying:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(130, 130, 155, 0.35);
 }
 
 .dungeon-widget-action.action-join {
@@ -490,6 +505,18 @@ ${sel.settingsContainer} {
   transform: scale(1.05) !important;
   box-shadow: 0 4px 12px rgba(138, 43, 226, 0.7) !important;
   text-shadow: 0 0 10px rgba(138, 43, 226, 1) !important;
+}
+
+.dungeon-deploy-btn.is-deploying {
+  background: linear-gradient(135deg, #55507a 0%, #3f3a5c 100%) !important;
+  cursor: not-allowed !important;
+  opacity: 0.75 !important;
+  box-shadow: none !important;
+}
+.dungeon-deploy-btn.is-deploying:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
 }
 
 .dungeon-join-btn {
@@ -945,6 +972,11 @@ ${sel.settingsContainer} {
   color: #94a3b8 !important;
 }
 
+.boss-bar-shadow-info.is-deploying .shadow-pending {
+  color: #ffcc72 !important;
+  font-weight: 700 !important;
+}
+
 .boss-bar-badge-waiting {
   color: #8a2be2 !important;
   font-weight: 700 !important;
@@ -957,6 +989,11 @@ ${sel.settingsContainer} {
 
 .boss-bar-badge-deployed {
   color: #f59e0b !important;
+  font-weight: 700 !important;
+}
+
+.boss-bar-badge-deploying {
+  color: #ffcc72 !important;
   font-weight: 700 !important;
 }
 

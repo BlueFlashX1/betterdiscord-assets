@@ -493,8 +493,10 @@ module.exports = {
       const maxHpFloor = Math.floor(currentBossMaxHP);
       const hpPctRound = Math.floor(hpPercent * 10) / 10;
       const prev = this._bossBarCache.get(channelKey);
+      const deploying = Boolean(dungeon._deploying);
       const structuralUnchanged = prev &&
         prev.part === dungeon.userParticipating && prev.dep === dungeon.shadowsDeployed &&
+        prev.deploying === deploying &&
         prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name &&
         prev.combatSig === combatSignature && prev.gateUnlocked === gateUnlocked;
 
@@ -544,8 +546,11 @@ module.exports = {
         if (mobAliveEl) mobAliveEl.textContent = aliveMobs.toLocaleString();
         const mobTotalEl = cachedEls.mobTotal;
         if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
-        // Fast-path: update shadow alive/dead counts (changes every combat tick)
-        if (dungeon.shadowsDeployed) {
+        // Fast-path: update shadow alive/dead counts (changes every combat tick).
+        // Skipped while _deploying — the transitional "Shadows: …" placeholder has no
+        // numeric spans to update; structuralUnchanged already forces a rebuild on the
+        // deploying-state flip itself (deploying is part of the cache key above).
+        if (!deploying && dungeon.shadowsDeployed) {
           const allocated = this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
           const deadSet = this.deadShadows?.get(channelKey);
           const deadCount = deadSet?.size || 0;
@@ -574,7 +579,7 @@ module.exports = {
         this._bossBarCache.set(channelKey, {
           hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
           alive: aliveMobs, total: totalMobs,
-          part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
+          part: dungeon.userParticipating, dep: dungeon.shadowsDeployed, deploying,
           type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
           combatSig: combatSignature, gateUnlocked,
         });
@@ -585,7 +590,7 @@ module.exports = {
       this._bossBarCache.set(channelKey, {
         hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
         alive: aliveMobs, total: totalMobs,
-        part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
+        part: dungeon.userParticipating, dep: dungeon.shadowsDeployed, deploying,
         type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
         combatSig: combatSignature, gateUnlocked,
       });
@@ -596,17 +601,29 @@ module.exports = {
         hpContainer.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
       }
 
-      // Participation indicator — 3 states: WAITING (no deploy), DEPLOYED (shadows fighting), FIGHTING (user joined)
-      const participationBadge = !dungeon.shadowsDeployed
-        ? '<span class="boss-bar-badge-waiting">WAITING</span>'
-        : dungeon.userParticipating
-          ? '<span class="boss-bar-badge-fighting">FIGHTING</span>'
-          : '<span class="boss-bar-badge-deployed">DEPLOYED</span>';
+      // Participation indicator — 4 states: DEPLOYING (transitional, gated on _deploying
+      // mutex), WAITING (no deploy), DEPLOYED (shadows fighting), FIGHTING (user joined).
+      // DEPLOYING takes priority: shadowsDeployed flips true synchronously before the
+      // starter allocation lands, so without this check WAITING/DEPLOYED would misreport
+      // during the (possibly multi-second) cold-cache recovery ladder — see
+      // memory/scratch/audit-deploy-count-2026-07-12.md.
+      const participationBadge = dungeon._deploying
+        ? '<span class="boss-bar-badge-deploying">DEPLOYING</span>'
+        : !dungeon.shadowsDeployed
+          ? '<span class="boss-bar-badge-waiting">WAITING</span>'
+          : dungeon.userParticipating
+            ? '<span class="boss-bar-badge-fighting">FIGHTING</span>'
+            : '<span class="boss-bar-badge-deployed">DEPLOYED</span>';
 
-      // DEPLOY SHADOWS button / DEPLOYED indicator
-      const deployButtonHTML = !dungeon.shadowsDeployed
-        ? `<button class="dungeon-deploy-btn" data-channel-key="${channelKey}">DEPLOY SHADOWS</button>`
-        : `<button class="dungeon-recall-btn" data-channel-key="${channelKey}">RECALL SHADOWS</button>`;
+      // DEPLOY SHADOWS button / DEPLOYED indicator. Disabled during _deploying (not
+      // clickable — recall-to-abort is intentionally unavailable in this window per
+      // wave-8 UX decision; the window is now bounded by the R1 fix to the recovery
+      // ladder rather than by an unbounded full-store scan).
+      const deployButtonHTML = dungeon._deploying
+        ? `<button class="dungeon-deploy-btn is-deploying" data-channel-key="${channelKey}" disabled>DEPLOYING…</button>`
+        : !dungeon.shadowsDeployed
+          ? `<button class="dungeon-deploy-btn" data-channel-key="${channelKey}">DEPLOY SHADOWS</button>`
+          : `<button class="dungeon-recall-btn" data-channel-key="${channelKey}">RECALL SHADOWS</button>`;
 
       // JOIN button (show if user hasn't joined yet — can join before or after deploy)
       const joinButtonHTML = !dungeon.userParticipating
@@ -668,9 +685,17 @@ module.exports = {
           </div>`
         : '';
 
-      // Shadow deployment info row — shows count + rank breakdown when deployed
+      // Shadow deployment info row — shows count + rank breakdown when deployed.
+      // While _deploying, show a pending placeholder instead of reading the allocation
+      // array (which is empty/stale until the starter allocation lands).
       let shadowInfoHTML = '';
-      if (dungeon.shadowsDeployed) {
+      if (dungeon._deploying) {
+        shadowInfoHTML = `
+          <div class="boss-bar-shadow-info is-deploying">
+            <span class="boss-bar-stat-label">Shadows:</span>
+            <span class="shadow-pending">…</span>
+          </div>`;
+      } else if (dungeon.shadowsDeployed) {
         const allocated = this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
         const deadSet = this.deadShadows?.get(channelKey);
         const deadCount = deadSet?.size || 0;

@@ -293,6 +293,78 @@ module.exports = {
     }
   },
 
+  // R1 CONFORMANCE (2026-07-12): replaces deployShadows()'s previous last-resort
+  // getAllShadows(false) full-store scan (281k-record, 45-50s per PERF-CONVENTIONS.md
+  // R1). Mirrors ShadowSenses/deployment-manager.js:getWeakestAvailableShadow's bounded
+  // per-rank walk via ShadowArmy's 'rank' IDB index (getShadowsByRankLimited), but walks
+  // outward from the DUNGEON'S rank using the same offset order _warmDeployStarterPool
+  // already uses above — deploy wants rank-appropriate shadows, not the globally weakest.
+  // Populates _deployStarterPoolCache (deploy's own pool) so the retry _buildDeployStarterAllocation
+  // call picks candidates up through its normal deployStarterPoolCache source — it does
+  // NOT touch _shadowsCache, which getAllShadows()'s many other call sites already keep warm.
+  async _lastResortRankBoundedStarterPool(dungeonRank, targetCount = this._deployStarterShadowCap || 240) {
+    if (!this.started || !this.shadowArmy) return 0;
+    const shadowStorage = this.shadowArmy.storageManager;
+    if (!shadowStorage?.getShadowsByRankLimited) return 0;
+
+    const desiredCount = this.clampNumber(
+      Math.max(200, Math.floor((Number.isFinite(targetCount) ? targetCount : this._deployStarterShadowCap || 240) * 4)),
+      200,
+      2000
+    );
+    const rankOrder = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : [];
+    const rankHintIndex =
+      dungeonRank && rankOrder.length > 0 ? this.getRankIndexValue(dungeonRank, rankOrder) : -1;
+    const rankOffsets = [0, 1, -1, 2, -2, 3, -3];
+    const perRankLimit = this.clampNumber(Math.ceil(desiredCount / rankOffsets.length), 80, 500);
+
+    const candidates = [];
+    const seenIds = new Set();
+    for (let i = 0; i < rankOffsets.length && candidates.length < desiredCount; i++) {
+      const rankIdx = rankHintIndex >= 0 ? rankHintIndex + rankOffsets[i] : -1;
+      const rank = rankIdx >= 0 && rankIdx < rankOrder.length ? rankOrder[rankIdx] : null;
+      if (!rank) continue;
+
+      let rows;
+      try {
+        rows = await shadowStorage.getShadowsByRankLimited(rank, perRankLimit);
+      } catch (error) {
+        this.errorLog('DEPLOY', 'Last-resort bounded rank query failed', { rank, error });
+        continue;
+      }
+      if (!Array.isArray(rows) || rows.length === 0) continue;
+
+      for (let j = 0; j < rows.length; j++) {
+        let normalized = this.normalizeShadowId(rows[j]);
+        if ((!normalized || !this.getShadowIdValue(normalized)) && this.shadowArmy.getShadowData) {
+          try {
+            const decoded = this.shadowArmy.getShadowData(rows[j]);
+            normalized = this.normalizeShadowId(decoded) || decoded;
+          } catch (_) {}
+        }
+        if (!normalized) continue;
+        const sid = this.getShadowIdValue(normalized);
+        if (!sid) continue;
+        const idKey = String(sid);
+        if (seenIds.has(idKey)) continue;
+        seenIds.add(idKey);
+        candidates.push(normalized);
+      }
+
+      if (i % 2 === 1) {
+        await this._yieldToEventLoop();
+        if (!this.started) return 0;
+      }
+    }
+
+    if (candidates.length === 0) return 0;
+
+    this._deployStarterPoolCache = candidates;
+    this._deployStarterPoolCacheTime = Date.now();
+    this._deployStarterPoolCacheRank = dungeonRank || null;
+    return candidates.length;
+  },
+
   _scheduleSpawnRankStarterWarm(channelKey, dungeonRank) {
     if (!this.started || !this.shadowArmy || !channelKey) return;
 

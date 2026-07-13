@@ -166,6 +166,12 @@ module.exports = {
       return;
     }
     dungeon._deploying = true;
+    // TRANSITIONAL UI (2026-07-12): tracks whether _deploying has already been explicitly
+    // cleared on this invocation so the finally-net below never double-releases a mutex a
+    // later deploy call may have re-acquired for this same dungeon (see finally comment).
+    let deployMutexReleased = false;
+    this._bossBarCache?.delete?.(channelKey);
+    this.queueHPBarUpdate(channelKey);
 
     // Validate active dungeon status first (clear invalid references)
     this.validateActiveDungeonStatus();
@@ -185,6 +191,9 @@ module.exports = {
 
     if (this.settings.userHP <= 0) {
       dungeon._deploying = false;
+      deployMutexReleased = true;
+      this._bossBarCache?.delete?.(channelKey);
+      this.queueHPBarUpdate(channelKey);
       this.showToast('You need HP to deploy shadows! Wait for HP to regenerate.', 'error');
       return;
     }
@@ -220,6 +229,7 @@ module.exports = {
     } catch (stateError) {
       // Rollback — prevent irrecoverable limbo state
       dungeon._deploying = false;
+      deployMutexReleased = true;
       dungeon.shadowsDeployed = false;
       dungeon.deployedAt = null;
       if (dungeon.bossGate && typeof dungeon.bossGate === 'object') {
@@ -227,6 +237,8 @@ module.exports = {
         dungeon.bossGate.unlockedAt = null;
       }
       this.errorLog('DEPLOY', 'Failed to initialize deploy state — rolled back', { channelKey, error: stateError });
+      this._bossBarCache?.delete?.(channelKey);
+      this.queueHPBarUpdate(channelKey);
       this.showToast('Deploy failed to initialize. Try again.', 'error');
       return;
     }
@@ -270,6 +282,9 @@ module.exports = {
         // Race guard: recall may have fired during async IDB read
         if (!dungeon.shadowsDeployed) {
           dungeon._deploying = false;
+          deployMutexReleased = true;
+          this._bossBarCache?.delete?.(channelKey);
+          this.queueHPBarUpdate(channelKey);
           this.debugLog('DEPLOY', 'Aborted — recalled during cache warm', { channelKey });
           return;
         }
@@ -295,11 +310,14 @@ module.exports = {
           }
         }
 
-        // Last-resort compatibility path: force full IDB read only if lightweight warm still failed.
+        // Last-resort: bounded per-rank IDB walk (R1 fix, 2026-07-12) — was previously a
+        // full 281k-record getAllShadows(false) scan (45-50s per PERF-CONVENTIONS.md R1).
+        // See player-sync-allocation.js:_lastResortRankBoundedStarterPool for the bounded
+        // getShadowsByRankLimited pattern (mirrors ShadowSenses' deploy bounded query).
         if (starterAllocationCount === 0) {
-          const allShadows = await this.getAllShadows(false); // force fresh full read
-          if (Array.isArray(allShadows) && allShadows.length > 0) {
-            this.debugLog('DEPLOY', `Full cache warmed: ${allShadows.length} shadows found — retrying allocation`, { channelKey });
+          const lastResortPoolCount = await this._lastResortRankBoundedStarterPool(dungeon.rank);
+          if (lastResortPoolCount > 0) {
+            this.debugLog('DEPLOY', `Last-resort bounded pool warmed: ${lastResortPoolCount} shadows found — retrying allocation`, { channelKey });
             const retryShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
             starterAllocationCount = this._applyDeployStarterAllocation(channelKey, dungeon, retryShadows);
           }
@@ -334,6 +352,7 @@ module.exports = {
     // nothing attacks the boss, leading to phantom defeats and unearned XP.
     if (assignedShadows.length === 0 && starterAllocationCount === 0) {
       dungeon._deploying = false;
+      deployMutexReleased = true;
       dungeon.shadowsDeployed = false;
       dungeon.deployedAt = null;
       if (dungeon.bossGate) {
@@ -348,6 +367,8 @@ module.exports = {
         dungeonName: dungeon.name,
         dungeonRank: dungeon.rank,
       });
+      this._bossBarCache?.delete?.(channelKey);
+      this.queueHPBarUpdate(channelKey);
       this.showToast('No shadows available to deploy! Extract more shadows first.', 'error');
       return;
     }
@@ -424,6 +445,7 @@ module.exports = {
     // Release BEFORE async combat init (startShadowAttacks, processShadowAttacks) so the
     // user can join immediately instead of waiting for IDB-heavy attack processing.
     dungeon._deploying = false;
+    deployMutexReleased = true;
     this.saveSettings();
 
     // CRITICAL: Persist dungeon state to IDB immediately — shadowsDeployed must survive hot-reload.
@@ -463,6 +485,16 @@ module.exports = {
       // passes that were never suspended.
       if (selfHealAborted && this.shadowArmy?.resumeSelfHeal) {
         this.shadowArmy.resumeSelfHeal(30000);
+      }
+      // SAFETY NET: closes the one exception gap — an uncaught throw between mutex
+      // acquisition and the last explicit clear site above would otherwise strand
+      // _deploying=true forever (permanently showing "DEPLOYING..." and blocking all
+      // future deploys on this dungeon). No-op on every already-released path since
+      // deployMutexReleased is set at each of those; only fires on the unhandled case.
+      if (!deployMutexReleased) {
+        dungeon._deploying = false;
+        this._bossBarCache?.delete?.(channelKey);
+        this.queueHPBarUpdate(channelKey);
       }
     }
   },
