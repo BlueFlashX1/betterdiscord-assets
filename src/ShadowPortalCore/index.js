@@ -72,6 +72,11 @@ function _getPortalCoreState() {
 // destinations satisfy readiness within a frame or two (short cap); uncached
 // cross-server loads get a much larger ceiling so black holds until content
 // is really there.
+// Opacity multiplier for the purple mist halo (the big soft "blob" behind the
+// portal ring). 1 = original intensity. Dimmed so the portal image reads as the
+// hero and the halo sits back as atmosphere.
+const MIST_HALO_DIM = 0.62;
+
 const REVEAL_HOLD_CAP_MS = 500;            // cached destination — reveal fast
 const REVEAL_HOLD_CAP_UNCACHED_MS = 2200;  // uncached / cross-server ceiling
 const REVEAL_READY_POLL_MS = 32;           // readiness re-check cadence
@@ -1629,9 +1634,15 @@ const methods = {
         mistHalo.addColorStop(0.90, `rgba(32, 18, 62, ${fade016})`);
         mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = mistHalo;
+        // Dim the purple mist halo so it reads as backdrop rather than the
+        // main event, letting the portal image show through it more. Tune via
+        // MIST_HALO_DIM (1 = original intensity). The surrounding save/restore
+        // already resets globalAlpha, but reset explicitly for clarity.
+        ctx.globalAlpha = MIST_HALO_DIM;
         ctx.beginPath();
         ctx.arc(cx, cy, ringOuter + innerRadius, 0, TAU);
         ctx.fill();
+        ctx.globalAlpha = 1;
         ctx.restore();
       }
 

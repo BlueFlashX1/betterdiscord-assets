@@ -333,6 +333,7 @@ function _getPortalCoreState() {
   };
   return window.__SL_PortalCore;
 }
+var MIST_HALO_DIM = 0.62;
 var REVEAL_HOLD_CAP_MS = 500;
 var REVEAL_HOLD_CAP_UNCACHED_MS = 2200;
 var REVEAL_READY_POLL_MS = 32;
@@ -1617,9 +1618,11 @@ var methods = {
         mistHalo.addColorStop(0.9, `rgba(32, 18, 62, ${fade016})`);
         mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = mistHalo;
+        ctx.globalAlpha = MIST_HALO_DIM;
         ctx.beginPath();
         ctx.arc(cx, cy, ringOuter + innerRadius, 0, TAU);
         ctx.fill();
+        ctx.globalAlpha = 1;
         ctx.restore();
       }
       if (t < 1) rafId = requestAnimationFrame(draw);
