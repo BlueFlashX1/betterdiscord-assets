@@ -329,6 +329,7 @@ function _getPortalCoreState() {
   return window.__SL_PortalCore;
 }
 var SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
+var REVEAL_HOLD_CAP_MS = 500;
 function preloadSpiralMask() {
   const core = _getPortalCoreState();
   if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
@@ -809,6 +810,7 @@ var methods = {
   },
   _cancelPendingTransition() {
     this._gsapMasterTimeline = null;
+    this._portalRevealGate = null;
     if (this._transitionNavTimeout) {
       clearTimeout(this._transitionNavTimeout);
       this._transitionNavTimeout = null;
@@ -856,6 +858,7 @@ var methods = {
     this._cancelPendingTransition();
     this._transitionRunId = Number(this._transitionRunId || 0) + 1;
     const runId = this._transitionRunId;
+    this._portalRevealGate = { released: false, capMs: REVEAL_HOLD_CAP_MS };
     const configuredDuration = this.settings.animationDuration || 550;
     const isCached = !!targetPath && this._isChannelCached(targetPath);
     const duration = 1200;
@@ -1051,6 +1054,12 @@ var methods = {
       debugLog(this, "Transition", `Navigation callback fired at ${Math.round(performance.now() - transitionStartedAt)}ms`);
       callback();
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (runId !== this._transitionRunId) return;
+          this._releasePortalReveal("nav-committed");
+        });
+      });
     };
     const navDelay = prefersReducedMotion ? 24 : Math.max(580, Math.round(totalDuration * 0.39));
     _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms, cached=${isCached})`);
@@ -1061,7 +1070,7 @@ var methods = {
       this._transitionNavTimeout = null;
       runNavigation();
     }, navDelay);
-    const cleanupDelay = prefersReducedMotion ? Math.max(320, Math.round(duration * 0.98)) : totalDuration + 340;
+    const cleanupDelay = prefersReducedMotion ? Math.max(320, Math.round(duration * 0.98)) : totalDuration + 340 + REVEAL_HOLD_CAP_MS;
     _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
@@ -1069,6 +1078,22 @@ var methods = {
       this._transitionCleanupTimeout = null;
       this._cancelPendingTransition();
     }, cleanupDelay);
+  },
+  /**
+   * REVEAL GATE release — called when navigation has committed (double-rAF
+   * after the route callback) or when the draw loop hits the hold cap.
+   * Idempotent; resumes the GSAP timeline if it's parked at the addPause.
+   */
+  _releasePortalReveal(reason) {
+    const gate = this._portalRevealGate;
+    if (!gate || gate.released) return;
+    gate.released = true;
+    debugLog(this, "Transition", `Reveal gate released (${reason})`);
+    const tl = this._gsapMasterTimeline;
+    try {
+      if (tl && tl.paused()) tl.play();
+    } catch (_) {
+    }
   },
   startPortalCanvasAnimation(canvas, duration, cssPortalEl, perfProfile) {
     if (_getPortalCoreState().gsapLoaded && window.gsap) {
@@ -1138,6 +1163,15 @@ var methods = {
       duration: dur,
       ease: "power2.inOut"
     }, 0);
+    tl.addPause(dur * 0.6, () => {
+      const gate = this._portalRevealGate;
+      if (!gate || gate.released) {
+        try {
+          tl.play();
+        } catch (_) {
+        }
+      }
+    });
     tl.to(gs, {
       revealProgress: 1,
       revealEase: 1,
@@ -1336,10 +1370,21 @@ var methods = {
       var _a;
       if ((_a = this.settings) == null ? void 0 : _a.debugMode) console.log(`%c[PortalDiag]%c ${phase} %c@ ${Math.round(performance.now() - start)}ms (canvas)`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
     };
+    const revealGate = this._portalRevealGate || null;
+    const gateHoldPointMs = Math.max(1, duration) * 0.599;
+    let gateFrozenMs = 0;
     const draw = (now) => {
       var _a;
       if (stopped) return;
-      const elapsed = now - start;
+      let elapsed = now - start - gateFrozenMs;
+      if (revealGate && !revealGate.released && elapsed >= gateHoldPointMs) {
+        if (gateFrozenMs >= revealGate.capMs) {
+          this._releasePortalReveal("hold-cap");
+        } else {
+          gateFrozenMs += elapsed - gateHoldPointMs;
+          elapsed = gateHoldPointMs;
+        }
+      }
       const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
       if (now - lastFrameAt < targetFrameMs) {
         if (t < 1) rafId = requestAnimationFrame(draw);

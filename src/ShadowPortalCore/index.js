@@ -58,6 +58,16 @@ function _getPortalCoreState() {
 
 const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 
+// REVEAL GATE (2026-07-13): max extra time the portal may HOLD at full black
+// waiting for navigation to commit before the reveal is forced anyway. The
+// gate fixes the mistimed reveal: nav fires at ~585ms but the aperture opened
+// on a fixed clock at 720ms — only ~135ms for Discord to route-switch and
+// paint, so on real servers the reveal showed the OLD channel and the actual
+// switch popped after the portal cleared. The reveal now waits for the
+// navigation to commit (double-rAF after the route callback), capped here so
+// a slow load can never hang the overlay.
+const REVEAL_HOLD_CAP_MS = 500;
+
 /**
  * Preload the spiral mask image from imgur.
  * On success, caches as data URL (avoids repeat network hits + CSP issues).
@@ -607,6 +617,10 @@ const methods = {
 
   _cancelPendingTransition() {
     this._gsapMasterTimeline = null;
+    // Drop the reveal gate so a stale gate can never hold a FUTURE run's
+    // draw loop (each run creates a fresh gate object; the draw loop
+    // captures its own run's gate by identity).
+    this._portalRevealGate = null;
     if (this._transitionNavTimeout) {
       clearTimeout(this._transitionNavTimeout);
       this._transitionNavTimeout = null;
@@ -653,6 +667,11 @@ const methods = {
     this._cancelPendingTransition();
     this._transitionRunId = Number(this._transitionRunId || 0) + 1;
     const runId = this._transitionRunId;
+
+    // REVEAL GATE: freeze-at-black state shared between the draw loop (clock
+    // hold), the GSAP timeline (addPause at the reveal boundary), and
+    // runNavigation (releases after the route callback commits).
+    this._portalRevealGate = { released: false, capMs: REVEAL_HOLD_CAP_MS };
 
     // Timing: Two profiles based on whether target channel is cached
     // Fast (cached):     ~1000ms total, same full portal but sped up
@@ -878,6 +897,15 @@ const methods = {
       callback();
       // Log when Discord actually processes the navigation (next microtask)
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
+      // REVEAL GATE release: double-rAF ≈ Discord committed the route change
+      // and painted the destination view (at least its frame/skeleton) — NOW
+      // the aperture may open onto the new channel instead of the old one.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (runId !== this._transitionRunId) return;
+          this._releasePortalReveal("nav-committed");
+        });
+      });
     };
 
     // Navigation delay — SAME for cached and uncached:
@@ -902,10 +930,14 @@ const methods = {
     }, navDelay);
 
     // Cleanup delay — SAME for cached and uncached:
-    //   totalDuration + 340ms buffer for Discord to finish rendering after portal ends
+    //   totalDuration + 340ms buffer for Discord to finish rendering after
+    //   portal ends, + the reveal-gate hold cap (the overlay timeline can be
+    //   frozen at black up to that long waiting for navigation to commit;
+    //   past the fade the overlay is transparent, so the extra margin in the
+    //   fast case costs nothing visible).
     const cleanupDelay = prefersReducedMotion
       ? Math.max(320, Math.round(duration * 0.98))
-      : totalDuration + 340;
+      : totalDuration + 340 + REVEAL_HOLD_CAP_MS;
     _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
@@ -913,6 +945,22 @@ const methods = {
       this._transitionCleanupTimeout = null;
       this._cancelPendingTransition();
     }, cleanupDelay);
+  },
+
+  /**
+   * REVEAL GATE release — called when navigation has committed (double-rAF
+   * after the route callback) or when the draw loop hits the hold cap.
+   * Idempotent; resumes the GSAP timeline if it's parked at the addPause.
+   */
+  _releasePortalReveal(reason) {
+    const gate = this._portalRevealGate;
+    if (!gate || gate.released) return;
+    gate.released = true;
+    debugLog(this, "Transition", `Reveal gate released (${reason})`);
+    const tl = this._gsapMasterTimeline;
+    try {
+      if (tl && tl.paused()) tl.play();
+    } catch (_) {}
   },
 
   startPortalCanvasAnimation(canvas, duration, cssPortalEl, perfProfile) {
@@ -980,6 +1028,18 @@ const methods = {
       duration: dur,
       ease: "power2.inOut",
     }, 0);
+
+    // REVEAL GATE: pause the timeline at the reveal boundary until navigation
+    // commits (_releasePortalReveal calls tl.play()). If the release already
+    // happened before the playhead got here (fast nav), resume immediately.
+    // The infinite breathing tweens are independent gsap.to()s, so the portal
+    // keeps visibly breathing at full black during the hold — no freeze-frame.
+    tl.addPause(dur * 0.60, () => {
+      const gate = this._portalRevealGate;
+      if (!gate || gate.released) {
+        try { tl.play(); } catch (_) {}
+      }
+    });
 
     // Reveal aperture: 60%→100% with expo.inOut for dramatic accel/decel (synced with darkness clear)
     tl.to(gs, {
@@ -1219,10 +1279,26 @@ const methods = {
     const _canvasDiag = { formDone: false, revealStarted: false, fadeStarted: false, done: false };
     const _cdLog = (phase) => { if (this.settings?.debugMode) console.log(`%c[PortalDiag]%c ${phase} %c@ ${Math.round(performance.now() - start)}ms (canvas)`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8"); };
 
+    // REVEAL GATE: capture the current run's gate. While un-released, the
+    // clock below pins t just under the reveal boundary (0.60) — darkness
+    // stays at full black and the aperture stays shut — until navigation
+    // commits or the hold cap forces the release.
+    const revealGate = this._portalRevealGate || null;
+    const gateHoldPointMs = Math.max(1, duration) * 0.599;
+    let gateFrozenMs = 0;
+
     const draw = (now) => {
       if (stopped) return;
 
-      const elapsed = now - start;
+      let elapsed = now - start - gateFrozenMs;
+      if (revealGate && !revealGate.released && elapsed >= gateHoldPointMs) {
+        if (gateFrozenMs >= revealGate.capMs) {
+          this._releasePortalReveal("hold-cap");
+        } else {
+          gateFrozenMs += elapsed - gateHoldPointMs;
+          elapsed = gateHoldPointMs;
+        }
+      }
       const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
       if ((now - lastFrameAt) < targetFrameMs) {
         if (t < 1) rafId = requestAnimationFrame(draw);
