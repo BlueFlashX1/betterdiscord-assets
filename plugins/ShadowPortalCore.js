@@ -43,6 +43,15 @@ var require_transition_css = __commonJS({
   will-change: opacity;
 }
 
+/* Stacking inside the overlay (bottom -> top):
+ *   1 canvas       \u2014 darkness blackout + aperture punch + ring/mist decoration
+ *   2 portal image \u2014 portal_shadowv2.png, the hero visual
+ *   3 shards       \u2014 cinders, always in front
+ * The canvas MUST stay below the portal image: it paints a full-screen black
+ * fill, so anything beneath it is invisible during the dark phase. Before this,
+ * the image was appended first (and so buried under the blackout) while the
+ * canvas's own ring/mist drew on top of the black \u2014 which is why the generated
+ * decoration read as the main visual and the PNG barely showed. */
 .ss-transition-canvas {
   position: absolute;
   inset: 0;
@@ -50,6 +59,7 @@ var require_transition_css = __commonJS({
   height: 100%;
   display: block;
   opacity: 1;
+  z-index: 1;
 }
 
 .ss-shard {
@@ -61,6 +71,7 @@ var require_transition_css = __commonJS({
   box-shadow: 0 0 6px rgba(110, 82, 56, 0.28);
   opacity: 0;
   will-change: transform, opacity;
+  z-index: 3;
 }
 
 .ss-transition-overlay--waapi .ss-shard {
@@ -840,7 +851,11 @@ var methods = {
         "@keyframes ss-portal-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}",
         // No-GSAP lifecycle: fade in, hold, burst outward, fade out.
         "@keyframes ss-portal-img-life{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}15%{opacity:1}55%{opacity:1;transform:translate(-50%,-50%) scale(1)}78%{opacity:1;transform:translate(-50%,-50%) scale(2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.8)}}",
-        ".ss-portal-img{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.5);opacity:0;pointer-events:none;border-radius:50%;overflow:hidden;filter:drop-shadow(0 0 24px rgba(123,63,191,.45)) drop-shadow(0 0 60px rgba(90,45,138,.25))}",
+        // z-index:2 — ABOVE the canvas (z-index:1). The canvas paints a
+        // full-screen black fill, so an image below it is invisible during the
+        // dark phase; the canvas's own ring/mist decoration drew on top of that
+        // black and dominated. The PNG is the hero visual, so it sits above.
+        ".ss-portal-img{position:absolute;top:50%;left:50%;z-index:2;transform:translate(-50%,-50%) scale(.5);opacity:0;pointer-events:none;border-radius:50%;overflow:hidden;filter:drop-shadow(0 0 24px rgba(123,63,191,.45)) drop-shadow(0 0 60px rgba(90,45,138,.25))}",
         // The PNG as visible artwork — counter-rotating layers for depth.
         `.ss-portal-img__inner,.ss-portal-img__core{position:absolute;inset:0;background:url(${PORTAL_IMAGE_DATA_URL}) center/100% 100% no-repeat}`,
         ".ss-portal-img__inner{animation:ss-portal-spin 2.8s infinite linear}",

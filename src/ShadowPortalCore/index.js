@@ -686,7 +686,11 @@ const methods = {
         "@keyframes ss-portal-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}",
         // No-GSAP lifecycle: fade in, hold, burst outward, fade out.
         "@keyframes ss-portal-img-life{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}15%{opacity:1}55%{opacity:1;transform:translate(-50%,-50%) scale(1)}78%{opacity:1;transform:translate(-50%,-50%) scale(2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.8)}}",
-        ".ss-portal-img{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.5);opacity:0;pointer-events:none;border-radius:50%;overflow:hidden;filter:drop-shadow(0 0 24px rgba(123,63,191,.45)) drop-shadow(0 0 60px rgba(90,45,138,.25))}",
+        // z-index:2 — ABOVE the canvas (z-index:1). The canvas paints a
+        // full-screen black fill, so an image below it is invisible during the
+        // dark phase; the canvas's own ring/mist decoration drew on top of that
+        // black and dominated. The PNG is the hero visual, so it sits above.
+        ".ss-portal-img{position:absolute;top:50%;left:50%;z-index:2;transform:translate(-50%,-50%) scale(.5);opacity:0;pointer-events:none;border-radius:50%;overflow:hidden;filter:drop-shadow(0 0 24px rgba(123,63,191,.45)) drop-shadow(0 0 60px rgba(90,45,138,.25))}",
         // The PNG as visible artwork — counter-rotating layers for depth.
         `.ss-portal-img__inner,.ss-portal-img__core{position:absolute;inset:0;background:url(${PORTAL_IMAGE_DATA_URL}) center/100% 100% no-repeat}`,
         ".ss-portal-img__inner{animation:ss-portal-spin 2.8s infinite linear}",
