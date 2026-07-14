@@ -728,6 +728,10 @@ function getStartupEntries(windowMs = 24 * 60 * 60 * 1000, limit = 12) {
         priority: Number(entry.priority) || PRIORITY.LOW,
         messageCount: Number(entry.messageCount) || 1,
         content: String(entry.content || "").replace(/\s+/g, " ").trim().slice(0, 220),
+        // Carry WHY this signal fired so the report can explain the priority
+        // ("mentioned you" / keyword) instead of a bare [URGENT].
+        matchReason: entry.matchReason ? String(entry.matchReason) : null,
+        matchedTerm: entry.matchedTerm ? String(entry.matchedTerm) : (entry.userKeywordMatch ? String(entry.userKeywordMatch) : null),
       });
     }
   }

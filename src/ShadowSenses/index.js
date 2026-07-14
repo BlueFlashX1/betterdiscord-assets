@@ -710,7 +710,11 @@ module.exports = class ShadowSenses {
   // Mentions collapse to readable tokens rather than raw <@id> / <#id>.
   _cleanReportMarkup(rawContent) {
     return String(rawContent || "")
-      .replace(/<a?:([A-Za-z0-9_]+):\d+>/g, ":$1:") // custom + animated emoji → :name:
+      // Custom/animated emoji → :name:, BUT hash-named emoji (e.g.
+      // <:228a473d127ae9f63b589309b1e6eced:120…>) become a generic [emoji]
+      // token — ':228a473…:' is gibberish, not a readable name.
+      .replace(/<a?:([A-Za-z0-9_]+):\d+>/g, (_m, name) =>
+        /^[0-9a-f]{12,}$/i.test(name) ? "[emoji]" : `:${name}:`)
       .replace(/<@!?\d+>/g, "@user")                 // user mention
       .replace(/<@&\d+>/g, "@role")                  // role mention
       .replace(/<#\d+>/g, "#channel")                // channel mention
@@ -727,6 +731,24 @@ module.exports = class ShadowSenses {
     if (p >= 3) return "HIGH";
     if (p >= 2) return "MEDIUM";
     return "LOW";
+  }
+
+  // Plain-English reason a signal demands attention. Prefers the precise
+  // matchReason; falls back to a priority-tier description so the label is
+  // never a bare [URGENT] with no "why".
+  _startupAttentionReason(entry) {
+    const reason = String(entry?.matchReason || "").toLowerCase();
+    const term = entry?.matchedTerm ? `"${this._cleanReportMarkup(entry.matchedTerm)}"` : "";
+    if (reason === "mention") return "mentioned you";
+    if (reason === "name") return "said your name";
+    if (reason === "targetkeyword" || reason === "keyword" || reason === "userkeyword") {
+      return term ? `keyword ${term}` : "keyword match";
+    }
+    const p = Number(entry?.priority) || 1;
+    if (p >= 4) return "direct mention";
+    if (p >= 3) return "reply or @everyone";
+    if (p >= 2) return "role or keyword";
+    return "activity";
   }
 
   // Compact relative time ("2h ago") — far easier to scan than a full locale
@@ -1252,11 +1274,14 @@ module.exports = class ShadowSenses {
           const when = this._startupRelativeTime(entry.timestamp);
           const countLabel = Number(entry.messageCount) > 1 ? ` x${entry.messageCount}` : "";
           const word = this._startupPriorityWord(entry.priority);
+          // Label now says WHY: "[URGENT · mentioned you]" instead of a bare
+          // [URGENT] the Monarch has to decode.
+          const reason = this._startupAttentionReason(entry);
           // Clean custom-emoji / mention markup so the preview is readable
-          // (was printing raw <:name:1207868584932417566> etc).
+          // (hash-named custom emoji → [emoji] rather than :hash: gibberish).
           const cleanContent = this._cleanReportMarkup(entry.content);
           const contentLine = cleanContent ? `\n${cleanContent}` : "";
-          return `${idx + 1}. [${word}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}${contentLine}\n${when}`;
+          return `${idx + 1}. [${word} · ${reason}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}${contentLine}\n${when}`;
         })
         .join("\n\n");
     } else if (summaryActionableCount > 0) {
