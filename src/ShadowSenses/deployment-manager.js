@@ -181,7 +181,16 @@ class DeploymentManager {
       shadowName: shadow.roleName || shadow.role || "Shadow",
       shadowRank: shadow.rank || "E",
       targetUserId,
-      targetUsername: targetUser.username || targetUser.globalName || "Unknown",
+      // Prefer the DISPLAY name (globalName) over the raw @username handle —
+      // the list is unreadable when it shows handles you can't map to people
+      // (2026-07-13). Reports already resolve display names via
+      // _resolveUserName; this aligns the stored deployment label with them.
+      targetUsername:
+        targetUser.globalName ||
+        targetUser.global_name ||
+        targetUser.displayName ||
+        targetUser.username ||
+        "Unknown",
       deployedAt: Date.now(),
       alertKeywords: [],
       watchFocus: normalizeWatchFocus(null), // all signals on by default

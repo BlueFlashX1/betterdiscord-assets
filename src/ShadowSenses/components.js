@@ -554,6 +554,17 @@ function buildComponents(pluginRef) {
   function DeploymentRow({ deployment, onRecall, onToggleFocus, onDossier }) {
     const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
     const focus = deployment.watchFocus || {};
+    // Resolve the DISPLAY name live from the user store so even deployments
+    // saved before the display-name fix show a readable name immediately,
+    // and the label stays current if the target changes their display name.
+    // Falls back to the stored label (itself now display-name-first).
+    let targetLabel = deployment.targetUsername;
+    try {
+      const engine = pluginRef.sensesEngine;
+      if (engine?._resolveUserName) {
+        targetLabel = engine._resolveUserName(deployment.targetUserId, deployment.targetUsername);
+      }
+    } catch (_) {}
     const HB = {
       fontFamily: "'gg sans', 'Helvetica Neue', system-ui, sans-serif",
       fontSize: "13px",
@@ -573,7 +584,7 @@ function buildComponents(pluginRef) {
         ce("span", { style: { ...HB, color: "#5a5a6e" } }, "\u2192"),
         ce("span", {
           style: { ...HB, color: "#8a2be2", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-        }, deployment.targetUsername)
+        }, targetLabel)
       ),
       ce("button", {
         className: "shadow-senses-recall-btn",
@@ -1130,6 +1141,12 @@ function buildComponents(pluginRef) {
         const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
         const draftValue = keywordDrafts[userId] ?? "";
         const userKeywords = keywordsByUser[userId] || [];
+        // Live display name (same rationale as DeploymentRow).
+        let targetLabel = deployment.targetUsername;
+        try {
+          const engine = pluginRef.sensesEngine;
+          if (engine?._resolveUserName) targetLabel = engine._resolveUserName(userId, deployment.targetUsername);
+        } catch (_) {}
         const HB_KW = {
           fontFamily: "'gg sans', 'Helvetica Neue', system-ui, sans-serif",
           fontSize: "13px",
@@ -1150,7 +1167,7 @@ function buildComponents(pluginRef) {
               ce("span", { style: { ...HB_KW, color: rankColor, fontWeight: 700, letterSpacing: "0.03em" } }, `[${deployment.shadowRank}]`),
               ce("span", { style: { ...HB_KW, color: "#d4b0ff", fontWeight: 600 } }, deployment.shadowName),
               ce("span", { style: { ...HB_KW, color: "#5a5a6e" } }, "\u2192"),
-              ce("span", { style: { ...HB_KW, color: "#8a2be2", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, deployment.targetUsername)
+              ce("span", { style: { ...HB_KW, color: "#8a2be2", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, targetLabel)
             ),
             ce("span", {
               className: "shadow-senses-keyword-count",
