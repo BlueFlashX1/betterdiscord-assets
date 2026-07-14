@@ -63,6 +63,9 @@ function _getChannelStore() {
   return _channelStore;
 }
 
+// One-shot on-screen diagnostic guard (per session).
+let _jumpDiagShown = false;
+
 // Resolve the guild segment for a channel: explicit guildId wins; otherwise
 // look it up from the channel; DMs / unresolved → "@me".
 function _resolveGuildSegment(guildId, channelId) {
@@ -78,22 +81,21 @@ function navigateToChannel(guildId, channelId, messageId) {
   if (!channelId) return false;
   const seg = _resolveGuildSegment(guildId, channelId);
 
-  // Always log ONE diagnostic line per click (not debug-gated) so a failure
-  // is immediately explainable from the console instead of another blind
-  // fix. Cheap — fires only on a user click.
   const actions = messageId ? _getMessageActions() : null;
   const nav = getNavigationUtils();
-  console.log(
-    "%c[ShadowSenses] jump%c",
-    "color:#a855f7;font-weight:bold", "color:inherit",
-    {
-      guildSeg: seg,
-      channelId,
-      messageId: messageId || null,
-      jumpToMessage: actions ? `resolved via ${_messageActionsStrategy}` : "NOT RESOLVED",
-      transitionTo: nav?.transitionTo ? "available" : "NOT RESOLVED",
-    }
-  );
+
+  // First jump of the session shows ONE on-screen diagnostic toast (no
+  // console needed). Reports whether jumpToMessage resolved and via which
+  // strategy, and whether transitionTo is available — the exact facts a
+  // remote debugger can't see. Only once per session; unobtrusive after.
+  if (messageId && !_jumpDiagShown) {
+    _jumpDiagShown = true;
+    try {
+      const jm = actions ? `OK(${_messageActionsStrategy})` : "MISSING";
+      const nv = nav?.transitionTo ? "OK" : "MISSING";
+      BdApi.UI.showToast(`SS jump diag — jumpToMessage:${jm} nav:${nv}`, { type: "info", timeout: 8000 });
+    } catch (_) {}
+  }
 
   // No message → just open the channel.
   if (!messageId) {
