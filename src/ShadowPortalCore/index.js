@@ -13,6 +13,10 @@
 // via the consumer refcount below instead of being duplicated into every
 // consumer plugin's permanent style tag (perf-audit 2026-07-13).
 const { PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS } = require("./transition-css");
+// The portal image (portal_shadowv2.png), inlined as a data URI. See
+// portal-image-data.js — it is embedded rather than fetched so the portal can
+// never silently fall back to a generated spiral.
+const { PORTAL_IMAGE_DATA_URL } = require("./portal-image-data");
 
 // GSAP CDN loader + spiral-mask cache — GLOBAL singleton via window.__SL_PortalCore.
 //
@@ -21,13 +25,6 @@ const { PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS } = require("./transit
 // hosts the cache on window.__SL_PortalCore (same first-wins pattern as
 // shared/event-bus.js / shared/dom-bus.js) so all three plugins share ONE GSAP CDN load
 // and ONE spiral-mask preload instead of racing three independent copies.
-// Bump to invalidate a stale/poisoned spiral-mask cache on a LIVE global (the
-// cache lives on window.__SL_PortalCore and survives BD plugin reloads, so a
-// bad value would otherwise persist until a full Discord restart).
-// v2: pre-v2 builds wrote the PROCEDURAL fallback into spiralMaskUrl and set
-// spiralMaskReady=true, which permanently suppressed the real mask image.
-const SPIRAL_MASK_CACHE_VERSION = 2;
-
 function _getPortalCoreState() {
   if (window.__SL_PortalCore) {
     // Back-compat: a live global left over from a pre-Set build (old integer
@@ -35,17 +32,6 @@ function _getPortalCoreState() {
     // without disturbing the rest of the cached state (GSAP load / mask stay warm).
     if (!(window.__SL_PortalCore.consumers instanceof Set)) {
       window.__SL_PortalCore.consumers = new Set();
-    }
-    // Mask-cache migration: an older build may have cached the procedural
-    // spiral as if it were the real mask. Drop the mask fields (GSAP stays
-    // warm) so the real image is fetched again on the next portal.
-    if (window.__SL_PortalCore.spiralMaskVersion !== SPIRAL_MASK_CACHE_VERSION) {
-      window.__SL_PortalCore.spiralMaskUrl = null;
-      window.__SL_PortalCore.spiralMaskReady = false;
-      window.__SL_PortalCore.spiralMaskLoadedFrom = null;
-      window.__SL_PortalCore.spiralMaskInFlight = false;
-      window.__SL_PortalCore.proceduralMaskUrl = null;
-      window.__SL_PortalCore.spiralMaskVersion = SPIRAL_MASK_CACHE_VERSION;
     }
     return window.__SL_PortalCore;
   }
@@ -56,17 +42,7 @@ function _getPortalCoreState() {
     // GSAP script elements injected into document.head — cleaned up once the last
     // consumer releases, to prevent accumulation across BD reloads.
     gsapScriptEls: [],
-    // CSS Portal spiral mask (PropJockey technique)
-    // spiralMaskUrl holds ONLY the real mask image (portal_shadowv2.png, as a
-    // data URL). The procedural spiral is cached separately in
-    // proceduralMaskUrl and is NEVER written into spiralMaskUrl — see
-    // getSpiralMaskUrl() for why that distinction is load-bearing.
-    spiralMaskUrl: null,
-    spiralMaskReady: false,
-    spiralMaskLoadedFrom: null,
-    spiralMaskInFlight: false,
-    spiralMaskVersion: SPIRAL_MASK_CACHE_VERSION,
-    proceduralMaskUrl: null,
+    // (Portal artwork is embedded — see portal-image-data.js. No mask cache.)
     // Consumer hold set, keyed by stable class name — populated by the
     // _portalCoreAcquire()/_portalCoreRelease() prototype methods (installed via
     // applyPortalCoreToClass). Set semantics make acquire/release idempotent: a
@@ -80,7 +56,6 @@ function _getPortalCoreState() {
   return window.__SL_PortalCore;
 }
 
-const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 
 // REVEAL GATE (2026-07-13): max extra time the portal may HOLD at full black
 // waiting for the DESTINATION to be ready before the reveal is forced anyway.
@@ -107,99 +82,16 @@ const REVEAL_READY_POLL_MS = 32;           // readiness re-check cadence
  * On failure, falls back to a procedurally generated spiral.
  * Called fire-and-forget during applyPortalCoreToClass.
  */
-function preloadSpiralMask() {
-  const core = _getPortalCoreState();
-  // Re-fetch if URL changed (e.g. mask image swapped between plugin versions)
-  if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
-    core.spiralMaskUrl = null;
-    core.spiralMaskReady = false;
-    core.spiralMaskInFlight = false;
-    core.spiralMaskLoadedFrom = null;
-  }
-  // Skip ONLY when the real mask is already in hand, or a fetch is in flight.
-  // We deliberately do NOT skip because a procedural fallback was handed out:
-  // the old guard (`spiralMaskReady || spiralMaskUrl`) combined with
-  // getSpiralMaskUrl() caching the procedural spiral meant one early portal
-  // permanently suppressed the real image for the rest of the Discord session.
-  if (core.spiralMaskUrl || core.spiralMaskInFlight) return;
-  core.spiralMaskInFlight = true;
-  core.spiralMaskLoadedFrom = SPIRAL_IMG_URL;
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    try {
-      const c = document.createElement("canvas");
-      c.width = c.height = 512;
-      const ctx = c.getContext("2d");
-      ctx.drawImage(img, 0, 0, 512, 512);
-      core.spiralMaskUrl = c.toDataURL(); // real image — wins from here on
-      core.spiralMaskReady = true;
-    } catch (_) {
-      // CORS-tainted canvas. Leave spiralMaskUrl unset so a later attempt can
-      // still succeed; callers use the procedural mask in the meantime.
-    }
-    core.spiralMaskInFlight = false;
-  };
-  img.onerror = () => {
-    // Transient failure (offline, rate-limited). Leave the cache EMPTY so the
-    // next portal retries instead of locking in the procedural spiral forever.
-    core.spiralMaskInFlight = false;
-  };
-  img.src = SPIRAL_IMG_URL;
-}
-
-/** Procedural fallback: logarithmic spiral with Gaussian ring. */
-function generateProceduralSpiral() {
-  const size = 256;
-  const c = document.createElement("canvas");
-  c.width = c.height = size;
-  const ctx = c.getContext("2d");
-  const mid = size / 2;
-  const imgData = ctx.createImageData(size, size);
-  const d = imgData.data;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = (x - mid) / mid;
-      const dy = (y - mid) / mid;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 1.0) continue;
-      const angle = Math.atan2(dy, dx);
-      const ring = Math.exp(-Math.pow((dist - 0.52) / 0.27, 2));
-      const spiral = (Math.cos(angle * 3 + Math.log(Math.max(0.001, dist)) * 4.5) + 1) * 0.5;
-      const idx = (y * size + x) * 4;
-      d[idx + 3] = Math.round(ring * (0.25 + 0.75 * spiral) * 255);
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
-  const blurred = document.createElement("canvas");
-  blurred.width = blurred.height = size;
-  const bctx = blurred.getContext("2d");
-  bctx.filter = "blur(4px)";
-  bctx.drawImage(c, 0, 0);
-  return blurred.toDataURL();
-}
-
-/**
- * Get the spiral mask URL — the real mask image if it has loaded, otherwise a
- * procedural spiral for THIS portal only.
- *
- * CRITICAL: never write the procedural spiral into core.spiralMaskUrl. The mask
- * cache lives on window.__SL_PortalCore and survives BD plugin reloads, so
- * caching the fallback there (as the old code did, along with
- * spiralMaskReady = true) made preloadSpiralMask() early-return forever and
- * permanently replaced the real portal image with the generated spiral for the
- * rest of the Discord session. Keep them in separate slots and always give the
- * real image another chance to land.
- */
-function getSpiralMaskUrl() {
-  const core = _getPortalCoreState();
-  if (core.spiralMaskUrl) return core.spiralMaskUrl; // real mask image
-  // Real mask not in hand yet — (re)start the fetch so a later portal gets it...
-  preloadSpiralMask();
-  // ...and hand back a cached procedural spiral for this run only.
-  if (!core.proceduralMaskUrl) core.proceduralMaskUrl = generateProceduralSpiral();
-  return core.proceduralMaskUrl;
-}
+// NOTE (2026-07-13): the runtime mask pipeline that used to live here —
+// preloadSpiralMask() / generateProceduralSpiral() / getSpiralMaskUrl() — has
+// been REMOVED. The portal now renders portal_shadowv2.png directly from an
+// embedded data URI (see portal-image-data.js and the portal image layer in
+// playTransition). The old pipeline fetched the PNG over the network and, on
+// any hiccup (CDN, CORS, CSP, or simply a portal firing before the async load
+// finished), silently substituted a procedurally-generated spiral — which then
+// poisoned a reload-surviving window cache and permanently replaced the real
+// artwork. There is deliberately no generated fallback anymore: the image is
+// always present, so there is nothing to fall back to.
 
 const DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
 
@@ -356,6 +248,9 @@ const methods = {
         console.warn("[ShadowPortalCore] GSAP CDN load failed — vanilla canvas fallback active:", err.message);
         core.gsapLoaded = false;
         core.gsapLoadPromise = null;
+        // Remember WHY: without GSAP the spiral-mask CSS portal never renders,
+        // so the custom mask image silently goes unused (canvas-only fallback).
+        core.gsapError = err.message || "unknown";
         return null;
       }
     })();
@@ -770,42 +665,46 @@ const methods = {
     overlay.style.setProperty("--ss-duration", `${duration}ms`);
     overlay.style.setProperty("--ss-total-duration", `${totalDuration}ms`);
 
-    // CSS Portal (PropJockey spiral-mask counter-rotation technique)
+    // PORTAL IMAGE LAYER — renders portal_shadowv2.png DIRECTLY.
+    //
+    // Previously this block (a) used the PNG only as an alpha MASK over a
+    // conic-gradient, so the image itself was never visible, and (b) was gated
+    // on `gsapLoaded && window.gsap`. When the GSAP CDN was blocked the whole
+    // layer was skipped, so the portal image never appeared at all. Both are
+    // fixed: the PNG is now the visible artwork, and the layer always renders.
+    // GSAP, when present, still drives the burst/reveal timeline; when it is
+    // absent a pure-CSS lifecycle animation drives it instead.
+    //
     // Appended BEFORE canvas so canvas (dark overlay + aperture punch) stacks on top.
     let cssPortalEl = null;
-    if (!prefersReducedMotion && _getPortalCoreState().gsapLoaded && window.gsap) {
-      const maskUrl = getSpiralMaskUrl();
+    if (!prefersReducedMotion) {
+      const gsapReady = !!(_getPortalCoreState().gsapLoaded && window.gsap);
       const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 3.0;
 
-      // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
-      // Dual-speed portal: outer layer spins fast (4.5s), inner core spins slow (14s)
       portalStyleEl.textContent = [
-        "@keyframes ss-portal-spin{0%{transform:rotate(359deg)}}",
-        // Organic warp: asymmetric scale + skew breathing cycle
-        "@keyframes ss-portal-warp{0%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7) scaleY(1.0) skew(0deg)}25%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.78) scaleY(0.93) skew(1.5deg)}50%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.65) scaleY(1.05) skew(-1deg)}75%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.74) scaleY(0.96) skew(0.8deg)}100%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7) scaleY(1.0) skew(0deg)}}",
-        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 8px rgba(123,63,191,0.3)) drop-shadow(0 0 20px rgba(90,45,138,0.15));overflow:hidden;pointer-events:none;border-radius:50%;opacity:0;animation:ss-portal-warp 3s ease-in-out infinite}",
-        // Main layer — oversized (inset:-30%) so mask edges are off-screen during burst
-        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:-30%;animation:ss-portal-spin 2.8s infinite linear}",
-        `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) center/100% 100% no-repeat;mask:url(${maskUrl}) center/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
-        // Inner core — also oversized to avoid crop at burst scale
-        ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:-5%;animation:ss-portal-spin 8s infinite linear}",
-        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) center/100% 100% no-repeat;mask:url(${maskUrl}) center/100% 100% no-repeat}`,
-        '.ss-portal-css__core::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
+        "@keyframes ss-portal-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}",
+        // No-GSAP lifecycle: fade in, hold, burst outward, fade out.
+        "@keyframes ss-portal-img-life{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}15%{opacity:1}55%{opacity:1;transform:translate(-50%,-50%) scale(1)}78%{opacity:1;transform:translate(-50%,-50%) scale(2)}100%{opacity:0;transform:translate(-50%,-50%) scale(2.8)}}",
+        ".ss-portal-img{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.5);opacity:0;pointer-events:none;border-radius:50%;overflow:hidden;filter:drop-shadow(0 0 24px rgba(123,63,191,.45)) drop-shadow(0 0 60px rgba(90,45,138,.25))}",
+        // The PNG as visible artwork — counter-rotating layers for depth.
+        `.ss-portal-img__inner,.ss-portal-img__core{position:absolute;inset:0;background:url(${PORTAL_IMAGE_DATA_URL}) center/100% 100% no-repeat}`,
+        ".ss-portal-img__inner{animation:ss-portal-spin 2.8s infinite linear}",
+        ".ss-portal-img__core{animation:ss-portal-spin 8s infinite linear reverse;opacity:.7}",
+        // Applied ONLY when GSAP is unavailable — otherwise GSAP owns the lifecycle.
+        ".ss-portal-img--css{animation:ss-portal-img-life var(--ss-duration,2000ms) cubic-bezier(.22,.61,.36,1) forwards}",
       ].join("");
       overlay.appendChild(portalStyleEl);
 
       cssPortalEl = document.createElement("div");
-      cssPortalEl.className = "ss-portal-css";
+      cssPortalEl.className = "ss-portal-img" + (gsapReady ? "" : " ss-portal-img--css");
       cssPortalEl.style.width = `${portalDiam}px`;
       cssPortalEl.style.height = `${portalDiam}px`;
-      cssPortalEl.style.setProperty("--ss-portal-color", "#1e0a30");
       const portalInner = document.createElement("div");
-      portalInner.className = "ss-portal-css__inner";
+      portalInner.className = "ss-portal-img__inner";
       cssPortalEl.appendChild(portalInner);
       const portalCore = document.createElement("div");
-      portalCore.className = "ss-portal-css__core";
+      portalCore.className = "ss-portal-img__core";
       cssPortalEl.appendChild(portalCore);
       // Store layer refs for individual GSAP animation
       cssPortalEl._inner = portalInner;
@@ -2432,9 +2331,6 @@ function startDrawLoop() {
     core.gsapLoaded = false;
     core.gsapLoadPromise = null;
     core.gsapLogSent = false;
-    core.spiralMaskUrl = null;
-    core.spiralMaskReady = false;
-    core.spiralMaskLoadedFrom = null;
     // Last consumer out — remove the shared transition CSS.
     try {
       if (BdApi?.DOM?.removeStyle) BdApi.DOM.removeStyle(PORTAL_TRANSITION_STYLE_ID);
@@ -2493,9 +2389,6 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
   if (!core.gsapLoadPromise && !core.gsapLoaded) {
     methods._ensureGSAP.call({}).catch(() => {});
   }
-
-  // Fire-and-forget spiral mask preload — tries imgur PNG first, procedural fallback.
-  preloadSpiralMask();
 
   return true;
 }
