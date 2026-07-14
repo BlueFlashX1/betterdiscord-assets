@@ -330,6 +330,8 @@ function _getPortalCoreState() {
 }
 var SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 var REVEAL_HOLD_CAP_MS = 500;
+var REVEAL_HOLD_CAP_UNCACHED_MS = 2200;
+var REVEAL_READY_POLL_MS = 32;
 function preloadSpiralMask() {
   const core = _getPortalCoreState();
   if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
@@ -858,9 +860,10 @@ var methods = {
     this._cancelPendingTransition();
     this._transitionRunId = Number(this._transitionRunId || 0) + 1;
     const runId = this._transitionRunId;
-    this._portalRevealGate = { released: false, capMs: REVEAL_HOLD_CAP_MS };
     const configuredDuration = this.settings.animationDuration || 550;
     const isCached = !!targetPath && this._isChannelCached(targetPath);
+    const revealCapMs = isCached ? REVEAL_HOLD_CAP_MS : REVEAL_HOLD_CAP_UNCACHED_MS;
+    this._portalRevealGate = { released: false, capMs: revealCapMs };
     const duration = 2e3;
     const totalDuration = 2500;
     const transitionStartedAt = performance.now();
@@ -1054,12 +1057,20 @@ var methods = {
       debugLog(this, "Transition", `Navigation callback fired at ${Math.round(performance.now() - transitionStartedAt)}ms`);
       callback();
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (runId !== this._transitionRunId) return;
-          this._releasePortalReveal("nav-committed");
-        });
-      });
+      const readyDeadline = performance.now() + revealCapMs;
+      const pollReady = () => {
+        if (runId !== this._transitionRunId) return;
+        if (this._isDestinationReady(targetPath)) {
+          this._releasePortalReveal("dest-ready");
+          return;
+        }
+        if (performance.now() >= readyDeadline) {
+          this._releasePortalReveal("ready-timeout");
+          return;
+        }
+        setTimeout(pollReady, REVEAL_READY_POLL_MS);
+      };
+      requestAnimationFrame(() => requestAnimationFrame(pollReady));
     };
     const navDelay = prefersReducedMotion ? 24 : Math.max(580, Math.round(totalDuration * 0.39));
     _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms, cached=${isCached})`);
@@ -1070,7 +1081,7 @@ var methods = {
       this._transitionNavTimeout = null;
       runNavigation();
     }, navDelay);
-    const cleanupDelay = prefersReducedMotion ? Math.max(320, Math.round(duration * 0.98)) : totalDuration + 340 + REVEAL_HOLD_CAP_MS;
+    const cleanupDelay = prefersReducedMotion ? Math.max(320, Math.round(duration * 0.98)) : totalDuration + 340 + revealCapMs;
     _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
@@ -1080,8 +1091,25 @@ var methods = {
     }, cleanupDelay);
   },
   /**
-   * REVEAL GATE release — called when navigation has committed (double-rAF
-   * after the route callback) or when the draw loop hits the hold cap.
+   * Is the teleport destination actually ready to be revealed?
+   * True when the route has committed to the target AND (for a channel path)
+   * the target channel's messages are present — i.e. Discord has painted the
+   * destination, not just the old channel behind a committed URL. Used by the
+   * reveal gate so the aperture opens onto the new channel, not the old one.
+   */
+  _isDestinationReady(targetPath) {
+    try {
+      if (!this._isPathActive(targetPath)) return false;
+      const channelId = this._extractChannelId(targetPath);
+      if (!channelId) return true;
+      return this._isChannelCached(targetPath);
+    } catch (_) {
+      return false;
+    }
+  },
+  /**
+   * REVEAL GATE release — called when the destination is ready (readiness poll
+   * after the route callback) or when the draw loop / poll hits the hold cap.
    * Idempotent; resumes the GSAP timeline if it's parked at the addPause.
    */
   _releasePortalReveal(reason) {

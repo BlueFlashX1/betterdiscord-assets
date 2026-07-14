@@ -59,14 +59,23 @@ function _getPortalCoreState() {
 const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/matthewqilanthompson/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 
 // REVEAL GATE (2026-07-13): max extra time the portal may HOLD at full black
-// waiting for navigation to commit before the reveal is forced anyway. The
-// gate fixes the mistimed reveal: nav fires at ~585ms but the aperture opened
-// on a fixed clock at 720ms — only ~135ms for Discord to route-switch and
-// paint, so on real servers the reveal showed the OLD channel and the actual
-// switch popped after the portal cleared. The reveal now waits for the
-// navigation to commit (double-rAF after the route callback), capped here so
-// a slow load can never hang the overlay.
-const REVEAL_HOLD_CAP_MS = 500;
+// waiting for the DESTINATION to be ready before the reveal is forced anyway.
+// The gate fixes the mistimed reveal: the aperture used to open on a fixed
+// clock, so on real servers it showed the OLD channel and the actual switch
+// popped after the portal cleared.
+//
+// (2026-07-13b) A double-rAF "nav committed" release was still too optimistic
+// for CROSS-SERVER jumps: the route callback returns in ~2 frames but Discord
+// needs hundreds of ms more to load the new guild's channels + messages, so
+// the reveal fired onto a not-yet-painted destination and the switch popped
+// after the animation. The gate now polls actual destination readiness
+// (route active + messages present) and only falls back to a time cap. Cached
+// destinations satisfy readiness within a frame or two (short cap); uncached
+// cross-server loads get a much larger ceiling so black holds until content
+// is really there.
+const REVEAL_HOLD_CAP_MS = 500;            // cached destination — reveal fast
+const REVEAL_HOLD_CAP_UNCACHED_MS = 2200;  // uncached / cross-server ceiling
+const REVEAL_READY_POLL_MS = 32;           // readiness re-check cadence
 
 /**
  * Preload the spiral mask image from imgur.
@@ -668,16 +677,20 @@ const methods = {
     this._transitionRunId = Number(this._transitionRunId || 0) + 1;
     const runId = this._transitionRunId;
 
-    // REVEAL GATE: freeze-at-black state shared between the draw loop (clock
-    // hold), the GSAP timeline (addPause at the reveal boundary), and
-    // runNavigation (releases after the route callback commits).
-    this._portalRevealGate = { released: false, capMs: REVEAL_HOLD_CAP_MS };
-
     // Timing: Two profiles based on whether target channel is cached
     // Fast (cached):     ~1000ms total, same full portal but sped up
     // Cinematic (uncached): user's configured duration (default 550), full portal
     const configuredDuration = this.settings.animationDuration || 550;
     const isCached = !!targetPath && this._isChannelCached(targetPath);
+
+    // REVEAL GATE: freeze-at-black state shared between the draw loop (clock
+    // hold), the GSAP timeline (addPause at the reveal boundary), and
+    // runNavigation (releases once the DESTINATION is actually ready). The hold
+    // cap is the safety ceiling if readiness never resolves — short for cached
+    // destinations, generous for uncached cross-server loads that need time to
+    // fetch the new guild's channels + messages.
+    const revealCapMs = isCached ? REVEAL_HOLD_CAP_MS : REVEAL_HOLD_CAP_UNCACHED_MS;
+    this._portalRevealGate = { released: false, capMs: revealCapMs };
 
     // Both paths play the full ~2.5s canvas portal — extra dwell for the
     // shadow portal to linger (shockwave + glow breathing read more clearly).
@@ -898,15 +911,31 @@ const methods = {
       callback();
       // Log when Discord actually processes the navigation (next microtask)
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
-      // REVEAL GATE release: double-rAF ≈ Discord committed the route change
-      // and painted the destination view (at least its frame/skeleton) — NOW
-      // the aperture may open onto the new channel instead of the old one.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (runId !== this._transitionRunId) return;
-          this._releasePortalReveal("nav-committed");
-        });
-      });
+
+      // REVEAL GATE release: a plain double-rAF ("route callback returned")
+      // was too early for cross-server jumps — the callback returns in ~2
+      // frames but Discord still needs to load the new guild's channels +
+      // messages, so the reveal opened onto the OLD channel and the switch
+      // popped after the portal. Instead, poll for the destination to be
+      // genuinely ready (route active + messages present) and only release
+      // then; the gate's capMs (set from isCached) is the safety ceiling so a
+      // slow/failed load can never hang the overlay.
+      const readyDeadline = performance.now() + revealCapMs;
+      const pollReady = () => {
+        if (runId !== this._transitionRunId) return;
+        if (this._isDestinationReady(targetPath)) {
+          this._releasePortalReveal("dest-ready");
+          return;
+        }
+        if (performance.now() >= readyDeadline) {
+          this._releasePortalReveal("ready-timeout");
+          return;
+        }
+        setTimeout(pollReady, REVEAL_READY_POLL_MS);
+      };
+      // Start after a double-rAF so the route callback has at least been
+      // applied to history before the first readiness check.
+      requestAnimationFrame(() => requestAnimationFrame(pollReady));
     };
 
     // Navigation delay — SAME for cached and uncached:
@@ -938,7 +967,7 @@ const methods = {
     //   fast case costs nothing visible).
     const cleanupDelay = prefersReducedMotion
       ? Math.max(320, Math.round(duration * 0.98))
-      : totalDuration + 340 + REVEAL_HOLD_CAP_MS;
+      : totalDuration + 340 + revealCapMs;
     _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
@@ -949,8 +978,33 @@ const methods = {
   },
 
   /**
-   * REVEAL GATE release — called when navigation has committed (double-rAF
-   * after the route callback) or when the draw loop hits the hold cap.
+   * Is the teleport destination actually ready to be revealed?
+   * True when the route has committed to the target AND (for a channel path)
+   * the target channel's messages are present — i.e. Discord has painted the
+   * destination, not just the old channel behind a committed URL. Used by the
+   * reveal gate so the aperture opens onto the new channel, not the old one.
+   */
+  _isDestinationReady(targetPath) {
+    try {
+      // Route must have committed to the target (or a deeper path under it).
+      if (!this._isPathActive(targetPath)) return false;
+      const channelId = this._extractChannelId(targetPath);
+      // No channel component (e.g. /channels/@me home) — route commit is enough.
+      if (!channelId) return true;
+      // Channel destination: messages present means the view has data to paint.
+      // _isChannelCached reads MessageStore, which is populated once Discord's
+      // LOAD_MESSAGES_SUCCESS lands for the target channel (or immediately for
+      // a previously-visited channel).
+      return this._isChannelCached(targetPath);
+    } catch (_) {
+      // On any store hiccup, don't wedge the gate — let the time cap handle it.
+      return false;
+    }
+  },
+
+  /**
+   * REVEAL GATE release — called when the destination is ready (readiness poll
+   * after the route callback) or when the draw loop / poll hits the hold cap.
    * Idempotent; resumes the GSAP timeline if it's parked at the addPause.
    */
   _releasePortalReveal(reason) {
