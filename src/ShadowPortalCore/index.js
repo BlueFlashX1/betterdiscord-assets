@@ -679,10 +679,10 @@ const methods = {
     const configuredDuration = this.settings.animationDuration || 550;
     const isCached = !!targetPath && this._isChannelCached(targetPath);
 
-    // Both paths play the full ~1.95s canvas portal — extra dwell for the
+    // Both paths play the full ~2.5s canvas portal — extra dwell for the
     // shadow portal to linger (shockwave + glow breathing read more clearly).
-    const duration = 1550;                                          // Canvas animation length
-    const totalDuration = 1950;                                     // Total overlay lifetime (~1.95s)
+    const duration = 2000;                                          // Canvas animation length
+    const totalDuration = 2500;                                     // Total overlay lifetime (~2.5s)
     const transitionStartedAt = performance.now();
 
     // Portal Diagnostic Timeline (gated behind debugMode)
@@ -694,7 +694,7 @@ const methods = {
       _diag.events.push({ phase, ms });
       console.log(`%c[PortalDiag]%c ${phase} %c@ ${ms}ms`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
     };
-    _diagLog(isCached ? "TRANSITION_START (cached, ~1.95s)" : "TRANSITION_START (cinematic, ~1.95s)");
+    _diagLog(isCached ? "TRANSITION_START (cached, ~2.5s)" : "TRANSITION_START (cinematic, ~2.5s)");
     if (_debugMode) {
       console.log(`%c[PortalDiag]%c cached=${isCached} configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
       console.log(`%c[PortalDiag]%c navDelay=${Math.max(580, Math.round(totalDuration * 0.39))}ms cleanup=${totalDuration + 340}ms (unified timing)`, "color:#a855f7;font-weight:bold", "color:#94a3b8");

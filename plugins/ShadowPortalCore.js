@@ -861,8 +861,8 @@ var methods = {
     this._portalRevealGate = { released: false, capMs: REVEAL_HOLD_CAP_MS };
     const configuredDuration = this.settings.animationDuration || 550;
     const isCached = !!targetPath && this._isChannelCached(targetPath);
-    const duration = 1550;
-    const totalDuration = 1950;
+    const duration = 2e3;
+    const totalDuration = 2500;
     const transitionStartedAt = performance.now();
     const _debugMode = !!((_b = this.settings) == null ? void 0 : _b.debugMode);
     const _diag = { t0: transitionStartedAt, events: [] };
@@ -872,7 +872,7 @@ var methods = {
       _diag.events.push({ phase, ms });
       console.log(`%c[PortalDiag]%c ${phase} %c@ ${ms}ms`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
     };
-    _diagLog(isCached ? "TRANSITION_START (cached, ~1.95s)" : "TRANSITION_START (cinematic, ~1.95s)");
+    _diagLog(isCached ? "TRANSITION_START (cached, ~2.5s)" : "TRANSITION_START (cinematic, ~2.5s)");
     if (_debugMode) {
       console.log(`%c[PortalDiag]%c cached=${isCached} configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
       console.log(`%c[PortalDiag]%c navDelay=${Math.max(580, Math.round(totalDuration * 0.39))}ms cleanup=${totalDuration + 340}ms (unified timing)`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
