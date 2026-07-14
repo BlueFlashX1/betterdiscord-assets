@@ -339,6 +339,12 @@ module.exports = class ShadowRecon {
     this._UserStore = Webpack.getStore("UserStore");
     this._PresenceStore = Webpack.getStore("PresenceStore");
     this._GuildMemberStore = Webpack.getStore("GuildMemberStore");
+    // GuildRoleStore (2026-07-13): Discord moved role data OUT of the guild
+    // record (guild.roles) into a dedicated store. Without this, every
+    // non-owner's permissions computed to zero — admins/mods/staff were
+    // invisible. getStore returns null on builds that still keep guild.roles;
+    // computeGuildPermissionBits falls back to that.
+    this._GuildRoleStore = Webpack.getStore("GuildRoleStore");
     this._GuildMemberCountStore = Webpack.getStore("GuildMemberCountStore");
     this._SessionsStore = Webpack.getStore("SessionsStore");
 

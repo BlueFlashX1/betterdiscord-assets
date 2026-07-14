@@ -28,22 +28,63 @@ function isDetailedStaffIntelUnlocked(plugin, guildId) {
   return plugin.isGuildMarked(guildId);
 }
 
+// Robust owner check — the guild record's owner field name/type varies
+// across builds. Compare as strings across the known shapes.
+function isGuildOwner(guild, userId) {
+  if (!guild || !userId) return false;
+  const uid = String(userId);
+  return String(guild.ownerId ?? "") === uid || String(guild.owner_id ?? "") === uid;
+}
+
+// Resolve a guild's roles as a { roleId: role } map. Roles moved from the
+// guild record into GuildRoleStore (2026 refactor), so try that first, then
+// fall back to guild.roles for older builds. Cached per guild on the plugin
+// for the life of the dossier interaction.
+function getGuildRoleMap(plugin, guildId, guild) {
+  const grs = plugin._GuildRoleStore;
+  try {
+    if (grs?.getRoles) {
+      const roles = grs.getRoles(guildId);
+      if (roles && typeof roles === "object" && Object.keys(roles).length > 0) return roles;
+    }
+  } catch (_) {}
+  if (guild?.roles && typeof guild.roles === "object" && Object.keys(guild.roles).length > 0) {
+    return guild.roles;
+  }
+  return null;
+}
+
+// Fetch a single role, preferring an already-resolved map, then the store's
+// per-role getter — covers builds where getRoles() isn't present.
+function getGuildRole(plugin, guildId, roleId, roleMap) {
+  if (roleMap && roleMap[roleId]) return roleMap[roleId];
+  try {
+    const r = plugin._GuildRoleStore?.getRole?.(guildId, roleId);
+    if (r) return r;
+  } catch (_) {}
+  return null;
+}
+
 function computeGuildPermissionBits(plugin, guildId, userId) {
   const guild = plugin._GuildStore?.getGuild?.(guildId);
   if (!guild) return 0n;
 
-  if (String(guild.ownerId) === String(userId)) {
+  // Owner holds every permission implicitly.
+  if (isGuildOwner(guild, userId)) {
     return allPermissionBits(plugin);
   }
 
   const member = plugin._GuildMemberStore?.getMember?.(guildId, userId);
   if (!member) return 0n;
 
+  // @everyone role shares the guild id; a member's effective guild-level
+  // permissions are the OR of @everyone plus each assigned role.
+  const roleMap = getGuildRoleMap(plugin, guildId, guild);
   const roleIds = new Set([String(guildId), ...(Array.isArray(member.roles) ? member.roles.map(String) : [])]);
   let bits = 0n;
 
   for (const roleId of roleIds) {
-    const role = guild.roles?.[roleId];
+    const role = getGuildRole(plugin, guildId, roleId, roleMap);
     if (!role) continue;
     bits |= toBigInt(role.permissions);
   }
@@ -148,7 +189,7 @@ function getStaffIntel(plugin, userId, guildId, constants) {
   const guild = plugin._GuildStore?.getGuild?.(guildId);
   if (!guild) return null;
 
-  if (String(guild.ownerId) === String(userId)) {
+  if (isGuildOwner(guild, userId)) {
     return { label: "Server Owner", capabilities: ["Full control"] };
   }
 
@@ -184,7 +225,10 @@ function getStaffIntel(plugin, userId, guildId, constants) {
 function bandRolesByPower(plugin, guildId) {
   const result = { S: [], A: [], B: [], C: [], D: [] };
   const guild = plugin._GuildStore?.getGuild?.(guildId);
-  if (!guild?.roles) return result;
+  if (!guild) return result;
+  // Roles from GuildRoleStore (2026 refactor), fallback to guild.roles.
+  const roleMap = getGuildRoleMap(plugin, guildId, guild);
+  if (!roleMap) return result;
 
   const bitMap = getPermissionBitsMap(plugin);
   const ADMIN = bitMap.ADMINISTRATOR || 0n;
@@ -219,7 +263,7 @@ function bandRolesByPower(plugin, guildId) {
     }
   } catch (_) {}
 
-  for (const [roleId, role] of Object.entries(guild.roles)) {
+  for (const [roleId, role] of Object.entries(roleMap)) {
     if (!role) continue;
     const bits = toBigInt(role.permissions);
     if (bits === 0n) continue;
