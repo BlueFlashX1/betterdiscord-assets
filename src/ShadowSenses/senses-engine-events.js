@@ -1017,11 +1017,10 @@ function onTypingStart(payload) {
     const deployment = this._plugin.deploymentManager.getDeploymentForUser(userId);
     if (!deployment) return;
 
-    // Suppress toast if user is currently viewing the same channel —
-    // Discord's native typing indicator already shows there.
-    // Use the instance-cached _SelectedChannelStore (resolved once in
-    // initWebpack) rather than calling getStore on every TYPING_START.
-    if (channelId) {
+    // Same-channel suppression is now OPT-IN (settings.suppressTypingInViewedChannel,
+    // default off). Watching a target from inside their channel previously
+    // dropped every typing toast silently — the reported bug. Default: report.
+    if (channelId && this._plugin.settings?.suppressTypingInViewedChannel) {
       try {
         const selectedChannelId = this._plugin._SelectedChannelStore?.getChannelId?.();
         if (selectedChannelId && selectedChannelId === channelId) return;

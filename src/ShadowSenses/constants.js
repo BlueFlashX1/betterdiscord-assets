@@ -71,6 +71,12 @@ const DEFAULT_SETTINGS = {
   startupShadowReportWindowHours: 24,
   startupShadowReportArtwork: STARTUP_REPORT_ARTWORK_FALLBACK_URL,
   typingAlerts: true,
+  // When you're viewing the same channel a marked target types in, Discord
+  // shows its own native typing indicator. Previously ShadowSenses always
+  // suppressed its toast there — which read as "typing toasts don't work"
+  // for anyone watching from inside the channel. Default now: still report
+  // (you deployed a shadow to watch them). Set true to suppress in-channel.
+  suppressTypingInViewedChannel: false,
   removedFriendAlerts: true,
   showMarkedOnlineCount: true,
   typingAlertCooldownMs: DEFAULT_TYPING_ALERT_COOLDOWN_MS,

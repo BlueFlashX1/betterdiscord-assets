@@ -908,6 +908,16 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Suppress typing alerts in the channel you're viewing"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.suppressTypingInViewedChannel,
+          onChange: (e) => updateSetting("suppressTypingInViewedChannel", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
         ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Removed Friend Alerts"),
         ce("input", {
           type: "checkbox",
