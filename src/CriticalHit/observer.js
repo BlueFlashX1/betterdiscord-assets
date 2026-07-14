@@ -230,6 +230,27 @@ module.exports = {
       // PERF: Prune disconnected DOM refs from critMessages every 100 additions
       if (this.critMessages.size > 100) this.pruneCritMessages();
 
+      // ID-SWAP CONSUMER (2026-07-13): Discord renders an OWN message
+      // optimistically, then React swaps the real snowflake into
+      // data-message-id IN PLACE. That is an ATTRIBUTE mutation and produces
+      // no childList mutation, so the queued crit animation could previously
+      // only be claimed by the two timed attempts in _onMessageCreate (a
+      // double-rAF and a single 400ms timer). When the swap landed after those
+      // — slow ack, slow render — the pending entry was stranded forever:
+      // the message still turned crit-coloured (the injected CSS matches
+      // [data-message-id]) but the CRITICAL HIT! text and the combo never
+      // fired. Claiming the entry on the id-swap itself closes that race for
+      // good, independent of timing.
+      for (let i = 0; i < mutations.length; i++) {
+        const m = mutations[i];
+        if (m.type !== 'attributes' || m.attributeName !== 'data-message-id') continue;
+        const el = m.target;
+        const swappedId = el?.getAttribute?.('data-message-id');
+        if (!swappedId || !this._pendingAnimations?.has(swappedId)) continue;
+        const messageEl = el.closest?.('li[class*="messageListItem"]') || el;
+        this._consumePendingCritAnimation(swappedId, messageEl);
+      }
+
       // PERF: Batch all added nodes from the mutation batch, process in single RAF chain
       const addedElements = [];
       for (let i = 0; i < mutations.length; i++) {
@@ -299,6 +320,12 @@ module.exports = {
       this.messageObserver.observe(messageContainer, {
         childList: true,
         subtree: true,
+        // Watch ONLY data-message-id: React swaps the real snowflake onto the
+        // optimistically-rendered own message in place, with no childList
+        // mutation. attributeFilter keeps this cheap — no other attribute
+        // change wakes the callback. See the id-swap consumer above.
+        attributes: true,
+        attributeFilter: ['data-message-id'],
       });
 
       this.debug?.verbose &&
