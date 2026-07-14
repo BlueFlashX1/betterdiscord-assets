@@ -51,6 +51,10 @@ function normalizeDeploymentRecord(record) {
     shadowId: normalizedShadowId,
     alertKeywords: normalizeAlertKeywords(record.alertKeywords),
     watchFocus: normalizeWatchFocus(record.watchFocus),
+    // The Monarch's Mark — a priority target whose reports always cut
+    // through (see engine): gold urgent styling, watch-focus mutes ignored,
+    // higher rate cap. Default off.
+    priority: record.priority === true,
   };
 }
 
@@ -194,6 +198,7 @@ class DeploymentManager {
       deployedAt: Date.now(),
       alertKeywords: [],
       watchFocus: normalizeWatchFocus(null), // all signals on by default
+      priority: false,
     };
 
     this._deployments.push(record);
@@ -227,6 +232,7 @@ class DeploymentManager {
       ...deployment,
       alertKeywords: [...(deployment.alertKeywords || [])],
       watchFocus: normalizeWatchFocus(deployment.watchFocus),
+      priority: deployment.priority === true,
     }));
   }
 
@@ -246,6 +252,25 @@ class DeploymentManager {
   getWatchFocusForUser(userId) {
     const deployment = this.getDeploymentForUser(userId);
     return normalizeWatchFocus(deployment?.watchFocus);
+  }
+
+  isPriorityTarget(userId) {
+    return this.getDeploymentForUser(userId)?.priority === true;
+  }
+
+  setPriorityForUser(userId, enabled) {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return { ok: false };
+    const idx = this._deployments.findIndex(
+      (entry) => String(entry.targetUserId) === normalizedUserId
+    );
+    if (idx < 0) return { ok: false };
+    const next = !!enabled;
+    if ((this._deployments[idx].priority === true) === next) return { ok: true, changed: false };
+    this._deployments[idx].priority = next;
+    this._save();
+    this._debugLog("DeploymentManager", "Updated Monarch's Mark", { targetUserId: normalizedUserId, priority: next });
+    return { ok: true, changed: true };
   }
 
   // Returns { ok, changed } like setAlertKeywordsForUser so the caller can

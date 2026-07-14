@@ -342,7 +342,8 @@ function buildComponents(pluginRef) {
         // Include watch-focus so a focus toggle is a snapshot change too.
         const f = deployment.watchFocus || {};
         const focusSig = `${f.status !== false ? 1 : 0}${f.typing !== false ? 1 : 0}${f.messages !== false ? 1 : 0}${f.mentions !== false ? 1 : 0}`;
-        return `${shadowId}:${userId}:${keywordSig}:${focusSig}`;
+        const prioSig = deployment.priority === true ? "P" : "-";
+        return `${shadowId}:${userId}:${keywordSig}:${focusSig}:${prioSig}`;
       })
       .join(";");
   }
@@ -551,9 +552,10 @@ function buildComponents(pluginRef) {
     }
   }
 
-  function DeploymentRow({ deployment, onRecall, onToggleFocus, onDossier }) {
+  function DeploymentRow({ deployment, onRecall, onToggleFocus, onDossier, onTogglePriority }) {
     const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
     const focus = deployment.watchFocus || {};
+    const isPriority = deployment.priority === true;
     // Resolve the DISPLAY name live from the user store so even deployments
     // saved before the display-name fix show a readable name immediately,
     // and the label stays current if the target changes their display name.
@@ -635,6 +637,27 @@ function buildComponents(pluginRef) {
           }, chip.label);
         })
       ),
+      ce("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+      ce("button", {
+        title: isPriority
+          ? "The Monarch's Mark — priority target (cuts through mutes, gold urgent reports). Click to unmark."
+          : "Set the Monarch's Mark — make this a priority target whose reports always cut through.",
+        onClick: () => onTogglePriority && onTogglePriority(deployment, !isPriority),
+        ref: (el) => {
+          if (!el) return;
+          el.style.setProperty("background", isPriority ? "rgba(251,191,36,0.20)" : "rgba(0,0,0,0.25)", "important");
+          el.style.setProperty("color", isPriority ? "#fbbf24" : "#6a6a7e", "important");
+          el.style.setProperty("border", `1px solid ${isPriority ? "rgba(251,191,36,0.55)" : "rgba(120,120,140,0.18)"}`, "important");
+          el.style.setProperty("border-radius", "2px", "important");
+          el.style.setProperty("padding", "3px 9px", "important");
+          el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+          el.style.setProperty("font-size", "10px", "important");
+          el.style.setProperty("font-weight", "700", "important");
+          el.style.setProperty("cursor", "pointer", "important");
+          el.style.setProperty("outline", "none", "important");
+          el.style.setProperty("box-shadow", "none", "important");
+        },
+      }, isPriority ? "★ Marked" : "☆ Mark"),
       ce("button", {
         title: "Copy this target's last 24h of recorded activity to the clipboard",
         onClick: () => onDossier && onDossier(deployment),
@@ -661,6 +684,7 @@ function buildComponents(pluginRef) {
           e.currentTarget.style.setProperty("background", "rgba(59, 130, 246, 0.12)", "important");
         },
       }, "Dossier")
+      )
     );
 
     return ce("div", {
@@ -669,7 +693,11 @@ function buildComponents(pluginRef) {
         if (!el) return;
         el.style.setProperty("display", "block", "important");
         el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
+        // Marked (priority) targets get a gold left edge so they stand out
+        // in the list at a glance.
         el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.32)", "important");
+        el.style.setProperty("border-left",
+          isPriority ? "3px solid rgba(251,191,36,0.7)" : "1px solid rgba(138, 43, 226, 0.32)", "important");
         el.style.setProperty("border-radius", "2px", "important");
         el.style.setProperty("padding", "10px 14px", "important");
         el.style.setProperty("margin", "0 0 8px 0", "important");
@@ -838,6 +866,17 @@ function buildComponents(pluginRef) {
       }
     }, []);
 
+    const handleTogglePriority = useCallback((deployment, enabled) => {
+      try {
+        const dm = pluginRef.deploymentManager;
+        if (!dm?.setPriorityForUser) return;
+        const res = dm.setPriorityForUser(deployment.targetUserId, enabled);
+        if (res?.changed) setDeployments(dm.getDeployments());
+      } catch (err) {
+        pluginRef.debugError?.("DeploymentsTab", "Toggle priority failed:", err);
+      }
+    }, []);
+
     const handleDossier = useCallback((deployment) => {
       try {
         const engine = pluginRef.sensesEngine;
@@ -886,6 +925,7 @@ function buildComponents(pluginRef) {
           onRecall: handleRecall,
           onToggleFocus: handleToggleFocus,
           onDossier: handleDossier,
+          onTogglePriority: handleTogglePriority,
         })
       ),
       ce("div", { style: { display: "flex", justifyContent: "center", marginTop: 12 } },

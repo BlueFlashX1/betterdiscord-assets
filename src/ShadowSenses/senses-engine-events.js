@@ -158,8 +158,14 @@ function _monarch(ctx) {
 // this can never suppress a report for a target whose record predates the
 // feature or wasn't resolved. Gates toasts only; the feed still records.
 function focusAllows(deployment, signal) {
+  // The Monarch's Mark cuts through watch-focus mutes — a priority target
+  // always reports every signal.
+  if (deployment?.priority) return true;
   return deployment?.watchFocus?.[signal] !== false;
 }
+
+// Gold urgent accent for a priority (Monarch's-Mark) target's reports.
+const PRIORITY_ACCENT = "#fbbf24";
 
 const MAX_ACTIVITY_SEED_SCAN_ENTRIES = 6000;
 const LAST_SEEN_FALLBACK_MS = 24 * 60 * 60 * 1000;
@@ -1029,7 +1035,7 @@ function onTypingStart(payload) {
         const avatarUrl = this._resolveUserAvatarUrl(userId) || DEFAULT_AVATAR_URL;
         this._toastEngine.showCardToast({
           avatarUrl,
-          accentColor: "#9333ea",
+          accentColor: deployment.priority ? PRIORITY_ACCENT : "#9333ea",
           // Header dropped: the "[shadow] senses" framing felt redundant
           // alongside the body line. Avatar + purple accent still identify
           // the toast as ShadowSenses intel.
@@ -1196,13 +1202,13 @@ function onMessageCreate(payload) {
           const friendSuffix = this._isFriend(authorId) ? " [FRIEND]" : "";
           this._toastEngine.showCardToast({
             avatarUrl,
-            accentColor: "#22c55e",
+            accentColor: deployment.priority ? PRIORITY_ACCENT : "#22c55e",
             header: `[${deployment.shadowRank}] ${deployment.shadowName} reports${friendSuffix}`,
             body: reportBody("message", { userName: authorName, location: `${guildName} #${channelName}` }, _monarch(this)),
             detail: "Click to view message",
             timeout: 5000,
             callerId: "shadowSenses-sent",
-            maxPerMinute: 30,
+            maxPerMinute: deployment.priority ? 120 : 30,
             // SAME replaceKey as the typing toast so this dismisses it.
             replaceKey: `shadowsenses-typing:${authorId}`,
             onClick: () => navigateToChannel(guildId, message.channel_id, message.id),

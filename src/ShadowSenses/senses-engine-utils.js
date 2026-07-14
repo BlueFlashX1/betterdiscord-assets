@@ -260,7 +260,10 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
     } catch (_) {}
   }
 
-  const accent = STATUS_ACCENT_COLORS[nextStatus] || "#8a2be2";
+  // Monarch's Mark: gold urgent accent + higher rate cap so a priority
+  // target always cuts through.
+  const priority = deployment?.priority === true;
+  const accent = priority ? "#fbbf24" : (STATUS_ACCENT_COLORS[nextStatus] || "#8a2be2");
   const rankLabel = deployment?.shadowRank || "E";
   const shadowName = deployment?.shadowName || "Shadow";
   const friendSuffix = this._isFriend(userId) ? " [FRIEND]" : "";
@@ -274,7 +277,7 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
       body: body || `${userName || "Unknown"} ${previousLabel} -> ${nextLabel}`,
       timeout: STATUS_TOAST_TIMEOUT_MS,
       callerId: "shadowSenses-status",
-      maxPerMinute: 45,
+      maxPerMinute: priority ? 120 : 45,
       // Per-friend replacement: a fresh status toast for this user dismisses
       // any older one still on screen, so only the latest transition shows.
       replaceKey: `shadowsenses-presence:${userId}`,
@@ -288,15 +291,17 @@ function showMentionToast({ userId, userName, label, detail, accent, deployment,
   if (this._toastEngine) {
     const avatarUrl = this._resolveUserAvatarUrl(userId)
       || "https://cdn.discordapp.com/embed/avatars/0.png";
+    // Monarch's Mark overrides the per-match accent with gold + higher cap.
+    const priority = deployment?.priority === true;
     this._toastEngine.showCardToast({
       avatarUrl,
-      accentColor: accent,
+      accentColor: priority ? "#fbbf24" : accent,
       header: `[${deployment?.shadowRank || "E"}] ${deployment?.shadowName || "Shadow"}`,
       body: body || `${userName} ${label}`,
       detail: detail || undefined,
       timeout: STATUS_TOAST_TIMEOUT_MS,
       callerId: "shadowSenses-mention",
-      maxPerMinute: 30,
+      maxPerMinute: priority ? 120 : 30,
       onClick: typeof onClick === "function" ? onClick : undefined,
       // Inline media preview (image attachment / GIF still) when the
       // triggering message carried one (2026-07-13).
