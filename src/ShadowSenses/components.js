@@ -866,6 +866,70 @@ function buildComponents(pluginRef) {
       }
     }, []);
 
+    const handleMuster = useCallback(() => {
+      try {
+        const engine = pluginRef.sensesEngine;
+        if (!engine?.buildMusterReport) return;
+        const report = engine.buildMusterReport();
+        const monarch = pluginRef.settings?.reportToMonarch !== false;
+        const React = BdApi.React;
+
+        const fmtSilence = (ms) => {
+          if (ms == null) return "no activity seen";
+          const m = Math.floor(ms / 60000);
+          if (m < 1) return "active now";
+          if (m < 60) return `silent ${m}m`;
+          const h = Math.floor(m / 60);
+          if (h < 24) return `silent ${h}h`;
+          return `silent ${Math.floor(h / 24)}d`;
+        };
+        const rankColorOf = (r) => RANK_COLORS[r] || "#8a2be2";
+
+        const summary = monarch
+          ? `The army reports, my liege — ${report.onlineCount} of ${report.total} shadows' targets stand awake.`
+          : `${report.onlineCount} of ${report.total} watched targets online.`;
+
+        const rowsUi = report.rows.map((r, i) =>
+          React.createElement("div", {
+            key: i,
+            style: {
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "6px 8px", borderBottom: "1px solid rgba(138,43,226,0.10)",
+              fontFamily: "'gg sans', system-ui, sans-serif", fontSize: "12px",
+              color: r.online ? "#dcddde" : "#8a8a9a",
+              borderLeft: r.priority ? "3px solid #fbbf24" : "3px solid transparent",
+            },
+          },
+            React.createElement("span", { style: { color: rankColorOf(r.rank), fontWeight: 700 } }, `[${r.rank}]`),
+            React.createElement("span", { style: { color: "#d4b0ff", fontWeight: 600 } }, r.shadowName),
+            React.createElement("span", { style: { color: "#5a5a6e" } }, "→"),
+            React.createElement("span", { style: { flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, r.userName),
+            React.createElement("span", {
+              style: { color: r.online ? "#43b581" : "#72767d", fontSize: "11px" },
+            }, r.online ? r.statusLabel : fmtSilence(r.silenceMs))
+          )
+        );
+
+        const content = React.createElement("div",
+          { style: { maxHeight: "60vh", overflowY: "auto" } },
+          React.createElement("div", {
+            style: { color: "#b5bac1", fontSize: "13px", marginBottom: "10px", lineHeight: 1.4 },
+          }, summary),
+          report.rows.length ? rowsUi : React.createElement("div",
+            { style: { color: "#8a8a9a", fontSize: "12px", padding: "8px" } },
+            "No shadows deployed.")
+        );
+
+        BdApi.UI.showConfirmationModal(
+          monarch ? "Shadow Muster" : "Roll Call",
+          content,
+          { confirmText: "Dismiss", cancelText: null }
+        );
+      } catch (err) {
+        pluginRef.debugError?.("DeploymentsTab", "Muster failed:", err);
+      }
+    }, []);
+
     const handleTogglePriority = useCallback((deployment, enabled) => {
       try {
         const dm = pluginRef.deploymentManager;
@@ -918,6 +982,28 @@ function buildComponents(pluginRef) {
     }
 
     return ce("div", { style: { padding: "10px 16px 16px", maxHeight: "50vh", overflowY: "auto" } },
+      ce("div", { style: { display: "flex", justifyContent: "flex-end", marginBottom: 8 } },
+        ce("button", {
+          title: "Muster — the army's current read on every watched target",
+          onClick: handleMuster,
+          ref: (el) => {
+            if (!el) return;
+            el.style.setProperty("background", "rgba(138,43,226,0.14)", "important");
+            el.style.setProperty("color", "#d4b0ff", "important");
+            el.style.setProperty("border", "1px solid rgba(138,43,226,0.45)", "important");
+            el.style.setProperty("border-radius", "2px", "important");
+            el.style.setProperty("padding", "4px 12px", "important");
+            el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+            el.style.setProperty("font-size", "10px", "important");
+            el.style.setProperty("font-weight", "800", "important");
+            el.style.setProperty("letter-spacing", "0.06em", "important");
+            el.style.setProperty("text-transform", "uppercase", "important");
+            el.style.setProperty("cursor", "pointer", "important");
+            el.style.setProperty("outline", "none", "important");
+            el.style.setProperty("box-shadow", "none", "important");
+          },
+        }, "⚔ Muster")
+      ),
       deployments.map((d) =>
         ce(DeploymentRow, {
           key: d.shadowId,

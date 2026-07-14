@@ -534,6 +534,54 @@ function buildTargetDossier(userId, windowMs = 24 * 60 * 60 * 1000) {
   };
 }
 
+/**
+ * Roll-call / muster (2026-07-13): the army's current read on every watched
+ * target, from the live presence state (_statusByUserId) and last-activity
+ * map (_userLastActivity) already maintained — no new tracking. Returns a
+ * structured report the UI formats. `this` is the engine (mixed in), so it
+ * can read the plugin's deployment manager and status helpers.
+ */
+function buildMusterReport() {
+  const dm = this._plugin?.deploymentManager;
+  const deployments = dm ? dm.getDeployments() : [];
+  const now = Date.now();
+
+  const rows = deployments.map((d) => {
+    const uid = String(d.targetUserId);
+    const status = this._statusByUserId?.get(uid) || "offline";
+    const online = status !== "offline";
+    const act = this._userLastActivity?.get(uid);
+    const silenceMs = act?.timestamp ? Math.max(0, now - act.timestamp) : null;
+    const userName = this._resolveUserName
+      ? this._resolveUserName(uid, d.targetUsername || "Unknown")
+      : (d.targetUsername || "Unknown");
+    return {
+      rank: d.shadowRank || "E",
+      shadowName: d.shadowName || "Shadow",
+      userName,
+      status,
+      statusLabel: this._getStatusLabel ? this._getStatusLabel(status) : status,
+      online,
+      silenceMs,
+      priority: d.priority === true,
+    };
+  });
+
+  // Priority first, then online before offline, then by name.
+  rows.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority ? -1 : 1;
+    if (a.online !== b.online) return a.online ? -1 : 1;
+    return a.userName.localeCompare(b.userName);
+  });
+
+  return {
+    total: rows.length,
+    onlineCount: rows.filter((r) => r.online).length,
+    rows,
+    generatedAt: now,
+  };
+}
+
 /** Count of away-guild feed entries — no array copy. */
 function getActiveFeedCount() {
   let count = 0;
@@ -718,6 +766,7 @@ module.exports = {
   getActiveFeed,
   getActiveFeedCount,
   buildTargetDossier,
+  buildMusterReport,
   getMarkedOnlineCount,
   getSessionMessageCount,
   getStartupSummary,
