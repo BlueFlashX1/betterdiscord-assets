@@ -984,9 +984,26 @@ module.exports = class ShadowSenses {
     }
   }
 
+  // Names of Monarch's-Marked (priority) targets — used to spotlight them in
+  // the startup report. Returns a lowercase Set for case-insensitive matching
+  // against feed authorNames.
+  _markedTargetNameSet() {
+    try {
+      const deps = this.deploymentManager?.getDeployments?.() || [];
+      return new Set(
+        deps.filter((d) => d.priority === true)
+          .map((d) => String(d.targetUsername || "").toLowerCase())
+          .filter(Boolean)
+      );
+    } catch (_) {
+      return new Set();
+    }
+  }
+
   _buildStartupReportFallbackNarration(summary, windowHours, recentEntries = []) {
+    const hoursLabel = `${windowHours} hour${windowHours === 1 ? "" : "s"}`;
     if (!summary || Number(summary.totalEvents || 0) <= 0) {
-      return `My liege, in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}, your shadows detected no notable monitored activity.`;
+      return `My liege, the shadows kept watch through the last ${hoursLabel}. Nothing of note stirred.`;
     }
 
     const totalEvents = Math.max(0, Number(summary.totalEvents || 0));
@@ -1000,19 +1017,33 @@ module.exports = class ShadowSenses {
     const attentionDigest = this._buildStartupAttentionDigest(summary, recentEntries);
     const actionableCount = Math.max(0, Number(attentionDigest.actionableCount || 0));
 
+    // Spotlight marked targets that were active in the window (2026-07-13).
+    const marked = this._markedTargetNameSet();
+    const markedActive = marked.size
+      ? (summary.topTargets || []).filter((t) => marked.has(String(t.name || "").toLowerCase()))
+      : [];
+
     const parts = [
-      `My liege, shadows observed ${totalEvents} event${totalEvents === 1 ? "" : "s"} in the last ${windowHours} hour${windowHours === 1 ? "" : "s"}.`,
-      topChannel
-        ? `Most activity came from ${topChannelLabel} (${topChannelCount} signal${topChannelCount === 1 ? "" : "s"}).`
-        : `Most activity came from your monitored channels.`,
+      `My liege, your shadows observed ${totalEvents} signal${totalEvents === 1 ? "" : "s"} across the last ${hoursLabel}.`,
     ];
+
+    if (markedActive.length > 0) {
+      const names = markedActive.slice(0, 2).map((t) => t.name).join(" and ");
+      parts.push(`Your marked ${markedActive.length === 1 ? "quarry" : "quarries"} stirred — ${names} moved while you were away.`);
+    }
+
+    parts.push(
+      topChannel
+        ? `The most activity rose from ${topChannelLabel} (${topChannelCount} signal${topChannelCount === 1 ? "" : "s"}).`
+        : `The most activity rose from your monitored channels.`
+    );
 
     if (actionableCount > 0) {
       parts.push(
-        `${actionableCount} of ${totalEvents} signals require your attention, concentrated in: ${attentionDigest.focusText}.`
+        `${actionableCount} of ${totalEvents} call for your attention, concentrated in: ${attentionDigest.focusText}.`
       );
     } else {
-      parts.push("No urgent, high, or medium-priority signals require your attention in this window.");
+      parts.push("None of it demands your attention this hour.");
     }
 
     return parts.join(" ");
