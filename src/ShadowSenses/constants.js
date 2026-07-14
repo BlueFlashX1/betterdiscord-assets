@@ -64,6 +64,9 @@ const DEFAULT_SETTINGS = {
   respectReducedMotion: false,
   animationDuration: 550,
   statusAlerts: true,
+  // In-character report voice — shadows address the Monarch with flavored
+  // verbs ("has awakened", "stirs", "speaks"). Off = plain functional text.
+  reportToMonarch: true,
   startupShadowReport: true,
   startupShadowReportWindowHours: 24,
   startupShadowReportArtwork: STARTUP_REPORT_ARTWORK_FALLBACK_URL,

@@ -778,6 +778,16 @@ const ShadowSensesUiMethods = {
       ),
 
       ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Report to the Monarch (in-character voice)"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: this.settings.reportToMonarch !== false,
+          onChange: (e) => updateSetting("reportToMonarch", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
         ce("span", { style: { color: "#b5bac1", fontSize: "13px" } }, "Startup Shadow Report"),
         ce("input", {
           type: "checkbox",

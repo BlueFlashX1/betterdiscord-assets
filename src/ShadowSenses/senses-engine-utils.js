@@ -247,7 +247,7 @@ function scheduleDeferredUtilityToast(callback, delayMs = 0) {
   this._deferredUtilityToastTimers.add(timer);
 }
 
-function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatus, deployment }) {
+function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatus, deployment, body }) {
   // Lazy (re)acquire if SoloLevelingToasts loaded after ShadowSenses OR was
   // reloaded since (a stale ref to a stopped engine silently drops toasts —
   // the old `!this._toastEngine` guard never re-acquired in that case).
@@ -271,7 +271,7 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
       avatarUrl: avatarUrl || "https://cdn.discordapp.com/embed/avatars/0.png",
       accentColor: accent,
       header: `[${rankLabel}] ${shadowName} reports${friendSuffix}`,
-      body: `${userName || "Unknown"} ${previousLabel} -> ${nextLabel}`,
+      body: body || `${userName || "Unknown"} ${previousLabel} -> ${nextLabel}`,
       timeout: STATUS_TOAST_TIMEOUT_MS,
       callerId: "shadowSenses-status",
       maxPerMinute: 45,
@@ -284,7 +284,7 @@ function showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatu
   }
 }
 
-function showMentionToast({ userId, userName, label, detail, accent, deployment, onClick, imageUrl }) {
+function showMentionToast({ userId, userName, label, detail, accent, deployment, onClick, imageUrl, body }) {
   if (this._toastEngine) {
     const avatarUrl = this._resolveUserAvatarUrl(userId)
       || "https://cdn.discordapp.com/embed/avatars/0.png";
@@ -292,7 +292,7 @@ function showMentionToast({ userId, userName, label, detail, accent, deployment,
       avatarUrl,
       accentColor: accent,
       header: `[${deployment?.shadowRank || "E"}] ${deployment?.shadowName || "Shadow"}`,
-      body: `${userName} ${label}`,
+      body: body || `${userName} ${label}`,
       detail: detail || undefined,
       timeout: STATUS_TOAST_TIMEOUT_MS,
       callerId: "shadowSenses-mention",

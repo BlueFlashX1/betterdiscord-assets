@@ -145,6 +145,14 @@ function pickToastThumbnail(entry) {
   }
   return undefined;
 }
+const { reportBody } = require("./report-voice");
+
+// True when the in-character "Report to the Monarch" voice is enabled
+// (default on). ctx is the engine; settings live on ctx._plugin.
+function _monarch(ctx) {
+  return ctx?._plugin?.settings?.reportToMonarch !== false;
+}
+
 // Per-deployment watch-focus gate (2026-07-13). A signal reports unless the
 // deployment explicitly turned it off. Missing focus/deployment → allowed, so
 // this can never suppress a report for a target whose record predates the
@@ -593,12 +601,15 @@ function showMatchReasonToast(ctx, params) {
   const jumpClick = () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId);
   // Inline preview when the message carried an image / GIF (2026-07-13).
   const imageUrl = pickToastThumbnail(entry);
+  // In-character voice. Location lives in `detail`, so bodies omit it here.
+  const monarch = _monarch(ctx);
 
   if (entry.matchReason === "mention") {
     ctx._showMentionToast({
       userId: authorId,
       userName: authorName,
       label: `@mentioned you${invisibleSuffix}`,
+      body: reportBody("mention", { userName: authorName }, monarch) + invisibleSuffix,
       detail: `in ${guildName} #${entry.channelName}${snippet}`,
       accent: "#ef4444",
       deployment,
@@ -613,6 +624,7 @@ function showMatchReasonToast(ctx, params) {
       userId: authorId,
       userName: authorName,
       label: `said "${entry.matchedTerm}"${invisibleSuffix}`,
+      body: reportBody("name", { userName: authorName, term: entry.matchedTerm }, monarch) + invisibleSuffix,
       detail: `in ${guildName} #${entry.channelName}${snippet}`,
       accent: "#ec4899",
       deployment,
@@ -630,6 +642,7 @@ function showMatchReasonToast(ctx, params) {
     userId: authorId,
     userName: authorName,
     label: `keyword "${keywordTerm}"${invisibleSuffix}`,
+    body: reportBody("keyword", { userName: authorName, term: keywordTerm }, monarch) + invisibleSuffix,
     detail: `in ${guildName} #${entry.channelName}${snippet}`,
     accent: "#34d399",
     deployment,
@@ -682,6 +695,7 @@ function applyPresenceToastAndLastSeen(ctx, params) {
       userId: entry.authorId,
       userName: entry.authorName,
       label: "sent a message while invisible",
+      body: reportBody("invisible", { userName: entry.authorName }, _monarch(ctx)),
       detail: `in ${location}`,
       accent: "#ef4444",
       deployment: {
@@ -792,15 +806,18 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
   if (startupState.isEarlyStartup) return true;
 
   if (ctx._plugin.settings?.statusAlerts && focusAllows(deployment, "status")) {
-    const toastPayload = {
+    const uName = ctx._resolveUserName(userId, deployment.targetUsername || "Unknown");
+    const prevLabel = ctx._getStatusLabel(previousStatus);
+    const nextLbl = ctx._getStatusLabel(nextStatus);
+    ctx._showStatusToast({
       userId,
-      userName: ctx._resolveUserName(userId, deployment.targetUsername || "Unknown"),
-      previousLabel: ctx._getStatusLabel(previousStatus),
-      nextLabel: ctx._getStatusLabel(nextStatus),
+      userName: uName,
+      previousLabel: prevLabel,
+      nextLabel: nextLbl,
       nextStatus,
       deployment,
-    };
-    ctx._showStatusToast(toastPayload);
+      body: reportBody("status", { userName: uName, prevLabel, nextLabel: nextLbl, nextStatus }, _monarch(ctx)),
+    });
   }
 
   return true;
@@ -1016,7 +1033,7 @@ function onTypingStart(payload) {
           // Header dropped: the "[shadow] senses" framing felt redundant
           // alongside the body line. Avatar + purple accent still identify
           // the toast as ShadowSenses intel.
-          body: `${userName} typing in ${locationLabel}`,
+          body: reportBody("typing", { userName, location: locationLabel }, _monarch(this)),
           // Persistent-ish: Discord re-fires TYPING_START every ~10s while
           // the user is typing; each fire refreshes via replaceKey. Auto-
           // fades after 30s if they stop typing without sending.
@@ -1181,7 +1198,7 @@ function onMessageCreate(payload) {
             avatarUrl,
             accentColor: "#22c55e",
             header: `[${deployment.shadowRank}] ${deployment.shadowName} reports${friendSuffix}`,
-            body: `${authorName} sent in ${guildName} #${channelName}`,
+            body: reportBody("message", { userName: authorName, location: `${guildName} #${channelName}` }, _monarch(this)),
             detail: "Click to view message",
             timeout: 5000,
             callerId: "shadowSenses-sent",
