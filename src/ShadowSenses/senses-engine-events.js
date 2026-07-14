@@ -94,6 +94,25 @@ function _portalStyleNavigate(path) {
   return "none";
 }
 
+// Portal-animated jump for report toasts: routes through the plugin's
+// teleportToPath so clicking a report plays the shadow-portal transition,
+// respects the shared teleport cooldown (with a toast) unless the user is
+// Shadow Monarch, and scrolls to the exact message. Falls back to the plain
+// (no-animation) navigateToChannel if portal teleport isn't available.
+function portalJump(ctx, guildId, channelId, messageId) {
+  if (!channelId) return;
+  const plugin = ctx?._plugin;
+  if (plugin && typeof plugin.teleportToPath === "function") {
+    const seg = _resolveGuildSegment(guildId, channelId);
+    const path = messageId
+      ? `/channels/${seg}/${channelId}/${messageId}`
+      : `/channels/${seg}/${channelId}`;
+    try { plugin.teleportToPath(path, {}, messageId || null); return; }
+    catch (_) { /* fall through to plain nav */ }
+  }
+  navigateToChannel(guildId, channelId, messageId);
+}
+
 function navigateToChannel(guildId, channelId, messageId) {
   if (!channelId) return false;
   const seg = _resolveGuildSegment(guildId, channelId);
@@ -119,15 +138,6 @@ function navigateToChannel(guildId, channelId, messageId) {
       catch (_) { try { actions.jumpToMessage(channelId, messageId); } catch (_) {} }
     }, 700);
   }
-
-  // DEBUG (temporary): one toast per click so a failure is explainable
-  // on-screen. Reports how navigation fired + whether jumpToMessage resolved.
-  try {
-    BdApi.UI.showToast(
-      `SS jump — nav:${navVia} jumpToMessage:${actions ? `OK(${_messageActionsStrategy})` : "MISSING"} seg:${seg}`,
-      { type: "info", timeout: 9000 }
-    );
-  } catch (_) {}
 
   return navVia !== "none";
 }
@@ -608,7 +618,7 @@ function showMatchReasonToast(ctx, params) {
   // Click-to-jump — every match-reason toast carries a #channel reference,
   // so clicking the toast should navigate to that exact message. Captured
   // by closure so the IDs stay stable even if `entry` is later mutated.
-  const jumpClick = () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId);
+  const jumpClick = () => portalJump(ctx, entry.guildId, entry.channelId, entry.messageId);
   // Inline preview when the message carried an image / GIF (2026-07-13).
   const imageUrl = pickToastThumbnail(entry);
   // In-character voice. Location lives in `detail`, so bodies omit it here.
@@ -714,7 +724,7 @@ function applyPresenceToastAndLastSeen(ctx, params) {
       },
       // Click-to-jump — navigate to the exact message that triggered
       // this toast, same as the match-reason toasts above.
-      onClick: () => navigateToChannel(entry.guildId, entry.channelId, entry.messageId),
+      onClick: () => portalJump(ctx, entry.guildId, entry.channelId, entry.messageId),
       imageUrl: pickToastThumbnail(entry),
     });
     syncLastSeenCount(ctx, guildId);
@@ -1234,7 +1244,7 @@ function onMessageCreate(payload) {
             maxPerMinute: deployment.priority ? 120 : 30,
             // SAME replaceKey as the typing toast so this dismisses it.
             replaceKey: `shadowsenses-typing:${authorId}`,
-            onClick: () => navigateToChannel(guildId, message.channel_id, message.id),
+            onClick: () => portalJump(this, guildId, message.channel_id, message.id),
             imageUrl: pickToastThumbnail(entry),
           });
         }

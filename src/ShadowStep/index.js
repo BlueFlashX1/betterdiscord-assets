@@ -434,9 +434,15 @@ module.exports = class ShadowStep {
       return;
     }
 
-    // Shared teleport cooldown (synced with ShadowExchange + ShadowSenses)
+    // Shared teleport cooldown (synced with ShadowExchange + ShadowSenses).
+    // Instant Sovereign: the Shadow Monarch (rank at lvl 2000) bypasses it \u2014
+    // matches ShadowExchange._checkTeleportCooldown and the ShadowSenses jump.
+    const isMonarch = (() => {
+      try { return BdApi.Plugins.get("SoloLevelingStats")?.instance?.settings?.rank === "Shadow Monarch"; }
+      catch (_) { return false; }
+    })();
     const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
-    if (portalCore?.checkTeleportCooldown) {
+    if (!isMonarch && portalCore?.checkTeleportCooldown) {
       const cdCheck = portalCore.checkTeleportCooldown();
       if (cdCheck.onCooldown) {
         this._toast(`Teleport on cooldown \u2014 ${cdCheck.remainingText} remaining`, "error", 3000);

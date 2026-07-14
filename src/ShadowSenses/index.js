@@ -1787,23 +1787,71 @@ module.exports = class ShadowSenses {
     });
   }
 
-  teleportToPath(path, context = {}) {
-    // Shared teleport cooldown (synced with ShadowExchange + ShadowStep)
+  // Shadow Monarch rank (level 2000) \u2014 Instant Sovereign perk exempts the
+  // Monarch from the teleport cooldown. Mirrors ShadowExchange._getPlayerRank.
+  _isShadowMonarch() {
+    try {
+      return BdApi.Plugins.get("SoloLevelingStats")?.instance?.settings?.rank === "Shadow Monarch";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // Lazy MessageActions resolver for the post-navigation scroll reinforcement.
+  _resolveMsgActions() {
+    if (typeof this._msgActions?.jumpToMessage === "function") return this._msgActions;
+    const W = BdApi.Webpack;
+    const strats = [
+      () => W.getByKeys?.("jumpToMessage"),
+      () => W.getModule?.((m) => typeof m?.jumpToMessage === "function"),
+      () => W.getModule?.((m) => m?.jumpToMessage && m?.sendMessage && (m?.receiveMessage || m?.editMessage)),
+    ];
+    for (const s of strats) {
+      try {
+        const mod = s();
+        if (typeof mod?.jumpToMessage === "function") { this._msgActions = mod; return mod; }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  // teleportToPath now plays the shadow-portal animation for the ShadowSenses
+  // jump too, applies the shared teleport cooldown (with a toast) UNLESS the
+  // user is Shadow Monarch, and \u2014 when a messageId is given \u2014 scrolls/flashes
+  // the target message after the channel loads.
+  // Returns true if it proceeded, false if the cooldown blocked it.
+  teleportToPath(path, context = {}, messageId = null) {
+    // Shared teleport cooldown (synced with ShadowExchange + ShadowStep).
+    // Instant Sovereign: the Shadow Monarch bypasses the cooldown entirely.
     const portalCore = _EmbeddedShadowPortalCore || (typeof window !== "undefined" && window.ShadowPortalCore);
-    if (portalCore?.checkTeleportCooldown) {
+    if (!this._isShadowMonarch() && portalCore?.checkTeleportCooldown) {
       const cdCheck = portalCore.checkTeleportCooldown();
       if (cdCheck.onCooldown) {
-        this._toast(`Teleport on cooldown \u2014 ${cdCheck.remainingText} remaining`, "error", 3000);
-        return;
+        this._toast(`Shadow exchange on cooldown \u2014 ${cdCheck.remainingText} remaining`, "error", 3000);
+        return false;
       }
     }
+
+    // Scroll/flash the target message once the channel has mounted. Fired on
+    // a delay so it lands after the portal + route settle (not racing them).
+    const reinforceJump = () => {
+      if (!messageId) return;
+      const channelId = String(path).split("/").filter(Boolean).slice(-2)[0];
+      const actions = this._resolveMsgActions();
+      if (!actions || !channelId) return;
+      setTimeout(() => {
+        try { actions.jumpToMessage({ channelId, messageId, flash: true }); }
+        catch (_) { try { actions.jumpToMessage(channelId, messageId); } catch (_) {} }
+      }, 800);
+    };
 
     const targetPath = this._normalizePath(path);
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       _ensureShadowPortalCoreApplied(this.constructor);
     }
 
-    // Fail-safe: do not throw if shared core failed to load.
+    // Fail-safe: do not throw if shared core failed to load. Still navigate
+    // (portal-style) and still reinforce the message scroll.
     if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
       this.debugError("Teleport", "Shared portal core missing; using direct navigation fallback");
       if (this._NavigationUtils?.transitionTo) {
@@ -1812,8 +1860,8 @@ module.exports = class ShadowSenses {
         window.history.pushState({}, "", targetPath);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
-      this._toast("Shadow Senses navigation fallback used", "warning");
-      return;
+      reinforceJump();
+      return true;
     }
 
     // Stamp shared teleport cooldown
@@ -1822,10 +1870,11 @@ module.exports = class ShadowSenses {
     this.playTransition(() => {
       const fadeToken = this._beginChannelViewFadeOut();
       this._navigate(targetPath, context, {
-        onConfirmed: () => this._finishChannelViewFade(fadeToken, true),
+        onConfirmed: () => { this._finishChannelViewFade(fadeToken, true); reinforceJump(); },
         onFailed: () => this._finishChannelViewFade(fadeToken, false),
       });
     }, targetPath);
+    return true;
   }
 
   // UI/widget/panel/settings methods are mixed in from plugin-ui-methods.js
