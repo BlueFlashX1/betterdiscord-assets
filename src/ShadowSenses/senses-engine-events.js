@@ -22,25 +22,34 @@ const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 // Resolution is now multi-strategy (first hit wins), mirroring the proven
 // CriticalHit MessageActions lookup, so a single split can't break it again.
 let _messageActionsModule = null;
+let _messageActionsStrategy = "none";
 function _getMessageActions() {
   if (typeof _messageActionsModule?.jumpToMessage === "function") return _messageActionsModule;
   const W = BdApi.Webpack;
+  // Each strategy returns a candidate; we accept the first whose resolved
+  // value (possibly unwrapped from a default/Z/ZP export) exposes
+  // jumpToMessage as a function. Discord moves these around between builds,
+  // so we try direct, keyed, filtered, and nested-export forms.
   const strategies = [
-    () => W.getByKeys?.("jumpToMessage"),
-    () => W.getModule?.((m) => typeof m?.jumpToMessage === "function"),
-    // Classic combined MessageActions module (jumpToMessage co-located with
-    // send/edit) — the shape CriticalHit resolves against.
-    () => W.getModule?.((m) => m?.jumpToMessage && m?.sendMessage && (m?.receiveMessage || m?.editMessage)),
+    ["getByKeys(jumpToMessage)", () => W.getByKeys?.("jumpToMessage")],
+    ["getByKeys(jumpToMessage,sendMessage)", () => W.getByKeys?.("jumpToMessage", "sendMessage")],
+    ["getModule(fn)", () => W.getModule?.((m) => typeof m?.jumpToMessage === "function")],
+    ["getModule(combined)", () => W.getModule?.((m) => m?.jumpToMessage && m?.sendMessage && (m?.receiveMessage || m?.editMessage))],
+    ["nested.default", () => W.getModule?.((m) => typeof m?.default?.jumpToMessage === "function")?.default],
+    ["nested.Z", () => W.getModule?.((m) => typeof m?.Z?.jumpToMessage === "function")?.Z],
+    ["nested.ZP", () => W.getModule?.((m) => typeof m?.ZP?.jumpToMessage === "function")?.ZP],
   ];
-  for (const strat of strategies) {
+  for (const [name, strat] of strategies) {
     try {
       const mod = strat();
       if (typeof mod?.jumpToMessage === "function") {
         _messageActionsModule = mod;
+        _messageActionsStrategy = name;
         return mod;
       }
     } catch (_) {}
   }
+  _messageActionsStrategy = "none";
   return null;
 }
 
@@ -65,61 +74,56 @@ function _resolveGuildSegment(guildId, channelId) {
   return "@me";
 }
 
-let _jumpDiagLogged = false;
-
 function navigateToChannel(guildId, channelId, messageId) {
   if (!channelId) return false;
-
-  // Cross-server-safe click-to-jump (2026-07-13, hardened). Two mechanisms,
-  // belt-and-suspenders, because neither alone covers every case:
-  //   1. transitionTo the FULL message-path URL — this is exactly what
-  //      clicking a Discord message link does: it switches guild + channel
-  //      and deep-links to the message (scroll + flash). Resolving the guild
-  //      from the channel first prevents a malformed "@me" path when the
-  //      caller passed no guildId — the likely cause of the earlier failure.
-  //   2. jumpToMessage as reinforcement AFTER the route settles — covers the
-  //      case where you're already in the channel (a same-channel transitionTo
-  //      is a no-op that won't re-scroll) and forces the scroll/flash.
-  if (!messageId) {
-    // No message to jump to — just open the channel.
-    try {
-      const nav = getNavigationUtils();
-      const seg = _resolveGuildSegment(guildId, channelId);
-      nav?.transitionTo?.(`/channels/${seg}/${channelId}`);
-      return true;
-    } catch (_) { return false; }
-  }
-
   const seg = _resolveGuildSegment(guildId, channelId);
-  let navigated = false;
-  try {
-    const nav = getNavigationUtils();
-    if (nav?.transitionTo) {
-      nav.transitionTo(`/channels/${seg}/${channelId}/${messageId}`);
-      navigated = true;
-    }
-  } catch (_) {}
 
-  const actions = _getMessageActions();
+  // Always log ONE diagnostic line per click (not debug-gated) so a failure
+  // is immediately explainable from the console instead of another blind
+  // fix. Cheap — fires only on a user click.
+  const actions = messageId ? _getMessageActions() : null;
+  const nav = getNavigationUtils();
+  console.log(
+    "%c[ShadowSenses] jump%c",
+    "color:#a855f7;font-weight:bold", "color:inherit",
+    {
+      guildSeg: seg,
+      channelId,
+      messageId: messageId || null,
+      jumpToMessage: actions ? `resolved via ${_messageActionsStrategy}` : "NOT RESOLVED",
+      transitionTo: nav?.transitionTo ? "available" : "NOT RESOLVED",
+    }
+  );
+
+  // No message → just open the channel.
+  if (!messageId) {
+    try { nav?.transitionTo?.(`/channels/${seg}/${channelId}`); return true; }
+    catch (_) { return false; }
+  }
+
+  // PRIMARY: jumpToMessage alone. It is self-contained — switches guild +
+  // channel, fetches the surrounding history, scrolls, and flash-highlights,
+  // and manages its own async loading. It must NOT race a transitionTo (the
+  // previous version fired transitionTo then jumpToMessage ~32ms later, far
+  // too early for a cross-server channel load — they cancelled each other).
   if (actions) {
-    const doJump = () => {
-      try { actions.jumpToMessage({ channelId, messageId, flash: true }); }
-      catch (_) { try { actions.jumpToMessage(channelId, messageId); } catch (_) {} }
-    };
-    // Let the route change from (1) commit first, then force the scroll.
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => requestAnimationFrame(doJump));
-    } else {
-      doJump();
+    try {
+      actions.jumpToMessage({ channelId, messageId, flash: true });
+      return true;
+    } catch (e1) {
+      try { actions.jumpToMessage(channelId, messageId); return true; }
+      catch (e2) {
+        console.warn("[ShadowSenses] jumpToMessage threw on both signatures:", e1, e2);
+      }
     }
-    return true;
   }
 
-  if (!navigated && !_jumpDiagLogged) {
-    _jumpDiagLogged = true;
-    console.warn("[ShadowSenses] jump: neither NavigationUtils nor jumpToMessage resolved — click-to-jump unavailable.");
-  }
-  return navigated;
+  // FALLBACK: deep-link URL (the message-link behavior). May or may not scroll
+  // depending on build, but always at least lands in the right channel/server.
+  try {
+    if (nav?.transitionTo) { nav.transitionTo(`/channels/${seg}/${channelId}/${messageId}`); return true; }
+  } catch (_) {}
+  return false;
 }
 
 // First renderable thumbnail for a toast card: image attachments win (their
