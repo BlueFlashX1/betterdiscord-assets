@@ -704,14 +704,53 @@ module.exports = class ShadowSenses {
     return rawName.startsWith("#") ? rawName : `#${rawName}`;
   }
 
+  // Convert Discord's raw markup into human-readable text for the report.
+  // Custom emoji <:name:id> / <a:name:id> → :name: (was leaking the full
+  // <:name:1207868584932417566> id string into the report — unreadable).
+  // Mentions collapse to readable tokens rather than raw <@id> / <#id>.
+  _cleanReportMarkup(rawContent) {
+    return String(rawContent || "")
+      .replace(/<a?:([A-Za-z0-9_]+):\d+>/g, ":$1:") // custom + animated emoji → :name:
+      .replace(/<@!?\d+>/g, "@user")                 // user mention
+      .replace(/<@&\d+>/g, "@role")                  // role mention
+      .replace(/<#\d+>/g, "#channel")                // channel mention
+      .replace(/<https?:\/\/[^>]+>/gi, "")           // suppressed link embeds
+      .replace(/https?:\/\/\S+/gi, "")               // bare links
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Readable priority label for a signal line (was cryptic [P4]/[P3]/[P2]).
+  _startupPriorityWord(priority) {
+    const p = Number(priority) || 1;
+    if (p >= 4) return "URGENT";
+    if (p >= 3) return "HIGH";
+    if (p >= 2) return "MEDIUM";
+    return "LOW";
+  }
+
+  // Compact relative time ("2h ago") — far easier to scan than a full locale
+  // datetime string in a list of a dozen signals.
+  _startupRelativeTime(ts) {
+    const t = Number(ts) || 0;
+    if (!t) return "";
+    const diff = Date.now() - t;
+    if (diff < 60000) return "just now";
+    const m = Math.floor(diff / 60000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  }
+
   _cleanStartupTopicSnippet(rawContent, maxLength = 72) {
-    let content = String(rawContent || "").replace(/\s+/g, " ").trim();
+    let content = this._cleanReportMarkup(rawContent);
     if (!content) return "";
     content = content
-      .replace(/https?:\/\/\S+/gi, "")
-      .replace(/<https?:\/\/[^>]+>/gi, "")
-      .replace(/<@!?\d+>/g, "")
-      .replace(/<#\d+>/g, "")
+      // Drop mention placeholders AND :emoji: tokens — a topic digest wants
+      // words, not standalone emoji (esp. hash-named custom emoji).
+      .replace(/@user|@role|#channel/g, "")
+      .replace(/:[A-Za-z0-9_]+:/g, "")
       .replace(/\s+/g, " ")
       .trim();
     if (!content) return "";
@@ -1213,9 +1252,14 @@ module.exports = class ShadowSenses {
     } else if (attentionEntries.length) {
       attentionSignalText = attentionEntries
         .map((entry, idx) => {
-          const when = new Date(Number(entry.timestamp) || Date.now()).toLocaleString();
+          const when = this._startupRelativeTime(entry.timestamp);
           const countLabel = Number(entry.messageCount) > 1 ? ` x${entry.messageCount}` : "";
-          return `${idx + 1}. [P${Number(entry.priority) || 1}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}\n${entry.content}\n${when}`;
+          const word = this._startupPriorityWord(entry.priority);
+          // Clean custom-emoji / mention markup so the preview is readable
+          // (was printing raw <:name:1207868584932417566> etc).
+          const cleanContent = this._cleanReportMarkup(entry.content);
+          const contentLine = cleanContent ? `\n${cleanContent}` : "";
+          return `${idx + 1}. [${word}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}${contentLine}\n${when}`;
         })
         .join("\n\n");
     } else if (summaryActionableCount > 0) {
