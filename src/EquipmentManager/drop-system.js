@@ -31,27 +31,34 @@ module.exports = {
       }
     }
 
-    // 2. Probabilistic drop check
-    const dropChance = C.DROP_TABLES?.DROP_CHANCE_BY_RANK?.[bossRank] ?? 0.05;
+    // 2. Probabilistic drop check.
+    // Fallback is the E-rank chance rather than a magic 0.05: an unrecognised
+    // rank should behave like the weakest rank, not like a punitive one.
+    const chanceTable = C.DROP_TABLES?.DROP_CHANCE_BY_RANK || {};
+    const dropChance = chanceTable[bossRank] ?? chanceTable.E ?? 0.25;
     if (Math.random() >= dropChance) {
       this.debugLog?.(`[EquipmentManager] No drop for rank ${bossRank} boss (chance ${dropChance})`);
       return [];
     }
 
-    // 3. Select rarity from rank-specific pool
-    const pool = C.DROP_TABLES?.RARITY_POOL_BY_RANK?.[bossRank] || ['E'];
-    const weights = C.DROP_TABLES?.RARITY_WEIGHTS || {};
+    // 3. Select rarity from the rank-specific pool, using rank-specific weights
+    // when defined (high ranks skew toward the top of their pool).
+    const poolTable = C.DROP_TABLES?.RARITY_POOL_BY_RANK || {};
+    const pool = poolTable[bossRank] || poolTable.E || ['D'];
+    const weights = C.DROP_TABLES?.RARITY_WEIGHTS_BY_RANK?.[bossRank]
+      || C.DROP_TABLES?.RARITY_WEIGHTS
+      || {};
     const selectedRarity = this._weightedRarityPick(pool, weights);
 
     this.debugLog?.(
       `[EquipmentManager] Drop roll for rank ${bossRank}: rarity=${selectedRarity}`
     );
 
-    // 4. Filter equipment database by selected rarity
+    // 4. Resolve the selected rarity to actual items.
     const allEquipment = Object.values(C.EQUIPMENT_DATABASE || {});
-    const eligible = allEquipment.filter(e => e.rarity === selectedRarity);
+    const eligible = this._resolveEligibleForRarity(allEquipment, selectedRarity);
     if (eligible.length === 0) {
-      this.debugLog?.(`[EquipmentManager] No equipment found for rarity "${selectedRarity}"`);
+      this.debugLog?.(`[EquipmentManager] No equipment found at or below rarity "${selectedRarity}"`);
       return [];
     }
 
@@ -60,6 +67,43 @@ module.exports = {
     this.debugLog?.(`[EquipmentManager] Dropped: ${item.name} (${item.id})`);
 
     return [item.id];
+  },
+
+  /**
+   * Resolve a chosen rarity to a non-empty item list.
+   *
+   * A rarity tier with no items in the catalogue used to mean "no drop": the
+   * chance roll succeeded, the rarity was picked, the filter came back empty
+   * and the caller silently returned []. That is how the (item-less) 'E' tier
+   * turned E-rank bosses into a guaranteed 0% and ate most of D/C's rolls.
+   *
+   * Now a gap degrades gracefully — step DOWN the rarity ladder to the nearest
+   * tier that actually has items (and only as a last resort, up). A future
+   * catalogue gap costs the player a slightly worse item, never the whole drop.
+   *
+   * @param {object[]} allEquipment
+   * @param {string}   rarity
+   * @returns {object[]}
+   */
+  _resolveEligibleForRarity(allEquipment, rarity) {
+    const at = (r) => allEquipment.filter(e => e.rarity === r);
+
+    const exact = at(rarity);
+    if (exact.length > 0) return exact;
+
+    const order = C.RARITY_ORDER || ['D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+    const idx = order.indexOf(rarity);
+    if (idx === -1) return [];
+
+    for (let i = idx - 1; i >= 0; i--) {
+      const down = at(order[i]);
+      if (down.length > 0) return down;
+    }
+    for (let i = idx + 1; i < order.length; i++) {
+      const up = at(order[i]);
+      if (up.length > 0) return up;
+    }
+    return [];
   },
 
   /**
@@ -92,7 +136,9 @@ module.exports = {
    * @returns {string}
    */
   _weightedRarityPick(pool, weights) {
-    if (pool.length === 0) return 'E';
+    // Empty pool falls back to the lowest REAL rarity. It used to return 'E',
+    // which has no items in the catalogue and therefore meant "no drop".
+    if (pool.length === 0) return (C.RARITY_ORDER && C.RARITY_ORDER[0]) || 'D';
     if (pool.length === 1) return pool[0];
 
     // Build a numeric weight for each pool entry (weights is positional: [lowest, middle, highest])

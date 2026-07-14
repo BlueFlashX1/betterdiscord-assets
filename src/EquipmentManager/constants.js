@@ -592,35 +592,84 @@ const EQUIPMENT_SETS = Object.freeze({
 // ---------------------------------------------------------------------------
 // Drop tables
 // ---------------------------------------------------------------------------
+// Drop chance per boss kill, by boss rank.
+//
+// REBALANCE (2026-07-14). The old curve ran 0.55 (E) down to 0.05 (SSS) —
+// i.e. the HARDER the content, the less it paid out. It also stopped at SSS,
+// while Dungeons actually spawns SSS+ / NH / Monarch / Monarch+ /
+// Shadow Monarch; those fell through to the `?? 0.05` + `|| ['E']` defaults
+// and, because the catalogue has no E-rarity items, dropped NOTHING AT ALL.
+// The curve is now flat-to-gently-rising (25% -> 35%) so higher ranks are
+// never worse; VALUE now comes from the rarity pool, not from frequency.
 const DROP_CHANCE_BY_RANK = Object.freeze({
-  E:   0.55,
-  D:   0.45,
-  C:   0.35,
-  B:   0.25,
-  A:   0.18,
-  S:   0.12,
-  SS:  0.08,
-  SSS: 0.05,
+  E:                0.25,
+  D:                0.26,
+  C:                0.27,
+  B:                0.28,
+  A:                0.29,
+  S:                0.30,
+  SS:               0.31,
+  SSS:              0.32,
+  'SSS+':           0.33,
+  NH:               0.34,
+  Monarch:          0.35,
+  'Monarch+':       0.35,
+  'Shadow Monarch': 0.35,
 });
 
+// Rarity pool per boss rank, ordered [lowest ... highest].
+//
+// NOTE: 'E' appears in NO pool — the equipment catalogue contains zero
+// E-rarity items, so any roll that selected 'E' found nothing and silently
+// returned no drop. That made E-rank bosses drop 0% (despite an advertised
+// 55%) and burned ~70-78% of D/C bosses' successful rolls. Lowest real
+// rarity is 'D'.
 const RARITY_POOL_BY_RANK = Object.freeze({
-  E:   Object.freeze(['E']),
-  D:   Object.freeze(['E', 'D']),
-  C:   Object.freeze(['E', 'D', 'C']),
-  B:   Object.freeze(['D', 'C', 'B']),
-  A:   Object.freeze(['C', 'B', 'A']),
-  S:   Object.freeze(['B', 'A', 'S']),
-  SS:  Object.freeze(['A', 'S', 'SS']),
-  SSS: Object.freeze(['S', 'SS', 'SSS']),
+  E:                Object.freeze(['D', 'C']),
+  D:                Object.freeze(['D', 'C']),
+  C:                Object.freeze(['D', 'C', 'B']),
+  B:                Object.freeze(['C', 'B', 'A']),
+  A:                Object.freeze(['B', 'A', 'S']),
+  S:                Object.freeze(['A', 'S', 'SS']),
+  SS:               Object.freeze(['S', 'SS', 'SSS']),
+  SSS:              Object.freeze(['S', 'SS', 'SSS']),
+  'SSS+':           Object.freeze(['S', 'SS', 'SSS']),
+  NH:               Object.freeze(['SS', 'SSS']),
+  Monarch:          Object.freeze(['SS', 'SSS']),
+  'Monarch+':       Object.freeze(['SS', 'SSS']),
+  'Shadow Monarch': Object.freeze(['SS', 'SSS']),
 });
 
-// Weights for [lowest, middle, highest] rarity within the pool
+// Rarity ladder, lowest -> highest. Used to degrade gracefully when a chosen
+// rarity has no items in the catalogue (see _resolveEligibleForRarity).
+// 'E' is intentionally absent: no E-rarity equipment exists.
+const RARITY_ORDER = Object.freeze(['D', 'C', 'B', 'A', 'S', 'SS', 'SSS']);
+
+// Default weights for [lowest, middle, highest] rarity within a pool.
 const RARITY_WEIGHTS = Object.freeze([0.70, 0.20, 0.10]);
+
+// Per-rank weight overrides (positional, same shape as RARITY_WEIGHTS).
+// The flat default is bottom-heavy (70% lowest tier), which is right for early
+// ranks but meant even a Shadow Monarch kill would yield its top rarity only
+// 10% of the time. High ranks progressively skew toward the top of their pool,
+// so endgame content actually pays out endgame loot.
+const RARITY_WEIGHTS_BY_RANK = Object.freeze({
+  A:                Object.freeze([0.55, 0.30, 0.15]),
+  S:                Object.freeze([0.55, 0.30, 0.15]),
+  SS:               Object.freeze([0.45, 0.33, 0.22]),
+  SSS:              Object.freeze([0.45, 0.33, 0.22]),
+  'SSS+':           Object.freeze([0.35, 0.35, 0.30]),
+  NH:               Object.freeze([0.40, 0.60]),
+  Monarch:          Object.freeze([0.32, 0.68]),
+  'Monarch+':       Object.freeze([0.25, 0.75]),
+  'Shadow Monarch': Object.freeze([0.18, 0.82]),
+});
 
 const DROP_TABLES = Object.freeze({
   DROP_CHANCE_BY_RANK,
   RARITY_POOL_BY_RANK,
   RARITY_WEIGHTS,
+  RARITY_WEIGHTS_BY_RANK,
 });
 
 // ---------------------------------------------------------------------------
@@ -684,6 +733,8 @@ module.exports = {
   DROP_CHANCE_BY_RANK,
   RARITY_POOL_BY_RANK,
   RARITY_WEIGHTS,
+  RARITY_WEIGHTS_BY_RANK,
+  RARITY_ORDER,
   GUARANTEED_DROPS,
   getEquipmentById,
   getEquipmentForSlot,
