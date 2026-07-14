@@ -724,6 +724,18 @@ module.exports = class ShadowSenses {
       .trim();
   }
 
+  // Content preview for an attention signal: cleaned markup with emoji
+  // stripped entirely — an emoji as a signal's "content" conveys nothing
+  // useful in the report. Real text survives; an emoji-only message yields
+  // an empty preview (so no content line is shown at all).
+  _reportContentPreview(rawContent) {
+    return this._cleanReportMarkup(rawContent)
+      .replace(/\[emoji\]/g, "")
+      .replace(/:[A-Za-z0-9_]+:/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // Readable priority label for a signal line (was cryptic [P4]/[P3]/[P2]).
   _startupPriorityWord(priority) {
     const p = Number(priority) || 1;
@@ -1244,6 +1256,12 @@ module.exports = class ShadowSenses {
     );
     const attentionEntries = (Array.isArray(recentEntries) ? recentEntries : [])
       .filter((entry) => (Number(entry?.priority) || 1) >= 2)
+      // Emoji-only messages don't warrant attention (2026-07-13): if the
+      // content has no textual substance once emoji/mention/link markup is
+      // stripped, drop it from the attention list. A genuine mention or
+      // keyword hit with real words still qualifies; attachments/embeds keep
+      // their "[Image]"-style marker text, so those still count.
+      .filter((entry) => this._reportContentPreview(entry?.content) !== "")
       .sort((left, right) => {
         const rightPriority = Number(right?.priority) || 1;
         const leftPriority = Number(left?.priority) || 1;
@@ -1277,9 +1295,9 @@ module.exports = class ShadowSenses {
           // Label now says WHY: "[URGENT · mentioned you]" instead of a bare
           // [URGENT] the Monarch has to decode.
           const reason = this._startupAttentionReason(entry);
-          // Clean custom-emoji / mention markup so the preview is readable
-          // (hash-named custom emoji → [emoji] rather than :hash: gibberish).
-          const cleanContent = this._cleanReportMarkup(entry.content);
+          // Emoji stripped from the preview — useless as signal content.
+          // Real text survives; emoji-only messages show no content line.
+          const cleanContent = this._reportContentPreview(entry.content);
           const contentLine = cleanContent ? `\n${cleanContent}` : "";
           return `${idx + 1}. [${word} · ${reason}] ${entry.authorName} in #${entry.channelName} (${entry.guildName})${countLabel}${contentLine}\n${when}`;
         })
