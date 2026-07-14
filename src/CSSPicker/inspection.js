@@ -484,7 +484,9 @@ const iterCssRules = (rules, onRule, state) => {
 };
 
 // PERF: Cache flattened CSS rules to avoid re-scanning all stylesheets on every hover.
-// Cache invalidates every 10 seconds (stylesheets rarely change during a session).
+// Cache invalidates after RULE_CACHE_TTL_MS (stylesheets rarely change during a
+// session). Comment previously said "10 seconds" — the constant has been 3s; doc
+// drift corrected 2026-07-13.
 let _cachedFlatRules = null;
 let _cachedFlatRulesTime = 0;
 let _corsBlockedCount = 0;
@@ -603,13 +605,25 @@ export function findMatchingCssRules(el, keys, maxMatches = 30) {
 
 export function getCompactCssRules(el, keys, maxMatches = 30) {
   const raw = findMatchingCssRules(el, keys, maxMatches);
+  // PERF (2026-07-13): analyzeRuleScope runs a full document.querySelectorAll
+  // per rule (up to maxMatches=30 per capture click), and the SAME selector
+  // recurs across @media blocks and theme variants — so identical full-DOM
+  // scans ran several times per pick. Memoize per call by selector text; the
+  // picked element is constant within a call, so the result is identical.
+  const scopeMemo = new Map();
+  const scopeFor = (selectorText) => {
+    if (scopeMemo.has(selectorText)) return scopeMemo.get(selectorText);
+    const scope = analyzeRuleScope(selectorText, el);
+    scopeMemo.set(selectorText, scope);
+    return scope;
+  };
   return raw
     .filter((r) => !isResetRule(r.selectorText))
     .map((r) => {
       const entry = {
         source: simplifySheetLabel(r.stylesheet),
         origin: classifyRuleOrigin(simplifySheetLabel(r.stylesheet), r.sheetHref, r.ownerNode),
-        scope: analyzeRuleScope(r.selector || r.selectorText, el),
+        scope: scopeFor(r.selector || r.selectorText),
         selector: r.selectorText,
       };
       // Flatten properties: { 'background': { value, priority } } -> { 'background': 'value !important' }

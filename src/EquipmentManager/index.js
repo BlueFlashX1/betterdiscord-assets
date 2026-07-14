@@ -298,9 +298,9 @@ module.exports = class EquipmentManager {
       if (action === 'equip') {
         const instanceId = target.dataset.eqInstance;
         if (!instanceId) return;
-        const inventory = this.storage.getInventory();
-        const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
-        const inst = instanceMap.get(instanceId);
+        // O(1) lookup (2026-07-13) — was materializing the whole inventory
+        // into an array + Map just to read one entry.
+        const inst = this.storage.getInstance(instanceId);
         if (!inst) return;
         const def = C.getEquipmentById(inst.equipmentId);
         if (!def) return;
@@ -315,9 +315,7 @@ module.exports = class EquipmentManager {
         const result = this.equipItem(instanceId, targetSlot);
         if (result?.success) {
           if (result.unequippedInstanceId) {
-            const invAfter = this.storage.getInventory();
-            const instMapAfter = new Map(invAfter.map(i => [i.instanceId, i]));
-            const displacedInst = instMapAfter.get(result.unequippedInstanceId);
+            const displacedInst = this.storage.getInstance(result.unequippedInstanceId);
             const displacedDef = displacedInst ? C.getEquipmentById(displacedInst.equipmentId) : null;
             _toast(`Equipped ${def.name} (replaced ${displacedDef?.name || 'previous item'})`, 'success');
           } else {
@@ -336,9 +334,7 @@ module.exports = class EquipmentManager {
         const prevInstanceId = equipped[slot];
         const result = this.unequipItem(slot);
         if (result?.success) {
-          const inventory = this.storage.getInventory();
-          const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
-          const inst = instanceMap.get(prevInstanceId);
+          const inst = this.storage.getInstance(prevInstanceId);
           const def = inst ? C.getEquipmentById(inst.equipmentId) : null;
           _toast(`Unequipped ${def?.name || 'item'}`, 'info');
         }
@@ -402,13 +398,13 @@ module.exports = class EquipmentManager {
     if (!popup) popup = document.getElementById(POPUP_ID);
     if (!popup) return;
 
-    // Compute inventory once; pass the instanceMap into bonus helpers to avoid
-    // two additional getInventory() array allocations per render (HIGH fix).
+    // PERF (2026-07-13): the bonus helpers now resolve instances O(1) through
+    // storage's Map, so the popup no longer materializes the entire inventory
+    // into an array+Map on every render/2s tick just to feed them.
     const equipped = this.storage.getEquipped();
     const inventory = this.storage.getInventory();
-    const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
-    const bonuses = this._cachedBonuses || this.calculateTotalBonuses(instanceMap);
-    const sets = this.getActiveSetBonuses(instanceMap);
+    const bonuses = this._cachedBonuses || this.calculateTotalBonuses();
+    const sets = this.getActiveSetBonuses();
 
     // Mark storage version as rendered so the tick loop can skip unchanged ticks.
     this._lastPopupVersion = this.storage.version;
@@ -423,7 +419,7 @@ module.exports = class EquipmentManager {
     for (const slotKey of slotOrder) {
       const slotDef = C.EQUIPMENT_SLOTS[slotKey];
       const instanceId = equipped[slotKey];
-      const instance = instanceId ? instanceMap.get(instanceId) : null;
+      const instance = instanceId ? this.storage.getInstance(instanceId) : null;
       const def = instance ? C.getEquipmentById(instance.equipmentId) : null;
       const rarityColor = def ? C.getRarityColor(def.rarity) : '#2a1a3a';
       const isEmpty = !def;

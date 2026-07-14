@@ -11,11 +11,13 @@
  * authoritative read path; IDB writes are fire-and-forget with a
  * debounced 2s flush for durability.
  *
- * Dirty tracking is per-store ('inventory' | 'equipped') rather than
- * per-record, so flush always rewrites the full store contents for
- * each marked store. This is safe given the small record counts
- * (inventory is unbounded but equipment instances are player-scoped;
- * equipped is capped at 10 slots).
+ * Dirty tracking is PER-RECORD (2026-07-13). It was previously per-store,
+ * so every mutation cleared the whole object store and re-put every record
+ * — O(inventory) IDB work per 2s flush, on a Map that only ever grows
+ * (nothing calls removeFromInventory; there is no salvage/cap yet). A
+ * single drop roll therefore rewrote the entire inventory. Flush now
+ * writes only the records that actually changed and deletes only the keys
+ * actually removed, so cost is O(delta) regardless of inventory size.
  */
 
 const DB_NAME = 'EquipmentManagerDB';
@@ -29,7 +31,20 @@ class EquipmentStorage {
     this._db = null;
     this._inventory = new Map(); // instanceId → instance record
     this._equipped = new Map();  // slot → instanceId
-    this._dirty = new Set();     // 'inventory' | 'equipped'
+    this._dirty = new Set();     // 'inventory' | 'equipped' — which stores need a tx
+    // Per-record deltas (2026-07-13). Keys touched since the last flush:
+    //   _dirtyKeys[store]   — keys to put (value read from the live Map at flush)
+    //   _deletedKeys[store] — keys to delete
+    // A key is only ever in one of the two: marking it in either side removes
+    // it from the other, so re-adding a just-deleted key resolves correctly.
+    this._dirtyKeys = {
+      [STORE_INVENTORY]: new Set(),
+      [STORE_EQUIPPED]: new Set(),
+    };
+    this._deletedKeys = {
+      [STORE_INVENTORY]: new Set(),
+      [STORE_EQUIPPED]: new Set(),
+    };
     this._flushTimer = null;
     this._ready = false;
     this._version = 0; // incremented on every mutation; used by popup dirty-check
@@ -143,6 +158,16 @@ class EquipmentStorage {
     return this._equipped.get(slot) ?? null;
   }
 
+  /**
+   * O(1) lookup of a single inventory instance (2026-07-13). Callers used to
+   * rebuild a full instanceId→item Map (or run a linear .find()) for a single
+   * lookup — up to 3-4 times per equip click — even though the authoritative
+   * Map already lives here.
+   */
+  getInstance(instanceId) {
+    return this._inventory.get(instanceId) ?? null;
+  }
+
   get isReady() {
     return this._ready;
   }
@@ -151,10 +176,24 @@ class EquipmentStorage {
   // Write API
   // ---------------------------------------------------------------------------
 
+  /** Mark a key for write (put) on next flush. */
+  _markPut(storeName, key) {
+    this._deletedKeys[storeName].delete(key);
+    this._dirtyKeys[storeName].add(key);
+    this._dirty.add(storeName);
+  }
+
+  /** Mark a key for deletion on next flush. */
+  _markDelete(storeName, key) {
+    this._dirtyKeys[storeName].delete(key);
+    this._deletedKeys[storeName].add(key);
+    this._dirty.add(storeName);
+  }
+
   /** Add or overwrite an equipment instance in inventory. */
   addToInventory(instance) {
     this._inventory.set(instance.instanceId, instance);
-    this._dirty.add(STORE_INVENTORY);
+    this._markPut(STORE_INVENTORY, instance.instanceId);
     this._version++;
     this._scheduleFlush();
   }
@@ -163,7 +202,7 @@ class EquipmentStorage {
   removeFromInventory(instanceId) {
     if (!this._inventory.has(instanceId)) return;
     this._inventory.delete(instanceId);
-    this._dirty.add(STORE_INVENTORY);
+    this._markDelete(STORE_INVENTORY, instanceId);
     this._version++;
     this._scheduleFlush();
   }
@@ -171,7 +210,7 @@ class EquipmentStorage {
   /** Assign an instanceId to a slot. */
   setEquipped(slot, instanceId) {
     this._equipped.set(slot, instanceId);
-    this._dirty.add(STORE_EQUIPPED);
+    this._markPut(STORE_EQUIPPED, slot);
     this._version++;
     this._scheduleFlush();
   }
@@ -180,7 +219,7 @@ class EquipmentStorage {
   clearEquipped(slot) {
     if (!this._equipped.has(slot)) return;
     this._equipped.delete(slot);
-    this._dirty.add(STORE_EQUIPPED);
+    this._markDelete(STORE_EQUIPPED, slot);
     this._version++;
     this._scheduleFlush();
   }
@@ -201,60 +240,86 @@ class EquipmentStorage {
     const dirtyStores = [...this._dirty];
     this._dirty.clear();
 
+    // Snapshot the deltas and reset them optimistically. On failure the
+    // snapshot is merged BACK into the live sets (below) so nothing is lost —
+    // and any key touched during the in-flight tx keeps its newer marking.
+    const putSnapshot = {};
+    const delSnapshot = {};
+    for (const storeName of dirtyStores) {
+      putSnapshot[storeName] = [...this._dirtyKeys[storeName]];
+      delSnapshot[storeName] = [...this._deletedKeys[storeName]];
+      this._dirtyKeys[storeName].clear();
+      this._deletedKeys[storeName].clear();
+    }
+
+    const requeue = () => {
+      for (const storeName of dirtyStores) {
+        for (const k of putSnapshot[storeName]) {
+          // Don't resurrect a key that has since been deleted.
+          if (!this._deletedKeys[storeName].has(k)) this._dirtyKeys[storeName].add(k);
+        }
+        for (const k of delSnapshot[storeName]) {
+          if (!this._dirtyKeys[storeName].has(k)) this._deletedKeys[storeName].add(k);
+        }
+        this._dirty.add(storeName);
+      }
+    };
+
     return new Promise((resolve, reject) => {
       try {
         const tx = this._db.transaction(dirtyStores, 'readwrite');
 
         for (const storeName of dirtyStores) {
           const store = tx.objectStore(storeName);
+          const sourceMap = storeName === STORE_INVENTORY ? this._inventory : this._equipped;
 
-          // Clear then re-insert to handle deletes correctly.
-          const clearReq = store.clear();
+          // Deletes first, then puts — an id that was deleted and re-added in
+          // the same window is marked put-only, so ordering is safe either way.
+          for (const key of delSnapshot[storeName]) {
+            const delReq = store.delete(key);
+            delReq.onerror = (e) => {
+              console.error(`[EquipmentManager] delete failed for "${storeName}" key:`, key, e.target.error);
+              try { tx.abort(); } catch (_) {}
+            };
+          }
 
-          clearReq.onsuccess = () => {
-            const records = this._getRecordsForStore(storeName);
-            for (const record of records) {
-              const putReq = store.put(record);
-              putReq.onerror = (e) => {
-                console.error(
-                  `[EquipmentManager] put failed for "${storeName}" record:`,
-                  record,
-                  e.target.error,
-                );
-                // Abort entire transaction to prevent partial writes after clear
-                try { tx.abort(); } catch (_) {}
-              };
-            }
-          };
-
-          clearReq.onerror = (e) => {
-            console.error(`[EquipmentManager] clear failed for "${storeName}":`, e.target.error);
-          };
+          for (const key of putSnapshot[storeName]) {
+            // Read the CURRENT value at flush time (the Map is authoritative).
+            // A key marked dirty but since removed from the Map is skipped —
+            // its delete marking will carry it on a later flush.
+            const record = storeName === STORE_INVENTORY
+              ? sourceMap.get(key)
+              : (sourceMap.has(key) ? { slot: key, instanceId: sourceMap.get(key) } : undefined);
+            if (record === undefined) continue;
+            const putReq = store.put(record);
+            putReq.onerror = (e) => {
+              console.error(
+                `[EquipmentManager] put failed for "${storeName}" record:`,
+                record,
+                e.target.error,
+              );
+              // Abort the whole tx — partial writes would desync IDB from memory.
+              try { tx.abort(); } catch (_) {}
+            };
+          }
         }
 
         tx.oncomplete = () => resolve(true);
 
         tx.onerror = (e) => {
           console.error('[EquipmentManager] flush transaction failed:', e.target.error);
-          // Re-mark all stores dirty for retry on next flush.
-          for (const storeName of dirtyStores) {
-            this._dirty.add(storeName);
-          }
+          requeue();
           reject(tx.error);
         };
 
         tx.onabort = () => {
           console.error('[EquipmentManager] flush transaction aborted');
-          for (const storeName of dirtyStores) {
-            this._dirty.add(storeName);
-          }
+          requeue();
           reject(tx.error || new Error('Transaction aborted'));
         };
       } catch (err) {
         console.error('[EquipmentManager] flush error:', err);
-        for (const storeName of dirtyStores) {
-          this._dirty.add(storeName);
-        }
+        requeue();
         reject(err);
       }
     });
@@ -280,19 +345,6 @@ class EquipmentStorage {
   }
 
   /** Build the array of records to write for a given store name. */
-  _getRecordsForStore(storeName) {
-    if (storeName === STORE_INVENTORY) {
-      return Array.from(this._inventory.values());
-    }
-    if (storeName === STORE_EQUIPPED) {
-      const records = [];
-      for (const [slot, instanceId] of this._equipped) {
-        records.push({ slot, instanceId });
-      }
-      return records;
-    }
-    return [];
-  }
 
   /** Promise wrapper around IDBObjectStore.getAll() within an existing tx. */
   _getAllFromStore(tx, storeName) {

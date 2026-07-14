@@ -37,9 +37,9 @@ module.exports = {
    * @returns {{ success: boolean, message: string, unequippedInstanceId?: string }}
    */
   equipItem(instanceId, targetSlot) {
-    // 1. Find instance in inventory
-    const inventory = this.storage.getInventory();
-    const instance = inventory.find(item => item.instanceId === instanceId);
+    // 1. Find instance in inventory — O(1) via storage's own Map (was a linear
+    //    .find() over a freshly-materialized array, 2026-07-13).
+    const instance = this.storage.getInstance(instanceId);
     if (!instance) {
       return { success: false, message: 'Item not found in inventory.' };
     }
@@ -151,16 +151,18 @@ module.exports = {
     const equipped = this.storage.getEquipped();
     // Accept a pre-built instanceMap from the caller (avoids a redundant
     // getInventory() allocation when called from _renderPopupContent).
-    if (!instanceMap) {
-      const inventory = this.storage.getInventory();
-      instanceMap = new Map(inventory.map(item => [item.instanceId, item]));
-    }
+    // PERF (2026-07-13): equipped is <=10 slots, so materializing the WHOLE
+    // inventory into an array+Map to serve <=10 lookups was O(inventory) for
+    // O(10) of work — and inventory only ever grows. Resolve through storage's
+    // own Map instead. A caller-supplied instanceMap is still honoured.
+    const lookupInstance = (id) =>
+      (instanceMap ? instanceMap.get(id) : this.storage.getInstance(id));
 
     // 2 & 3. Sum stats from each equipped item
     for (const [slot, instanceId] of Object.entries(equipped)) {
       if (!instanceId) continue;
 
-      const instance = instanceMap.get(instanceId);
+      const instance = lookupInstance(instanceId);
       if (!instance) {
         this.debugLog?.(`[EquipmentManager] calculateTotalBonuses: instance ${instanceId} (slot ${slot}) not found in inventory`);
         continue;
@@ -182,7 +184,7 @@ module.exports = {
     const setPieceCounts = new Map(); // setId → count
     for (const instanceId of Object.values(equipped)) {
       if (!instanceId) continue;
-      const instance = instanceMap.get(instanceId);
+      const instance = lookupInstance(instanceId);
       if (!instance) continue;
       const definition = C.getEquipmentById(instance.equipmentId);
       if (!definition?.setId) continue;
@@ -223,15 +225,17 @@ module.exports = {
     const equipped = this.storage.getEquipped();
     // Accept a pre-built instanceMap from the caller (avoids a redundant
     // getInventory() allocation when called from _renderPopupContent).
-    if (!instanceMap) {
-      const inventory = this.storage.getInventory();
-      instanceMap = new Map(inventory.map(item => [item.instanceId, item]));
-    }
+    // PERF (2026-07-13): equipped is <=10 slots, so materializing the WHOLE
+    // inventory into an array+Map to serve <=10 lookups was O(inventory) for
+    // O(10) of work — and inventory only ever grows. Resolve through storage's
+    // own Map instead. A caller-supplied instanceMap is still honoured.
+    const lookupInstance = (id) =>
+      (instanceMap ? instanceMap.get(id) : this.storage.getInstance(id));
 
     const setPieceCounts = new Map();
     for (const instanceId of Object.values(equipped)) {
       if (!instanceId) continue;
-      const instance = instanceMap.get(instanceId);
+      const instance = lookupInstance(instanceId);
       if (!instance) continue;
       const definition = C.getEquipmentById(instance.equipmentId);
       if (!definition?.setId) continue;

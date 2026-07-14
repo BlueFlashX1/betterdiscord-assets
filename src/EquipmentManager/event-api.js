@@ -156,11 +156,9 @@ module.exports = {
       getEquippedItems: () => {
         const C = require('./constants');
         const equipped = this.storage.getEquipped();
-        const inventory = this.storage.getInventory();
-        const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
         const result = {};
         for (const [slot, instanceId] of Object.entries(equipped)) {
-          const inst = instanceMap.get(instanceId);
+          const inst = this.storage.getInstance(instanceId);
           if (inst) result[slot] = C.getEquipmentById(inst.equipmentId);
         }
         return result;
@@ -179,12 +177,10 @@ module.exports = {
       getEquippedSetPieceCount: (setId) => {
         const C = require('./constants');
         const equipped = this.storage.getEquipped();
-        const inventory = this.storage.getInventory();
-        const instanceMap = new Map(inventory.map(i => [i.instanceId, i]));
         let count = 0;
         for (const instanceId of Object.values(equipped)) {
           if (!instanceId) continue;
-          const inst = instanceMap.get(instanceId);
+          const inst = this.storage.getInstance(instanceId);
           if (!inst) continue;
           const def = C.getEquipmentById(inst.equipmentId);
           if (def?.setId === setId) count++;
