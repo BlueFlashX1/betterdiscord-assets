@@ -614,7 +614,10 @@ const DROP_CHANCE_BY_RANK = Object.freeze({
   NH:               0.34,
   Monarch:          0.35,
   'Monarch+':       0.35,
-  'Shadow Monarch': 0.35,
+  // 'Shadow Monarch' is deliberately ABSENT. It is the player's terminal rank,
+  // and its reward is the Regalia grant at Lv2000 (+35 achievements) — not
+  // loot. A Shadow-Monarch-rank boss resolves DOWN to the nearest ranked entry
+  // (Monarch+) for drop purposes; see _resolveRankForDrops().
 });
 
 // Rarity pool per boss rank, ordered [lowest ... highest].
@@ -624,6 +627,11 @@ const DROP_CHANCE_BY_RANK = Object.freeze({
 // returned no drop. That made E-rank bosses drop 0% (despite an advertised
 // 55%) and burned ~70-78% of D/C bosses' successful rolls. Lowest real
 // rarity is 'D'.
+// NOTE: 'SSS' appears in NO pool. Every SSS-rarity item in the catalogue is a
+// piece of the Shadow Monarch's Regalia, and that set is GRANT-ONLY (awarded in
+// full on reaching Shadow Monarch rank — Lv2000 + 35 achievements). Letting SSS
+// drop would let the player farm the Regalia from bosses and make the terminal
+// reward meaningless. The droppable ceiling is therefore 'SS'.
 const RARITY_POOL_BY_RANK = Object.freeze({
   E:                Object.freeze(['D', 'C']),
   D:                Object.freeze(['D', 'C']),
@@ -631,18 +639,28 @@ const RARITY_POOL_BY_RANK = Object.freeze({
   B:                Object.freeze(['C', 'B', 'A']),
   A:                Object.freeze(['B', 'A', 'S']),
   S:                Object.freeze(['A', 'S', 'SS']),
-  SS:               Object.freeze(['S', 'SS', 'SSS']),
-  SSS:              Object.freeze(['S', 'SS', 'SSS']),
-  'SSS+':           Object.freeze(['S', 'SS', 'SSS']),
-  NH:               Object.freeze(['SS', 'SSS']),
-  Monarch:          Object.freeze(['SS', 'SSS']),
-  'Monarch+':       Object.freeze(['SS', 'SSS']),
-  'Shadow Monarch': Object.freeze(['SS', 'SSS']),
+  SS:               Object.freeze(['A', 'S', 'SS']),
+  SSS:              Object.freeze(['S', 'SS']),
+  'SSS+':           Object.freeze(['S', 'SS']),
+  NH:               Object.freeze(['S', 'SS']),
+  Monarch:          Object.freeze(['S', 'SS']),
+  'Monarch+':       Object.freeze(['S', 'SS']),
 });
+
+// Sets that may NEVER be obtained from a random drop — they are awarded whole,
+// by a specific progression event. The Shadow Monarch's Regalia is granted in
+// full on reaching Shadow Monarch rank (Lv2000 + 35 achievements); farming its
+// pieces off bosses would defeat the point of the terminal reward.
+//
+// This is enforced structurally in the drop roll (not merely by keeping SSS out
+// of the pools) so that re-adding SSS to a pool later cannot silently leak the
+// Regalia back into the loot table.
+const GRANT_ONLY_SET_IDS = Object.freeze(['shadow_monarch_regalia']);
 
 // Rarity ladder, lowest -> highest. Used to degrade gracefully when a chosen
 // rarity has no items in the catalogue (see _resolveEligibleForRarity).
 // 'E' is intentionally absent: no E-rarity equipment exists.
+// 'SSS' is a real rarity but is NOT droppable — see GRANT_ONLY_SET_IDS.
 const RARITY_ORDER = Object.freeze(['D', 'C', 'B', 'A', 'S', 'SS', 'SSS']);
 
 // Default weights for [lowest, middle, highest] rarity within a pool.
@@ -656,13 +674,14 @@ const RARITY_WEIGHTS = Object.freeze([0.70, 0.20, 0.10]);
 const RARITY_WEIGHTS_BY_RANK = Object.freeze({
   A:                Object.freeze([0.55, 0.30, 0.15]),
   S:                Object.freeze([0.55, 0.30, 0.15]),
-  SS:               Object.freeze([0.45, 0.33, 0.22]),
-  SSS:              Object.freeze([0.45, 0.33, 0.22]),
-  'SSS+':           Object.freeze([0.35, 0.35, 0.30]),
-  NH:               Object.freeze([0.40, 0.60]),
-  Monarch:          Object.freeze([0.32, 0.68]),
-  'Monarch+':       Object.freeze([0.25, 0.75]),
-  'Shadow Monarch': Object.freeze([0.18, 0.82]),
+  SS:               Object.freeze([0.45, 0.35, 0.20]),
+  // 2-tier pools [S, SS] from SSS upward — progressively favour SS, the
+  // droppable ceiling, so endgame ranks meaningfully chase the top tier.
+  SSS:              Object.freeze([0.70, 0.30]),
+  'SSS+':           Object.freeze([0.62, 0.38]),
+  NH:               Object.freeze([0.55, 0.45]),
+  Monarch:          Object.freeze([0.48, 0.52]),
+  'Monarch+':       Object.freeze([0.40, 0.60]),
 });
 
 const DROP_TABLES = Object.freeze({
@@ -735,6 +754,7 @@ module.exports = {
   RARITY_WEIGHTS,
   RARITY_WEIGHTS_BY_RANK,
   RARITY_ORDER,
+  GRANT_ONLY_SET_IDS,
   GUARANTEED_DROPS,
   getEquipmentById,
   getEquipmentForSlot,

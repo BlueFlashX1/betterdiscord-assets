@@ -1,4 +1,5 @@
 const C = require('./constants');
+const { RANK_ORDER } = require('../shared/rank-utils');
 
 /**
  * Drop system mixin.
@@ -31,31 +32,35 @@ module.exports = {
       }
     }
 
-    // 2. Probabilistic drop check.
-    // Fallback is the E-rank chance rather than a magic 0.05: an unrecognised
-    // rank should behave like the weakest rank, not like a punitive one.
+    // 2. Resolve the boss rank to a rank that actually has drop tables.
+    // 'Shadow Monarch' is intentionally absent from the tables (its reward is
+    // the Regalia grant, not loot), so a Shadow-Monarch-rank boss resolves DOWN
+    // to Monarch+ rather than falling through to the weakest defaults.
+    const rank = this._resolveRankForDrops(bossRank);
+
+    // 3. Probabilistic drop check.
     const chanceTable = C.DROP_TABLES?.DROP_CHANCE_BY_RANK || {};
-    const dropChance = chanceTable[bossRank] ?? chanceTable.E ?? 0.25;
+    const dropChance = chanceTable[rank] ?? chanceTable.E ?? 0.25;
     if (Math.random() >= dropChance) {
       this.debugLog?.(`[EquipmentManager] No drop for rank ${bossRank} boss (chance ${dropChance})`);
       return [];
     }
 
-    // 3. Select rarity from the rank-specific pool, using rank-specific weights
+    // 4. Select rarity from the rank-specific pool, using rank-specific weights
     // when defined (high ranks skew toward the top of their pool).
     const poolTable = C.DROP_TABLES?.RARITY_POOL_BY_RANK || {};
-    const pool = poolTable[bossRank] || poolTable.E || ['D'];
-    const weights = C.DROP_TABLES?.RARITY_WEIGHTS_BY_RANK?.[bossRank]
+    const pool = poolTable[rank] || poolTable.E || ['D'];
+    const weights = C.DROP_TABLES?.RARITY_WEIGHTS_BY_RANK?.[rank]
       || C.DROP_TABLES?.RARITY_WEIGHTS
       || {};
     const selectedRarity = this._weightedRarityPick(pool, weights);
 
     this.debugLog?.(
-      `[EquipmentManager] Drop roll for rank ${bossRank}: rarity=${selectedRarity}`
+      `[EquipmentManager] Drop roll for rank ${bossRank} (as ${rank}): rarity=${selectedRarity}`
     );
 
-    // 4. Resolve the selected rarity to actual items.
-    const allEquipment = Object.values(C.EQUIPMENT_DATABASE || {});
+    // 5. Resolve the selected rarity to actual items — grant-only sets excluded.
+    const allEquipment = this._droppableEquipment();
     const eligible = this._resolveEligibleForRarity(allEquipment, selectedRarity);
     if (eligible.length === 0) {
       this.debugLog?.(`[EquipmentManager] No equipment found at or below rarity "${selectedRarity}"`);
@@ -67,6 +72,50 @@ module.exports = {
     this.debugLog?.(`[EquipmentManager] Dropped: ${item.name} (${item.id})`);
 
     return [item.id];
+  },
+
+  /**
+   * All equipment that is allowed to appear as a random drop.
+   *
+   * Excludes grant-only sets (see C.GRANT_ONLY_SET_IDS) — currently the Shadow
+   * Monarch's Regalia, which is awarded whole on reaching Shadow Monarch rank
+   * (Lv2000 + 35 achievements). Every SSS-rarity item in the catalogue belongs
+   * to that set, so without this filter a single SSS roll could hand the player
+   * a Regalia piece and undercut the terminal reward.
+   *
+   * @returns {object[]}
+   */
+  _droppableEquipment() {
+    const all = Object.values(C.EQUIPMENT_DATABASE || {});
+    const grantOnly = C.GRANT_ONLY_SET_IDS || [];
+    if (grantOnly.length === 0) return all;
+    return all.filter(e => !grantOnly.includes(e.setId));
+  },
+
+  /**
+   * Map a boss rank onto the nearest rank that HAS drop tables.
+   *
+   * 'Shadow Monarch' is deliberately not in the tables, so a boss of that rank
+   * would otherwise hit the unknown-rank default and drop bottom-tier junk.
+   * Walk DOWN the canonical rank ladder to the nearest ranked entry instead
+   * (Shadow Monarch -> Monarch+). A rank that isn't on the ladder at all is
+   * genuinely unknown and falls back to 'E'.
+   *
+   * @param {string} bossRank
+   * @returns {string}
+   */
+  _resolveRankForDrops(bossRank) {
+    const chanceTable = C.DROP_TABLES?.DROP_CHANCE_BY_RANK || {};
+    if (chanceTable[bossRank] != null) return bossRank;
+
+    const ladder = RANK_ORDER || [];
+    const idx = ladder.indexOf(bossRank);
+    if (idx === -1) return 'E';
+
+    for (let i = idx - 1; i >= 0; i--) {
+      if (chanceTable[ladder[i]] != null) return ladder[i];
+    }
+    return 'E';
   },
 
   /**
