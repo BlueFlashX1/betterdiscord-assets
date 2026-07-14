@@ -59,8 +59,8 @@
   writes hit `loadAddon` on an already-loaded plugin → throws
   "alreadyExists" → catch sets state to disabled, no error surfaced
   to user. **Use direct in-place writes** (esbuild default in this
-  repo). PluginGuardian auto-reconciles disabled state in staged
-  passes on launch.
+  repo). If a plugin does get silently disabled, re-enable it in BD
+  settings (a disable/re-enable toggle clears the stale state).
 
 ### Reload behavior
 - **Ctrl+R and BD settings toggle don't reliably reload rebuilt plugins.**

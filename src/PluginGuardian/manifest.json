@@ -1,6 +1,0 @@
-{
-  "name": "PluginGuardian",
-  "description": "Auto-re-enables plugins that BetterDiscord silently disables due to its file-watcher rename-event race. Snapshots enabled plugins on start, tracks user toggles, polls every 500ms.",
-  "version": "1.0.0",
-  "author": "Matthew Thompson"
-}
