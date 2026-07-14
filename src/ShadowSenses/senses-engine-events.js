@@ -11,48 +11,115 @@ const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 
 // Navigate Discord to a channel (or specific message inside it). Used as the
 // onClick handler for typing/sent toast cards so clicking jumps to the chat.
-// MessageActions module (jumpToMessage) — memoized; the module reference is
-// stable for the life of the client session.
+// MessageActions module (holds jumpToMessage) — memoized after first hit.
+//
+// BUGFIX (2026-07-13, 2nd pass): the previous filter required BOTH
+// jumpToMessage AND fetchMessages on one module. Current Discord split them,
+// so resolution returned null and every jump silently fell through to a
+// plain transitionTo — which lands in the channel but does NOT scroll/flash
+// to the message. That is exactly the "click to jump did nothing" symptom.
+//
+// Resolution is now multi-strategy (first hit wins), mirroring the proven
+// CriticalHit MessageActions lookup, so a single split can't break it again.
 let _messageActionsModule = null;
 function _getMessageActions() {
-  if (_messageActionsModule?.jumpToMessage) return _messageActionsModule;
-  try {
-    _messageActionsModule = BdApi.Webpack.getModule(
-      (m) => typeof m?.jumpToMessage === "function" && typeof m?.fetchMessages === "function"
-    ) || null;
-  } catch (_) {
-    _messageActionsModule = null;
-  }
-  return _messageActionsModule;
-}
-
-function navigateToChannel(guildId, channelId, messageId) {
-  // Click-to-jump (2026-07-13, reinstated): primary path is
-  // MessageActions.jumpToMessage — the same API Discord's own message links
-  // use — which scrolls to the message and flash-highlights it. An earlier
-  // attempt was removed as unreliable, but plain transitionTo only lands in
-  // the channel (the messageId URL segment alone doesn't trigger the
-  // scroll), which made "Click to view message" toasts feel broken. The
-  // transitionTo path below remains as the fallback if resolution fails.
-  if (channelId && messageId) {
+  if (typeof _messageActionsModule?.jumpToMessage === "function") return _messageActionsModule;
+  const W = BdApi.Webpack;
+  const strategies = [
+    () => W.getByKeys?.("jumpToMessage"),
+    () => W.getModule?.((m) => typeof m?.jumpToMessage === "function"),
+    // Classic combined MessageActions module (jumpToMessage co-located with
+    // send/edit) — the shape CriticalHit resolves against.
+    () => W.getModule?.((m) => m?.jumpToMessage && m?.sendMessage && (m?.receiveMessage || m?.editMessage)),
+  ];
+  for (const strat of strategies) {
     try {
-      const actions = _getMessageActions();
-      if (actions) {
-        actions.jumpToMessage({ channelId, messageId, flash: true });
-        return true;
+      const mod = strat();
+      if (typeof mod?.jumpToMessage === "function") {
+        _messageActionsModule = mod;
+        return mod;
       }
     } catch (_) {}
   }
+  return null;
+}
+
+// ChannelStore — used to recover a missing guildId from the channel, so a
+// cross-server jump can't produce a malformed "@me" URL when the caller
+// didn't pass the guild.
+let _channelStore = null;
+function _getChannelStore() {
+  if (_channelStore?.getChannel) return _channelStore;
+  try { _channelStore = BdApi.Webpack.getStore("ChannelStore") || null; } catch (_) { _channelStore = null; }
+  return _channelStore;
+}
+
+// Resolve the guild segment for a channel: explicit guildId wins; otherwise
+// look it up from the channel; DMs / unresolved → "@me".
+function _resolveGuildSegment(guildId, channelId) {
+  if (guildId && guildId !== "DM") return guildId;
+  try {
+    const ch = _getChannelStore()?.getChannel?.(channelId);
+    if (ch?.guild_id) return ch.guild_id;
+  } catch (_) {}
+  return "@me";
+}
+
+let _jumpDiagLogged = false;
+
+function navigateToChannel(guildId, channelId, messageId) {
+  if (!channelId) return false;
+
+  // Cross-server-safe click-to-jump (2026-07-13, hardened). Two mechanisms,
+  // belt-and-suspenders, because neither alone covers every case:
+  //   1. transitionTo the FULL message-path URL — this is exactly what
+  //      clicking a Discord message link does: it switches guild + channel
+  //      and deep-links to the message (scroll + flash). Resolving the guild
+  //      from the channel first prevents a malformed "@me" path when the
+  //      caller passed no guildId — the likely cause of the earlier failure.
+  //   2. jumpToMessage as reinforcement AFTER the route settles — covers the
+  //      case where you're already in the channel (a same-channel transitionTo
+  //      is a no-op that won't re-scroll) and forces the scroll/flash.
+  if (!messageId) {
+    // No message to jump to — just open the channel.
+    try {
+      const nav = getNavigationUtils();
+      const seg = _resolveGuildSegment(guildId, channelId);
+      nav?.transitionTo?.(`/channels/${seg}/${channelId}`);
+      return true;
+    } catch (_) { return false; }
+  }
+
+  const seg = _resolveGuildSegment(guildId, channelId);
+  let navigated = false;
   try {
     const nav = getNavigationUtils();
-    if (!nav?.transitionTo || !channelId) return false;
-    const guildSeg = guildId && guildId !== "DM" ? guildId : "@me";
-    const path = `/channels/${guildSeg}/${channelId}${messageId ? "/" + messageId : ""}`;
-    nav.transitionTo(path);
+    if (nav?.transitionTo) {
+      nav.transitionTo(`/channels/${seg}/${channelId}/${messageId}`);
+      navigated = true;
+    }
+  } catch (_) {}
+
+  const actions = _getMessageActions();
+  if (actions) {
+    const doJump = () => {
+      try { actions.jumpToMessage({ channelId, messageId, flash: true }); }
+      catch (_) { try { actions.jumpToMessage(channelId, messageId); } catch (_) {} }
+    };
+    // Let the route change from (1) commit first, then force the scroll.
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => requestAnimationFrame(doJump));
+    } else {
+      doJump();
+    }
     return true;
-  } catch (_) {
-    return false;
   }
+
+  if (!navigated && !_jumpDiagLogged) {
+    _jumpDiagLogged = true;
+    console.warn("[ShadowSenses] jump: neither NavigationUtils nor jumpToMessage resolved — click-to-jump unavailable.");
+  }
+  return navigated;
 }
 
 // First renderable thumbnail for a toast card: image attachments win (their
