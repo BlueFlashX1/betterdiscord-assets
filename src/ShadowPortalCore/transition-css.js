@@ -44,15 +44,6 @@ const PORTAL_TRANSITION_CSS = `
   will-change: opacity;
 }
 
-/* Stacking inside the overlay (bottom -> top):
- *   1 canvas       — darkness blackout + aperture punch + ring/mist decoration
- *   2 portal image — portal_shadowv2.png, the hero visual
- *   3 shards       — cinders, always in front
- * The canvas MUST stay below the portal image: it paints a full-screen black
- * fill, so anything beneath it is invisible during the dark phase. Before this,
- * the image was appended first (and so buried under the blackout) while the
- * canvas's own ring/mist drew on top of the black — which is why the generated
- * decoration read as the main visual and the PNG barely showed. */
 .ss-transition-canvas {
   position: absolute;
   inset: 0;
@@ -60,7 +51,6 @@ const PORTAL_TRANSITION_CSS = `
   height: 100%;
   display: block;
   opacity: 1;
-  z-index: 1;
 }
 
 .ss-shard {
@@ -72,7 +62,6 @@ const PORTAL_TRANSITION_CSS = `
   box-shadow: 0 0 6px rgba(110, 82, 56, 0.28);
   opacity: 0;
   will-change: transform, opacity;
-  z-index: 3;
 }
 
 .ss-transition-overlay--waapi .ss-shard {
