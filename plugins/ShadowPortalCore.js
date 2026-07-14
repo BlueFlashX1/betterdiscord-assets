@@ -297,10 +297,19 @@ var require_navigation = __commonJS({
 
 // src/ShadowPortalCore/index.js
 var { PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS } = require_transition_css();
+var SPIRAL_MASK_CACHE_VERSION = 2;
 function _getPortalCoreState() {
   if (window.__SL_PortalCore) {
     if (!(window.__SL_PortalCore.consumers instanceof Set)) {
       window.__SL_PortalCore.consumers = /* @__PURE__ */ new Set();
+    }
+    if (window.__SL_PortalCore.spiralMaskVersion !== SPIRAL_MASK_CACHE_VERSION) {
+      window.__SL_PortalCore.spiralMaskUrl = null;
+      window.__SL_PortalCore.spiralMaskReady = false;
+      window.__SL_PortalCore.spiralMaskLoadedFrom = null;
+      window.__SL_PortalCore.spiralMaskInFlight = false;
+      window.__SL_PortalCore.proceduralMaskUrl = null;
+      window.__SL_PortalCore.spiralMaskVersion = SPIRAL_MASK_CACHE_VERSION;
     }
     return window.__SL_PortalCore;
   }
@@ -312,10 +321,16 @@ function _getPortalCoreState() {
     // consumer releases, to prevent accumulation across BD reloads.
     gsapScriptEls: [],
     // CSS Portal spiral mask (PropJockey technique)
-    // Preferred: imgur PNG. Fallback: procedurally generated spiral.
+    // spiralMaskUrl holds ONLY the real mask image (portal_shadowv2.png, as a
+    // data URL). The procedural spiral is cached separately in
+    // proceduralMaskUrl and is NEVER written into spiralMaskUrl — see
+    // getSpiralMaskUrl() for why that distinction is load-bearing.
     spiralMaskUrl: null,
     spiralMaskReady: false,
     spiralMaskLoadedFrom: null,
+    spiralMaskInFlight: false,
+    spiralMaskVersion: SPIRAL_MASK_CACHE_VERSION,
+    proceduralMaskUrl: null,
     // Consumer hold set, keyed by stable class name — populated by the
     // _portalCoreAcquire()/_portalCoreRelease() prototype methods (installed via
     // applyPortalCoreToClass). Set semantics make acquire/release idempotent: a
@@ -337,9 +352,11 @@ function preloadSpiralMask() {
   if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
     core.spiralMaskUrl = null;
     core.spiralMaskReady = false;
+    core.spiralMaskInFlight = false;
     core.spiralMaskLoadedFrom = null;
   }
-  if (core.spiralMaskReady || core.spiralMaskUrl) return;
+  if (core.spiralMaskUrl || core.spiralMaskInFlight) return;
+  core.spiralMaskInFlight = true;
   core.spiralMaskLoadedFrom = SPIRAL_IMG_URL;
   const img = new Image();
   img.crossOrigin = "anonymous";
@@ -350,14 +367,13 @@ function preloadSpiralMask() {
       const ctx = c.getContext("2d");
       ctx.drawImage(img, 0, 0, 512, 512);
       core.spiralMaskUrl = c.toDataURL();
+      core.spiralMaskReady = true;
     } catch (_) {
-      core.spiralMaskUrl = generateProceduralSpiral();
     }
-    core.spiralMaskReady = true;
+    core.spiralMaskInFlight = false;
   };
   img.onerror = () => {
-    core.spiralMaskUrl = generateProceduralSpiral();
-    core.spiralMaskReady = true;
+    core.spiralMaskInFlight = false;
   };
   img.src = SPIRAL_IMG_URL;
 }
@@ -393,9 +409,9 @@ function generateProceduralSpiral() {
 function getSpiralMaskUrl() {
   const core = _getPortalCoreState();
   if (core.spiralMaskUrl) return core.spiralMaskUrl;
-  core.spiralMaskUrl = generateProceduralSpiral();
-  core.spiralMaskReady = true;
-  return core.spiralMaskUrl;
+  preloadSpiralMask();
+  if (!core.proceduralMaskUrl) core.proceduralMaskUrl = generateProceduralSpiral();
+  return core.proceduralMaskUrl;
 }
 var DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
 function getCoreConfig(instance) {

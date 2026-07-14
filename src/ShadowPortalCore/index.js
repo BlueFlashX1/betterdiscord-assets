@@ -21,6 +21,13 @@ const { PORTAL_TRANSITION_STYLE_ID, PORTAL_TRANSITION_CSS } = require("./transit
 // hosts the cache on window.__SL_PortalCore (same first-wins pattern as
 // shared/event-bus.js / shared/dom-bus.js) so all three plugins share ONE GSAP CDN load
 // and ONE spiral-mask preload instead of racing three independent copies.
+// Bump to invalidate a stale/poisoned spiral-mask cache on a LIVE global (the
+// cache lives on window.__SL_PortalCore and survives BD plugin reloads, so a
+// bad value would otherwise persist until a full Discord restart).
+// v2: pre-v2 builds wrote the PROCEDURAL fallback into spiralMaskUrl and set
+// spiralMaskReady=true, which permanently suppressed the real mask image.
+const SPIRAL_MASK_CACHE_VERSION = 2;
+
 function _getPortalCoreState() {
   if (window.__SL_PortalCore) {
     // Back-compat: a live global left over from a pre-Set build (old integer
@@ -28,6 +35,17 @@ function _getPortalCoreState() {
     // without disturbing the rest of the cached state (GSAP load / mask stay warm).
     if (!(window.__SL_PortalCore.consumers instanceof Set)) {
       window.__SL_PortalCore.consumers = new Set();
+    }
+    // Mask-cache migration: an older build may have cached the procedural
+    // spiral as if it were the real mask. Drop the mask fields (GSAP stays
+    // warm) so the real image is fetched again on the next portal.
+    if (window.__SL_PortalCore.spiralMaskVersion !== SPIRAL_MASK_CACHE_VERSION) {
+      window.__SL_PortalCore.spiralMaskUrl = null;
+      window.__SL_PortalCore.spiralMaskReady = false;
+      window.__SL_PortalCore.spiralMaskLoadedFrom = null;
+      window.__SL_PortalCore.spiralMaskInFlight = false;
+      window.__SL_PortalCore.proceduralMaskUrl = null;
+      window.__SL_PortalCore.spiralMaskVersion = SPIRAL_MASK_CACHE_VERSION;
     }
     return window.__SL_PortalCore;
   }
@@ -39,10 +57,16 @@ function _getPortalCoreState() {
     // consumer releases, to prevent accumulation across BD reloads.
     gsapScriptEls: [],
     // CSS Portal spiral mask (PropJockey technique)
-    // Preferred: imgur PNG. Fallback: procedurally generated spiral.
+    // spiralMaskUrl holds ONLY the real mask image (portal_shadowv2.png, as a
+    // data URL). The procedural spiral is cached separately in
+    // proceduralMaskUrl and is NEVER written into spiralMaskUrl — see
+    // getSpiralMaskUrl() for why that distinction is load-bearing.
     spiralMaskUrl: null,
     spiralMaskReady: false,
     spiralMaskLoadedFrom: null,
+    spiralMaskInFlight: false,
+    spiralMaskVersion: SPIRAL_MASK_CACHE_VERSION,
+    proceduralMaskUrl: null,
     // Consumer hold set, keyed by stable class name — populated by the
     // _portalCoreAcquire()/_portalCoreRelease() prototype methods (installed via
     // applyPortalCoreToClass). Set semantics make acquire/release idempotent: a
@@ -89,9 +113,16 @@ function preloadSpiralMask() {
   if (core.spiralMaskLoadedFrom && core.spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
     core.spiralMaskUrl = null;
     core.spiralMaskReady = false;
+    core.spiralMaskInFlight = false;
     core.spiralMaskLoadedFrom = null;
   }
-  if (core.spiralMaskReady || core.spiralMaskUrl) return;
+  // Skip ONLY when the real mask is already in hand, or a fetch is in flight.
+  // We deliberately do NOT skip because a procedural fallback was handed out:
+  // the old guard (`spiralMaskReady || spiralMaskUrl`) combined with
+  // getSpiralMaskUrl() caching the procedural spiral meant one early portal
+  // permanently suppressed the real image for the rest of the Discord session.
+  if (core.spiralMaskUrl || core.spiralMaskInFlight) return;
+  core.spiralMaskInFlight = true;
   core.spiralMaskLoadedFrom = SPIRAL_IMG_URL;
   const img = new Image();
   img.crossOrigin = "anonymous";
@@ -101,16 +132,18 @@ function preloadSpiralMask() {
       c.width = c.height = 512;
       const ctx = c.getContext("2d");
       ctx.drawImage(img, 0, 0, 512, 512);
-      core.spiralMaskUrl = c.toDataURL();
+      core.spiralMaskUrl = c.toDataURL(); // real image — wins from here on
+      core.spiralMaskReady = true;
     } catch (_) {
-      // CORS tainted canvas — fall back to procedural
-      core.spiralMaskUrl = generateProceduralSpiral();
+      // CORS-tainted canvas. Leave spiralMaskUrl unset so a later attempt can
+      // still succeed; callers use the procedural mask in the meantime.
     }
-    core.spiralMaskReady = true;
+    core.spiralMaskInFlight = false;
   };
   img.onerror = () => {
-    core.spiralMaskUrl = generateProceduralSpiral();
-    core.spiralMaskReady = true;
+    // Transient failure (offline, rate-limited). Leave the cache EMPTY so the
+    // next portal retries instead of locking in the procedural spiral forever.
+    core.spiralMaskInFlight = false;
   };
   img.src = SPIRAL_IMG_URL;
 }
@@ -146,14 +179,26 @@ function generateProceduralSpiral() {
   return blurred.toDataURL();
 }
 
-/** Get the spiral mask URL (imgur data URL preferred, procedural fallback). */
+/**
+ * Get the spiral mask URL — the real mask image if it has loaded, otherwise a
+ * procedural spiral for THIS portal only.
+ *
+ * CRITICAL: never write the procedural spiral into core.spiralMaskUrl. The mask
+ * cache lives on window.__SL_PortalCore and survives BD plugin reloads, so
+ * caching the fallback there (as the old code did, along with
+ * spiralMaskReady = true) made preloadSpiralMask() early-return forever and
+ * permanently replaced the real portal image with the generated spiral for the
+ * rest of the Discord session. Keep them in separate slots and always give the
+ * real image another chance to land.
+ */
 function getSpiralMaskUrl() {
   const core = _getPortalCoreState();
-  if (core.spiralMaskUrl) return core.spiralMaskUrl;
-  // If preload hasn't completed yet, generate procedural synchronously
-  core.spiralMaskUrl = generateProceduralSpiral();
-  core.spiralMaskReady = true;
-  return core.spiralMaskUrl;
+  if (core.spiralMaskUrl) return core.spiralMaskUrl; // real mask image
+  // Real mask not in hand yet — (re)start the fetch so a later portal gets it...
+  preloadSpiralMask();
+  // ...and hand back a cached procedural spiral for this run only.
+  if (!core.proceduralMaskUrl) core.proceduralMaskUrl = generateProceduralSpiral();
+  return core.proceduralMaskUrl;
 }
 
 const DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
