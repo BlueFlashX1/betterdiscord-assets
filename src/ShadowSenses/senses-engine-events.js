@@ -74,54 +74,62 @@ function _resolveGuildSegment(guildId, channelId) {
   return "@me";
 }
 
+// Navigate to a URL path using the EXACT mechanism the shadow-portal
+// teleport uses (which the user confirmed works in their client): try
+// NavigationUtils.transitionTo, then fall back to history.pushState +
+// popstate. The pushState fallback was missing from the previous jump code
+// and is very likely why the portal navigated but the toast click didn't.
+function _portalStyleNavigate(path) {
+  try {
+    const nav = getNavigationUtils();
+    if (nav?.transitionTo) { nav.transitionTo(path); return "transitionTo"; }
+  } catch (_) {}
+  try {
+    if (window.history?.pushState) {
+      window.history.pushState({}, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      return "pushState";
+    }
+  } catch (_) {}
+  return "none";
+}
+
 function navigateToChannel(guildId, channelId, messageId) {
   if (!channelId) return false;
   const seg = _resolveGuildSegment(guildId, channelId);
 
-  const actions = messageId ? _getMessageActions() : null;
-  const nav = getNavigationUtils();
-
-  // DEBUG (2026-07-13): show a diagnostic toast on EVERY jump click while we
-  // chase this down (previously one-shot, which is why it "didn't show" —
-  // it had already fired once). Proves the click reached this function at
-  // all, and reports what resolved. Remove once the jump is confirmed.
-  if (messageId) {
-    try {
-      const jm = actions ? `OK(${_messageActionsStrategy})` : "MISSING";
-      const nv = nav?.transitionTo ? "OK" : "MISSING";
-      BdApi.UI.showToast(`SS jump — jumpToMessage:${jm} nav:${nv} seg:${seg}`, { type: "info", timeout: 9000 });
-    } catch (_) {}
-  }
-
-  // No message → just open the channel.
+  // No message → just open the channel (portal-style nav).
   if (!messageId) {
-    try { nav?.transitionTo?.(`/channels/${seg}/${channelId}`); return true; }
-    catch (_) { return false; }
+    return _portalStyleNavigate(`/channels/${seg}/${channelId}`) !== "none";
   }
 
-  // PRIMARY: jumpToMessage alone. It is self-contained — switches guild +
-  // channel, fetches the surrounding history, scrolls, and flash-highlights,
-  // and manages its own async loading. It must NOT race a transitionTo (the
-  // previous version fired transitionTo then jumpToMessage ~32ms later, far
-  // too early for a cross-server channel load — they cancelled each other).
+  // PRIMARY: navigate to the full message-path URL exactly like the portal
+  // does — this is the proven-working path in the user's client. This alone
+  // switches server + channel and, on most builds, deep-links to the message.
+  const navVia = _portalStyleNavigate(`/channels/${seg}/${channelId}/${messageId}`);
+
+  // REINFORCEMENT: jumpToMessage forces the scroll + flash once the channel
+  // has had time to mount and load its history. Fired on a delay (NOT racing
+  // the navigation above) so it lands after the route settles. Harmless if
+  // the deep-link already scrolled.
+  const actions = _getMessageActions();
   if (actions) {
-    try {
-      actions.jumpToMessage({ channelId, messageId, flash: true });
-      return true;
-    } catch (e1) {
-      try { actions.jumpToMessage(channelId, messageId); return true; }
-      catch (e2) {
-        console.warn("[ShadowSenses] jumpToMessage threw on both signatures:", e1, e2);
-      }
-    }
+    setTimeout(() => {
+      try { actions.jumpToMessage({ channelId, messageId, flash: true }); }
+      catch (_) { try { actions.jumpToMessage(channelId, messageId); } catch (_) {} }
+    }, 700);
   }
 
-  // FALLBACK: deep-link URL (the message-link behavior). May or may not scroll
-  // depending on build, but always at least lands in the right channel/server.
+  // DEBUG (temporary): one toast per click so a failure is explainable
+  // on-screen. Reports how navigation fired + whether jumpToMessage resolved.
   try {
-    if (nav?.transitionTo) { nav.transitionTo(`/channels/${seg}/${channelId}/${messageId}`); return true; }
+    BdApi.UI.showToast(
+      `SS jump — nav:${navVia} jumpToMessage:${actions ? `OK(${_messageActionsStrategy})` : "MISSING"} seg:${seg}`,
+      { type: "info", timeout: 9000 }
+    );
   } catch (_) {}
-  return false;
+
+  return navVia !== "none";
 }
 
 // First renderable thumbnail for a toast card: image attachments win (their
@@ -808,6 +816,25 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
   if (startupState.isEarlyStartup) return true;
 
   if (ctx._plugin.settings?.statusAlerts && focusAllows(deployment, "status")) {
+    // DEDUPE (2026-07-13): both the presence EVENT handler and the fallback
+    // POLL route here, and Discord fires the same change under multiple event
+    // names (PRESENCE_UPDATE + PRESENCE_UPDATES). Guard against emitting the
+    // same userId→status toast twice within a short window. Keyed on
+    // userId+status; 6s covers the event/poll overlap without blocking a
+    // genuine later re-transition to the same status.
+    if (!ctx._statusToastDedup) ctx._statusToastDedup = new Map();
+    const dedupKey = `${userId}:${nextStatus}`;
+    const now = Date.now();
+    const lastAt = ctx._statusToastDedup.get(dedupKey) || 0;
+    if (now - lastAt < 6000) return true; // already toasted this transition
+    ctx._statusToastDedup.set(dedupKey, now);
+    // Prune opportunistically so the map can't grow unbounded.
+    if (ctx._statusToastDedup.size > 200) {
+      for (const [k, ts] of ctx._statusToastDedup) {
+        if (now - ts > 60000) ctx._statusToastDedup.delete(k);
+      }
+    }
+
     const uName = ctx._resolveUserName(userId, deployment.targetUsername || "Unknown");
     const prevLabel = ctx._getStatusLabel(previousStatus);
     const nextLbl = ctx._getStatusLabel(nextStatus);
