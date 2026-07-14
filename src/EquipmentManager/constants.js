@@ -549,12 +549,323 @@ const EQUIPMENT_DATABASE = {
     source: 'Rare drop — Demon Castle floor 100 final boss',
     lore: 'The seal on the face has never been successfully copied. Artisans who attempted it reported the etching tools melting. The ring refuses to be replicated.',
   },
+
+  // ── Kamish's Legacy — full 10-slot SS set ──────────────────────────────────
+  // The droppable ceiling. SSS is grant-only (the Shadow Monarch's Regalia), so
+  // SS is the top tier anyone can actually farm — it previously held a single
+  // item (Kamish's Wrath), which made the entire endgame chase one weapon on
+  // repeat. Forged from the corpse of Kamish, the Catastrophe-class dragon, so
+  // it sits alongside Kamish's Wrath rather than replacing it.
+  //
+  // Flat stats by design: the Regalia's power is a PERCENTAGE multiplier applied
+  // by SoloLevelingStats ((pieces/10) x (totalBase/5000), uncapped, Shadow
+  // Monarch rank only), so no flat-stat set can outscale it. The Lv2000 reward
+  // stays the terminal prize.
+  kamishs_fang: {
+    id: 'kamishs_fang',
+    name: "Kamish's Fang",
+    slot: 'weapon',
+    rarity: 'SS',
+    icon: '🐲',
+    description: 'A greatsword hewn from the upper jawbone of Kamish. Where the daggers were carved for speed, the Fang was shaped for finality.',
+    levelReq: 300,
+    stats: { ...EMPTY_STATS, strength: 35, attack: 600, critDamage: 15 },
+    specialEffects: ['Catastrophe: attacks against enemies above 50% HP deal +30% damage', 'Dragon Fear: on hit, 10% chance to reduce enemy defense by 25% for 8s'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'Kamish killed 3,000 people before it fell. The hunters who carved it afterwards worked in silence — no one wanted to be the first to speak near the body.',
+  },
+
+  kamishs_scale_ward: {
+    id: 'kamishs_scale_ward',
+    name: "Kamish's Scale Ward",
+    slot: 'offHand',
+    rarity: 'SS',
+    icon: '🛡️',
+    description: 'A tower shield of overlapping dragon scales. Each scale is still warm.',
+    levelReq: 300,
+    stats: { ...EMPTY_STATS, vitality: 25, defense: 100 },
+    specialEffects: ['Scaled Ward: blocks reduce incoming damage by an additional 20%', 'Ember Skin: attackers suffer 8% of the damage they deal as fire'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'Fire does not mark it. Neither does mana. The scales simply refuse to acknowledge that anything happened to them.',
+  },
+
+  dragonbone_visor: {
+    id: 'dragonbone_visor',
+    name: 'Dragonbone Visor',
+    slot: 'helmet',
+    rarity: 'SS',
+    icon: '👺',
+    description: 'A visored helm shaped from the skull-plate of a Catastrophe-class dragon. The eye slits glow faintly amber.',
+    levelReq: 290,
+    stats: { ...EMPTY_STATS, perception: 25, defense: 75 },
+    specialEffects: ['Dragon Sight: reveals enemy weak points; +12% critical strike chance', 'Unflinching: immune to fear and intimidation effects'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'Wearers report a persistent warmth at the temples, as though something inside the bone is still deciding whether to wake.',
+  },
+
+  scaled_cuirass_of_the_catastrophe: {
+    id: 'scaled_cuirass_of_the_catastrophe',
+    name: 'Scaled Cuirass of the Catastrophe',
+    slot: 'chestplate',
+    rarity: 'SS',
+    icon: '🐉',
+    description: 'Breastplate cut from the dragon\'s flank, where the scales grew thickest. It has never been pierced.',
+    levelReq: 310,
+    stats: { ...EMPTY_STATS, vitality: 40, strength: 15, defense: 130 },
+    specialEffects: ['Catastrophe Hide: reduces all incoming damage by 15%', 'Molten Core: regenerate 2% max HP per second while below 40% HP'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'The Association tried to cut a sample for study. They ruined four diamond saws and gave up.',
+  },
+
+  dragonclaw_gauntlets: {
+    id: 'dragonclaw_gauntlets',
+    name: 'Dragonclaw Gauntlets',
+    slot: 'gloves',
+    rarity: 'SS',
+    icon: '🦾',
+    description: 'Gauntlets tipped with the dragon\'s own talons. They close harder than a human hand should be able to.',
+    levelReq: 285,
+    stats: { ...EMPTY_STATS, strength: 30, agility: 15, defense: 55 },
+    specialEffects: ['Rending Grip: attacks apply a stacking bleed dealing 40% ATK over 5s', 'Talon Lock: grabbed enemies cannot dash or blink for 3s'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'The claws still retract and extend on their own when the wearer is angry. No one has explained this.',
+  },
+
+  wyrmstride_greaves: {
+    id: 'wyrmstride_greaves',
+    name: 'Wyrmstride Greaves',
+    slot: 'boots',
+    rarity: 'SS',
+    icon: '🥾',
+    description: 'Greaves strung with wing-sinew. The wearer\'s steps land lighter than they should.',
+    levelReq: 285,
+    stats: { ...EMPTY_STATS, agility: 35, defense: 60 },
+    specialEffects: ['Wyrmstride: +30% movement speed; falling deals no damage', 'Skyborne: may dash a second time in mid-air'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'Kamish never truly landed during the battle. Something of that refusal stayed in the sinew.',
+  },
+
+  ember_of_kamish: {
+    id: 'ember_of_kamish',
+    name: 'Ember of Kamish',
+    slot: 'earring',
+    rarity: 'SS',
+    icon: '🔥',
+    description: 'A single coal from the dragon\'s throat, still burning after all these years.',
+    levelReq: 295,
+    stats: { ...EMPTY_STATS, intelligence: 35, perception: 20 },
+    specialEffects: ['Dragon Breath: fire and mana-flame skills deal +25% damage', 'Everburning: mana regeneration increased by 30%'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'It has not cooled. It will not cool. Whatever fire a Catastrophe carries, it is not the kind that goes out.',
+  },
+
+  heart_of_the_catastrophe: {
+    id: 'heart_of_the_catastrophe',
+    name: 'Heart of the Catastrophe',
+    slot: 'necklace',
+    rarity: 'SS',
+    icon: '💠',
+    description: 'The crystallised mana-core of Kamish, strung on dragonhide. It beats, very slowly.',
+    levelReq: 305,
+    stats: { ...EMPTY_STATS, vitality: 45, intelligence: 25 },
+    specialEffects: ['Catastrophe Heart: +25% maximum HP', 'Second Breath: once per dungeon, survive a lethal blow at 1 HP'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'It beats once every forty seconds. Hunters who wear it eventually find their own pulse slowing to match.',
+  },
+
+  ring_of_the_dragons_eye: {
+    id: 'ring_of_the_dragons_eye',
+    name: "Ring of the Dragon's Eye",
+    slot: 'ring',
+    rarity: 'SS',
+    icon: '💍',
+    description: 'Set with a sliver of Kamish\'s eye. It watches what the wearer does not.',
+    levelReq: 300,
+    stats: { ...EMPTY_STATS, perception: 30, agility: 15, critChance: 10 },
+    specialEffects: ['Dragon\'s Eye: cannot be ambushed; attacks from behind deal no bonus damage', 'Predator: +15% critical strike damage against wounded enemies'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'The sliver tracks movement in the room even when set down on a table. Several owners have covered it with a cloth at night.',
+  },
+
+  ring_of_the_dragons_maw: {
+    id: 'ring_of_the_dragons_maw',
+    name: "Ring of the Dragon's Maw",
+    slot: 'ring',
+    rarity: 'SS',
+    icon: '💍',
+    description: 'Forged from a molar the size of a fist. Blunt, heavy, and entirely without subtlety.',
+    levelReq: 300,
+    stats: { ...EMPTY_STATS, strength: 30, vitality: 15, critDamage: 20 },
+    specialEffects: ['Devour: killing blows restore 5% maximum HP', 'Maw: heavy attacks cannot be blocked by enemies of lower rank'],
+    setId: 'kamishs_legacy',
+    source: 'Dropped by SS-rank and higher gate bosses',
+    lore: 'A dragon does not bite to wound. It bites to end the conversation.',
+  },
+
+  // ── S-rank slot gap-fills ──────────────────────────────────────────────────
+  // S previously covered only weapon/helmet/earring/necklace/ring, so four of
+  // the ten slots had no S-tier option at all and the ladder skipped straight
+  // from A to SS for them.
+  white_flame_bulwark: {
+    id: 'white_flame_bulwark',
+    name: 'White Flame Bulwark',
+    slot: 'offHand',
+    rarity: 'S',
+    icon: '🛡️',
+    description: 'A kite shield that answers mana with fire. Blocking a blow lights it.',
+    levelReq: 170,
+    stats: { ...EMPTY_STATS, vitality: 15, defense: 70 },
+    specialEffects: ['White Flame: successful blocks release a flame burst dealing 120% ATK', 'Bulwark: +20% block chance'],
+    setId: null,
+    source: 'Dropped by S-rank and higher gate bosses',
+    lore: 'The flames are the colour of nothing in particular. Witnesses always describe them as white because there is no better word.',
+  },
+
+  blood_red_commanders_armor: {
+    id: 'blood_red_commanders_armor',
+    name: "Blood-Red Commander's Armor",
+    slot: 'chestplate',
+    rarity: 'S',
+    icon: '🩸',
+    description: 'The plate of a knight-commander who did not survive the gate he was sent to close.',
+    levelReq: 185,
+    stats: { ...EMPTY_STATS, vitality: 25, strength: 10, defense: 80 },
+    specialEffects: ['Commander\'s Presence: summoned allies gain +15% attack', 'Last Stand: below 25% HP, defense is doubled'],
+    setId: null,
+    source: 'Dropped by S-rank and higher gate bosses',
+    lore: 'It was already red before the blood. That is the part people forget when they retell it.',
+  },
+
+  gauntlets_of_the_iron_body: {
+    id: 'gauntlets_of_the_iron_body',
+    name: 'Gauntlets of the Iron Body',
+    slot: 'gloves',
+    rarity: 'S',
+    icon: '🥊',
+    description: 'Heavy plated gauntlets favoured by hunters who have stopped bothering with weapons.',
+    levelReq: 160,
+    stats: { ...EMPTY_STATS, strength: 25, defense: 45 },
+    specialEffects: ['Iron Body: unarmed attacks deal 200% ATK', 'Crushing Blow: attacks ignore 20% of enemy defense'],
+    setId: null,
+    source: 'Dropped by S-rank and higher gate bosses',
+    lore: 'The previous owner is said to have punched a C-rank gate shut. This is almost certainly untrue and absolutely worth repeating.',
+  },
+
+  greaves_of_the_swift_step: {
+    id: 'greaves_of_the_swift_step',
+    name: 'Greaves of the Swift Step',
+    slot: 'boots',
+    rarity: 'S',
+    icon: '🥾',
+    description: 'Light greaves woven with mana-thread. The wearer arrives slightly before they are expected.',
+    levelReq: 165,
+    stats: { ...EMPTY_STATS, agility: 30, defense: 40 },
+    specialEffects: ['Swift Step: +25% movement speed', 'Afterimage: dashing leaves a decoy that absorbs one attack'],
+    setId: null,
+    source: 'Dropped by S-rank and higher gate bosses',
+    lore: 'Slow enough to be seen. Fast enough that seeing does not help.',
+  },
+
+  // ── A-rank slot gap-fills ──────────────────────────────────────────────────
+  knights_aegis: {
+    id: 'knights_aegis',
+    name: "Knight's Aegis",
+    slot: 'offHand',
+    rarity: 'A',
+    icon: '🛡️',
+    description: 'Standard-issue guild tower shield, reinforced well past standard issue.',
+    levelReq: 90,
+    stats: { ...EMPTY_STATS, vitality: 10, defense: 40 },
+    specialEffects: ['Guard: +15% block chance', 'Steadfast: cannot be knocked back while blocking'],
+    setId: null,
+    source: 'Dropped by A-rank and higher gate bosses',
+    lore: 'Issued to four hundred hunters. Returned by rather fewer.',
+  },
+
+  helm_of_the_steel_fang: {
+    id: 'helm_of_the_steel_fang',
+    name: 'Helm of the Steel Fang',
+    slot: 'helmet',
+    rarity: 'A',
+    icon: '⛑️',
+    description: 'A fanged half-helm taken from a beast-type gate. It still smells faintly of the place.',
+    levelReq: 85,
+    stats: { ...EMPTY_STATS, strength: 12, defense: 30 },
+    specialEffects: ['Steel Fang: +10% critical strike chance', 'Thick Skull: reduces stun duration by half'],
+    setId: null,
+    source: 'Dropped by A-rank and higher gate bosses',
+    lore: 'The fangs are not decorative. They were load-bearing, once, for something else.',
+  },
+
+  earring_of_clarity: {
+    id: 'earring_of_clarity',
+    name: 'Earring of Clarity',
+    slot: 'earring',
+    rarity: 'A',
+    icon: '💧',
+    description: 'A pale mana-stone stud. Thoughts arrive in order while wearing it.',
+    levelReq: 80,
+    stats: { ...EMPTY_STATS, intelligence: 20, perception: 10 },
+    specialEffects: ['Clarity: skill cooldowns reduced by 10%', 'Focus: mana costs reduced by 10%'],
+    setId: null,
+    source: 'Dropped by A-rank and higher gate bosses',
+    lore: 'Mages describe the effect as "the noise stopping". Non-mages report no effect whatsoever, which mages find very funny.',
+  },
+
+  band_of_the_lesser_monarch: {
+    id: 'band_of_the_lesser_monarch',
+    name: 'Band of the Lesser Monarch',
+    slot: 'ring',
+    rarity: 'A',
+    icon: '💍',
+    description: 'A plain iron band that once belonged to something that called itself a king.',
+    levelReq: 95,
+    stats: { ...EMPTY_STATS, strength: 12, intelligence: 12, perception: 8 },
+    specialEffects: ['Lesser Dominion: +10% damage against enemies of lower rank', 'Pretender: +5% experience from all sources'],
+    setId: null,
+    source: 'Dropped by A-rank and higher gate bosses',
+    lore: 'Every gate seems to produce at least one of these. There are, apparently, a great many lesser monarchs.',
+  },
 };
 
 // ---------------------------------------------------------------------------
 // Equipment sets
 // ---------------------------------------------------------------------------
 const EQUIPMENT_SETS = Object.freeze({
+  // Kamish's Legacy — the top FARMABLE set (SS). Flat bonuses on purpose: the
+  // Shadow Monarch's Regalia scales as a percentage of base stats via
+  // SoloLevelingStats and is rank-gated, so this can never eclipse the Lv2000
+  // reward no matter how much gear is farmed.
+  kamishs_legacy: {
+    name: "Kamish's Legacy",
+    pieces: [
+      'kamishs_fang',
+      'kamishs_scale_ward',
+      'dragonbone_visor',
+      'scaled_cuirass_of_the_catastrophe',
+      'dragonclaw_gauntlets',
+      'wyrmstride_greaves',
+      'ember_of_kamish',
+      'heart_of_the_catastrophe',
+      'ring_of_the_dragons_eye',
+      'ring_of_the_dragons_maw',
+    ],
+    bonuses: {
+      3: Object.freeze({ strength: 8, agility: 8, intelligence: 8, vitality: 8, perception: 8 }),
+      6: Object.freeze({ strength: 18, agility: 18, intelligence: 18, vitality: 18, perception: 18 }),
+      10: Object.freeze({ strength: 35, agility: 35, intelligence: 35, vitality: 35, perception: 35 }),
+    },
+  },
+
   demon_monarch_set: {
     name: "Demon Monarch's Set",
     pieces: ['demon_monarchs_earring', 'demon_monarchs_necklace', 'demon_monarchs_ring'],
