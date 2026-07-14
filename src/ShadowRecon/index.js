@@ -1200,14 +1200,32 @@ module.exports = class ShadowRecon {
 
   // Discord wraps PRESENCE_UPDATES around a `updates` array of records.
   _onPresenceUpdate(action) {
+    // PERF (2026-07-13): PRESENCE_UPDATES is one of the highest-frequency
+    // gateway events (every user in every mutual guild). Two hoists:
+    //   1. Resolve the deployment map ONCE per dispatch instead of once per
+    //      record via _isMarkedTarget (each call re-ran a Date.now() TTL
+    //      check + Map lookup, and a batched dispatch carries many records).
+    //   2. Zero deployed targets — the common case for anyone not actively
+    //      running recon — now costs ONE Map.size check for the whole
+    //      dispatch instead of a per-record String() + lookup.
+    const deploymentMap = this._getShadowDeploymentMap();
+    if (deploymentMap.size === 0) return;
+
+    // Hoist settings reads out of the per-record loop as well.
+    const wantSkirmish = this.settings.enableSkirmishLog;
+    const wantAura = this.settings.enableAuraReading;
+    if (!wantSkirmish && !wantAura) return;
+
     const updates = Array.isArray(action?.updates) ? action.updates : [action];
     for (const upd of updates) {
-      const userId = String(upd?.user?.id || upd?.userId || "");
-      if (!userId || !this._isMarkedTarget(userId)) continue;
+      const rawId = upd?.user?.id || upd?.userId;
+      if (!rawId) continue;
+      const userId = String(rawId);
+      if (!deploymentMap.has(userId)) continue;
 
       const guildId = upd?.guildId || upd?.guild_id;
       // For skirmish: require user present in a marked guild.
-      if (this.settings.enableSkirmishLog && guildId && this.isGuildMarked(guildId) && this._isUserPresentInGuild(userId, guildId)) {
+      if (wantSkirmish && guildId && this.isGuildMarked(guildId) && this._isUserPresentInGuild(userId, guildId)) {
         ringPush(
           `intel:skirmish:${userId}`,
           { t: Date.now(), type: "presence", status: String(upd?.status || "").toLowerCase(), guildId: String(guildId) },
@@ -1217,7 +1235,7 @@ module.exports = class ShadowRecon {
 
       // For aura: capture custom-status + activities for ANY marked target
       // (no guild filter — aura is user-level info, not guild-scoped).
-      if (this.settings.enableAuraReading) {
+      if (wantAura) {
         const activities = Array.isArray(upd?.activities) ? upd.activities : [];
         const customStatus = activities.find(a => a?.type === 4) || null;
         const games = activities.filter(a => a?.type !== 4).map(a => ({
@@ -1241,11 +1259,17 @@ module.exports = class ShadowRecon {
 
   _onVoiceStateUpdate(action) {
     const states = Array.isArray(action?.voiceStates) ? action.voiceStates : [];
+    if (states.length === 0) return;
+    // PERF (2026-07-13): same hoist as _onPresenceUpdate — one map resolve
+    // per dispatch, and zero-deployment is a single size check.
+    const deploymentMap = this._getShadowDeploymentMap();
+    if (deploymentMap.size === 0) return;
     for (const s of states) {
-      const userId = String(s?.userId || "");
+      const rawId = s?.userId;
       const guildId = s?.guildId;
-      if (!userId || !guildId) continue;
-      if (!this._isMarkedTarget(userId)) continue;
+      if (!rawId || !guildId) continue;
+      const userId = String(rawId);
+      if (!deploymentMap.has(userId)) continue;
       if (!this.isGuildMarked(guildId)) continue;
       ringPush(
         `intel:skirmish:${userId}`,

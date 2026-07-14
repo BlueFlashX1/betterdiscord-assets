@@ -41,8 +41,11 @@ function getShadowReconCss(widgetId, modalId) {
   position: fixed;
   inset: 0;
   z-index: 10060;
-  background: rgba(2, 6, 23, 0.75);
-  backdrop-filter: blur(4px);
+  /* PERF (2026-07-13): backdrop-filter removed — it re-blurred the entire
+     app behind the overlay on every repaint for as long as the recon modal
+     stayed open (user-bounded, not transition-bounded). A deeper wash reads
+     near-identically. Same call made for the ShadowExchange panel (2905994). */
+  background: rgba(2, 6, 23, 0.92);
   display: flex;
   align-items: center;
   justify-content: center;
