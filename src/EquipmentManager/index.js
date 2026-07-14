@@ -26,6 +26,11 @@ const POPUP_ID = 'eq-header-popup';
 // 2 = GUILD_VOICE, 13 = GUILD_STAGE_VOICE.
 const HIDDEN_CHANNEL_TYPES = new Set([2, 13]);
 
+// Salvage is irreversible. Rarities at or above B get a confirmation modal;
+// E/D/C (ordinary drop spam) salvage on the first click so clearing an
+// inventory full of junk isn't one modal per item.
+const VALUABLE_RARITIES = new Set(['B', 'A', 'S', 'SS', 'SSS']);
+
 // Resolve the channel currently shown in the URL — independent of any
 // VC overlay state. Returns null when ChannelStore isn't available or
 // the URL doesn't point at a channel.
@@ -340,6 +345,54 @@ module.exports = class EquipmentManager {
         }
         this._refreshPopup();
       }
+
+      // Salvage — permanently destroys the item. Confirmed for B-rank and
+      // above; junk (E/D/C) salvages immediately so clearing drop spam isn't
+      // a modal-per-item chore.
+      if (action === 'salvage') {
+        const instanceId = target.dataset.eqInstance;
+        if (!instanceId) return;
+        const inst = this.storage.getInstance(instanceId);
+        if (!inst) return;
+        const def = C.getEquipmentById(inst.equipmentId);
+        const name = def?.name || 'this item';
+        const rarity = def?.rarity || 'E';
+
+        const doSalvage = () => {
+          const result = this.salvageItem(instanceId);
+          _toast(result.message, result.success ? 'info' : 'error');
+          this._refreshPopup();
+        };
+
+        if (VALUABLE_RARITIES.has(rarity)) {
+          this._confirmDestructive(
+            `Salvage ${name}?`,
+            `${name} (${rarity}-Rank) will be permanently destroyed. This cannot be undone.`,
+            doSalvage
+          );
+        } else {
+          doSalvage();
+        }
+      }
+
+      // Bulk salvage of duplicates — always confirmed (it can destroy many
+      // items at once), and the confirmation states the exact count.
+      if (action === 'salvage-duplicates') {
+        const preview = this._countDuplicates();
+        if (preview === 0) {
+          _toast('No duplicates to salvage.', 'info');
+          return;
+        }
+        this._confirmDestructive(
+          `Salvage ${preview} duplicate${preview === 1 ? '' : 's'}?`,
+          `One copy of each item is kept (equipped items are never touched). ${preview} item${preview === 1 ? '' : 's'} will be permanently destroyed. This cannot be undone.`,
+          () => {
+            const result = this.salvageDuplicates();
+            _toast(result.message, 'success');
+            this._refreshPopup();
+          }
+        );
+      }
     };
     popup.addEventListener('click', this._popupClickHandler);
 
@@ -373,6 +426,50 @@ module.exports = class EquipmentManager {
       this._renderPopupContent(p);
       p.scrollTop = scrollTop;
     }, 2000);
+  }
+
+  /**
+   * Count unequipped duplicates. Mirrors salvageDuplicates' keep-rule exactly:
+   * if a copy of an equipmentId is equipped, every unequipped copy is a
+   * duplicate; otherwise one unequipped copy is kept.
+   */
+  _countDuplicates() {
+    const equipped = this.storage.getEquipped();
+    const equippedInstanceIds = new Set(Object.values(equipped).filter(Boolean));
+    const inventory = this.storage.getInventory();
+    const equippedEquipmentIds = new Set(
+      inventory.filter((i) => equippedInstanceIds.has(i.instanceId)).map((i) => i.equipmentId)
+    );
+    const seen = new Set();
+    let count = 0;
+    for (const inst of inventory) {
+      if (equippedInstanceIds.has(inst.instanceId)) continue;
+      if (equippedEquipmentIds.has(inst.equipmentId) || seen.has(inst.equipmentId)) count++;
+      seen.add(inst.equipmentId);
+    }
+    return count;
+  }
+
+  /**
+   * Confirmation modal for irreversible actions. Falls back to executing
+   * nothing (safe default) if BdApi's modal API is unavailable — a destructive
+   * action must never proceed just because the confirm UI failed to render.
+   */
+  _confirmDestructive(title, body, onConfirm) {
+    try {
+      if (typeof BdApi.UI?.showConfirmationModal === 'function') {
+        BdApi.UI.showConfirmationModal(title, body, {
+          danger: true,
+          confirmText: 'Salvage',
+          cancelText: 'Cancel',
+          onConfirm,
+        });
+        return;
+      }
+    } catch (err) {
+      console.error('[EquipmentManager] Confirmation modal failed:', err);
+    }
+    _toast('Cannot show confirmation dialog — salvage aborted.', 'error');
   }
 
   _positionPopup(popup, btn) {
@@ -466,6 +563,10 @@ module.exports = class EquipmentManager {
     const equippedInstanceIds = new Set(Object.values(equipped).filter(Boolean));
     const unequipped = inventory.filter(i => !equippedInstanceIds.has(i.instanceId));
 
+    // Duplicate count drives the bulk-salvage button. Single source of truth
+    // shared with the click handler's confirmation copy.
+    const duplicateCount = this._countDuplicates();
+
     let inventoryHtml = '';
     if (unequipped.length === 0) {
       inventoryHtml = `<div style="text-align: center; color: #b5bac1; padding: 20px; font-size: 11px;">
@@ -512,6 +613,16 @@ module.exports = class EquipmentManager {
               font-family: inherit;
               border-radius: 0;
             ">${canEquipResult.canEquip ? 'Equip' : `Lv.${levelReq}`}</button>
+            <button data-eq-action="salvage" data-eq-instance="${inst.instanceId}" title="Salvage (destroy) this item" style="
+              padding: 4px 10px; font-size: 10px; font-weight: 800;
+              background: rgba(239,68,68,0.08);
+              color: #ef4444;
+              border: 1px solid rgba(239,68,68,0.25);
+              cursor: pointer;
+              text-transform: uppercase; letter-spacing: 0.06em;
+              font-family: inherit;
+              border-radius: 0;
+            ">Salvage</button>
           </div>
         `;
       }).join('');
@@ -565,7 +676,21 @@ module.exports = class EquipmentManager {
 
       <!-- Inventory -->
       <div style="padding: 8px 0 0 0;">
-        <div style="font-size: 10px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; margin-bottom: 6px; padding: 0 20px;">Inventory (${unequipped.length})</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding: 0 20px;">
+          <div style="font-size: 10px; color: #b5bac1; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700;">Inventory (${unequipped.length})</div>
+          ${duplicateCount > 0 ? `
+            <button data-eq-action="salvage-duplicates" title="Salvage every duplicate, keeping one copy of each item" style="
+              padding: 3px 10px; font-size: 9px; font-weight: 800;
+              background: rgba(239,68,68,0.08);
+              color: #ef4444;
+              border: 1px solid rgba(239,68,68,0.25);
+              cursor: pointer;
+              text-transform: uppercase; letter-spacing: 0.06em;
+              font-family: inherit;
+              border-radius: 0;
+            ">Salvage ${duplicateCount} Duplicate${duplicateCount === 1 ? '' : 's'}</button>
+          ` : ''}
+        </div>
         ${inventoryHtml}
       </div>
     `;

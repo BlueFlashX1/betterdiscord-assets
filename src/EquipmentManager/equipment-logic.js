@@ -271,6 +271,109 @@ module.exports = {
   },
 
   /**
+   * Salvage (permanently destroy) an inventory item.
+   *
+   * Added 2026-07-13: until now nothing ever called storage.removeFromInventory,
+   * so inventory only ever grew. This is the caller — the deliberate way to
+   * shed unwanted drops.
+   *
+   * Refuses to salvage an EQUIPPED item (the popup only offers salvage for
+   * unequipped items, but callers are external too — guard at the boundary).
+   *
+   * @param {string} instanceId
+   * @returns {{ success: boolean, message: string, name?: string }}
+   */
+  salvageItem(instanceId) {
+    const instance = this.storage.getInstance(instanceId);
+    if (!instance) {
+      return { success: false, message: 'Item not found in inventory.' };
+    }
+
+    const equipped = this.storage.getEquipped();
+    for (const [slot, equippedId] of Object.entries(equipped)) {
+      if (equippedId === instanceId) {
+        return {
+          success: false,
+          message: `Unequip it from "${slot}" before salvaging.`,
+        };
+      }
+    }
+
+    const definition = C.getEquipmentById(instance.equipmentId);
+    const name = definition?.name || instance.equipmentId;
+
+    this.storage.removeFromInventory(instanceId);
+
+    SLEvents.emit('EquipmentManager:salvaged', {
+      instanceId,
+      equipmentId: instance.equipmentId,
+      name,
+      rarity: definition?.rarity || null,
+    });
+
+    this.debugLog?.(`[EquipmentManager] Salvaged ${name} (${instanceId})`);
+
+    return { success: true, message: `${name} salvaged.`, name };
+  },
+
+  /**
+   * Salvage every DUPLICATE unequipped item, keeping one copy of each
+   * equipmentId. This is the bulk answer to inventory growth — boss drops
+   * repeat, and hand-salvaging hundreds of copies is not a workflow.
+   *
+   * Equipped items are never touched, and the copy kept for each equipmentId
+   * is preferred in this order: the equipped one (so it's never counted as a
+   * duplicate), else the oldest instance (stable, so repeated runs are no-ops).
+   *
+   * @returns {{ success: boolean, salvaged: number, message: string }}
+   */
+  salvageDuplicates() {
+    const equippedIds = new Set(Object.values(this.storage.getEquipped()).filter(Boolean));
+    const inventory = this.storage.getInventory();
+
+    // equipmentId → instances (unequipped only), oldest first.
+    const byEquipmentId = new Map();
+    for (const inst of inventory) {
+      if (equippedIds.has(inst.instanceId)) continue; // never salvage equipped
+      const list = byEquipmentId.get(inst.equipmentId) || [];
+      list.push(inst);
+      byEquipmentId.set(inst.equipmentId, list);
+    }
+
+    const toSalvage = [];
+    for (const [equipmentId, list] of byEquipmentId) {
+      // If a copy of this equipmentId is already equipped, EVERY unequipped
+      // copy is a duplicate. Otherwise keep the oldest unequipped copy.
+      const hasEquippedCopy = inventory.some(
+        (i) => i.equipmentId === equipmentId && equippedIds.has(i.instanceId)
+      );
+      list.sort((a, b) => (a.acquiredAt || 0) - (b.acquiredAt || 0));
+      const keepCount = hasEquippedCopy ? 0 : 1;
+      for (let i = keepCount; i < list.length; i++) toSalvage.push(list[i]);
+    }
+
+    for (const inst of toSalvage) {
+      this.storage.removeFromInventory(inst.instanceId);
+    }
+
+    if (toSalvage.length > 0) {
+      SLEvents.emit('EquipmentManager:salvaged', {
+        bulk: true,
+        count: toSalvage.length,
+      });
+      this.debugLog?.(`[EquipmentManager] Salvaged ${toSalvage.length} duplicate(s)`);
+    }
+
+    return {
+      success: true,
+      salvaged: toSalvage.length,
+      message: toSalvage.length
+        ? `Salvaged ${toSalvage.length} duplicate${toSalvage.length === 1 ? '' : 's'}.`
+        : 'No duplicates to salvage.',
+    };
+  },
+
+  /**
    * Check if an item can currently be equipped by the user.
    *
    * @param {string} equipmentId
