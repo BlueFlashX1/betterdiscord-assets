@@ -1039,51 +1039,44 @@ module.exports = class ShadowSenses {
     }
   }
 
-  _buildStartupReportFallbackNarration(summary, windowHours, recentEntries = []) {
+  _buildStartupReportFallbackNarration(summary, windowHours /*, recentEntries */) {
     const hoursLabel = `${windowHours} hour${windowHours === 1 ? "" : "s"}`;
     if (!summary || Number(summary.totalEvents || 0) <= 0) {
-      return `My liege, the shadows kept watch through the last ${hoursLabel}. Nothing of note stirred.`;
+      return `My liege, the shadows kept watch through the last ${hoursLabel}. Nothing stirred worth reporting.`;
     }
 
     const totalEvents = Math.max(0, Number(summary.totalEvents || 0));
-    const topChannel = Array.isArray(summary.topChannels) && summary.topChannels.length > 0
-      ? summary.topChannels[0]
-      : null;
-    const topChannelLabel = topChannel
-      ? this._formatStartupChannelLabel(topChannel.name)
-      : "your monitored channels";
-    const topChannelCount = Math.max(0, Number(topChannel?.count || 0));
-    const attentionDigest = this._buildStartupAttentionDigest(summary, recentEntries);
-    const actionableCount = Math.max(0, Number(attentionDigest.actionableCount || 0));
+    // "Signals" is the report's unit everywhere below (counts, the list), so
+    // define it ONCE here in-world and then stop — the channel/speaker/topic
+    // breakdown that used to live here is exactly the detail the sections
+    // below already show, so the opener no longer recaps it.
+    const attentionCount = Math.max(
+      0,
+      Number(summary.urgentCount || 0) + Number(summary.highCount || 0) + Number(summary.mediumCount || 0)
+    );
 
-    // Spotlight marked targets that were active in the window (2026-07-13).
+    // Spotlight marked (Monarch's-Mark) targets — this is NOT shown elsewhere,
+    // so it's the one detail worth surfacing in the opener.
     const marked = this._markedTargetNameSet();
     const markedActive = marked.size
       ? (summary.topTargets || []).filter((t) => marked.has(String(t.name || "").toLowerCase()))
       : [];
 
+    const s = totalEvents === 1 ? "" : "s";
     const parts = [
-      `My liege, your shadows observed ${totalEvents} signal${totalEvents === 1 ? "" : "s"} across the last ${hoursLabel}.`,
+      `My liege, across the last ${hoursLabel} your shadows caught ${totalEvents} signal${s} — the messages and stirrings of those you watch.`,
     ];
 
     if (markedActive.length > 0) {
       const names = markedActive.slice(0, 2).map((t) => t.name).join(" and ");
-      parts.push(`Your marked ${markedActive.length === 1 ? "quarry" : "quarries"} stirred — ${names} moved while you were away.`);
+      parts.push(`Your marked ${markedActive.length === 1 ? "quarry" : "quarries"} stirred: ${names}.`);
     }
 
     parts.push(
-      topChannel
-        ? `The most activity rose from ${topChannelLabel} (${topChannelCount} signal${topChannelCount === 1 ? "" : "s"}).`
-        : `The most activity rose from your monitored channels.`
+      attentionCount > 0
+        ? `${attentionCount} call for your attention — their account waits below.`
+        : `None demand your attention; the full watch waits below.`
     );
-
-    if (actionableCount > 0) {
-      parts.push(
-        `${actionableCount} of ${totalEvents} call for your attention, concentrated in: ${attentionDigest.focusText}.`
-      );
-    } else {
-      parts.push("None of it demands your attention this hour.");
-    }
 
     return parts.join(" ");
   }
@@ -1153,9 +1146,13 @@ module.exports = class ShadowSenses {
       "You are Igris, a loyal shadow retainer reporting to the Shadow Monarch.",
       "You must return TWO pieces in a single JSON response.",
       "",
-      "1) \"report\" — a concise 3-5 sentence startup catch-up narration in plain text.",
+      "1) \"report\" — a SHORT 2-3 sentence opener in plain text. Not a recap.",
       "   Tone: respectful, direct, tactical, calm. Always begin with 'My liege,'.",
-      "   Flow: total events → most active channel → actionable signal count and key channels/speakers.",
+      "   Say: how long the shadows watched, the total signal count (define 'signals'",
+      "   ONCE as the messages/stirrings of the watched), and how many need attention.",
+      "   Then point the Monarch to the detail below. Do NOT list channels, speakers,",
+      "   or topics here — that breakdown lives in signalBreakdown and the sections",
+      "   below, and repeating it is the redundancy we are removing.",
       "",
       "2) \"signalBreakdown\" — a detailed tactical briefing on the attention-worthy signals (priority >= 2).",
       "   Group by channel. For each channel: name the speakers, summarize what they discussed or what triggered the alert.",
