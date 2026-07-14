@@ -339,7 +339,10 @@ function buildComponents(pluginRef) {
         const userId = String(deployment.targetUserId || "");
         const shadowId = String(deployment.shadowId || "");
         const keywordSig = (deployment.alertKeywords || []).map((keyword) => keyword.toLowerCase()).join("|");
-        return `${shadowId}:${userId}:${keywordSig}`;
+        // Include watch-focus so a focus toggle is a snapshot change too.
+        const f = deployment.watchFocus || {};
+        const focusSig = `${f.status !== false ? 1 : 0}${f.typing !== false ? 1 : 0}${f.messages !== false ? 1 : 0}${f.mentions !== false ? 1 : 0}`;
+        return `${shadowId}:${userId}:${keywordSig}:${focusSig}`;
       })
       .join(";");
   }
@@ -513,39 +516,55 @@ function buildComponents(pluginRef) {
   // DeploymentRow \u2014 same bulletproof inline-style pattern as FeedCard.
   // CSS class rules keep getting beaten by external theme overrides, so
   // every visual property goes through ref + setProperty('important').
-  function DeploymentRow({ deployment, onRecall }) {
+  // Watch-focus signal chips (2026-07-13). Each toggles one report class for
+  // this deployment. Short labels keep the row compact.
+  const WATCH_FOCUS_CHIPS = [
+    { key: "status", label: "Status" },
+    { key: "typing", label: "Typing" },
+    { key: "messages", label: "Msgs" },
+    { key: "mentions", label: "Pings" },
+  ];
+
+  function _applyFocusChip(el, active) {
+    if (!el) return;
+    el.style.setProperty("display", "inline-flex", "important");
+    el.style.setProperty("align-items", "center", "important");
+    el.style.setProperty("padding", "2px 8px", "important");
+    el.style.setProperty("border-radius", "2px", "important");
+    el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+    el.style.setProperty("font-size", "10px", "important");
+    el.style.setProperty("font-weight", "700", "important");
+    el.style.setProperty("letter-spacing", "0.04em", "important");
+    el.style.setProperty("text-transform", "uppercase", "important");
+    el.style.setProperty("cursor", "pointer", "important");
+    el.style.setProperty("outline", "none", "important");
+    el.style.setProperty("box-shadow", "none", "important");
+    el.style.setProperty("transition", "background 0.15s ease, color 0.15s ease, border-color 0.15s ease", "important");
+    if (active) {
+      el.style.setProperty("background", "rgba(138, 43, 226, 0.22)", "important");
+      el.style.setProperty("color", "#d4b0ff", "important");
+      el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.55)", "important");
+    } else {
+      el.style.setProperty("background", "rgba(0, 0, 0, 0.25)", "important");
+      el.style.setProperty("color", "#6a6a7e", "important");
+      el.style.setProperty("border", "1px solid rgba(120, 120, 140, 0.18)", "important");
+    }
+  }
+
+  function DeploymentRow({ deployment, onRecall, onToggleFocus, onDossier }) {
     const rankColor = RANK_COLORS[deployment.shadowRank] || "#8a2be2";
+    const focus = deployment.watchFocus || {};
     const HB = {
       fontFamily: "'gg sans', 'Helvetica Neue', system-ui, sans-serif",
       fontSize: "13px",
       lineHeight: 1.3,
     };
 
-    return ce("div", {
-      className: "shadow-senses-deploy-row",
-      ref: (el) => {
-        if (!el) return;
-        el.style.setProperty("display", "flex", "important");
-        el.style.setProperty("align-items", "center", "important");
-        el.style.setProperty("justify-content", "space-between", "important");
-        el.style.setProperty("gap", "12px", "important");
-        el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
-        el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.32)", "important");
-        el.style.setProperty("border-radius", "2px", "important");
-        el.style.setProperty("padding", "10px 14px", "important");
-        el.style.setProperty("margin", "0 0 8px 0", "important");
-        el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(138, 43, 226, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
-      },
+    const topLine = ce("div", {
+      style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" },
     },
       ce("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          flex: 1,
-          minWidth: 0,
-          ...HB,
-        },
+        style: { display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0, ...HB },
       },
         ce("span", {
           style: { ...HB, color: rankColor, fontWeight: 700, letterSpacing: "0.03em" },
@@ -586,6 +605,66 @@ function buildComponents(pluginRef) {
         },
       }, "Recall")
     );
+
+    // Bottom line: watch-focus toggle chips (left) + Dossier button (right).
+    const bottomLine = ce("div", {
+      style: {
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: "8px", marginTop: "8px", flexWrap: "wrap",
+      },
+    },
+      ce("div", { style: { display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap" } },
+        WATCH_FOCUS_CHIPS.map((chip) => {
+          const active = focus[chip.key] !== false;
+          return ce("button", {
+            key: chip.key,
+            title: `${active ? "Reporting" : "Muted"}: ${chip.label} — click to ${active ? "mute" : "report"}`,
+            onClick: () => onToggleFocus && onToggleFocus(deployment, chip.key, !active),
+            ref: (el) => _applyFocusChip(el, active),
+          }, chip.label);
+        })
+      ),
+      ce("button", {
+        title: "Copy this target's last 24h of recorded activity to the clipboard",
+        onClick: () => onDossier && onDossier(deployment),
+        ref: (el) => {
+          if (!el) return;
+          el.style.setProperty("background", "rgba(59, 130, 246, 0.12)", "important");
+          el.style.setProperty("color", "#93c5fd", "important");
+          el.style.setProperty("border", "1px solid rgba(59, 130, 246, 0.35)", "important");
+          el.style.setProperty("border-radius", "2px", "important");
+          el.style.setProperty("padding", "3px 10px", "important");
+          el.style.setProperty("font-family", "'gg sans', system-ui, sans-serif", "important");
+          el.style.setProperty("font-size", "10px", "important");
+          el.style.setProperty("font-weight", "700", "important");
+          el.style.setProperty("letter-spacing", "0.04em", "important");
+          el.style.setProperty("text-transform", "uppercase", "important");
+          el.style.setProperty("cursor", "pointer", "important");
+          el.style.setProperty("box-shadow", "none", "important");
+          el.style.setProperty("outline", "none", "important");
+        },
+        onMouseEnter: (e) => {
+          e.currentTarget.style.setProperty("background", "rgba(59, 130, 246, 0.22)", "important");
+        },
+        onMouseLeave: (e) => {
+          e.currentTarget.style.setProperty("background", "rgba(59, 130, 246, 0.12)", "important");
+        },
+      }, "Dossier")
+    );
+
+    return ce("div", {
+      className: "shadow-senses-deploy-row",
+      ref: (el) => {
+        if (!el) return;
+        el.style.setProperty("display", "block", "important");
+        el.style.setProperty("background", "rgba(38, 28, 60, 0.85)", "important");
+        el.style.setProperty("border", "1px solid rgba(138, 43, 226, 0.32)", "important");
+        el.style.setProperty("border-radius", "2px", "important");
+        el.style.setProperty("padding", "10px 14px", "important");
+        el.style.setProperty("margin", "0 0 8px 0", "important");
+        el.style.setProperty("box-shadow", "inset 0 1px 0 rgba(138, 43, 226, 0.12), 0 2px 6px rgba(0, 0, 0, 0.45)", "important");
+      },
+    }, topLine, bottomLine);
   }
 
   // Shared style applier for the "Deploy New Shadow" button \u2014 inline
@@ -735,6 +814,44 @@ function buildComponents(pluginRef) {
       if (onRecall) onRecall(deployment);
     }, [onRecall]);
 
+    const handleToggleFocus = useCallback((deployment, signal, enabled) => {
+      try {
+        const dm = pluginRef.deploymentManager;
+        if (!dm?.setWatchFocusForUser) return;
+        const res = dm.setWatchFocusForUser(deployment.targetUserId, signal, enabled);
+        // The _bus 'change' event refreshes the list; also set locally so the
+        // chip flips instantly even if the bus listener is mid-teardown.
+        if (res?.changed) setDeployments(dm.getDeployments());
+      } catch (err) {
+        pluginRef.debugError?.("DeploymentsTab", "Toggle focus failed:", err);
+      }
+    }, []);
+
+    const handleDossier = useCallback((deployment) => {
+      try {
+        const engine = pluginRef.sensesEngine;
+        if (!engine?.buildTargetDossier) return;
+        const { text, count, userName } = engine.buildTargetDossier(deployment.targetUserId);
+        const notify = (msg, type) => {
+          try {
+            if (typeof pluginRef._toast === "function") pluginRef._toast(msg, type);
+            else BdApi.UI.showToast(msg, { type });
+          } catch (_) {}
+        };
+        const copy = navigator?.clipboard?.writeText?.(text);
+        if (copy && typeof copy.then === "function") {
+          copy.then(
+            () => notify(`Dossier copied: ${count} entr${count === 1 ? "y" : "ies"} on ${userName}`, "success"),
+            () => notify("Dossier: clipboard write blocked by Discord.", "error")
+          );
+        } else {
+          notify("Dossier: clipboard unavailable.", "error");
+        }
+      } catch (err) {
+        pluginRef.debugError?.("DeploymentsTab", "Dossier failed:", err);
+      }
+    }, []);
+
     if (deployments.length === 0) {
       return ce("div", { style: { padding: "16px", textAlign: "center" } },
         ce("div", { className: "shadow-senses-empty" },
@@ -752,7 +869,13 @@ function buildComponents(pluginRef) {
 
     return ce("div", { style: { padding: "10px 16px 16px", maxHeight: "50vh", overflowY: "auto" } },
       deployments.map((d) =>
-        ce(DeploymentRow, { key: d.shadowId, deployment: d, onRecall: handleRecall })
+        ce(DeploymentRow, {
+          key: d.shadowId,
+          deployment: d,
+          onRecall: handleRecall,
+          onToggleFocus: handleToggleFocus,
+          onDossier: handleDossier,
+        })
       ),
       ce("div", { style: { display: "flex", justifyContent: "center", marginTop: 12 } },
         ce("button", {

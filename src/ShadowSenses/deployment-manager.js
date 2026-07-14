@@ -2,6 +2,23 @@ const { PLUGIN_NAME, RANKS } = require("./constants");
 const { _ttl } = require("./shared-utils");
 const { getPluginInstance } = require("../shared/plugin-bridge");
 
+// Per-deployment "watch focus" (2026-07-13): which signal classes this shadow
+// reports for its target. All default ON, so existing deployments and new
+// ones behave exactly as before until the user narrows the focus. This gates
+// TOASTS only — the message feed still records everything, so the dossier
+// export stays complete even for a muted signal.
+const WATCH_FOCUS_SIGNALS = ["status", "typing", "messages", "mentions"];
+
+function normalizeWatchFocus(raw) {
+  const focus = {};
+  const src = raw && typeof raw === "object" ? raw : {};
+  for (const signal of WATCH_FOCUS_SIGNALS) {
+    // Missing/undefined → true (on). Only an explicit false turns a signal off.
+    focus[signal] = src[signal] !== false;
+  }
+  return focus;
+}
+
 function normalizeAlertKeywords(rawKeywords) {
   const source = Array.isArray(rawKeywords)
     ? rawKeywords
@@ -33,6 +50,7 @@ function normalizeDeploymentRecord(record) {
     targetUserId: normalizedUserId,
     shadowId: normalizedShadowId,
     alertKeywords: normalizeAlertKeywords(record.alertKeywords),
+    watchFocus: normalizeWatchFocus(record.watchFocus),
   };
 }
 
@@ -166,6 +184,7 @@ class DeploymentManager {
       targetUsername: targetUser.username || targetUser.globalName || "Unknown",
       deployedAt: Date.now(),
       alertKeywords: [],
+      watchFocus: normalizeWatchFocus(null), // all signals on by default
     };
 
     this._deployments.push(record);
@@ -198,6 +217,7 @@ class DeploymentManager {
     return this._deployments.map((deployment) => ({
       ...deployment,
       alertKeywords: [...(deployment.alertKeywords || [])],
+      watchFocus: normalizeWatchFocus(deployment.watchFocus),
     }));
   }
 
@@ -212,6 +232,37 @@ class DeploymentManager {
   getAlertKeywordsForUser(userId) {
     const deployment = this.getDeploymentForUser(userId);
     return deployment?.alertKeywords ? [...deployment.alertKeywords] : [];
+  }
+
+  getWatchFocusForUser(userId) {
+    const deployment = this.getDeploymentForUser(userId);
+    return normalizeWatchFocus(deployment?.watchFocus);
+  }
+
+  // Returns { ok, changed } like setAlertKeywordsForUser so the caller can
+  // distinguish a real save from a no-op. Unknown signal keys are ignored.
+  setWatchFocusForUser(userId, signal, enabled) {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return { ok: false };
+    if (!WATCH_FOCUS_SIGNALS.includes(signal)) return { ok: false };
+    const idx = this._deployments.findIndex(
+      (entry) => String(entry.targetUserId) === normalizedUserId
+    );
+    if (idx < 0) return { ok: false };
+
+    const current = normalizeWatchFocus(this._deployments[idx].watchFocus);
+    const next = !!enabled;
+    if (current[signal] === next) return { ok: true, changed: false };
+
+    current[signal] = next;
+    this._deployments[idx].watchFocus = current;
+    this._save();
+    this._debugLog("DeploymentManager", "Updated watch focus", {
+      targetUserId: normalizedUserId,
+      signal,
+      enabled: next,
+    });
+    return { ok: true, changed: true };
   }
 
   // Returns one of:

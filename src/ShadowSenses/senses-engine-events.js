@@ -72,6 +72,14 @@ function pickToastThumbnail(entry) {
   }
   return undefined;
 }
+// Per-deployment watch-focus gate (2026-07-13). A signal reports unless the
+// deployment explicitly turned it off. Missing focus/deployment → allowed, so
+// this can never suppress a report for a target whose record predates the
+// feature or wasn't resolved. Gates toasts only; the feed still records.
+function focusAllows(deployment, signal) {
+  return deployment?.watchFocus?.[signal] !== false;
+}
+
 const MAX_ACTIVITY_SEED_SCAN_ENTRIES = 6000;
 const LAST_SEEN_FALLBACK_MS = 24 * 60 * 60 * 1000;
 
@@ -501,6 +509,9 @@ function showMatchReasonToast(ctx, params) {
     guildName,
     isInvisible = false,
   } = params;
+  // Watch-focus: mention/name/keyword matches are the "mentions" signal.
+  // The feed entry was already recorded upstream; this only gates the toast.
+  if (!focusAllows(deployment, "mentions")) return null;
   const snippet = entry.content ? `: "${entry.content.slice(0, 80)}"` : "";
   const invisibleSuffix = isInvisible ? " (invisible)" : "";
   // Click-to-jump — every match-reason toast carries a #channel reference,
@@ -582,6 +593,15 @@ function applyPresenceToastAndLastSeen(ctx, params) {
     matchToastType = null,
     suppressGenericToast = false,
   } = params;
+
+  // Watch-focus: every toast this function emits is a "messages" signal.
+  // When focus turns messages off, still run the last-seen bookkeeping (the
+  // feed already recorded the message) — just skip the toast.
+  const deployment = ctx._plugin.deploymentManager.getDeploymentForUser(entry.authorId);
+  if (!focusAllows(deployment, "messages")) {
+    syncLastSeenCount(ctx, guildId);
+    return;
+  }
 
   if (isInvisible && !matchToastType && !shouldSkipInvisibleMessageToast(ctx, entry, entry.timestamp || Date.now())) {
     const location = `${guildName} #${entry.channelName}`;
@@ -698,7 +718,7 @@ function handlePresenceUpdateEntry(ctx, update, monitoredIds, startupState) {
   // correctly baselined; we just skip the user-facing toast for this entry.
   if (startupState.isEarlyStartup) return true;
 
-  if (ctx._plugin.settings?.statusAlerts) {
+  if (ctx._plugin.settings?.statusAlerts && focusAllows(deployment, "status")) {
     const toastPayload = {
       userId,
       userName: ctx._resolveUserName(userId, deployment.targetUsername || "Unknown"),
@@ -895,7 +915,7 @@ function onTypingStart(payload) {
     const guildName = guildId ? this._plugin._getGuildName(guildId) : "Shadow Network";
     const locationLabel = channelId ? `${guildName} #${channelName}` : guildName;
 
-    if (this._plugin.settings?.typingAlerts) {
+    if (this._plugin.settings?.typingAlerts && focusAllows(deployment, "typing")) {
       // Track this typing event so onMessageCreate can replace the toast
       // with a "sent" toast if the user posts within the next ~30s.
       this._lastTypingAt = this._lastTypingAt || new Map();
@@ -1078,8 +1098,10 @@ function onMessageCreate(payload) {
     } else if (this._lastTypingAt) {
       const recent = this._lastTypingAt.get(authorId);
       if (recent && Date.now() - recent.ts < 30000) {
-        this._lastTypingAt.delete(authorId);
-        if (this._toastEngine) {
+        this._lastTypingAt.delete(authorId); // clear regardless (avoid stale entry)
+        // The typing→"sent" replacement is a "messages" signal — gate it, but
+        // only after the cleanup above so a muted target can't leak entries.
+        if (this._toastEngine && focusAllows(deployment, "messages")) {
           const avatarUrl = this._resolveUserAvatarUrl(authorId) || DEFAULT_AVATAR_URL;
           const friendSuffix = this._isFriend(authorId) ? " [FRIEND]" : "";
           this._toastEngine.showCardToast({

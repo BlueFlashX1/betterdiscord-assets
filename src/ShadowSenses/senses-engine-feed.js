@@ -481,6 +481,59 @@ function getActiveFeed() {
   return merged;
 }
 
+/**
+ * Build a plain-text intelligence dossier on one target (2026-07-13): every
+ * recorded feed entry for that user across ALL guilds within `windowMs`,
+ * chronological, formatted for the clipboard. Reads the feed, which records
+ * messages regardless of per-deployment watch-focus, so the dossier is
+ * complete even for signals whose toasts are muted.
+ *
+ * @param {string} userId
+ * @param {number} windowMs   lookback window (default 24h)
+ * @returns {{ text: string, count: number, userName: string }}
+ */
+function buildTargetDossier(userId, windowMs = 24 * 60 * 60 * 1000) {
+  const targetId = String(userId || "").trim();
+  if (!targetId) return { text: "", count: 0, userName: "Unknown" };
+
+  const cutoff = Date.now() - windowMs;
+  const rows = [];
+  for (const feed of Object.values(this._guildFeeds)) {
+    for (let i = 0; i < feed.length; i++) {
+      const e = feed[i];
+      if (String(e.authorId) !== targetId) continue;
+      if ((e.timestamp || 0) < cutoff) continue;
+      rows.push(e);
+    }
+  }
+  rows.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+  const userName = rows.length ? (rows[rows.length - 1].authorName || "Unknown") : "Unknown";
+  const hours = Math.round(windowMs / (60 * 60 * 1000));
+  const fmtTime = (ts) => {
+    try { return new Date(ts).toLocaleString(); } catch (_) { return String(ts); }
+  };
+
+  const header = [
+    `Shadow Senses — Dossier: ${userName}`,
+    `Window: last ${hours}h · Entries: ${rows.length}`,
+    "─".repeat(40),
+  ];
+  const lines = rows.map((e) => {
+    const where = e.guildName ? `${e.guildName} #${e.channelName || "?"}` : `#${e.channelName || "?"}`;
+    const tag = e.matchReason ? ` [${e.matchReason}${e.matchedTerm ? `: ${e.matchedTerm}` : ""}]` : "";
+    const media = (e.attachments?.length || e.embeds?.length) ? " 📎" : "";
+    const body = (e.content || "").replace(/\s+/g, " ").trim();
+    return `${fmtTime(e.timestamp)} · ${where}${tag}${media}\n  ${body || "(no text)"}`;
+  });
+
+  return {
+    text: rows.length ? header.concat(lines).join("\n") : `No recorded activity for ${userName} in the last ${hours}h.`,
+    count: rows.length,
+    userName,
+  };
+}
+
 /** Count of away-guild feed entries — no array copy. */
 function getActiveFeedCount() {
   let count = 0;
@@ -664,6 +717,7 @@ module.exports = {
   _tryBurstGroup: tryBurstGroup,
   getActiveFeed,
   getActiveFeedCount,
+  buildTargetDossier,
   getMarkedOnlineCount,
   getSessionMessageCount,
   getStartupSummary,
