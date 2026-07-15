@@ -31,7 +31,18 @@ module.exports = {
         bossName: data?.bossName || null,
       };
 
-      const droppedIds = this.rollEquipmentDrop(bossRank, context);
+      let droppedIds = this.rollEquipmentDrop(bossRank, context) || [];
+      // SHADOW MONARCH PERK (Sovereign's Tribute): the fallen offer double
+      // tribute — boss kills roll the drop table a second time at SM. Two
+      // independent rolls (not a guaranteed drop): expected yield doubles,
+      // and both can hit. Regalia stays grant-only via GRANT_ONLY_SET_IDS
+      // regardless of how many rolls happen.
+      try {
+        const rank = BdApi.Plugins.get('SoloLevelingStats')?.instance?.settings?.rank;
+        if (rank === 'Shadow Monarch') {
+          droppedIds = droppedIds.concat(this.rollEquipmentDrop(bossRank, context) || []);
+        }
+      } catch (_) { /* tribute must never break the base drop */ }
       if (!droppedIds || droppedIds.length === 0) return;
 
       for (const eqId of droppedIds) {

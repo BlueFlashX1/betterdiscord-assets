@@ -533,6 +533,21 @@ module.exports = {
       // ShadowSenses' navigateToChannel uses.
       const guildSeg = guildId && guildId !== "DM" ? guildId : "@me";
       const path = `/channels/${guildSeg}/${channelId}`;
+
+      // SHADOW MONARCH PERK (Monarch's Exchange): at SM the GO button steps
+      // through the shadows — the full portal transition to wherever the army
+      // fights — instead of a plain channel switch. Routed via ShadowSenses'
+      // teleportToPath (SM has no teleport cooldown); falls through to the
+      // plain navigation below when ShadowSenses is unavailable.
+      if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+        try {
+          const senses = BdApi.Plugins.get('ShadowSenses')?.instance;
+          if (senses && typeof senses.teleportToPath === 'function') {
+            if (senses.teleportToPath(path, {}, null) !== false) return true;
+          }
+        } catch (_) { /* fall through to plain navigation */ }
+      }
+
       this._navigationUtils ||= getNavigationUtils();
 
       if (this._navigationUtils?.transitionTo) {

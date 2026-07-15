@@ -99,7 +99,13 @@ module.exports = {
     // Force cache bust so HP bar re-renders with updated button states
     this._bossBarCache?.delete?.(channelKey);
     this.queueHPBarUpdate(channelKey);
-    this.showToast(`Joined ${dungeon.name}!`, 'info');
+    if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+      // MONARCH'S ADVENT: the field announces your arrival.
+      this._playMonarchAdvent();
+      this.showToast(`The Monarch enters ${dungeon.name}.`, 'info');
+    } else {
+      this.showToast(`Joined ${dungeon.name}!`, 'info');
+    }
     this.saveSettings();
     // Persist userParticipating to IDB so it survives hot-reload
     if (this.storageManager) {
@@ -625,6 +631,28 @@ module.exports = {
   // (SkillTree data.js shadowBuff) + the SM +1.0 bonus, permanent, shadows
   // status-immune. Gated on the Domain Expansion unlock (passive level >= 3,
   // same as casting it by hand).
+  // MONARCH'S ADVENT: a brief purple aura burst when the Shadow Monarch joins
+  // a fight. Self-contained overlay (own keyframes, fixed, pointer-events:none,
+  // auto-removed) — pure flair, zero combat impact.
+  _playMonarchAdvent() {
+    try {
+      if (typeof document === 'undefined') return;
+      if (document.getElementById('dungeon-monarch-advent')) return;
+      const el = document.createElement('div');
+      el.id = 'dungeon-monarch-advent';
+      const style = document.createElement('style');
+      style.textContent = '@keyframes dg-monarch-advent{0%{opacity:0;transform:scale(.65)}22%{opacity:.9}100%{opacity:0;transform:scale(1.55)}}';
+      el.appendChild(style);
+      Object.assign(el.style, {
+        position: 'fixed', inset: '0', zIndex: '99999', pointerEvents: 'none',
+        background: 'radial-gradient(circle at 50% 55%, rgba(138,43,226,0.38) 0%, rgba(88,28,135,0.20) 35%, transparent 68%)',
+        animation: 'dg-monarch-advent 900ms ease-out forwards',
+      });
+      document.body.appendChild(el);
+      this._setTrackedTimeout(() => { try { el.remove(); } catch (_) {} }, 1000);
+    } catch (_) { /* flair must never break join */ }
+  },
+
   _autoApplySovereignDomain(channelKey, dungeon) {
     try {
       if (!dungeon) return;

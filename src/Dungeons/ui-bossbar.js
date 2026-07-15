@@ -612,7 +612,11 @@ module.exports = {
         : !dungeon.shadowsDeployed
           ? '<span class="boss-bar-badge-waiting">WAITING</span>'
           : dungeon.userParticipating
-            ? '<span class="boss-bar-badge-fighting">FIGHTING</span>'
+            // MONARCH'S ADVENT: at SM the fighting badge is crowned — the boss
+            // bar itself announces who has entered the field.
+            ? (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch'
+                ? '<span class="boss-bar-badge-fighting">👑 MONARCH</span>'
+                : '<span class="boss-bar-badge-fighting">FIGHTING</span>')
             : '<span class="boss-bar-badge-deployed">DEPLOYED</span>';
 
       // DEPLOY SHADOWS button / DEPLOYED indicator. Disabled during _deploying (not
