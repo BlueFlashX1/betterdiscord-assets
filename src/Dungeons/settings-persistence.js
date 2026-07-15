@@ -315,7 +315,7 @@ module.exports = {
   // general). settings.bossGateRequiredMobKills is the BASE (default 40);
   // with the default base: E 16 · C 30 · A 80 · S 120 · SSS 200 · Monarch+ 400.
   // Callers without a rank in scope get the unscaled base (multiplier 1).
-  getBossGateRuntimeConfig(dungeonRank = null) {
+  getBossGateRuntimeConfig(dungeonRank = null, mobCapacity = null) {
     const minDurationRaw = Number(this.settings?.bossGateMinDurationMs);
     const requiredMobKillsRaw = Number(this.settings?.bossGateRequiredMobKills);
     const baseKills =
@@ -327,13 +327,27 @@ module.exports = {
       'SSS+': 6.5, NH: 8, Monarch: 9, 'Monarch+': 10,
     };
     const killMult = dungeonRank != null ? (RANK_KILL_MULT[dungeonRank] ?? 1) : 1;
+    let requiredMobKills = Math.max(0, Math.round(baseKills * killMult));
+    // WARFRONT gate floor: when the gate's host size is known, the general
+    // only takes the field after warGateCullPercent of the host is culled
+    // (e.g. 10% of a Monarch+ 500k host = 50k kills — minutes of aggregate
+    // war for a real army). The bossGateMaxWaitMs valve in
+    // ensureBossEngagementUnlocked prevents under-sized armies being walled.
+    const capacity = Number(mobCapacity);
+    if (Number.isFinite(capacity) && capacity > 0) {
+      const cullRaw = Number(this.settings?.warGateCullPercent);
+      const cullPct = Number.isFinite(cullRaw)
+        ? this.clampNumber(cullRaw, 0, 0.5)
+        : (this.defaultSettings.warGateCullPercent ?? 0.10);
+      requiredMobKills = Math.max(requiredMobKills, Math.floor(capacity * cullPct));
+    }
     return {
       enabled: this.settings?.bossGateEnabled !== false,
       minDurationMs:
         Number.isFinite(minDurationRaw) && minDurationRaw >= 5000
           ? Math.floor(minDurationRaw)
           : this.defaultSettings.bossGateMinDurationMs,
-      requiredMobKills: Math.max(0, Math.round(baseKills * killMult)),
+      requiredMobKills,
     };
   },
 

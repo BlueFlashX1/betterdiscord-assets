@@ -371,7 +371,8 @@ module.exports = {
     // deploy/join flags, active tab, and row count. Build it before any DOM work.
     const popupVersionKey = activeTab + '|' + rows.map(([ck, d]) => {
       const { aliveMobs, queuedMobs, mobsKilled, mobsSpawned } = this._getWidgetMobMetrics(ck, d);
-      return `${ck}:${Math.floor(d?.boss?.hp || 0)}:${aliveMobs}:${queuedMobs}:${mobsKilled}:${mobsSpawned}:${d.shadowsDeployed ? 1 : 0}:${d.userParticipating ? 1 : 0}:${d._deploying ? 1 : 0}`;
+      const warBucket = d?.war ? Math.floor((d.war.fallen || 0) / 500) : -1;
+      return `${ck}:${Math.floor(d?.boss?.hp || 0)}:${aliveMobs}:${queuedMobs}:${mobsKilled}:${mobsSpawned}:${d.shadowsDeployed ? 1 : 0}:${d.userParticipating ? 1 : 0}:${d._deploying ? 1 : 0}:${warBucket}`;
     }).join('|');
     if (popupVersionKey === this._lastPopupVersionKey) return;
     this._lastPopupVersionKey = popupVersionKey;
@@ -425,6 +426,12 @@ module.exports = {
             <span>•</span>
             <span>${guildName}</span>
           </div>
+          ${dungeon.war && (dungeon.war.reserves > 0 || dungeon.war.fallen > 0) ? `
+          <div class="dungeons-header-popup-row-meta" style="color:#c084fc;">
+            <span>⚔ Host: ${Math.max(0, dungeon.war.reserves).toLocaleString()}</span>
+            <span>•</span>
+            <span>${(dungeon.war.fallen || 0).toLocaleString()} annihilated</span>
+          </div>` : ''}
           <div class="dungeons-header-popup-row-stats">
             <span>Boss HP ${bossHp}</span>
             <span>•</span>

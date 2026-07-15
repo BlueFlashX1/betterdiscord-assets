@@ -1268,7 +1268,7 @@ module.exports = {
   ensureBossEngagementUnlocked(dungeon, channelKey = null) {
     if (!dungeon?.boss) return false;
 
-    const bossGateConfig = this.getBossGateRuntimeConfig(dungeon?.rank);
+    const bossGateConfig = this.getBossGateRuntimeConfig(dungeon?.rank, dungeon?.mobs?.mobCapacity);
     if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
       dungeon.bossGate = {
         enabled: bossGateConfig.enabled,
@@ -1340,14 +1340,23 @@ module.exports = {
       Number.isFinite(dungeon.bossGate.requiredMobKills) ? dungeon.bossGate.requiredMobKills : 0
     );
 
+    // WARFRONT anti-stuck valve: after bossGateMaxWaitMs the general takes the
+    // field regardless of the kill cull — an under-sized army besieging a huge
+    // host is never permanently walled off the boss.
+    const maxWaitRaw = Number(this.settings?.bossGateMaxWaitMs);
+    const maxWaitMs = Number.isFinite(maxWaitRaw) && maxWaitRaw >= 60000
+      ? Math.floor(maxWaitRaw)
+      : (this.defaultSettings?.bossGateMaxWaitMs ?? 600000);
+    const killsSatisfied = kills >= requiredMobKills || elapsed >= maxWaitMs;
+
     const unlockedAt = Number(dungeon.bossGate.unlockedAt);
     const hasValidUnlockStamp = Number.isFinite(unlockedAt) && unlockedAt >= deployedAt;
     if (hasValidUnlockStamp) {
-      if (elapsed >= minDurationMs && kills >= requiredMobKills) return true;
+      if (elapsed >= minDurationMs && killsSatisfied) return true;
       dungeon.bossGate.unlockedAt = null;
     }
 
-    if (elapsed < minDurationMs || kills < requiredMobKills) return false;
+    if (elapsed < minDurationMs || !killsSatisfied) return false;
 
     dungeon.bossGate.unlockedAt = now;
     dungeon.boss.lastAttackTime = now;
@@ -1394,11 +1403,19 @@ module.exports = {
     const minDurationMs = Number.isFinite(dungeon.bossGate.minDurationMs) ? dungeon.bossGate.minDurationMs : 180000;
     const requiredMobKills = Number.isFinite(dungeon.bossGate.requiredMobKills) ? dungeon.bossGate.requiredMobKills : 0;
 
+    // Same max-wait valve as ensureBossEngagementUnlocked — the two gates
+    // MUST agree or simulation paths diverge from live combat.
+    const maxWaitRaw = Number(this.settings?.bossGateMaxWaitMs);
+    const maxWaitMs = Number.isFinite(maxWaitRaw) && maxWaitRaw >= 60000
+      ? Math.floor(maxWaitRaw)
+      : (this.defaultSettings?.bossGateMaxWaitMs ?? 600000);
+    const killsSatisfied = kills >= requiredMobKills || elapsed >= maxWaitMs;
+
     const unlockedAt = Number(dungeon.bossGate.unlockedAt);
     if (Number.isFinite(unlockedAt) && unlockedAt >= deployedAt) {
-      return elapsed >= minDurationMs && kills >= requiredMobKills;
+      return elapsed >= minDurationMs && killsSatisfied;
     }
 
-    return elapsed >= minDurationMs && kills >= requiredMobKills;
+    return elapsed >= minDurationMs && killsSatisfied;
   }
 };

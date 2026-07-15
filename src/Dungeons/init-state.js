@@ -46,6 +46,24 @@ module.exports = {
       // mobs refill from the queue as they die). Set false for rank-table caps.
       performanceMode: true,
       performanceAliveMobCap: 800,
+      // WARFRONT (2026-07-15): two-layer battle. The object-simulated frontline
+      // stays capped (performanceAliveMobCap), while the MASS battle — your
+      // surplus army vs the gate's war host (dungeon.war.reserves, seeded from
+      // mobCapacity: S 10k … Monarch+ 500k) — resolves in AGGREGATE each combat
+      // tick: O(1) arithmetic, real war-scale kill counts, zero per-entity cost.
+      // Kills flow through _onMobKilled (XP/essence/gate credit all batched).
+      warfrontEnabled: true,
+      // Aggregate kills per surplus shadow per combat tick (~2s). 0.015 with a
+      // 100k surplus army ≈ 1,500 kills/tick ≈ 45k/min — a Monarch host
+      // (250k) falls in ~5 minutes of sustained war.
+      warfrontKillRatePerShadow: 0.015,
+      warfrontMaxKillsPerTick: 5000,
+      // Boss gate during war: the general takes the field only after this
+      // fraction of the host is culled (floor on top of the rank-scaled kills).
+      warGateCullPercent: 0.10,
+      // Anti-stuck valve: the gate opens on time alone after this long, so an
+      // under-sized army is never permanently walled off the boss.
+      bossGateMaxWaitMs: 600000,
       // Healer/support shadows actively restore HP to alive-damaged shadows
       // each combat tick (scaled by healer presence). Set false to disable.
       shadowHealerRestorationEnabled: true,

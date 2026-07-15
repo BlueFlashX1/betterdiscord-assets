@@ -323,7 +323,7 @@ module.exports = {
       1,
       Math.floor((100 + bossBaseStats.vitality * 10 + rankBonus) * staticBossHpMultiplier * armyMultiplier)
     );
-    const initialBossGate = this.getBossGateRuntimeConfig(rank);
+    const initialBossGate = this.getBossGateRuntimeConfig(rank, Math.max(200, totalMobCount));
     const dungeonStartTime = Date.now();
     const dungeonXPBatchKey = `${channelKey}:${dungeonStartTime}`;
 
@@ -353,6 +353,13 @@ module.exports = {
         // Shadows kill mobs continuously; the adaptive combat budget system
         // (perDungeonMobBudget) already throttles per-tick iteration cost.
         mobCapacity: Math.max(200, totalMobCount),
+      },
+      // WARFRONT: the gate's war host. reserves = the mass army your surplus
+      // shadows grind down in aggregate; fallen/shadowsFallen feed war reports.
+      war: {
+        reserves: Math.max(200, totalMobCount),
+        fallen: 0,
+        shadowsFallen: 0,
       },
       boss: {
         id: `boss_${channelKey}`,

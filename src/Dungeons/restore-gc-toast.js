@@ -282,14 +282,14 @@ module.exports = {
           if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
             dungeon.bossGate = {
               enabled: this.settings?.bossGateEnabled !== false,
-              minDurationMs: this.getBossGateRuntimeConfig(dungeon?.rank).minDurationMs,
-              requiredMobKills: this.getBossGateRuntimeConfig(dungeon?.rank).requiredMobKills,
+              minDurationMs: this.getBossGateRuntimeConfig(dungeon?.rank, dungeon?.mobs?.mobCapacity).minDurationMs,
+              requiredMobKills: this.getBossGateRuntimeConfig(dungeon?.rank, dungeon?.mobs?.mobCapacity).requiredMobKills,
               deployedAt: null,
               unlockedAt: null,
             };
           } else {
-            dungeon.bossGate.minDurationMs = this.getBossGateRuntimeConfig(dungeon?.rank).minDurationMs;
-            dungeon.bossGate.requiredMobKills = this.getBossGateRuntimeConfig(dungeon?.rank).requiredMobKills;
+            dungeon.bossGate.minDurationMs = this.getBossGateRuntimeConfig(dungeon?.rank, dungeon?.mobs?.mobCapacity).minDurationMs;
+            dungeon.bossGate.requiredMobKills = this.getBossGateRuntimeConfig(dungeon?.rank, dungeon?.mobs?.mobCapacity).requiredMobKills;
           }
           if (dungeon.shadowsDeployed) {
             // Preserve existing deployedAt when present; otherwise self-heal so boss never unlocks immediately on restore.

@@ -641,6 +641,10 @@ module.exports = {
       // attacks (boss + mobs) so it restores HP to alive-but-damaged shadows
       // rather than racing the damage. Bounded by the tracked shadowHP set.
       this._applyShadowHealPass(channelKey, dungeon);
+
+      // WARFRONT: the aggregate mass battle — surplus army vs the gate's war
+      // host. O(1) arithmetic per tick; kills flow through _onMobKilled.
+      this._processWarfrontTick(channelKey, dungeon, now);
     } catch (error) {
       this.errorLog('CRITICAL', 'Error in parallel dungeon combat tick', { channelKey, error });
     }

@@ -60,6 +60,75 @@ module.exports = {
     this._pendingDungeonMobKillsByBatch?.delete(batchKey);
   },
 
+  // ── WARFRONT: aggregate army-vs-host battle (O(1) per tick) ────────────────
+  // The object-simulated frontline stays small (performanceAliveMobCap); the
+  // MASS battle happens here: shadows beyond the frontline's needs grind the
+  // gate's war host (dungeon.war.reserves) down arithmetically. Kills flow
+  // through _onMobKilled, so XP batching, essence batching, gate-kill credit,
+  // and reserve depletion all reuse the existing pipeline. War-scale numbers
+  // (thousands of kills a minute for a big army) with zero per-entity cost.
+  _processWarfrontTick(channelKey, dungeon, now) {
+    try {
+      if (this.settings?.warfrontEnabled === false) return;
+      if (!dungeon || !dungeon.shadowsDeployed || dungeon.completed || dungeon.failed || dungeon._completing) return;
+      if ((dungeon.boss?.hp || 0) <= 0) return; // war ends when the general falls
+      // Demon Castle floors use inverted remaining semantics (counts DOWN) and
+      // pre-set totals — aggregate kills would corrupt floor accounting. The
+      // warfront is for open gates only.
+      if (dungeon._isDemonCastle) return;
+
+      // Lazy-seed for dungeons created before the warfront existed.
+      if (!dungeon.war || !Number.isFinite(dungeon.war.reserves)) {
+        const cap = Number(dungeon.mobs?.mobCapacity) || 0;
+        const killed = Number(dungeon.mobs?.killed) || 0;
+        dungeon.war = { reserves: Math.max(0, cap - killed), fallen: killed, shadowsFallen: 0 };
+      }
+      if (dungeon.war.reserves <= 0) return; // host annihilated — stragglers remain
+
+      const assigned = this.shadowAllocations.get(channelKey);
+      const armySize = Array.isArray(assigned) ? assigned.length : 0;
+      // Shadows engaged at the object-sim frontline don't double-dip: reserve
+      // 2× the alive cap for the skirmish line, the rest fight the mass battle.
+      const aliveCapRaw = Number(this.settings?.performanceAliveMobCap);
+      const frontlineNeed = 2 * (Number.isFinite(aliveCapRaw) && aliveCapRaw >= 100 ? aliveCapRaw : 800);
+      const surplus = Math.max(0, armySize - frontlineNeed);
+      if (surplus <= 0) return; // no mass army — the frontline is the whole battle
+
+      const rateRaw = Number(this.settings?.warfrontKillRatePerShadow);
+      const rate = Number.isFinite(rateRaw) && rateRaw > 0 ? Math.min(rateRaw, 1) : 0.015;
+      const capRaw = Number(this.settings?.warfrontMaxKillsPerTick);
+      const perTickCap = Number.isFinite(capRaw) && capRaw >= 100 ? Math.floor(capRaw) : 5000;
+      const kills = Math.min(
+        dungeon.war.reserves,
+        perTickCap,
+        Math.floor(surplus * rate)
+      );
+      if (kills <= 0) return;
+
+      // Existing pipeline: gate-kill credit, batched XP, batched essence,
+      // war-reserve depletion (all inside _onMobKilled).
+      this._onMobKilled(channelKey, dungeon, dungeon.rank, kills);
+
+      // Casualties of war: cosmetic below the frontline (the shadows rise
+      // again — resurrection is the army's whole premise). Report-only.
+      dungeon.war.shadowsFallen = (dungeon.war.shadowsFallen || 0) + Math.floor(kills * 0.02);
+
+      // War report — one toast a minute while the mass battle rages.
+      if (!dungeon.war._lastReportAt || now - dungeon.war._lastReportAt >= 60000) {
+        dungeon.war._lastReportAt = now;
+        const fallen = (dungeon.war.fallen || 0).toLocaleString();
+        const reserves = dungeon.war.reserves.toLocaleString();
+        const lost = (dungeon.war.shadowsFallen || 0).toLocaleString();
+        this.showToast(
+          `⚔ Warfront ${dungeon.name}: ${fallen} of the host annihilated — ${reserves} remain. ${lost} shadows fell and rose again.`,
+          'info'
+        );
+      }
+    } catch (error) {
+      this.errorLog?.('WARFRONT', 'warfront tick failed', error);
+    }
+  },
+
   _onMobKilled(channelKey, dungeon, mobRank, killCount = 1) {
     if (!dungeon || typeof dungeon !== 'object') return;
     if (!Number.isFinite(killCount) || killCount <= 0) killCount = 1;
@@ -71,6 +140,12 @@ module.exports = {
 
     dungeon.mobs.killed += killCount;
     dungeon.mobs.remaining = Math.max(0, dungeon.mobs.remaining - killCount);
+    // WARFRONT: every kill — frontline object-sim or aggregate war — depletes
+    // the gate's war host. Single decrement point for both layers.
+    if (dungeon.war && Number.isFinite(dungeon.war.reserves)) {
+      dungeon.war.reserves = Math.max(0, dungeon.war.reserves - killCount);
+      dungeon.war.fallen = (dungeon.war.fallen || 0) + killCount;
+    }
 
     if (!this.settings.mobKillNotifications) this.settings.mobKillNotifications = {};
     if (!this.settings.mobKillNotifications[channelKey]) {
