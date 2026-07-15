@@ -36,6 +36,11 @@ module.exports = {
       // Healer/support shadows actively restore HP to alive-damaged shadows
       // each combat tick (scaled by healer presence). Set false to disable.
       shadowHealerRestorationEnabled: true,
+      // When the army exceeds its deployable cap, guarantee this share of the
+      // deployed set is support/tank so the role-pressure mechanics engage
+      // instead of being benched by a pure strongest-first cut. 0.12 = 12%.
+      roleDiversityGuaranteeEnabled: true,
+      minSupportTankShare: 0.12,
       shadowMobTargetShare: 0.5,
       shadowBossTargetShareLowBossHp: 0.85,
       shadowBossFocusLowHpThreshold: 0.4,

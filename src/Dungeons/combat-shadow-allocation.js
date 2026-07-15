@@ -294,6 +294,60 @@ module.exports = {
     };
   },
 
+  // Guarantee a minimum support+tank presence in the deployed (capped) set.
+  // A pure strongest-first army cap can bench every support/tank shadow when
+  // they score lower than strikers, silently zeroing the guard/weaken/heal
+  // role-pressure mechanics. This swaps the WEAKEST deployed non-support/tank
+  // shadows for the STRONGEST benched support/tank shadows, preserving the
+  // deployed count and only touching up to `minSupportTankShare` of it.
+  //
+  // Bounded: classifies the `deployed` set (O(cap)) and scans only the top of
+  // `benched` (strongest-first) up to a cap, so it stays cheap even for very
+  // large armies. Gated by roleDiversityGuaranteeEnabled (default on).
+  _applyRoleDiversityGuarantee(deployed, benched) {
+    if (this.settings?.roleDiversityGuaranteeEnabled === false) return deployed;
+    const cap = deployed.length;
+    if (cap < 10 || !Array.isArray(benched) || benched.length === 0) return deployed;
+
+    const minShare = this.clampNumber(
+      Number.isFinite(this.settings?.minSupportTankShare) ? this.settings.minSupportTankShare : 0.12,
+      0,
+      0.5
+    );
+    const targetCount = Math.floor(cap * minShare);
+    if (targetCount <= 0) return deployed;
+
+    const isSupportOrTank = (s) => {
+      const a = this._getShadowArchetypeForRole(s);
+      return a === 'support' || a === 'tank';
+    };
+
+    // Count support/tank already deployed; collect weakest-first swap targets
+    // (deployed is strongest-first, so later indices are weaker).
+    let haveCount = 0;
+    const swappableStrikerIdx = [];
+    for (let i = 0; i < deployed.length; i++) {
+      if (isSupportOrTank(deployed[i])) haveCount++;
+      else swappableStrikerIdx.push(i);
+    }
+    if (haveCount >= targetCount || swappableStrikerIdx.length === 0) return deployed;
+
+    let need = targetCount - haveCount;
+    const result = deployed.slice();
+    let swapCursor = swappableStrikerIdx.length - 1; // weakest deployed striker
+    const scanCap = Math.min(benched.length, Math.max(1000, cap * 3)); // bound the benched scan
+    for (let b = 0; b < scanCap && need > 0 && swapCursor >= 0; b++) {
+      if (!isSupportOrTank(benched[b])) continue;
+      result[swappableStrikerIdx[swapCursor--]] = benched[b];
+      need--;
+    }
+
+    if (need < targetCount - haveCount) {
+      this.debugLog?.('ALLOCATION', `Role-diversity guarantee: promoted ${(targetCount - haveCount) - need} support/tank shadow(s) into the deployed set`);
+    }
+    return result;
+  },
+
   async preSplitShadowArmy(forceRecalculate = false) {
     const now = Date.now();
     const cacheFresh =
@@ -464,12 +518,17 @@ module.exports = {
       const intelligence = soloData?.stats?.intelligence || 0;
       const cap = this.shadowArmy.getShadowArmyCap(playerRank, intelligence);
       if (Number.isFinite(cap) && shadowsSorted.length > cap) {
-        const benched = shadowsSorted.length - cap;
-        this.debugLog('ALLOCATION', `Shadow army over capacity: deploying ${cap}/${shadowsSorted.length} (${benched} benched)`, {
-          playerRank, intelligence, cap, total: shadowsSorted.length, benched,
+        const benchedCount = shadowsSorted.length - cap;
+        this.debugLog('ALLOCATION', `Shadow army over capacity: deploying ${cap}/${shadowsSorted.length} (${benchedCount} benched)`, {
+          playerRank, intelligence, cap, total: shadowsSorted.length, benchedCount,
         });
-        // shadowsSorted is already strongest-first — take the top `cap` shadows
-        shadowsSorted = shadowsSorted.slice(0, cap);
+        // shadowsSorted is already strongest-first — take the top `cap` shadows,
+        // then guarantee a minimum support/tank presence so the role-pressure
+        // mechanics (guard/weaken/heal) actually engage instead of being
+        // silently benched by a pure strongest-first cut.
+        const deployed = shadowsSorted.slice(0, cap);
+        const benched = shadowsSorted.slice(cap);
+        shadowsSorted = this._applyRoleDiversityGuarantee(deployed, benched);
       }
     }
 
