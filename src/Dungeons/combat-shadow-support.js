@@ -218,8 +218,15 @@ module.exports = {
     const shadowHP = dungeon.shadowHP;
     if (!shadowHP || shadowHP.size === 0) return;
 
+    // shadowHP is lazily populated with combat participants; over a long fight
+    // it can grow toward the dungeon's allocation size. Each entry's check is
+    // trivial (a couple compares), but cap the scan as a safety valve so a very
+    // large dungeon can't turn this into an unbounded per-tick loop.
+    const HEAL_SCAN_CAP = 6000;
+    let scanned = 0;
     let healedCount = 0;
     for (const hpData of shadowHP.values()) {
+      if (++scanned > HEAL_SCAN_CAP) break;
       if (!hpData) continue;
       const maxHp = Number(hpData.maxHp) || 0;
       const hp = Number(hpData.hp) || 0;

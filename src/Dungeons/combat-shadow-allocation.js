@@ -512,6 +512,7 @@ module.exports = {
     // SHADOW ARMY CAP: Only deploy up to capacity (strongest first).
     // Shadows over-cap are stored but can't fight until player ranks up or gains INT.
     // Shadow Monarch = Infinity (no cap). shadowArmy.getShadowArmyCap() handles the formula.
+    let overCapBenched = []; // over-cap remainder, used by the role-diversity guarantee below
     if (this.shadowArmy && typeof this.shadowArmy.getShadowArmyCap === 'function') {
       const soloData = this.shadowArmy.getSoloLevelingData?.();
       const playerRank = soloData?.rank || 'E';
@@ -522,13 +523,15 @@ module.exports = {
         this.debugLog('ALLOCATION', `Shadow army over capacity: deploying ${cap}/${shadowsSorted.length} (${benchedCount} benched)`, {
           playerRank, intelligence, cap, total: shadowsSorted.length, benchedCount,
         });
-        // shadowsSorted is already strongest-first — take the top `cap` shadows,
-        // then guarantee a minimum support/tank presence so the role-pressure
-        // mechanics (guard/weaken/heal) actually engage instead of being
-        // silently benched by a pure strongest-first cut.
-        const deployed = shadowsSorted.slice(0, cap);
-        const benched = shadowsSorted.slice(cap);
-        shadowsSorted = this._applyRoleDiversityGuarantee(deployed, benched);
+        // shadowsSorted is already strongest-first — take the top `cap` shadows.
+        // Capture the over-cap remainder so the role-diversity guarantee (applied
+        // to the combat pool AFTER the reserve split, below) can promote from it.
+        // NB: the guarantee runs post-reserve on purpose — running it here would
+        // let the reserve's slice(-N) "weakest" cut re-bench the promoted
+        // support/tank shadows (they land at the weak end) and also break the
+        // strongest-first invariant that reserve slice depends on.
+        overCapBenched = shadowsSorted.slice(cap);
+        shadowsSorted = shadowsSorted.slice(0, cap);
       }
     }
 
@@ -551,7 +554,17 @@ module.exports = {
         .map((s) => getShadowId(s))
         .filter(Boolean)
     );
-    const combatPool = shadowsSorted.filter(s => !reserveIds.has(getShadowId(s)));
+    let combatPool = shadowsSorted.filter(s => !reserveIds.has(getShadowId(s)));
+
+    // ROLE-DIVERSITY GUARANTEE (applied post-reserve): if a strongest-first cap
+    // benched the army's support/tank shadows, promote the strongest benched
+    // ones into the combat pool (swapping the weakest deployed strikers) so the
+    // guard/weaken/heal role-pressure mechanics actually engage. Count is
+    // preserved; the reserve pool is already split off and untouched. No-op if
+    // the army has no support/tank to promote or nothing was benched.
+    if (overCapBenched.length > 0) {
+      combatPool = this._applyRoleDiversityGuarantee(combatPool, overCapBenched);
+    }
 
     // Store reserve on instance for ShadowSenses to query
     this.shadowReserve = reserveShadows;
