@@ -1,7 +1,7 @@
 const C = require('./constants');
 
 module.exports = {
-  async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null) {
+  async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, tickBudget = 500) {
     try {
       // PERF: Use hoisted visibility when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
@@ -248,7 +248,10 @@ module.exports = {
         //
         // TICK_BUDGET: tunable const. 500 = processes 500 shadows per tick regardless of army size.
         // At 50k army this is 1% per tick, full rotation in ~100 ticks.
-        const TICK_BUDGET = 500;
+        // Per-dungeon shadow-sim cap, now supplied by the combat loop's global
+        // budget divided across active dungeons (was a hardcoded 500 per
+        // dungeon, so N dungeons ran N×500). Falls back to 500 for direct callers.
+        const TICK_BUDGET = Number.isFinite(tickBudget) && tickBudget > 0 ? Math.floor(tickBudget) : 500;
 
         // revisitSpan: the real wall-clock interval between a shadow's successive visits.
         // At a 50k army with TICK_BUDGET=500 each shadow is visited once every 100 ticks.
@@ -552,10 +555,7 @@ module.exports = {
                   vitality: bossStats.vitality,
                   perception: bossStats.perception,
                 })
-              : this.applyBehaviorModifier(
-                  finalCombatData.behavior || 'balanced',
-                  this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank)
-                );
+              : this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank, false);
             const roleBossMultiplier = this.getRoleCombatOutgoingDamageMultiplier({
               shadow,
               combatData: finalCombatData,
@@ -579,10 +579,7 @@ module.exports = {
 
               const perHitMobRaw = this.shadowArmy?.calculateShadowDamage
                 ? this.shadowArmy.calculateShadowDamage(shadow, rankGroup.representative)
-                : this.applyBehaviorModifier(
-                    finalCombatData.behavior || 'balanced',
-                    this.calculateShadowDamage(shadow, rankGroup.representative, rankGroup.representative.rank)
-                  );
+                : this.calculateShadowDamage(shadow, rankGroup.representative, rankGroup.representative.rank, false);
               const roleMobMultiplier = this.getRoleCombatOutgoingDamageMultiplier({
                 shadow,
                 combatData: finalCombatData,

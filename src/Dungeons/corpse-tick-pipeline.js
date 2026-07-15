@@ -299,7 +299,7 @@ module.exports = {
       // CPU stays constant regardless of dungeon count.
       const configuredShadowBudget = Number.isFinite(this.settings?.maxSimulatedShadowsPerTick) && this.settings.maxSimulatedShadowsPerTick > 0
         ? this.settings.maxSimulatedShadowsPerTick
-        : 400; // Total shadow samples across ALL dungeons
+        : 500; // Total shadow samples across ALL dungeons (500 keeps single-dungeon parity with the old per-dungeon TICK_BUDGET)
       const pressureScale = activeDungeonCount >= 4 ? 0.65 : activeDungeonCount >= 2 ? 0.8 : 1;
       const visibilityScale = isWindowVisible ? 1 : 0.65;
       const adaptiveScale = this.clampNumber(adaptive?.budgetScale ?? 1, 0.5, 1);
@@ -307,6 +307,11 @@ module.exports = {
       const globalMobBudget = Math.max(320, Math.floor(800 * pressureScale * visibilityScale * adaptiveScale));
       const budgetDivisor = Math.max(1, processedDungeonCount);
       const perDungeonMobBudget = Math.max(50, Math.floor(globalMobBudget / budgetDivisor));
+      // FIX (2026-07-14): globalShadowBudget was computed but never enforced —
+      // processShadowAttacks hardcoded TICK_BUDGET=500 per dungeon, so N boss
+      // dungeons ran N×500 shadow sims instead of a fixed global cap (mobs were
+      // already divided correctly). Now split across dungeons like mobs are.
+      const perDungeonShadowBudget = Math.max(100, Math.floor(globalShadowBudget / budgetDivisor));
 
       if (
         this.settings.debug &&
@@ -367,7 +372,7 @@ module.exports = {
       let dungeonIndex = 0;
       for (const [channelKey, dungeon] of selectedEntries) {
         dungeonPromises.push(this._processDungeonCombatTick(
-          channelKey, dungeon, now, isWindowVisible, perDungeonMobBudget, dungeonIndex
+          channelKey, dungeon, now, isWindowVisible, perDungeonMobBudget, perDungeonShadowBudget, dungeonIndex
         ));
         dungeonIndex++;
       }
@@ -498,7 +503,7 @@ module.exports = {
     return { selectedEntries, skippedCount: Math.max(0, total - selectedEntries.length) };
   },
 
-  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, mobBudget, dungeonIndex = 0) {
+  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, mobBudget, shadowBudget = 500, dungeonIndex = 0) {
     try {
       // MANUAL DEPLOY: Skip combat entirely for dungeons where shadows haven't been deployed
       if (!dungeon.shadowsDeployed) return;
@@ -590,7 +595,7 @@ module.exports = {
         if (shadowDue) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(shadowElapsed / shadowActiveInterval));
           const preAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
-          await this.processShadowAttacks(channelKey, cyclesToProcess, isWindowVisible);
+          await this.processShadowAttacks(channelKey, cyclesToProcess, isWindowVisible, shadowBudget);
           const postAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
           this._lastShadowAttackTime.set(channelKey, now);
           this.settings.debug && console.log(`[Dungeons] COMBAT_MOB_TRACE: ch=${channelKey.slice(-8)}, isActive=${isActive}, mobsBefore=${preAttackMobs}, mobsAfter=${postAttackMobs}, bossHP=${dungeon.boss?.hp}, elapsed=${shadowElapsed}ms`);

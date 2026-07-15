@@ -728,7 +728,12 @@ module.exports = {
     return stats;
   },
 
-  calculateShadowDamage(shadow, enemyStats, enemyRank) {
+  // applyRole defaults true for standalone callers (e.g. runtime-visibility's
+  // preview). The combat execution path passes false and instead applies role
+  // via getRoleCombatOutgoingDamageMultiplier, which is the single source of
+  // archetype + personality + context scaling — applying role here too would
+  // double-count it (the fallback-path triple-stack bug, 2026-07-14).
+  calculateShadowDamage(shadow, enemyStats, enemyRank, applyRole = true) {
     const attacker = this.resolveCombatStats({ entityType: 'shadow', entity: shadow });
     const defender = this.resolveCombatStats({
       entityType: 'enemy',
@@ -739,7 +744,7 @@ module.exports = {
 
     let damage = this.calculateDamage(attacker.stats, defender.stats, attacker.rank, defender.rank);
 
-    damage = this.applyRoleDamageMultiplier(shadow.role, damage);
+    if (applyRole) damage = this.applyRoleDamageMultiplier(shadow.role, damage);
 
     if (!Number.isFinite(damage) || damage < 0) {
       this.debugLog?.('COMBAT', 'NaN/invalid shadow damage, falling back to 1', { role: shadow?.role });
