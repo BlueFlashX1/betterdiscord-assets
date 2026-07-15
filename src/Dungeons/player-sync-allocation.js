@@ -1268,7 +1268,7 @@ module.exports = {
   ensureBossEngagementUnlocked(dungeon, channelKey = null) {
     if (!dungeon?.boss) return false;
 
-    const bossGateConfig = this.getBossGateRuntimeConfig();
+    const bossGateConfig = this.getBossGateRuntimeConfig(dungeon?.rank);
     if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
       dungeon.bossGate = {
         enabled: bossGateConfig.enabled,

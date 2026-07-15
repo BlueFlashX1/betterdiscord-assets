@@ -310,19 +310,30 @@ module.exports = {
     return ['E'];
   },
 
-  getBossGateRuntimeConfig() {
+  // Optional dungeonRank scales requiredMobKills by gate rank (lore pacing:
+  // an E-gate is a den clear, a Monarch+ gate is a war campaign before the
+  // general). settings.bossGateRequiredMobKills is the BASE (default 40);
+  // with the default base: E 16 · C 30 · A 80 · S 120 · SSS 200 · Monarch+ 400.
+  // Callers without a rank in scope get the unscaled base (multiplier 1).
+  getBossGateRuntimeConfig(dungeonRank = null) {
     const minDurationRaw = Number(this.settings?.bossGateMinDurationMs);
     const requiredMobKillsRaw = Number(this.settings?.bossGateRequiredMobKills);
+    const baseKills =
+      Number.isFinite(requiredMobKillsRaw) && requiredMobKillsRaw >= 0
+        ? Math.floor(requiredMobKillsRaw)
+        : this.defaultSettings.bossGateRequiredMobKills;
+    const RANK_KILL_MULT = {
+      E: 0.4, D: 0.5, C: 0.75, B: 1.25, A: 2, S: 3, SS: 4, SSS: 5,
+      'SSS+': 6.5, NH: 8, Monarch: 9, 'Monarch+': 10,
+    };
+    const killMult = dungeonRank != null ? (RANK_KILL_MULT[dungeonRank] ?? 1) : 1;
     return {
       enabled: this.settings?.bossGateEnabled !== false,
       minDurationMs:
         Number.isFinite(minDurationRaw) && minDurationRaw >= 5000
           ? Math.floor(minDurationRaw)
           : this.defaultSettings.bossGateMinDurationMs,
-      requiredMobKills:
-        Number.isFinite(requiredMobKillsRaw) && requiredMobKillsRaw >= 0
-          ? Math.floor(requiredMobKillsRaw)
-          : this.defaultSettings.bossGateRequiredMobKills,
+      requiredMobKills: Math.max(0, Math.round(baseKills * killMult)),
     };
   },
 

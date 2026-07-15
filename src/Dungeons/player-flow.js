@@ -210,7 +210,7 @@ module.exports = {
     // set but no allocation/combat ever starts, and re-deploy is blocked by L5152 guard).
     try {
       dungeon.shadowsDeployed = true;
-      const bossGateConfig = this.getBossGateRuntimeConfig();
+      const bossGateConfig = this.getBossGateRuntimeConfig(dungeon.rank);
       if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
         dungeon.bossGate = {
           enabled: bossGateConfig.enabled,

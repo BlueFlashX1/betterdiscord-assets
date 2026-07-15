@@ -323,7 +323,7 @@ module.exports = {
       1,
       Math.floor((100 + bossBaseStats.vitality * 10 + rankBonus) * staticBossHpMultiplier * armyMultiplier)
     );
-    const initialBossGate = this.getBossGateRuntimeConfig();
+    const initialBossGate = this.getBossGateRuntimeConfig(rank);
     const dungeonStartTime = Date.now();
     const dungeonXPBatchKey = `${channelKey}:${dungeonStartTime}`;
 
