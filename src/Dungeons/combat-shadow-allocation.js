@@ -348,7 +348,29 @@ module.exports = {
     return result;
   },
 
+  // In-flight guard (2026-07-15): overlapping calls — a deploy-storm across many
+  // dungeons plus the combat tick's own refresh — must not each run the full
+  // O(army) sort + O(combatPool) distribution concurrently (they interleave via
+  // the sort's setTimeout(0) yields). Coalesce non-forced callers onto the
+  // in-flight run; a forced recompute waits for it, then runs fresh so it never
+  // rides stale/cached data.
   async preSplitShadowArmy(forceRecalculate = false) {
+    if (this._preSplitInFlight) {
+      if (!forceRecalculate) return this._preSplitInFlight;
+      try { await this._preSplitInFlight; } catch (_) {}
+    }
+    const run = (async () => {
+      try {
+        return await this._preSplitShadowArmyImpl(forceRecalculate);
+      } finally {
+        if (this._preSplitInFlight === run) this._preSplitInFlight = null;
+      }
+    })();
+    this._preSplitInFlight = run;
+    return run;
+  },
+
+  async _preSplitShadowArmyImpl(forceRecalculate = false) {
     const now = Date.now();
     const cacheFresh =
       this.allocationCacheTime && now - this.allocationCacheTime < this.allocationCacheTTL;
@@ -632,16 +654,30 @@ module.exports = {
       Math.max(minDeployTarget, Math.floor(combatPool.length * DEPLOY_POOL_SHARE))
     );
 
-    const pickFromBucket = (bucket, count) => {
-      // Pick strongest-first (bucket inherits combatPool sort order: strongest first)
+    // PERF (2026-07-15): per-bucket cursor. pickFromBucket used to rescan each
+    // rank bucket from index 0 on every call, so D dungeons drawing from one
+    // shared rank bucket cost O(D²) skip-checks (bottom-heavy armies put ~all
+    // shadows in one bucket). Buckets are consumed strongest-first and each
+    // shadow lives in exactly one bucket, and reserve shadows are already
+    // filtered out of combatPool — so everything before the cursor is
+    // definitively consumed. The cursor advances monotonically, making the
+    // whole distribution O(combatPool) instead of O(dungeons × bucket).
+    const bucketCursors = new Map(); // rankIndex → next unconsumed index
+    const bucketAvailable = (ri) =>
+      (rankBuckets.get(ri)?.length || 0) - (bucketCursors.get(ri) || 0);
+    const pickFromBucket = (ri, count) => {
+      const bucket = rankBuckets.get(ri);
       const picked = [];
-      for (let i = 0; i < bucket.length && picked.length < count; i++) {
+      if (!bucket || count <= 0) return picked;
+      let i = bucketCursors.get(ri) || 0;
+      for (; i < bucket.length && picked.length < count; i++) {
         const s = bucket[i];
         const id = getShadowId(s);
-        if (!id || assignedIds.has(id)) continue;
+        if (!id || assignedIds.has(id)) continue; // defensive; within-bucket dedup is the cursor
         assignedIds.add(id);
         picked.push(s);
       }
+      bucketCursors.set(ri, i); // everything up to i is consumed or skipped
       return picked;
     };
 
@@ -654,12 +690,12 @@ module.exports = {
       for (let distance = 1; distance <= maxRI + 1 && picked.length < neededCount; distance++) {
         const lowerRI = dungeonRI - distance;
         if (lowerRI >= 0) {
-          picked.push(...pickFromBucket(rankBuckets.get(lowerRI) || [], neededCount - picked.length));
+          picked.push(...pickFromBucket(lowerRI, neededCount - picked.length));
         }
         if (picked.length >= neededCount) break;
         const upperRI = dungeonRI + distance;
         if (upperRI <= maxRI) {
-          picked.push(...pickFromBucket(rankBuckets.get(upperRI) || [], neededCount - picked.length));
+          picked.push(...pickFromBucket(upperRI, neededCount - picked.length));
         }
       }
       return picked;
@@ -673,16 +709,10 @@ module.exports = {
       const previousCount = Array.isArray(previousAssigned) ? previousAssigned.length : 0;
       const selected = [];
       const dungeonRI = dw.rankIndex;
-      const sameRankBucket = rankBuckets.get(dungeonRI) || [];
-      const higherBucket = rankBuckets.get(dungeonRI + 1) || [];
-      const sameRankAvailable = sameRankBucket.reduce(
-        (count, shadow) => count + (assignedIds.has(getShadowId(shadow)) ? 0 : 1),
-        0
-      );
-      const higherRankAvailable = higherBucket.reduce(
-        (count, shadow) => count + (assignedIds.has(getShadowId(shadow)) ? 0 : 1),
-        0
-      );
+      // O(1) availability via the per-bucket cursor (was an O(bucket) reduce per
+      // dungeon → O(dungeons × bucket) for shared buckets).
+      const sameRankAvailable = bucketAvailable(dungeonRI);
+      const higherRankAvailable = bucketAvailable(dungeonRI + 1);
       const pairAvailable = sameRankAvailable + higherRankAvailable;
       const dungeonsLeft = weightedDungeons.length - idx;
       const reservedForOthers = Math.max(0, (dungeonsLeft - 1) * MIN_DUNGEON_ASSIGNMENT);
@@ -711,18 +741,18 @@ module.exports = {
 
       // Preferred composition: same-rank majority + smaller one-rank-higher supplement.
       if (sameRankTarget > 0) {
-        selected.push(...pickFromBucket(sameRankBucket, sameRankTarget));
+        selected.push(...pickFromBucket(dungeonRI, sameRankTarget));
       }
       if (higherRankTarget > 0) {
-        selected.push(...pickFromBucket(higherBucket, higherRankTarget));
+        selected.push(...pickFromBucket(dungeonRI + 1, higherRankTarget));
       }
 
       // Pair top-up: if preferred pair shortfalls, fill from same/higher before any spillover.
       if (selected.length < pairTarget) {
-        selected.push(...pickFromBucket(sameRankBucket, pairTarget - selected.length));
+        selected.push(...pickFromBucket(dungeonRI, pairTarget - selected.length));
       }
       if (selected.length < pairTarget) {
-        selected.push(...pickFromBucket(higherBucket, pairTarget - selected.length));
+        selected.push(...pickFromBucket(dungeonRI + 1, pairTarget - selected.length));
       }
 
       // Spillover: nearest-rank fallback only after pair target is exhausted.
