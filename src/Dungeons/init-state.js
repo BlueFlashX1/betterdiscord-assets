@@ -33,6 +33,9 @@ module.exports = {
       // (joined + attacking). Makes joining matter instead of deploy-and-idle.
       // 0.25 = +25%. Range 0–2.
       userParticipationDamageBonus: 0.25,
+      // Healer/support shadows actively restore HP to alive-damaged shadows
+      // each combat tick (scaled by healer presence). Set false to disable.
+      shadowHealerRestorationEnabled: true,
       shadowMobTargetShare: 0.5,
       shadowBossTargetShareLowBossHp: 0.85,
       shadowBossFocusLowHpThreshold: 0.4,

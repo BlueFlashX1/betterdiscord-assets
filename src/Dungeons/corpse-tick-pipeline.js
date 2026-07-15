@@ -636,6 +636,11 @@ module.exports = {
         );
         this._lastMobAttackTime.set(channelKey, now);
       }
+
+      // Healer/support restoration — runs after this tick's shadow-damaging
+      // attacks (boss + mobs) so it restores HP to alive-but-damaged shadows
+      // rather than racing the damage. Bounded by the tracked shadowHP set.
+      this._applyShadowHealPass(channelKey, dungeon);
     } catch (error) {
       this.errorLog('CRITICAL', 'Error in parallel dungeon combat tick', { channelKey, error });
     }

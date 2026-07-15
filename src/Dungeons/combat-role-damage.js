@@ -254,6 +254,7 @@ module.exports = {
       mark: 0, // Enemy vulnerability pressure from role coordination
       guard: 0, // Incoming damage mitigation from tanks/support
       weaken: 0, // Enemy output suppression from caster/support pressure
+      heal: 0, // Active shadow-HP restoration pressure from healers/support
     };
   },
 
@@ -267,6 +268,7 @@ module.exports = {
     state.mark *= decay;
     state.guard *= decay;
     state.weaken *= decay;
+    if (Number.isFinite(state.heal)) state.heal *= decay;
     state.updatedAt = now;
   },
 
@@ -359,6 +361,11 @@ module.exports = {
       0.55
     );
     state.weaken = this.clampNumber(state.weaken + casterP * 0.04 + supportP * 0.03, 0, 0.35);
+    // Healers/support (both map to the 'support' archetype) actively restore
+    // shadow HP — the "healer" role now does something. Accumulates from
+    // support pressure like guard/weaken, and is consumed each tick by
+    // _applyShadowHealPass.
+    state.heal = this.clampNumber((state.heal || 0) + supportP * 0.05, 0, 0.6);
     state.updatedAt = Date.now();
     return state;
   },
@@ -387,6 +394,10 @@ module.exports = {
     const mobMarkMultiplier = this.clampNumber(1 + state.mark * 0.015, 1, 1.12);
     const incomingReduction = state.guard * 0.45 + state.weaken * 0.55;
     const incomingDamageMultiplier = this.clampNumber(1 - incomingReduction, 0.55, 1);
+    // Fraction of maxHp restored to alive-but-damaged shadows this tick from
+    // healer/support presence (consumed by _applyShadowHealPass). Capped so a
+    // support-heavy army self-sustains without becoming unkillable.
+    const shadowHealFraction = this.clampNumber((state.heal || 0) * 0.25, 0, 0.15);
 
     return {
       enabled: true,
@@ -394,6 +405,7 @@ module.exports = {
       bossMarkMultiplier,
       mobMarkMultiplier,
       incomingDamageMultiplier,
+      shadowHealFraction,
     };
   },
 

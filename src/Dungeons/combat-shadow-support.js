@@ -199,6 +199,43 @@ module.exports = {
     return { totalDamage, targetsKilled };
   },
 
+  // Healer/support restoration pass. Runs once per combat tick after damage.
+  // The "healer" role (and support archetype generally) now actively restores
+  // shadow HP: healers/support build a `heal` accumulator in the role-combat
+  // state (updateRoleCombatStateFromPressure), surfaced as shadowHealFraction
+  // by getRoleCombatTickContext. Heals only ALIVE-but-damaged shadows (never
+  // revives — that's the mana-gated resurrection path) and never overheals.
+  // Bounded by dungeon.shadowHP (lazily populated with combat participants,
+  // not the whole army), so it's cheap even for very large armies.
+  _applyShadowHealPass(channelKey, dungeon) {
+    if (!dungeon) return;
+    if (this.settings?.shadowHealerRestorationEnabled === false) return;
+
+    const ctx = this.getRoleCombatTickContext?.(channelKey);
+    const healFraction = ctx && ctx.enabled ? (ctx.shadowHealFraction || 0) : 0;
+    if (!(healFraction > 0)) return;
+
+    const shadowHP = dungeon.shadowHP;
+    if (!shadowHP || shadowHP.size === 0) return;
+
+    let healedCount = 0;
+    for (const hpData of shadowHP.values()) {
+      if (!hpData) continue;
+      const maxHp = Number(hpData.maxHp) || 0;
+      const hp = Number(hpData.hp) || 0;
+      if (maxHp <= 0 || hp <= 0 || hp >= maxHp) continue; // dead or already full
+      hpData.hp = Math.min(maxHp, hp + Math.max(1, Math.floor(maxHp * healFraction)));
+      healedCount++;
+    }
+
+    if (healedCount > 0) {
+      this.debugLog?.(
+        'HEALER',
+        `Restored ${healedCount} shadows in ${dungeon.name || channelKey} (frac=${healFraction.toFixed(3)})`
+      );
+    }
+  },
+
   initializeShadowHPSync(shadow, shadowHP) {
     const shadowId = this.getShadowIdValue(shadow);
     if (!shadowId) return null;
