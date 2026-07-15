@@ -29,6 +29,10 @@ module.exports = {
       // low boss HP via shadowBossTargetShareLowBossHp. While the boss is
       // GATED, shadows already target mobs 100% (getShadowBossTargetChance
       // returns 0), so this only governs the post-unlock phase.
+      // Extra army boss-damage while the player is actively participating
+      // (joined + attacking). Makes joining matter instead of deploy-and-idle.
+      // 0.25 = +25%. Range 0–2.
+      userParticipationDamageBonus: 0.25,
       shadowMobTargetShare: 0.5,
       shadowBossTargetShareLowBossHp: 0.85,
       shadowBossFocusLowHpThreshold: 0.4,

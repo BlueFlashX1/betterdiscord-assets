@@ -760,9 +760,27 @@ module.exports = {
           }
         }
 
-        // Apply aggregated boss damage once (was per-shadow)
+        // Apply aggregated boss damage once (was per-shadow).
+        // COMMANDER'S PRESENCE (2026-07-14): fighting alongside the army
+        // (userParticipating — set by joining + attacking via chat) amplifies
+        // the whole army's boss damage. Without this the player was cosmetic
+        // once shadows were deployed; now joining is a real, tunable buff on
+        // top of the player's own per-message hit. Deploy-and-idle gets 1.0.
         if (aggregatedBossDamage > 0) {
-          await this.applyDamageToBoss(channelKey, aggregatedBossDamage, 'shadow', null);
+          const participationBonus = dungeon.userParticipating
+            ? this.clampNumber(
+                Number.isFinite(this.settings?.userParticipationDamageBonus)
+                  ? this.settings.userParticipationDamageBonus
+                  : 0.25,
+                0,
+                2
+              )
+            : 0;
+          const finalBossDamage = Math.max(
+            1,
+            Math.floor(aggregatedBossDamage * (1 + participationBonus))
+          );
+          await this.applyDamageToBoss(channelKey, finalBossDamage, 'shadow', null);
         }
 
         const deadMobsThisTick = [];
