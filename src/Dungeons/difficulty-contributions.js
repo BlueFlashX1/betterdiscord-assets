@@ -60,6 +60,34 @@ module.exports = {
     this._pendingDungeonMobKillsByBatch?.delete(batchKey);
   },
 
+  // Rank histogram of a dungeon's assigned shadows, cached against the
+  // allocation array identity — recomputed only when the allocation is
+  // replaced (re-split / deploy), so the per-tick warfront read is O(ranks),
+  // not O(army). Compressed shadow records carry `rank` top-level (IDB index
+  // field), so this works for both compressed and full records.
+  _getWarRankHistogram(channelKey, dungeon, assigned) {
+    const cache = dungeon._warRankHist;
+    if (cache && cache.ref === assigned) return cache.counts;
+    // GRADE BUMP (lore: named marshals ARE monarch-tier — Beru/Igris fight far
+    // above their nominal rank): General +0.5, Marshal +1, Grand Marshal +2
+    // effective rank steps in the mass battle. This is what lets an invested
+    // (essence-promoted) army raid hosts above its nominal rank, and it makes
+    // the grade economy matter at war scale.
+    const GRADE_BUMP = { General: 0.5, Marshal: 1, 'Grand Marshal': 2 };
+    const counts = {}; // effectiveRankIndex (may be half-steps) → count
+    if (Array.isArray(assigned)) {
+      for (let i = 0; i < assigned.length; i++) {
+        const s = assigned[i];
+        const baseIdx = this.getRankIndexValue(s?.rank || 'E');
+        const bump = GRADE_BUMP[s?.grade || s?.gr || ''] || 0;
+        const key = (baseIdx + bump).toFixed(1);
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    }
+    dungeon._warRankHist = { ref: assigned, counts };
+    return counts;
+  },
+
   // ── WARFRONT: aggregate army-vs-host battle (O(1) per tick) ────────────────
   // The object-simulated frontline stays small (performanceAliveMobCap); the
   // MASS battle happens here: shadows beyond the frontline's needs grind the
@@ -98,20 +126,55 @@ module.exports = {
       const rate = Number.isFinite(rateRaw) && rateRaw > 0 ? Math.min(rateRaw, 1) : 0.015;
       const capRaw = Number(this.settings?.warfrontMaxKillsPerTick);
       const perTickCap = Number.isFinite(capRaw) && capRaw >= 100 ? Math.floor(capRaw) : 5000;
+
+      // RANK-AWARE WAR MATH (lore: "it takes 10 C-Ranks to possibly overpower
+      // a B-Rank" — one rank step ≈ 10:1 in mass battle; at 2+ ranks the gap is
+      // "a different species"). Each shadow's contribution is weighted
+      // 10^(shadowRankIdx − hostRankIdx), clamped [0.001, 100]:
+      //   even rank  → 1×   (numbers decide — parity with the flat model)
+      //   1 below    → 0.1× (ten fodder ≈ one even soldier)
+      //   2+ below   → ~0   (fodder cannot meaningfully cull a higher host)
+      //   1 above    → 10×  (one general shreds ten lessers)
+      //   2+ above   → 100× cap (functional annihilation)
+      const hist = this._getWarRankHistogram(channelKey, dungeon, assigned);
+      const hostIdx = this.getRankIndexValue(dungeon.rank);
+      let effPower = 0;
+      let casualtyWeight = 0;
+      const surplusShare = armySize > 0 ? surplus / armySize : 0;
+      for (const effIdxKey in hist) {
+        const count = hist[effIdxKey] * surplusShare; // surplus slice of each tier
+        if (!(count > 0)) continue;
+        const diff = parseFloat(effIdxKey) - hostIdx; // effective idx (rank + grade bump)
+        effPower += count * this.clampNumber(Math.pow(10, diff), 0.001, 100);
+        // Inverse for casualties: fodder dies en masse to a higher host.
+        casualtyWeight += count * this.clampNumber(Math.pow(10, -diff), 0.001, 100);
+      }
+      // The Monarch takes the field: participating amplifies the whole war
+      // effort (same lever as the boss-damage commander's presence bonus).
+      if (dungeon.userParticipating) {
+        const bonusRaw = Number(this.settings?.userParticipationDamageBonus);
+        effPower *= 1 + this.clampNumber(Number.isFinite(bonusRaw) ? bonusRaw : 0.25, 0, 2);
+      }
+
       const kills = Math.min(
         dungeon.war.reserves,
         perTickCap,
-        Math.floor(surplus * rate)
+        Math.floor(effPower * rate)
       );
-      if (kills <= 0) return;
+      if (kills > 0) {
+        // Existing pipeline: gate-kill credit, batched XP, batched essence,
+        // war-reserve depletion (all inside _onMobKilled).
+        this._onMobKilled(channelKey, dungeon, dungeon.rank, kills);
+      }
 
-      // Existing pipeline: gate-kill credit, batched XP, batched essence,
-      // war-reserve depletion (all inside _onMobKilled).
-      this._onMobKilled(channelKey, dungeon, dungeon.rank, kills);
-
-      // Casualties of war: cosmetic below the frontline (the shadows rise
-      // again — resurrection is the army's whole premise). Report-only.
-      dungeon.war.shadowsFallen = (dungeon.war.shadowsFallen || 0) + Math.floor(kills * 0.02);
+      // Casualties of war (report-only — the shadows rise again): scales with
+      // the host's rank advantage. Even-rank war ≈ 0.03% of engaged per tick;
+      // a fodder army thrown at a higher host bleeds hard.
+      const fallen = Math.min(surplus, Math.floor(casualtyWeight * 0.0003));
+      if (fallen > 0) {
+        dungeon.war.shadowsFallen = (dungeon.war.shadowsFallen || 0) + fallen;
+      }
+      if (kills <= 0 && fallen <= 0) return;
 
       // War report — one toast a minute while the mass battle rages.
       if (!dungeon.war._lastReportAt || now - dungeon.war._lastReportAt >= 60000) {
