@@ -89,6 +89,12 @@ module.exports = {
       const msg = payload && payload.message;
       if (!msg || !msg.id || !msg.channel_id || !msg.author || !msg.author.id) return;
 
+      // ORDER (perf): free property-read rejects FIRST. Bot/webhook/system
+      // traffic (a large share of busy-server volume) is dropped before any
+      // store call, Set write, or timestamp parse. type 0 = default, 19 = reply.
+      if (msg.author.bot || msg.webhook_id) return;
+      if (msg.type !== 0 && msg.type !== 19) return;
+
       // Only react to the channel the user is actually viewing — mirrors the
       // old DOM observer, which only ever saw rendered messages in the open
       // channel. Without this, MESSAGE_CREATE for other subscribed channels
@@ -108,12 +114,6 @@ module.exports = {
       // before we started" gate for safety (e.g. a late-delivered dispatch).
       const ts = this._msgTimestampMs(msg.timestamp);
       if (ts && this.observerStartTime && ts < this.observerStartTime) return;
-
-      // User message = a human's own post: not a bot, not a webhook, and a
-      // normal (0) or reply (19) message type. System messages (joins, boosts,
-      // pins…) and bots must never spawn dungeons.
-      if (msg.author.bot || msg.webhook_id) return;
-      if (msg.type !== 0 && msg.type !== 19) return;
 
       this._processDungeonMessage(msg);
     } catch (error) {
@@ -205,24 +205,38 @@ module.exports = {
     return Number.isNaN(t) ? null : t;
   },
 
+  // PERF (2026-07-15): store refs are MEMOIZED on the instance. This runs per
+  // MESSAGE_CREATE (every message from every author), and BdApi.Webpack.getStore
+  // is a module-registry lookup — not guaranteed cached. Flux stores are stable
+  // for the app's lifetime, so resolve once and retry only while null.
   _getViewedChannelId() {
     try {
-      const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
-      if (SelectedChannelStore && typeof SelectedChannelStore.getChannelId === 'function') {
-        return SelectedChannelStore.getChannelId();
+      let store = this._selectedChannelStoreRef;
+      if (!store) {
+        store = BdApi.Webpack.getStore?.('SelectedChannelStore');
+        if (!(store && typeof store.getChannelId === 'function')) {
+          store = BdApi.Webpack.getStore?.('ChannelStore');
+        }
+        if (store && typeof store.getChannelId === 'function') {
+          this._selectedChannelStoreRef = store;
+        } else {
+          return null;
+        }
       }
-      const ChannelStore = BdApi.Webpack.getStore?.('ChannelStore');
-      if (ChannelStore && typeof ChannelStore.getChannelId === 'function') {
-        return ChannelStore.getChannelId();
-      }
+      return store.getChannelId();
     } catch (_) {}
     return null;
   },
 
   _isOwnAuthor(authorId) {
     try {
-      const UserStore = BdApi.Webpack.getStore?.('UserStore');
-      const me = UserStore && UserStore.getCurrentUser ? UserStore.getCurrentUser() : null;
+      let store = this._userStoreRef;
+      if (!store) {
+        store = BdApi.Webpack.getStore?.('UserStore');
+        if (store && typeof store.getCurrentUser === 'function') this._userStoreRef = store;
+        else return false;
+      }
+      const me = store.getCurrentUser();
       return !!(me && me.id === authorId);
     } catch (_) {
       return false;

@@ -164,13 +164,20 @@ module.exports = {
       const msg = payload && payload.message;
       if (!msg || !msg.id || !msg.channel_id || !msg.author || !msg.author.id) return;
 
-      // OWN messages only — one property compare rejects all other traffic
-      // before any work. This is the whole performance win. Include the
-      // persisted ownUserId as a last-resort fallback so own-message XP still
-      // lands if the live UserStore lookup transiently returns null (the
-      // documented currentUserId-null failure mode).
-      const me = this.getCurrentUserIdForMessageDetection()
-        || this.currentUserId
+      // ORDER (perf): free property-read rejects first — bots and system
+      // message types are dropped before ANY resolution work.
+      if (msg.author.bot) return;
+      if (msg.type !== 0 && msg.type !== 19) return;
+
+      // OWN messages only — one property compare rejects all other traffic.
+      // This is the whole performance win. this.currentUserId is a cached
+      // property set at startup (zero cost per message); the heavier
+      // getCurrentUserIdForMessageDetection() resolver (5s cache, but a
+      // querySelector + fiber-walk fallback when the store lookup fails) only
+      // runs while the cached id is still unresolved. Persisted ownUserId is
+      // the last resort (the documented currentUserId-null failure mode).
+      const me = this.currentUserId
+        || this.getCurrentUserIdForMessageDetection()
         || this.settings?.ownUserId;
       if (!me || msg.author.id !== me) return;
 
@@ -180,10 +187,7 @@ module.exports = {
       const viewed = this._getViewedChannelId();
       if (viewed && msg.channel_id !== viewed) return;
 
-      // Real text only (bots/system/empty award no XP). type 0 = default,
-      // 19 = reply.
-      if (msg.author.bot) return;
-      if (msg.type !== 0 && msg.type !== 19) return;
+      // Real text only (empty awards no XP).
       const text = typeof msg.content === 'string' ? msg.content.trim() : '';
       if (!text) return;
 
@@ -217,12 +221,21 @@ module.exports = {
     return Number.isNaN(t) ? null : t;
   },
 
+  // PERF (2026-07-15): store ref memoized — this runs per own-message and the
+  // getStore lookup is a module-registry scan, not guaranteed cached by BD.
+  // Flux stores are stable for the app lifetime; retry only while null.
   _getViewedChannelId() {
     try {
-      const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
-      if (SelectedChannelStore && typeof SelectedChannelStore.getChannelId === 'function') {
-        return SelectedChannelStore.getChannelId();
+      let store = this._selectedChannelStoreRef;
+      if (!store) {
+        store = BdApi.Webpack.getStore?.('SelectedChannelStore');
+        if (store && typeof store.getChannelId === 'function') {
+          this._selectedChannelStoreRef = store;
+        } else {
+          return null;
+        }
       }
+      return store.getChannelId();
     } catch (_) {}
     return null;
   },
