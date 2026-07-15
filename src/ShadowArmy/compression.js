@@ -85,6 +85,7 @@ module.exports = {
       ol: shadow.ownerLevelAtExtraction || 1,
       hv: shadow._healV || 0,
       gr: shadow.grade || 'Common', // Shadow grade (manhwa lore tier)
+      cn: shadow.customName || null, // Monarch's Naming — custom general name
 
       // IDB index fields — full-name properties so compressed shadows
       // remain visible to IndexedDB secondary indexes
@@ -138,6 +139,7 @@ module.exports = {
       ol: shadow.ownerLevelAtExtraction || 1,
       hv: shadow._healV || 0,
       gr: shadow.grade || 'Common',
+      cn: shadow.customName || null,
 
       // IDB index fields
       rank: shadow.rank || 'E',
@@ -214,6 +216,7 @@ module.exports = {
       lastNaturalGrowth: compressed.e * 86400000,
       _healV: compressed.hv || 0,
       grade: compressed.gr || 'Common',
+      customName: compressed.cn || null,
       _ultraCompressed: true,
     };
   },
@@ -269,6 +272,7 @@ module.exports = {
       strength: 0,
       _healV: compressed.hv || 0,
       grade: compressed.gr || 'Common',
+      customName: compressed.cn || null,
       _compressed: true,
     };
   },

@@ -425,4 +425,48 @@ module.exports = {
 
     return buffs;
   },
+
+  // ── MONARCH'S NAMING — "Arise, Igris." ─────────────────────────────────────
+  // SHADOW MONARCH PERK: the Monarch names his generals. SM-only, and only for
+  // top-grade shadows (Marshal / Grand Marshal — the generals). A named general
+  // carries the Monarch's favor: +5% effective stats (getShadowEffectiveStats)
+  // and appears BY NAME in dungeon/senses reporting. Persisted via the `cn`
+  // compressed field so the name survives compression round-trips.
+  async renameShadow(shadow, rawName) {
+    try {
+      if (this.getSoloLevelingData?.()?.rank !== 'Shadow Monarch') {
+        this.showToast?.('Only the Shadow Monarch may name his generals.', 'error');
+        return false;
+      }
+      const full = shadow && shadow._c ? this.decompressShadow(shadow) : shadow;
+      const id = full?.id || full?.i;
+      if (!id) return false;
+      const grade = full.grade || 'Common';
+      if (grade !== 'Marshal' && grade !== 'Grand Marshal') {
+        this.showToast?.('Only Marshal-grade and above may receive a name.', 'warning');
+        return false;
+      }
+      // Sanitize: strip control chars, collapse whitespace, cap length.
+      // Empty clears the name.
+      const name = String(rawName == null ? '' : rawName)
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 24);
+      full.customName = name || null;
+      const compressed = this.compressShadow(full) || full;
+      await this.storageManager.saveShadow(compressed);
+      this._invalidateSnapshot?.();
+      this.showToast?.(
+        name ? `"Arise, ${name}." — the Monarch has named a general.` : 'The general’s name has been withdrawn.',
+        'success'
+      );
+      return true;
+    } catch (error) {
+      this.debugError?.('RENAME', 'Failed to name shadow', error);
+      this.showToast?.('Naming failed — see console.', 'error');
+      return false;
+    }
+  },
 };

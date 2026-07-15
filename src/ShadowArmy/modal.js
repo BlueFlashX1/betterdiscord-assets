@@ -286,7 +286,37 @@ module.exports = {
             ce('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' } },
               ce('span', { style: { color: '#8a2be2', fontWeight: 'bold', fontSize: '14px', flexShrink: 0 } }, `[${safeShadow.rank || 'E'}]`),
               ce('span', { style: { color: GRADE_COLORS_SA[safeShadow.grade || 'Common'] || '#888', fontSize: '12px', fontWeight: '600', flexShrink: 0 } }, safeShadow.grade || 'Common'),
-              ce('span', { style: { color: roleColor, fontSize: '14px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, role),
+              // Monarch's Naming: a named general leads with its given name (gold),
+              // role shown after. Unnamed generals show the role as before.
+              ce('span', { style: { color: safeShadow.customName ? '#fbbf24' : roleColor, fontSize: '14px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                safeShadow.customName ? `${safeShadow.customName} — ${role}` : role),
+              (pluginRef.getSoloLevelingData?.()?.rank === 'Shadow Monarch' &&
+                (safeShadow.grade === 'Marshal' || safeShadow.grade === 'Grand Marshal'))
+                ? ce('button', {
+                    title: 'Name this general (Monarch\'s Naming)',
+                    onClick: () => {
+                      let value = safeShadow.customName || '';
+                      BdApi.UI.showConfirmationModal(
+                        'Name Your General',
+                        ce('div', {},
+                          ce('div', { style: { marginBottom: '8px', color: '#b5bac1', fontSize: '13px' } },
+                            'The Monarch names his generals. Named generals carry +5% stats and report by name. Leave empty to withdraw the name.'),
+                          ce('input', {
+                            type: 'text', defaultValue: value, maxLength: 24, placeholder: 'e.g. Igris',
+                            style: { width: '100%', padding: '6px 8px', background: 'rgba(0,0,0,0.4)', border: '1px solid #8a2be2', borderRadius: '3px', color: '#fff' },
+                            onChange: (e) => { value = e.target.value; },
+                          })
+                        ),
+                        {
+                          confirmText: 'Arise',
+                          cancelText: 'Cancel',
+                          onConfirm: () => { pluginRef.renameShadow?.(safeShadow, value); },
+                        }
+                      );
+                    },
+                    style: { background: 'none', border: '1px solid #8a2be2', borderRadius: '3px', color: '#fbbf24', cursor: 'pointer', fontSize: '11px', padding: '1px 6px', flexShrink: 0 },
+                  }, '✎')
+                : null,
               ce('span', { style: { color: '#34d399', marginLeft: 'auto', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 } }, Math.floor(totalPower || 0).toLocaleString())
             ),
             ce('div', { style: { marginBottom: '8px' } },

@@ -353,6 +353,15 @@ module.exports = {
       });
     }
 
+    // MONARCH'S NAMING: a named general carries the Monarch's favor — +5% all
+    // stats. MUST run after the SM replacement above (naming is SM-gated, so
+    // applying it before would be overwritten at exactly the rank that names).
+    if (shadow.customName) {
+      statKeys.forEach((stat) => {
+        effective[stat] = Math.floor(effective[stat] * 1.05);
+      });
+    }
+
     return effective;
   },
 
