@@ -109,6 +109,10 @@ module.exports = {
 
       this.activeDungeons.delete(DC.DEMON_CASTLE_KEY);
       this.channelLocks.delete(DC.DEMON_CASTLE_KEY);
+      // DC deployed shadows but doesn't route through completeDungeon or set the
+      // allocation-dirty flag — invalidate the deploy union directly so its
+      // freed shadows aren't stranded "used" (this path has no self-heal).
+      this._invalidateDeployAssignedUnion?.();
       this._cleanupPerChannelRuntimeState(DC.DEMON_CASTLE_KEY);
     }
 
@@ -257,6 +261,9 @@ module.exports = {
 
     this.activeDungeons.delete(channelKey);
     this.channelLocks.delete(channelKey);
+    // Floor cleared — free its shadows from the cached deploy union (this path
+    // bypasses completeDungeon's invalidation and sets no dirty flag).
+    this._invalidateDeployAssignedUnion?.();
     this._cleanupPerChannelRuntimeState(channelKey);
     this._storyModeActive = false;
 

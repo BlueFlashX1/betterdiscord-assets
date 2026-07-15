@@ -366,6 +366,7 @@ module.exports = {
       dungeon.shadowAllocation = null;
       this.shadowAllocations.delete(channelKey);
       this._markAllocationDirty('deploy-aborted-no-shadows');
+      this._invalidateDeployAssignedUnion?.();
       this.errorLog('DEPLOY', 'Deploy aborted: 0 shadows available for starter allocation', {
         channelKey,
         dungeonName: dungeon.name,
@@ -543,6 +544,10 @@ module.exports = {
     // Clear shadow allocations for this dungeon
     this.shadowAllocations.delete(channelKey);
     this._markAllocationDirty('recall-shadows');
+    // Recalled shadows are freed — drop them from the cached deploy union so
+    // another dungeon can reuse them immediately (markDirty only self-heals via
+    // another dungeon's tick; this is immediate).
+    this._invalidateDeployAssignedUnion?.();
 
     // Start idle timer for expiry (3-minute countdown)
     dungeon._idleSince = Date.now();
