@@ -171,12 +171,27 @@ module.exports = {
   },
 
   _getMobActiveCap(dungeon) {
-    // No artificial ceiling — dungeon's total mob capacity (from MOB_COUNT_BY_RANK) IS the cap.
-    // E=50, SS=25000, SSS=50000, Shadow Monarch=1000000.
     const dungeonMobCapacity = Number(dungeon?.mobs?.mobCapacity);
-    return Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
+    const rankCap = Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
       ? Math.max(50, Math.floor(dungeonMobCapacity))
       : 200; // Fallback for dungeons without capacity data
+
+    // PERF (2026-07-15, performanceMode): clamp CONCURRENT alive mobs to a
+    // simulation-friendly ceiling. The rank table allows up to 1,000,000 alive
+    // (Monarch 250k, SM 1M), and at least four per-tick passes iterate the FULL
+    // alive array (boss AOE, status effects ×2, shadow rank-grouping) — that
+    // unbounded alive pool was the sustained main-thread lag during dungeons.
+    // Crucially it bought nothing: the global mob-attack budget only simulates
+    // ~800 mobs/tick regardless, so 250k alive never cleared faster — mobs
+    // refill from the spawn queue as they die, total kill throughput is
+    // IDENTICAL, only the per-tick scan cost drops by orders of magnitude.
+    // Disable via settings.performanceMode = false to restore rank-table caps.
+    if (this.settings?.performanceMode !== false) {
+      const perfCap = Number(this.settings?.performanceAliveMobCap);
+      const ceiling = Number.isFinite(perfCap) && perfCap >= 100 ? Math.floor(perfCap) : 800;
+      return Math.min(rankCap, ceiling);
+    }
+    return rankCap;
   },
 
   processMobSpawnQueue(channelKey) {

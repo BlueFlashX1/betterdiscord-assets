@@ -38,6 +38,14 @@ module.exports = {
       // steamroll, lower for more challenge. (Not the old inflation bug — this
       // is the clean, single-source power lever.)
       shadowDamageScalar: 2.0,
+      // PERFORMANCE MODE (default ON): clamps concurrent alive mobs to
+      // performanceAliveMobCap regardless of dungeon rank. High-rank dungeons
+      // allowed up to 1M alive mobs, and several per-tick passes scan the full
+      // alive array — the main in-dungeon lag source. Kill throughput is
+      // unchanged (the attack budget only simulates ~800 mobs/tick anyway;
+      // mobs refill from the queue as they die). Set false for rank-table caps.
+      performanceMode: true,
+      performanceAliveMobCap: 800,
       // Healer/support shadows actively restore HP to alive-damaged shadows
       // each combat tick (scaled by healer presence). Set false to disable.
       shadowHealerRestorationEnabled: true,
