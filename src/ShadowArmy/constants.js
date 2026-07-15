@@ -149,6 +149,24 @@ const DEFAULT_SETTINGS = {
       Marshal: 2.5,
       'Grand Marshal': 3.5,
     },
+    // COMMAND HIERARCHY (lore: one sovereign per species — Igris leads the
+    // knights, Beru the ants, Bellion above all). Officer grades are capped
+    // PER SPECIES (species = beastFamily || beastType || role):
+    //   Grand Marshal: 1  — the species' supreme commander
+    //   Marshal:       4  — co-commanders (vanguard/rear/left/right)
+    //   General:       1 per 50 troops of the species (min 5) — officer corps
+    //   Elite Knight and below: uncapped rank-and-file.
+    // Enforced in autoPromoteGrades; reconcileGradeHierarchy() restructures an
+    // existing over-promoted army once (keeps the highest rank+stats holder of
+    // each slot, demotes the rest down the ladder, refunds the essence
+    // difference in full).
+    gradeHierarchy: {
+      enabled: true,
+      grandMarshalPerSpecies: 1,
+      marshalPerSpecies: 4,
+      generalPerTroops: 50,
+      generalMinPerSpecies: 5,
+    },
     // Auto-promote: process up to N shadows per cycle (prevents IDB storm)
     autoPromoteBatchSize: 50,
     autoPromoteIntervalMs: 30000, // Check every 30s

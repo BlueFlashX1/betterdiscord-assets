@@ -528,6 +528,24 @@ const ShadowArmy = class ShadowArmy {
     if (this._gradePromoteInterval) {
       clearInterval(this._gradePromoteInterval);
     }
+    // COMMAND HIERARCHY one-shot restructure: armies promoted before the
+    // per-species officer caps existed hold too many Grand Marshals/Marshals.
+    // Runs once (persisted flag), delayed off the start path; refunds the full
+    // essence difference for every demotion. Manual re-run:
+    // BdApi.Plugins.get('ShadowArmy').instance.reconcileGradeHierarchy()
+    if (!this.settings?.shadowEssence?.hierarchyReconciledV1) {
+      setTimeout(() => {
+        if (this._isStopped) return;
+        this.reconcileGradeHierarchy()
+          .then(() => {
+            if (this.settings?.shadowEssence) {
+              this.settings.shadowEssence.hierarchyReconciledV1 = true;
+              this.saveSettings();
+            }
+          })
+          .catch((error) => this.debugError('GRADE', 'Hierarchy restructure failed', error));
+      }, 15000);
+    }
     const gradePromoteInterval = this.settings?.shadowEssence?.autoPromoteIntervalMs ?? 30000;
     this._gradePromoteInterval = setInterval(() => {
       if (this._isStopped) return;

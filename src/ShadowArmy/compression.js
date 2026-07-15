@@ -695,10 +695,17 @@ module.exports = {
       const cost = promotionCosts?.[nextGrade] || 0;
       if (cost <= 0 || remainingEssence < cost) continue;
 
+      // COMMAND HIERARCHY: officer grades (General/Marshal/Grand Marshal) are
+      // capped per species — no promotion into a full command slot. The
+      // census self-updates on each grant so one cycle can't overfill a slot.
+      const hierarchyCfg = this._getGradeHierarchyConfig();
+      if (!this._officerSlotAvailable(entry.raw, nextGrade, hierarchyCfg)) continue;
+
       // Promote!
       remainingEssence -= cost;
       essenceSpent += cost;
       promoted++;
+      this._recordOfficerPromotion(entry.raw, entry.grade, nextGrade);
 
       const id = this.getCacheKey?.(entry.raw) || entry.raw?.id || entry.raw?.i;
       if (id) idsToPromote.push(id);
@@ -861,5 +868,248 @@ module.exports = {
     }
 
     return shadowToSave;
+  },
+
+  // ── COMMAND HIERARCHY ───────────────────────────────────────────────────────
+  // One Grand Marshal per species, a handful of Marshal co-commanders, a
+  // proportional officer corps of Generals — the Igris/Beru/Bellion structure.
+
+  _getShadowSpeciesKey(s) {
+    return String(
+      s?.beastFamily || s?.bf || s?.beastType || s?.bt || s?.role || s?.ro || 'shadow'
+    );
+  },
+
+  _getGradeHierarchyConfig() {
+    const cfg = this.settings?.shadowEssence?.gradeHierarchy
+      || this.defaultSettings?.shadowEssence?.gradeHierarchy
+      || {};
+    return {
+      enabled: cfg.enabled !== false,
+      grandMarshalPerSpecies: Math.max(1, Math.floor(cfg.grandMarshalPerSpecies ?? 1)),
+      marshalPerSpecies: Math.max(1, Math.floor(cfg.marshalPerSpecies ?? 4)),
+      generalPerTroops: Math.max(10, Math.floor(cfg.generalPerTroops ?? 50)),
+      generalMinPerSpecies: Math.max(1, Math.floor(cfg.generalMinPerSpecies ?? 5)),
+    };
+  },
+
+  _generalCapForSpecies(total, cfg) {
+    return Math.max(cfg.generalMinPerSpecies, Math.floor(total / cfg.generalPerTroops));
+  },
+
+  // Species/grade census: { species: { total, officers: {General,Marshal,'Grand Marshal'} } }.
+  // Streamed in batches off the raw store (compressed-field reads only), cached
+  // 5 min, and kept consistent cycle-locally by the promote loop's own updates.
+  async _buildSpeciesGradeCensus(force = false) {
+    const now = Date.now();
+    if (!force && this._speciesCensus && now - (this._speciesCensusTime || 0) < 300000) {
+      return this._speciesCensus;
+    }
+    if (this._speciesCensusInFlight) return this._speciesCensusInFlight;
+    const run = (async () => {
+      const census = {};
+      const bump = (s) => {
+        const key = this._getShadowSpeciesKey(s);
+        const grade = s?.grade || s?.gr || 'Common';
+        const entry = census[key] || (census[key] = { total: 0, officers: { General: 0, Marshal: 0, 'Grand Marshal': 0 } });
+        entry.total++;
+        if (entry.officers[grade] !== undefined) entry.officers[grade]++;
+      };
+      try {
+        if (this.storageManager?.forEachShadowBatch) {
+          await this.storageManager.forEachShadowBatch(
+            (batch) => { for (let i = 0; i < batch.length; i++) bump(batch[i]); },
+            { batchSize: 500 }
+          );
+        } else {
+          for (const s of this.settings.shadows || []) bump(s);
+        }
+        this._speciesCensus = census;
+        this._speciesCensusTime = Date.now();
+        return census;
+      } finally {
+        this._speciesCensusInFlight = null;
+      }
+    })();
+    this._speciesCensusInFlight = run;
+    return run;
+  },
+
+  // Synchronous slot check for the promote loop. Census may still be building
+  // on the very first cycle — officer promotions simply wait for it (lower
+  // grades keep flowing). The loop passes its own cycle-local increments via
+  // the census object itself (we mutate counts on grant).
+  _officerSlotAvailable(raw, nextGrade, cfg) {
+    if (!cfg.enabled) return true;
+    if (nextGrade !== 'General' && nextGrade !== 'Marshal' && nextGrade !== 'Grand Marshal') return true;
+    const census = this._speciesCensus;
+    if (!census) {
+      this._buildSpeciesGradeCensus().catch(() => {});
+      return false; // defer officer promotions until the census exists
+    }
+    const key = this._getShadowSpeciesKey(raw);
+    const entry = census[key];
+    if (!entry) return false;
+    if (nextGrade === 'Grand Marshal') return entry.officers['Grand Marshal'] < cfg.grandMarshalPerSpecies;
+    if (nextGrade === 'Marshal') return entry.officers.Marshal < cfg.marshalPerSpecies;
+    return entry.officers.General < this._generalCapForSpecies(entry.total, cfg);
+  },
+
+  _recordOfficerPromotion(raw, fromGrade, toGrade) {
+    const census = this._speciesCensus;
+    if (!census) return;
+    const entry = census[this._getShadowSpeciesKey(raw)];
+    if (!entry) return;
+    if (entry.officers[fromGrade] !== undefined) entry.officers[fromGrade] = Math.max(0, entry.officers[fromGrade] - 1);
+    if (entry.officers[toGrade] !== undefined) entry.officers[toGrade]++;
+  },
+
+  // One-shot army restructure: enforce the hierarchy on an army that was
+  // promoted before the caps existed. Per species, the best officer (rank,
+  // then strength, then level) holds each slot: 1 Grand Marshal, then the
+  // Marshal co-commanders, then the General corps; every displaced officer
+  // steps down to the next tier below, overflow landing at Elite Knight.
+  // The FULL essence difference between old and new grade is refunded —
+  // the Monarch reorganizes his army, he does not squander it.
+  async reconcileGradeHierarchy() {
+    const cfg = this._getGradeHierarchyConfig();
+    if (!cfg.enabled) return { changed: 0 };
+    const gradeOrder = C.SHADOW_GRADES;
+    const costs = this.settings?.shadowEssence?.gradePromotionCost
+      || this.defaultSettings.shadowEssence.gradePromotionCost;
+    const gradeCost = (grade) => {
+      // Cumulative essence invested to REACH a grade from Common.
+      let sum = 0;
+      for (let i = 1; i <= gradeOrder.indexOf(grade); i++) sum += costs[gradeOrder[i]] || 0;
+      return sum;
+    };
+
+    // Pass 1: species totals + officer rosters (officers only — bounded).
+    const species = {}; // key → { total, officers: [{raw, gradeIdx, rankIdx, str, level}] }
+    const { getRankIndex } = require('../shared/rank-utils');
+    const rankFixes = [];
+    const collect = (s) => {
+      // SHADOW MONARCH is the PLAYER's exclusive rank — no shadow may hold it.
+      // Rank-ups to SM are already blocked (progression.js attemptAutoRankUp);
+      // this purges any legacy holder down to Monarch+.
+      const shadowRank = s?.rank || s?.r;
+      if (shadowRank === 'Shadow Monarch') {
+        if (s.rank !== undefined || !s._c) s.rank = 'Monarch+';
+        if (s.r !== undefined || s._c) s.r = 'Monarch+';
+        rankFixes.push(s);
+      }
+      const key = this._getShadowSpeciesKey(s);
+      const entry = species[key] || (species[key] = { total: 0, officers: [] });
+      entry.total++;
+      const grade = s?.grade || s?.gr || 'Common';
+      const gradeIdx = gradeOrder.indexOf(grade);
+      if (gradeIdx >= gradeOrder.indexOf('General')) {
+        entry.officers.push({
+          raw: s,
+          gradeIdx,
+          rankIdx: getRankIndex(s?.rank || s?.r || 'E'),
+          str: Number(s?.strength) || 0,
+          level: Number(s?.level || s?.l) || 1,
+        });
+      }
+    };
+    if (this.storageManager?.forEachShadowBatch) {
+      await this.storageManager.forEachShadowBatch(
+        (batch) => { for (let i = 0; i < batch.length; i++) collect(batch[i]); },
+        { batchSize: 500 }
+      );
+    } else {
+      for (const s of this.settings.shadows || []) collect(s);
+    }
+
+    // Pass 2: per species, CASCADING slot assignment. Slot holders are chosen
+    // best-first (rank, then strength, then level) FROM WITHIN each grade's
+    // pool plus the overflow cascading down from above — the best existing
+    // Grand Marshal keeps the throne, displaced GMs become the first Marshal
+    // co-commanders, displaced Marshals join the General corps, and overflow
+    // Generals step down to Elite Knight. Restructure never promotes (that's
+    // autoPromote's essence-gated job) — it only demotes surplus officers.
+    const toSave = [];
+    let refund = 0;
+    let demoted = 0;
+    const best = (a, b) =>
+      (b.rankIdx - a.rankIdx) || (b.str - a.str) || (b.level - a.level);
+    const idxOf = (g) => gradeOrder.indexOf(g);
+    const applyGrade = (o, targetGrade) => {
+      const currentGrade = gradeOrder[o.gradeIdx];
+      if (idxOf(targetGrade) >= o.gradeIdx) return; // never promote here
+      refund += Math.max(0, gradeCost(currentGrade) - gradeCost(targetGrade));
+      if (o.raw.grade !== undefined || !o.raw._c) o.raw.grade = targetGrade;
+      if (o.raw.gr !== undefined || o.raw._c) o.raw.gr = targetGrade;
+      toSave.push(o.raw);
+      demoted++;
+    };
+    for (const [, entry] of Object.entries(species)) {
+      if (entry.officers.length === 0) continue;
+      const gmCap = cfg.grandMarshalPerSpecies;
+      const marshalCap = cfg.marshalPerSpecies;
+      const generalCap = this._generalCapForSpecies(entry.total, cfg);
+
+      const gms = entry.officers.filter((o) => o.gradeIdx === idxOf('Grand Marshal')).sort(best);
+      const gmOverflow = gms.slice(gmCap); // best gmCap keep the throne
+
+      const marshals = entry.officers.filter((o) => o.gradeIdx === idxOf('Marshal'));
+      const marshalPool = marshals.concat(gmOverflow).sort(best);
+      const marshalKeep = new Set(marshalPool.slice(0, marshalCap));
+      const marshalOverflow = marshalPool.slice(marshalCap);
+      for (const o of marshalPool) {
+        if (marshalKeep.has(o)) { if (o.gradeIdx !== idxOf('Marshal')) applyGrade(o, 'Marshal'); }
+      }
+
+      const generals = entry.officers.filter((o) => o.gradeIdx === idxOf('General'));
+      const generalPool = generals.concat(marshalOverflow).sort(best);
+      const generalKeep = new Set(generalPool.slice(0, generalCap));
+      for (const o of generalPool) {
+        if (generalKeep.has(o)) { if (o.gradeIdx !== idxOf('General')) applyGrade(o, 'General'); }
+        else applyGrade(o, 'Elite Knight');
+      }
+    }
+
+    // Merge SM-rank purges into the save set (dedup — an officer may be in both).
+    for (const s of rankFixes) {
+      if (!toSave.includes(s)) toSave.push(s);
+    }
+    if (rankFixes.length > 0) {
+      this.debugLog?.('GRADE', `Purged Shadow Monarch rank from ${rankFixes.length} shadow(s) → Monarch+`);
+    }
+
+    // Pass 3: persist + refund + invalidate.
+    if (toSave.length > 0) {
+      const CHUNK = 400;
+      for (let i = 0; i < toSave.length; i += CHUNK) {
+        const chunk = toSave.slice(i, i + CHUNK);
+        try {
+          if (this.storageManager?.saveShadowsBatch) await this.storageManager.saveShadowsBatch(chunk);
+          else for (const s of chunk) await this.storageManager?.saveShadow?.(s);
+        } catch (error) {
+          this.debugError('GRADE', 'Hierarchy restructure save chunk failed', error);
+        }
+      }
+      if (refund > 0) {
+        const essenceConfig = this.settings?.shadowEssence || this.defaultSettings.shadowEssence;
+        essenceConfig.essence = Math.max(0, (essenceConfig.essence || 0) + refund);
+        try {
+          SLEvents?.emit('ItemVault:add', {
+            itemId: 'shadow_essence',
+            amount: refund,
+            source: 'grade_restructure',
+          });
+        } catch (_) {}
+        this.saveSettings();
+      }
+      this._invalidateSnapshot?.();
+      this._gradeCacheTs = 0;
+      this._speciesCensus = null; // force fresh census next cycle
+      this.showToast?.(
+        `Army restructured: ${demoted} officers stepped down across ${Object.keys(species).length} species — ${refund.toLocaleString()} essence returned to the Monarch.`,
+        'success'
+      );
+    }
+    return { changed: demoted, refund, species: Object.keys(species).length };
   },
 };
