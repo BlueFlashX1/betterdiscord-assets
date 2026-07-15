@@ -844,6 +844,9 @@ module.exports = {
     this.allocationCacheTime = now;
     this._allocationDirty = false;
     this._allocationDirtyReason = null;
+    // The re-split reassigned every dungeon — the deploy-time assigned-ID union
+    // is now stale; force a rebuild on the next deploy.
+    this._invalidateDeployAssignedUnion?.();
   },
 
   async startShadowAttacks(channelKey, options = {}) {

@@ -168,6 +168,9 @@ module.exports = {
     if (dungeon._completing) return; // Prevent concurrent completion
     dungeon._completing = true;
     dungeon._completingStartedAt = Date.now(); // BUGFIX LOGIC-9: Timestamp for stranded dungeon recovery
+    // This dungeon's shadows are now freed — invalidate the deploy-time
+    // assigned-ID union so a subsequent deploy can reuse them.
+    this._invalidateDeployAssignedUnion?.();
     let hadShadowsDeployed = false;
     let corpsePileSnapshot = [];
     let dungeonSnapshot = null;

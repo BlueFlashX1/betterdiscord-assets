@@ -513,6 +513,43 @@ module.exports = {
     }, 0);
   },
 
+  // Cached union of shadow IDs assigned to ACTIVE dungeons, for deploy-time
+  // "don't reuse another dungeon's shadows" filtering. Rebuilt lazily only when
+  // invalidated (re-split / completion), and extended in-place as deploys pick
+  // shadows — so a deploy storm across many dungeons rebuilds once instead of
+  // O(dungeons × assigned) per deploy. Includes every active dungeon; callers
+  // exclude the current dungeon's own IDs so re-deploys can reuse them.
+  _getDeployAssignedUnion() {
+    if (this._deployAssignedUnion && this._deployAssignedUnionValid) {
+      return this._deployAssignedUnion;
+    }
+    const union = new Set();
+    for (const [otherKey, assigned] of this.shadowAllocations.entries()) {
+      if (!Array.isArray(assigned) || assigned.length === 0) continue;
+      const d = this._getActiveDungeon(otherKey);
+      if (
+        !d ||
+        !d.shadowsDeployed ||
+        d._completing ||
+        ((d.boss?.hp || 0) <= 0 && !d.boss?._isSentinel)
+      ) continue;
+      for (const shadow of assigned) {
+        const sid = this.getShadowIdValue(shadow);
+        sid && union.add(String(sid));
+      }
+    }
+    this._deployAssignedUnion = union;
+    this._deployAssignedUnionValid = true;
+    return union;
+  },
+
+  // Force the next deploy to rebuild the assigned-ID union. Called when the
+  // allocation wholesale changes (re-split) or a dungeon frees its shadows
+  // (completion), since those aren't captured by the per-deploy incremental add.
+  _invalidateDeployAssignedUnion() {
+    this._deployAssignedUnionValid = false;
+  },
+
   _buildDeployStarterAllocation(channelKey, dungeon) {
     // Deploy target scales with mob capacity (rank-rebalance, 2026-06-08; table +
     // ceiling centralized + raised, wave 9, 2026-07-12):
@@ -594,19 +631,24 @@ module.exports = {
       );
     }
 
-    const usedIds = new Set();
-    for (const [otherKey, assigned] of this.shadowAllocations.entries()) {
-      if (otherKey === channelKey || !Array.isArray(assigned) || assigned.length === 0) continue;
-      const otherDungeon = this._getActiveDungeon(otherKey);
-      if (
-        !otherDungeon ||
-        !otherDungeon.shadowsDeployed ||
-        otherDungeon._completing ||
-        ((otherDungeon.boss?.hp || 0) <= 0 && !otherDungeon.boss?._isSentinel)
-      ) continue;
-      for (const shadow of assigned) {
-        const sid = this.getShadowIdValue(shadow);
-        sid && usedIds.add(String(sid));
+    // PERF (2026-07-15): union of shadow IDs assigned to active dungeons.
+    // Was rebuilt from scratch every deploy — O(dungeons × assigned) — so a
+    // storm of N deploys cost ~O(N²) as the army grew across dungeons. Now
+    // cached and invalidated only on re-split / completion (see
+    // _invalidateDeployAssignedUnion), NOT on individual deploys; a deploy
+    // storm rebuilds once then extends incrementally. The union includes ALL
+    // active dungeons (channelKey too); the current dungeon's own IDs are
+    // excluded per-candidate via ownIds so a re-deploy can reuse its own
+    // shadows.
+    const usedIds = this._getDeployAssignedUnion();
+    const ownIds = new Set();
+    {
+      const own = this.shadowAllocations.get(channelKey);
+      if (Array.isArray(own)) {
+        for (const shadow of own) {
+          const sid = this.getShadowIdValue(shadow);
+          sid && ownIds.add(String(sid));
+        }
       }
     }
 
@@ -700,8 +742,13 @@ module.exports = {
       const shadowId = this.getShadowIdValue(normalized);
       if (!shadowId) return null;
       const sid = String(shadowId);
-      if (usedIds.has(sid) || blockedIds.has(sid) || pickedIds.has(sid)) return null;
+      // Used by ANOTHER active dungeon (in the union but not this dungeon's own),
+      // exchange/senses-blocked, or already picked this pass.
+      if ((usedIds.has(sid) && !ownIds.has(sid)) || blockedIds.has(sid) || pickedIds.has(sid)) return null;
       pickedIds.add(sid);
+      // Extend the cached union immediately so a concurrent-in-storm deploy to
+      // ANOTHER dungeon (rebuilt from this same cache) won't re-grab this shadow.
+      usedIds.add(sid);
       return normalized;
     };
 
