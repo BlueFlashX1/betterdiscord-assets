@@ -226,6 +226,9 @@ module.exports = {
       dungeon.bossGate.deployedAt = deployedAt;
       dungeon.bossGate.unlockedAt = null;
       this._markAllocationDirty('deploy-shadows');
+      // SM: Sovereign Territory auto-envelops the dungeon on deploy (no-op
+      // below SM or without Domain Expansion; harmless if deploy rolls back).
+      this._autoApplySovereignDomain(channelKey, dungeon);
     } catch (stateError) {
       // Rollback — prevent irrecoverable limbo state
       dungeon._deploying = false;
@@ -614,6 +617,38 @@ module.exports = {
     };
   },
 
+  // SHADOW MONARCH PERK (Monarch's Domain -> Sovereign Territory, auto-cast):
+  // at SM the domain is permanent and the manual cast was pointless friction —
+  // the cast site's comment marked auto-apply-on-deploy as the follow-up
+  // refinement. Envelops the dungeon the moment shadows deploy, matching the
+  // manual cast's SM numbers exactly: base 1.50 + 0.05/passive-level
+  // (SkillTree data.js shadowBuff) + the SM +1.0 bonus, permanent, shadows
+  // status-immune. Gated on the Domain Expansion unlock (passive level >= 3,
+  // same as casting it by hand).
+  _autoApplySovereignDomain(channelKey, dungeon) {
+    try {
+      if (!dungeon) return;
+      if (this.soloLevelingStats?.settings?.rank !== 'Shadow Monarch') return;
+      const existing = dungeon.activeBuffs?.domain;
+      if (existing && existing.expiresAt === Infinity) return; // already enveloped
+      const st = this.getSkillTreeInstance?.();
+      const passiveLevel = Math.max(0, st?.getSkillLevel?.('domain_of_the_monarch') || 0);
+      if (passiveLevel < 3) return; // Domain Expansion not unlocked — nothing to auto-cast
+      const multiplier = 1.50 + 0.05 * (passiveLevel - 1) + 1.0;
+      if (!dungeon.activeBuffs) dungeon.activeBuffs = {};
+      dungeon.activeBuffs.domain = {
+        expiresAt: Infinity,
+        statMultiplier: multiplier,
+        statusImmunity: true,
+      };
+      this.queueHPBarUpdate?.(channelKey);
+      this.showToast(
+        `Sovereign Territory: your domain envelops ${dungeon.name} — shadows +${Math.round((multiplier - 1) * 100)}% stats.`,
+        'success'
+      );
+    } catch (_) { /* auto-cast must never break deploy */ }
+  },
+
   _resolveUserBossDamage(dungeon, options = {}) {
     const {
       messageElement = null,
@@ -652,6 +687,21 @@ module.exports = {
     if (pluginCrit || passiveCrit) {
       isCritical = true;
       damage = this.applyEnhancedCritMultiplier(damage, 2.0, critDamageBonus);
+    }
+
+    // SHADOW MONARCH PERK (Dagger Arts -> Shadow Edge rider): the Monarch's
+    // OPENING blow against each boss is a guaranteed critical. Consumed once
+    // per dungeon on the first landed (non-dodged) hit; a natural crit on that
+    // hit consumes it too. This is the per-boss rider the skill-cast path
+    // already had (player-flow "first hit of the cast"), now on the regular
+    // chat-attack path as well.
+    if (dungeon && !dungeon._smFirstStrikeDone && damage > 0 &&
+        this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+      if (!isCritical) {
+        isCritical = true;
+        damage = this.applyEnhancedCritMultiplier(damage, 2.5, critDamageBonus);
+      }
+      dungeon._smFirstStrikeDone = true;
     }
 
     const skillDamageMultiplier = Math.max(0.1, Number(skillMultiplier) || 1);

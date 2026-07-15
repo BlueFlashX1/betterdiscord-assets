@@ -136,7 +136,8 @@ module.exports = {
     const bonuses = this.getSkillTreeBonuses() || null;
     const raw = Math.max(0, Number(bonuses?.critBonus || 0));
     // SHADOW MONARCH PERK (Dagger Arts -> Shadow Edge): crit-chance bonus x3, cap raised
-    // 0.35 -> 1.0. (The "first hit always crits" rider is combat-path, deferred.)
+    // 0.35 -> 1.0. The "first hit always crits" rider lives in the combat path:
+    // per-boss First Strike in _resolveUserBossDamage (player-flow.js).
     if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
       return Math.min(1, raw * 3);
     }
@@ -146,8 +147,9 @@ module.exports = {
   getUserCritDamageBonus() {
     const bonuses = this.getSkillTreeBonuses() || null;
     const raw = Math.max(0, Number(bonuses?.critDamageBonus || 0));
-    // SHADOW MONARCH PERK (Mutilation -> Fatal Strike): crit-damage bonus x2. (The
-    // "crits ignore 100% defense" rider is combat-path, deferred.)
+    // SHADOW MONARCH PERK (Mutilation -> Fatal Strike): crit-damage bonus x2. The
+    // "crits ignore 100% defense" rider is wired in the combat path:
+    // calculateDamageBreakdown's ignoreDefenseOnCrit (combat-role-damage.js).
     if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
       return raw * 2;
     }
