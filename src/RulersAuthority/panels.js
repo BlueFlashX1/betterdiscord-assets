@@ -684,10 +684,18 @@ export function restoreAllCrushedCategories() {
 export function applyMicroStateForCurrentGuild(ctx) {
   const guildId = ctx._SelectedGuildStore?.getGuildId?.();
   if (guildId) {
-    // Resolve once, share across both calls — halves the sidebar lookup
-    // cost per channel-observer firing (mirrors ShadowRecon's cached
-    // getGuildsTarget pattern in guild-visuals.js).
-    const sidebar = findChannelSidebar();
+    // PERF (2026-07-14): CACHE the resolved sidebar element across fires.
+    // findChannelSidebar() runs several querySelector fallbacks, and the
+    // channel observer fires on every sidebar mutation (throttled 400ms), so
+    // re-resolving each time was pure waste. Reuse the cached element while
+    // it's still in the DOM; only re-scan when it detaches (channel/guild
+    // remount). Behaviour is identical — the apply functions still receive a
+    // valid sidebar every time, so their stale-marker cleanup runs unchanged.
+    let sidebar = ctx._sidebarElCache;
+    if (!sidebar || !sidebar.isConnected) {
+      sidebar = findChannelSidebar();
+      ctx._sidebarElCache = sidebar || null;
+    }
     applyChannelHiding(ctx, guildId, sidebar);
     applyCategoryCrushing(ctx, guildId, sidebar);
   }

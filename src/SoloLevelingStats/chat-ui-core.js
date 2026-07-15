@@ -369,6 +369,9 @@ module.exports = {
         // If the header appears we attempt creation once; on success we
         // disconnect, on failure we keep observing until the 10s ceiling.
         this.chatUICreationObserver = new MutationObserver((records) => {
+          // PERF: skip while hidden — no header will meaningfully mount for us
+          // to react to, and this watches #app-mount+subtree during its window.
+          if (typeof document !== 'undefined' && document.hidden) return;
           for (const r of records) {
             for (const node of r.addedNodes) {
               if (node.nodeType !== 1) continue;

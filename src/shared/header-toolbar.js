@@ -150,17 +150,34 @@ function _getToolbarHub() {
         this._mo = new MutationObserver((records) => {
           // PERF: no work while hidden; visibilitychange re-fires on return.
           if (document.hidden) return;
-          for (const r of records) {
-            for (const list of [r.addedNodes, r.removedNodes]) {
-              for (const node of list) {
-                if (node.nodeType !== 1) continue;
-                if (node.matches?.('[aria-label="Channel header"], [class*="toolbar_"]')) {
-                  this.fireAll();
-                  return;
+          // PERF (2026-07-14): coalesce the node scan to once per frame. This
+          // observes #app-mount+subtree (needed — the toolbar/header can mount
+          // anywhere and this hub is shared by ~6 plugins), so under busy chat
+          // the callback fires many times per frame and each batch used to run
+          // the full added/removed node scan. Accumulate records and scan once
+          // per rAF instead. Detection is identical (same nodes, same match);
+          // fireAll() is itself rAF-coalesced downstream, so no double-fire.
+          if (!this._moPending) this._moPending = [];
+          for (let i = 0; i < records.length; i++) this._moPending.push(records[i]);
+          if (this._moScanScheduled) return;
+          this._moScanScheduled = true;
+          requestAnimationFrame(() => {
+            this._moScanScheduled = false;
+            const pending = this._moPending;
+            this._moPending = [];
+            if (document.hidden) return;
+            for (const r of pending) {
+              for (const list of [r.addedNodes, r.removedNodes]) {
+                for (const node of list) {
+                  if (node.nodeType !== 1) continue;
+                  if (node.matches?.('[aria-label="Channel header"], [class*="toolbar_"]')) {
+                    this.fireAll();
+                    return;
+                  }
                 }
               }
             }
-          }
+          });
         });
         this._mo.observe(target, { childList: true, subtree: true });
       } catch (_) { this._mo = null; }

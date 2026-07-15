@@ -324,7 +324,10 @@ module.exports = {
     }
     this.pendingLevelUp = null;
 
-    // Stop observing
+    // Stop observing — own-message XP is FluxDispatcher-driven now.
+    this.teardownMessageDispatcher?.();
+    // Legacy MutationObserver teardown kept defensively in case a stale
+    // instance exists from an older build during hot-reload.
     if (this.messageObserver) {
       this.messageObserver.disconnect();
       this.messageObserver = null;

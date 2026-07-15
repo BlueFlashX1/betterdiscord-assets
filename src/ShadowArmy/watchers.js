@@ -301,8 +301,16 @@ module.exports = {
     const memberRoot = this.getMemberListElements()?.membersWrap || null;
     const chatContent = this._findMainChatContainer();
 
+    // PERF (2026-07-14): observe membersWrap DIRECTLY, not its parent. The
+    // parent also holds the chat area as a sibling, so parent+subtree woke this
+    // observer on every chat message in a busy server. membersWrap contains
+    // ONLY the member list, so internal member re-renders (scroll, join/leave —
+    // which can drop our injected widget) still fire and re-inject, but chat
+    // traffic no longer wakes it at all. When the panel is closed membersWrap
+    // doesn't exist yet; fall back to the chat parent so we still notice the
+    // panel opening, and the health check below upgrades to the direct observer.
     const observeRoot =
-      memberRoot?.parentElement ||
+      memberRoot ||
       chatContent?.parentElement ||
       null;
 
@@ -481,7 +489,13 @@ module.exports = {
         return;
       }
       if (document.hidden) return;
-      if (!observeRoot.isConnected) {
+      // Re-run setup if our observe target dropped out of the DOM, OR if we are
+      // on the chat-parent fallback (panel was closed) but membersWrap has
+      // since appeared — so we upgrade to observing membersWrap directly and
+      // stop watching the chat subtree.
+      const currentMembersWrap = this.getMemberListElements()?.membersWrap || null;
+      const onFallbackButPanelNowOpen = currentMembersWrap && observeRoot !== currentMembersWrap;
+      if (!observeRoot.isConnected || onFallbackButPanelNowOpen) {
         clearInterval(this._memberListHealthCheck);
         this._memberListHealthCheck = null;
         this.setupMemberListWatcher();

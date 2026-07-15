@@ -312,7 +312,10 @@ const SoloLevelingStats = class SoloLevelingStats {
     // successful write). The per-save regression/floor check reads this
     // instead of re-scanning all 6 backup files from disk on every save.
     this._fileBackupCache = null;
-    this.messageObserver = null;
+    this.messageObserver = null; // legacy; own-message XP is FluxDispatcher-driven (message-observers.js)
+    this._msgDispatcher = null;
+    this._msgCreateHandler = null;
+    this._msgDispatcherPoll = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
     this.processedMessageIds = new Set();

@@ -1,4 +1,4 @@
-const dc = require('../shared/discord-classes');
+const { acquireDispatcher, pollForDispatcher } = require('../shared/dispatcher');
 
 module.exports = {
   _ensureMessageProcessTimeoutSet() {
@@ -90,268 +90,141 @@ module.exports = {
     }, 500);
   },
 
-  _extractMutationMessageElement(node) {
-    const className = node?.className || '';
-    const isMessageNode = typeof className === 'string' && className.includes('message');
-    return isMessageNode ? node : node?.closest?.(dc.sel.message) || null;
-  },
+  // ── FluxDispatcher MESSAGE_CREATE — own-message XP detection ─────────────────
+  //
+  // PERF (2026-07-14): this REPLACES a per-message MutationObserver that ran a
+  // 20-deep React-fiber ownership walk (isOwnMessage) on EVERY message from
+  // EVERY author just to find the current user's own posts — the busy-server
+  // lag. MESSAGE_CREATE hands over `author.id` directly, so a single
+  // `author.id === me` compare rejects everyone else's traffic with zero DOM
+  // work. Own messages are funneled through the SAME processMessageSent() path
+  // the input handler uses; its content-hash + 2s dedup already prevents
+  // double-counting across the two paths, so this third trigger is safe.
+  //
+  // The input handler (keydown Enter) stays as the instant-feedback path (it
+  // fires before the server round-trip); MESSAGE_CREATE is the reliable
+  // fallback that also catches sends the input handler misses (slash commands,
+  // click-to-send, paste flows) — the exact role the observer used to play,
+  // now cheap.
 
-  _hasExplicitYouIndicator(messageElement) {
-    const usernameElement =
-      dc.query(messageElement, 'username') ||
-      messageElement.querySelector(dc.sel.author);
-    if (!usernameElement) return false;
-
-    const usernameText = usernameElement.textContent?.trim().toLowerCase() || '';
-    return usernameText === 'you' || usernameText.startsWith('you ');
-  },
-
-  _extractMutationMessageText(messageElement) {
-    return (
-      messageElement.textContent?.trim() ||
-      dc.query(messageElement, 'messageContent')?.textContent?.trim() ||
-      messageElement.querySelector('[class*="textValue"]')?.textContent?.trim() ||
-      ''
-    );
-  },
-
-  _trackMutationNodeAddedAt(node, messageElement) {
-    if (!this._domNodeAddedTime) {
-      this._domNodeAddedTime = new WeakMap();
-    }
-    this._domNodeAddedTime.set(node, Date.now());
-    if (messageElement && messageElement !== node) {
-      this._domNodeAddedTime.set(messageElement, Date.now());
-    }
-  },
-
-  _shouldSkipMutationMessageById(messageId) {
-    if (!messageId || this.processedMessageIds?.has(messageId)) {
-      this.debugLog('MUTATION_OBSERVER', 'Message already processed or no ID', {
-        messageId,
-        hasId: Boolean(messageId),
-      });
-      return true;
-    }
-    return false;
-  },
-
-  _resolveMutationMessageConfirmation(messageElement, currentUserId, messageId) {
-    const hasReactProps = this.doesMessageFiberMatchAuthorId(messageElement, currentUserId);
-    const hasExplicitYou = this._hasExplicitYouIndicator(messageElement);
-    if (hasReactProps || hasExplicitYou) {
-      return {
-        isConfirmed: true,
-        hasReactProps,
-      };
-    }
-
-    this.debugLog('MUTATION_OBSERVER', 'Skipping: Insufficient confirmation for MutationObserver detection', {
-      hasReactProps,
-      hasExplicitYou,
-      messageId,
-    });
-    return {
-      isConfirmed: false,
-      hasReactProps,
-    };
-  },
-
-  _resolveMutationMessageTimestamp(messageElement, messageId) {
-    const messageTimestamp = this.getMessageTimestamp(messageElement);
-    const isNewMessage = messageTimestamp && messageTimestamp >= (this.pluginStartTime || 0);
-    if (!isNewMessage && messageTimestamp) {
-      this.debugLog('MUTATION_OBSERVER', 'Skipping old message from chat history', {
-        messageId,
-        messageTimestamp,
-        pluginStartTime: this.pluginStartTime,
-        age: Date.now() - messageTimestamp,
-      });
-      return {
-        shouldProcess: false,
-        messageTimestamp,
-        isNewMessage,
-      };
-    }
-
-    return {
-      shouldProcess: true,
-      messageTimestamp,
-      isNewMessage,
-    };
-  },
-
-  _scheduleMutationMessageSend({
-    messageText,
-    messageElement,
-    messageId,
-    hasReactProps,
-    isNewMessage,
-    messageTimestamp,
-  }) {
-    this.debugLog('MUTATION_OBSERVER', 'Processing own message (confirmed)', {
-      messageId,
-      length: messageText.length,
-      preview: messageText.substring(0, 50),
-      confirmationMethod: hasReactProps ? 'React props' : 'Explicit You',
-      isNewMessage,
-      messageTimestamp,
-    });
-    this._scheduleTrackedMessageTimeout(() => {
-      if (!this._isRunning) return;
-      const context = this.buildMessageContextFromView(messageText, messageElement);
-      this.processMessageSent(messageText, context);
-    }, 100);
-  },
-
-  _ensureNotOwnMessageElementCache() {
-    if (!this._notOwnMessageElements) {
-      this._notOwnMessageElements = new WeakSet();
-    }
-    return this._notOwnMessageElements;
-  },
-
-  _processMutationNode(messageElement, currentUserId) {
-    if (!messageElement?.isConnected) return;
-
-    // PERF: skip elements already confirmed NOT the current user's message.
-    // Safe because Discord's virtualized message list unmounts/removes a
-    // row's DOM node when it scrolls out of view rather than reusing the
-    // same node instance for a different message's content while mounted
-    // (this codebase already relies on that same assumption elsewhere --
-    // SystemWindow caches author-id lookups directly on the DOM element).
-    // So a given element here always maps to the same message for its
-    // entire lifetime in the WeakSet.
-    const notOwnCache = this._ensureNotOwnMessageElementCache();
-    if (notOwnCache.has(messageElement)) return;
-
-    // PERF: cheap ID-based dedup ahead of the expensive ownership check --
-    // only when the ID is obtainable from the DOM attribute alone (no
-    // fiber walk needed). Falls through to the normal order if absent.
-    const cheapMessageId =
-      messageElement.getAttribute('data-list-item-id') || messageElement.getAttribute('id');
-    if (cheapMessageId && this.processedMessageIds?.has(cheapMessageId)) return;
-
-    const isOwnMessage = this.isOwnMessage(messageElement, currentUserId);
-    this.debugLog('MUTATION_OBSERVER', 'Message element detected', {
-      hasMessageElement: Boolean(messageElement),
-      isOwnMessage,
-      hasCurrentUserId: Boolean(currentUserId),
-    });
-    if (!isOwnMessage) {
-      notOwnCache.add(messageElement);
-      return;
-    }
-
-    const messageId = this.getMessageId(messageElement);
-    this.debugLog('MUTATION_OBSERVER', 'Own message detected via MutationObserver', {
-      messageId,
-      alreadyProcessed: messageId ? this.processedMessageIds?.has(messageId) : false,
-      elementClasses: messageElement.classList?.toString() || '',
-    });
-    if (this._shouldSkipMutationMessageById(messageId)) return;
-
-    const confirmation = this._resolveMutationMessageConfirmation(
-      messageElement,
-      currentUserId,
-      messageId
-    );
-    if (!confirmation.isConfirmed) return;
-
-    const messageTiming = this._resolveMutationMessageTimestamp(messageElement, messageId);
-    if (!messageTiming.shouldProcess) return;
-
-    this.addProcessedMessageId(messageId);
-    this.lastMessageId = messageId;
-    this.lastMessageElement = messageElement;
-
-    const messageText = this._extractMutationMessageText(messageElement);
-    if (messageText.length <= 0 || this.isSystemMessage(messageElement)) {
-      this.debugLog('MUTATION_OBSERVER', 'Message skipped', {
-        reason: messageText.length === 0 ? 'empty' : 'system_message',
-      });
-      return;
-    }
-
-    this._scheduleMutationMessageSend({
-      messageText,
-      messageElement,
-      messageId,
-      hasReactProps: confirmation.hasReactProps,
-      isNewMessage: messageTiming.isNewMessage,
-      messageTimestamp: messageTiming.messageTimestamp,
-    });
-  },
-
-  _queueMutationNodes(mutations) {
-    if (!this._pendingMutationNodes) this._pendingMutationNodes = [];
-
-    for (let i = 0; i < mutations.length; i++) {
-      const addedNodes = mutations[i].addedNodes;
-      for (let j = 0; j < addedNodes.length; j++) {
-        const candidate = addedNodes[j];
-        if (candidate.nodeType === 1) {
-          this._pendingMutationNodes.push(candidate);
-        }
+  setupMessageDispatcher() {
+    if (this._msgDispatcher || this._msgDispatcherPoll) return;
+    try {
+      const d = acquireDispatcher();
+      if (d) {
+        this._msgDispatcher = d;
+        this._subscribeMessageDispatcher();
+        return;
       }
-    }
-  },
-
-  _scheduleMutationProcessing(currentUserId) {
-    if (this._mutationDebounceTimer) return;
-
-    this._mutationDebounceTimer = setTimeout(() => {
-      this._mutationDebounceTimer = null;
-      const nodes = this._pendingMutationNodes;
-      this._pendingMutationNodes = [];
-      if (!nodes.length || !this._isRunning) return;
-
-      requestAnimationFrame(() => {
-        // PERF: resolve each added node to its enclosing message row first,
-        // then dedupe to distinct elements before running the (expensive)
-        // per-element ownership pipeline -- N nested mutations inside one
-        // message row (reaction add, embed load, hover toolbar, etc.)
-        // collapse to a single ownership check per 150ms batch instead of N.
-        const seenElements = new Set();
-        for (let i = 0; i < nodes.length; i++) {
-          const node = nodes[i];
-          if (!node?.isConnected) continue;
-          const messageElement = this._extractMutationMessageElement(node);
-          this._trackMutationNodeAddedAt(node, messageElement);
-          if (!messageElement || seenElements.has(messageElement)) continue;
-          seenElements.add(messageElement);
-          this._processMutationNode(messageElement, currentUserId);
-        }
-        this.trackChannelVisit();
+      this._msgDispatcherPoll = pollForDispatcher({
+        onAcquired: (dd) => {
+          this._msgDispatcherPoll = null;
+          if (!this._isRunning) return;
+          this._msgDispatcher = dd;
+          this._subscribeMessageDispatcher();
+        },
+        onTimeout: () => {
+          this._msgDispatcherPoll = null;
+          this.debugLog('MESSAGE_DISPATCHER', 'FluxDispatcher unavailable after 30s — own-message XP will rely on the input handler only');
+        },
+        onPoll: () => { if (!this._isRunning) this._msgDispatcherPoll?.cancel?.(); },
       });
-    }, 150);
+    } catch (error) {
+      this.debugError('MESSAGE_DISPATCHER', error);
+    }
   },
 
-  setupMessageObserver({ messageContainer, currentUserId }) {
-    if (this.messageObserver) {
-      this.messageObserver.disconnect();
-      this.messageObserver = null;
+  _subscribeMessageDispatcher() {
+    if (!this._msgDispatcher || this._msgCreateHandler) return;
+    this._msgCreateHandler = (payload) => this._onMessageCreate(payload);
+    try {
+      this._msgDispatcher.subscribe('MESSAGE_CREATE', this._msgCreateHandler);
+      this.debugLog('MESSAGE_DISPATCHER', 'Subscribed to MESSAGE_CREATE for own-message XP');
+    } catch (error) {
+      this._msgCreateHandler = null;
+      this.debugError('MESSAGE_DISPATCHER', error);
     }
+  },
 
-    if (this._mutationDebounceTimer) {
-      clearTimeout(this._mutationDebounceTimer);
-      this._mutationDebounceTimer = null;
+  teardownMessageDispatcher() {
+    if (this._msgDispatcher && this._msgCreateHandler) {
+      try { this._msgDispatcher.unsubscribe('MESSAGE_CREATE', this._msgCreateHandler); } catch (_) {}
     }
-    this._pendingMutationNodes = [];
+    this._msgCreateHandler = null;
+    this._msgDispatcher = null;
+    if (this._msgDispatcherPoll) {
+      try { this._msgDispatcherPoll.cancel?.(); } catch (_) {}
+      this._msgDispatcherPoll = null;
+    }
+  },
 
-    this.messageObserver = new MutationObserver((mutations) => {
-      this._queueMutationNodes(mutations);
-      this._scheduleMutationProcessing(currentUserId);
-    });
+  _onMessageCreate(payload) {
+    try {
+      if (!this._isRunning) return;
+      const msg = payload && payload.message;
+      if (!msg || !msg.id || !msg.channel_id || !msg.author || !msg.author.id) return;
 
-    this.messageObserver.observe(messageContainer, {
-      childList: true,
-      subtree: true,
-      attributes: false,
-      characterData: false,
-    });
+      // OWN messages only — one property compare rejects all other traffic
+      // before any work. This is the whole performance win. Include the
+      // persisted ownUserId as a last-resort fallback so own-message XP still
+      // lands if the live UserStore lookup transiently returns null (the
+      // documented currentUserId-null failure mode).
+      const me = this.getCurrentUserIdForMessageDetection()
+        || this.currentUserId
+        || this.settings?.ownUserId;
+      if (!me || msg.author.id !== me) return;
 
-    this.debugLog('SETUP_MESSAGE_DETECTION', 'MutationObserver set up for message detection');
+      // Match the old observer's scope: the channel currently in view.
+      // buildMessageContextFromView reads the active view, and the input
+      // handler already covers the rare send-then-immediately-switch case.
+      const viewed = this._getViewedChannelId();
+      if (viewed && msg.channel_id !== viewed) return;
+
+      // Real text only (bots/system/empty award no XP). type 0 = default,
+      // 19 = reply.
+      if (msg.author.bot) return;
+      if (msg.type !== 0 && msg.type !== 19) return;
+      const text = typeof msg.content === 'string' ? msg.content.trim() : '';
+      if (!text) return;
+
+      // Realtime guard against a late-delivered dispatch predating start.
+      const ts = this._msgTimestampMs(msg.timestamp);
+      if (ts && this.pluginStartTime && ts < this.pluginStartTime) return;
+
+      // Cheap id dedup (the authoritative anti-double-count vs the input
+      // handler is processMessageSent's content-hash + 2s window).
+      this.processedMessageIds = this.processedMessageIds || new Set();
+      if (this.processedMessageIds.has(msg.id)) return;
+      if (typeof this.addProcessedMessageId === 'function') this.addProcessedMessageId(msg.id);
+      else this.processedMessageIds.add(msg.id);
+      this.lastMessageId = msg.id;
+
+      this.processMessageSent(text, this.buildMessageContextFromView(text));
+      this.trackChannelVisit?.();
+    } catch (error) {
+      this.debugError('MESSAGE_CREATE', error);
+    }
+  },
+
+  _msgTimestampMs(ts) {
+    if (ts == null) return null;
+    if (typeof ts === 'number') return ts;
+    if (typeof ts === 'object' && typeof ts.valueOf === 'function') {
+      const v = ts.valueOf();
+      return typeof v === 'number' ? v : null;
+    }
+    const t = new Date(ts).getTime();
+    return Number.isNaN(t) ? null : t;
+  },
+
+  _getViewedChannelId() {
+    try {
+      const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
+      if (SelectedChannelStore && typeof SelectedChannelStore.getChannelId === 'function') {
+        return SelectedChannelStore.getChannelId();
+      }
+    } catch (_) {}
+    return null;
   },
 
   setupInputMonitoringForMessageSending({ maxRetries = 10 } = {}) {
@@ -376,7 +249,7 @@ module.exports = {
         } else {
           this.debugLog(
             'SETUP_INPUT',
-            'Message input not found after max retries, will rely on MutationObserver'
+            'Message input not found after max retries, will rely on FluxDispatcher'
           );
         }
         return;
@@ -435,24 +308,19 @@ module.exports = {
   },
 
   startObserving() {
-    const messageContainer = this.getMessageContainerElementForObserving();
-
-    if (!messageContainer) {
-      if (!this._startObservingRetryTimeout) {
-        this._startObservingRetryTimeout = setTimeout(() => {
-          this._startObservingRetryTimeout = null;
-          this.startObserving();
-        }, 1000);
-      }
-      return;
-    }
-
-    this._messageContainerEl = messageContainer;
     this.processedMessageIds = this.processedMessageIds || new Set();
 
-    const currentUserId = this.getCurrentUserIdForMessageDetection();
+    // Own-message XP is now FluxDispatcher-driven — no DOM message container
+    // required. Subscribe once (idempotent); the subscription is channel-
+    // agnostic and persists across channel switches.
+    this.setupMessageDispatcher();
 
-    this.setupMessageObserver({ messageContainer, currentUserId });
+    // Keep _messageContainerEl current for channel-context.js consumers (cheap
+    // single lookup; no longer gates message detection).
+    const messageContainer = this.getMessageContainerElementForObserving();
+    if (messageContainer) this._messageContainerEl = messageContainer;
+
+    // Input monitoring stays as the instant-feedback path; it has its own retry.
     this.setupInputMonitoringForMessageSending({ maxRetries: 10 });
   },
 };

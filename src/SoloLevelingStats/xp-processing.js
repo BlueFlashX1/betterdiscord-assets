@@ -62,8 +62,32 @@ module.exports = {
 
   _buildRecentMessageHash(messageText, resolvedContext) {
     const channelScope = resolvedContext?.channelId || this.getCurrentChannelId() || 'global';
-    const messageHash = this.hashString(messageText.substring(0, 2000));
+    const messageHash = this.hashString(this._normalizeForDedup(messageText).substring(0, 2000));
     return `msg_${channelScope}_${messageHash}`;
+  },
+
+  // The same message reaches processMessageSent from two triggers whose text
+  // representation differs: the input handler reads the composer DOM (mentions
+  // render as "@Name", channels "#name", custom emoji ":name:"), while the
+  // FluxDispatcher path uses msg.content (raw markdown: "<@123>", "<#456>",
+  // "<:name:789>"). Hashing raw text let the same message hash two different
+  // ways, so the recent-message dedup missed it and awarded XP twice. Strip
+  // Discord entity tokens in BOTH raw and rendered forms so the two triggers
+  // converge on one dedup key. Over-stripping (e.g. a literal "@word") is
+  // symmetric across both paths, so it can only cause a rare false-dedup
+  // (one message's XP skipped) — never the double-count it prevents.
+  _normalizeForDedup(text) {
+    if (typeof text !== 'string' || text.length === 0) return '';
+    return text
+      .replace(/<a?:\w+:\d+>/g, '')          // raw custom emoji
+      .replace(/<@[!&]?\d+>/g, '')            // raw user / role mention
+      .replace(/<#\d+>/g, '')                 // raw channel link
+      .replace(/<t:\d+(?::[a-zA-Z])?>/g, '')  // raw timestamp
+      .replace(/@[^\s]+/g, '')                // rendered mention (@Name)
+      .replace(/#[^\s]+/g, '')                // rendered channel (#name)
+      .replace(/:\w+:/g, '')                  // rendered / custom emoji (:name:)
+      .replace(/\s+/g, ' ')
+      .trim();
   },
 
   _isRecentMessageDuplicate(hashKey, now, recentWindowMs) {
