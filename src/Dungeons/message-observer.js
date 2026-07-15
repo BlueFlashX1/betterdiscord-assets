@@ -1,382 +1,245 @@
-const dc = require("../shared/discord-classes");
+const { acquireDispatcher, pollForDispatcher } = require("../shared/dispatcher");
 
+/**
+ * Message handling — FluxDispatcher MESSAGE_CREATE driven.
+ *
+ * PERF (2026-07-14): this module used to be a DOM MutationObserver that ran
+ * ~12 DOM traversals per message (getMessageId + getMessageTimestamp with a
+ * 20-deep React-fiber-walk fallback + isUserMessage's up-to-8 querySelector
+ * calls), for every message from every author, plus a subtree:true callback
+ * that fired for every reaction / embed load / hover button. In busy servers
+ * that pegged the main thread.
+ *
+ * It now subscribes to FluxDispatcher MESSAGE_CREATE instead. The event hands
+ * over the message object directly, so id / author / bot / timestamp / channel
+ * are plain property reads and the hot path does zero DOM work. The only DOM
+ * lookup left is a single, exact-selector query for the crit-damage bonus, and
+ * only for the current user's OWN messages while they have an active dungeon in
+ * the viewed channel — a tiny fraction of traffic. (Same pattern CriticalHit
+ * already uses.)
+ *
+ * Method names startMessageObserver / stopMessageObserver are kept because the
+ * lifecycle (lifecycle.js start/stop) calls them; they now manage the
+ * subscription rather than a MutationObserver.
+ *
+ * Mixed onto the plugin prototype via Object.assign — `this` is the plugin.
+ */
 module.exports = {
   startMessageObserver() {
-    if (this.messageObserver) {
-      return;
-    }
-
-    // IMPORTANT: Never fall back to document.body — causes massive mutation volume and pegs CPU
-    const findMessageContainer = () => {
-      const selectors = [
-        'div[data-list-id="chat-messages"]',
-        `main${dc.sel.chatContent} > div${dc.sel.messagesWrapper}`,
-        `div${dc.sel.messagesWrapper}`,
-        `div${dc.sel.scrollerInner}`,
-        `ol${dc.sel.scrollerInner}`,
-        dc.sel.messagesWrapper,
-        `${dc.sel.chat} > ${dc.sel.content}`,
-        dc.sel.messages,
-        dc.sel.messageList,
-      ];
-
-      for (const sel of selectors) {
-        const element = document.querySelector(sel);
-        if (element) {
-          const hasMessages = element.querySelector(`[data-list-item-id^="chat-messages"], [role="article"], ${dc.sel.message}`) !== null;
-          const hasMessageId =
-            element.querySelector('[data-list-item-id^="chat-messages"]') !== null;
-          if (
-            hasMessages ||
-            hasMessageId ||
-            sel.includes('messagesWrapper') ||
-            sel.includes('scrollerInner')
-          ) {
-            return element;
-          }
-        }
+    if (this._msgDispatcher || this._msgDispatcherPoll) return;
+    try {
+      const d = acquireDispatcher();
+      if (d) {
+        this._msgDispatcher = d;
+        this._subscribeMessageDispatcher();
+        return;
       }
-
-      const scrollers = document.querySelectorAll(dc.sel.scroller);
-      let scrollerWithMessages = null;
-      for (const scroller of scrollers) {
-        const hasMessage = scroller.querySelector(`[data-list-item-id^="chat-messages"], [role="article"], ${dc.sel.message}`) !== null;
-        const hasMessageId =
-          scroller.querySelector('[data-list-item-id^="chat-messages"]') !== null;
-        if (hasMessage || hasMessageId) {
-          scrollerWithMessages = scroller;
-          break;
-        }
-      }
-      if (scrollerWithMessages) return scrollerWithMessages;
-
-      return null;
-    };
-
-    const messageContainer = findMessageContainer();
-
-    if (messageContainer) {
-      this.debugLog('MESSAGE_OBSERVER', 'Container found, attaching observer');
-
-      this._messageObserverRetryCount = 0;
-      if (this._messageObserverRetryTimeoutId) {
-        clearTimeout(this._messageObserverRetryTimeoutId);
-        this._timeouts?.delete?.(this._messageObserverRetryTimeoutId);
-        this._messageObserverRetryTimeoutId = null;
-      }
-
-      this.messageObserver = new MutationObserver((mutations) => {
-        if (!this.started || !this.settings?.enabled) return;
-        if (document.hidden) return;
-
-        // PERF: Queue only real message list items; skip expensive DOM queries per mutation
-        let addedMessageCount = 0;
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (!node || node.nodeType !== 1) return;
-
-            const listItemId = node.getAttribute?.('data-list-item-id');
-            const isChatMessageItem = listItemId && listItemId.startsWith('chat-messages');
-            const messageElement =
-              (isChatMessageItem && (node.closest?.('[data-list-item-id]') || node)) ||
-              node.closest?.('[data-list-item-id^="chat-messages"]');
-
-            if (!messageElement) return;
-            this._pendingMessageElements || (this._pendingMessageElements = new Set());
-            this._pendingMessageElements.add(messageElement);
-            addedMessageCount++;
-          });
-        });
-
-        if (addedMessageCount > 0) this._scheduleMessageFlush();
+      // Not ready yet — poll with backoff, then subscribe once acquired.
+      this._msgDispatcherPoll = pollForDispatcher({
+        onAcquired: (dd) => {
+          this._msgDispatcherPoll = null;
+          if (!this.started) return; // stopped while we waited
+          this._msgDispatcher = dd;
+          this._subscribeMessageDispatcher();
+        },
+        onTimeout: () => {
+          this._msgDispatcherPoll = null;
+          this.errorLog?.('MESSAGE_DISPATCHER', 'FluxDispatcher unavailable after 30s — Dungeons will not react to messages');
+        },
+        onPoll: () => { if (!this.started) this._msgDispatcherPoll?.cancel?.(); },
       });
-
-      this._observers.add(this.messageObserver);
-      this._messageContainerRef = messageContainer;
-      // PERF: attributes/characterData false — we only care about added/removed nodes
-      this.messageObserver.observe(messageContainer, { childList: true, subtree: true, attributes: false, characterData: false });
-
-      // Event-driven reattach — replaces the prior 3s isConnected poll.
-      // The message container gets replaced by React on channel switches;
-      // SelectedChannelStore.addChangeListener fires when that happens.
-      // startMessageObserver is idempotent (stopMessageObserver runs first)
-      // and the surrounding retry path handles transient "no container
-      // yet" states.
-      if (this._messageContainerStore && this._messageContainerStoreListener) {
-        try { this._messageContainerStore.removeChangeListener(this._messageContainerStoreListener); } catch (_) {}
-        this._messageContainerStore = null;
-        this._messageContainerStoreListener = null;
-      }
-      try {
-        const SelectedChannelStore = BdApi.Webpack.getStore?.("SelectedChannelStore");
-        if (SelectedChannelStore && typeof SelectedChannelStore.addChangeListener === "function") {
-          this._messageContainerStoreListener = () => {
-            if (document.hidden) return;
-            if (!this.messageObserver || !this._messageContainerRef) return;
-            if (!this._messageContainerRef.isConnected) {
-              this.debugLog('MESSAGE_OBSERVER', 'Container removed from DOM, reattaching');
-              this.stopMessageObserver();
-              this.startMessageObserver();
-            }
-          };
-          SelectedChannelStore.addChangeListener(this._messageContainerStoreListener);
-          this._messageContainerStore = SelectedChannelStore;
-        }
-      } catch (_) {}
-    } else {
-      if (this._messageObserverRetryTimeoutId) return;
-
-      this._messageObserverRetryCount = (this._messageObserverRetryCount || 0) + 1;
-      const attempt = this._messageObserverRetryCount;
-      const retryDelayMs = Math.min(
-        30000,
-        Math.floor(2000 * Math.pow(1.35, Math.max(0, attempt - 1)))
-      );
-
-      this.debugLogOnce(
-        'MESSAGE_OBSERVER:NO_CONTAINER',
-        'MESSAGE_OBSERVER',
-        'No message container yet',
-        {
-          attempt,
-          retryDelayMs,
-        }
-      );
-
-      this._messageObserverRetryTimeoutId = this._setTrackedTimeout(() => {
-        this._messageObserverRetryTimeoutId = null;
-        if (this.started) this.startMessageObserver();
-      }, retryDelayMs);
+    } catch (error) {
+      this.errorLog?.('MESSAGE_DISPATCHER', 'init failed', error);
     }
   },
 
-  _scheduleMessageFlush() {
-    if (this._messageFlushTimeout) return;
-    this._messageFlushTimeout = this._setTrackedTimeout(() => {
-      this._messageFlushTimeout = null;
-      this._flushMessageQueue();
-    }, 100);
-  },
-
-  _flushMessageQueue() {
-    if (this._messageProcessingInFlight) return;
-    const pending = this._pendingMessageElements;
-    if (!pending || pending.size === 0) return;
-    if (!this.started || !this.settings?.enabled) return;
-
-    this._messageProcessingInFlight = true;
-    const run = async () => {
-      const MAX_PER_FLUSH = 10;
-      let processed = 0;
-      for (const el of pending) {
-        pending.delete(el);
-        processed++;
-        try {
-          // PERF: Sequential — prevents async runaway under message storms
-          await this.handleMessage(el);
-        } catch (error) {
-          this.errorLog('MESSAGE_OBSERVER', 'Failed processing message element', error);
-        }
-        if (processed >= MAX_PER_FLUSH) break;
-      }
-    };
-
-    run()
-      .catch((error) => this.errorLog('MESSAGE_OBSERVER', 'Message queue flush failed', error))
-      .finally(() => {
-        this._messageProcessingInFlight = false;
-        pending.size > 0 && this._scheduleMessageFlush();
-      });
+  _subscribeMessageDispatcher() {
+    if (!this._msgDispatcher || this._msgCreateHandler) return;
+    this._msgCreateHandler = (payload) => this._onMessageCreate(payload);
+    try {
+      this._msgDispatcher.subscribe('MESSAGE_CREATE', this._msgCreateHandler);
+      this.debugLog('MESSAGE_DISPATCHER', 'Subscribed to MESSAGE_CREATE');
+    } catch (error) {
+      this._msgCreateHandler = null;
+      this.errorLog?.('MESSAGE_DISPATCHER', 'subscribe failed', error);
+    }
   },
 
   stopMessageObserver() {
-    if (this.messageObserver) {
-      this.messageObserver.disconnect();
-      this._observers?.delete?.(this.messageObserver);
-      this.messageObserver = null;
+    if (this._msgDispatcher && this._msgCreateHandler) {
+      try { this._msgDispatcher.unsubscribe('MESSAGE_CREATE', this._msgCreateHandler); } catch (_) {}
     }
-    if (this._messageObserverRetryTimeoutId) {
-      clearTimeout(this._messageObserverRetryTimeoutId);
-      this._timeouts?.delete?.(this._messageObserverRetryTimeoutId);
-      this._messageObserverRetryTimeoutId = null;
+    this._msgCreateHandler = null;
+    this._msgDispatcher = null;
+    if (this._msgDispatcherPoll) {
+      try { this._msgDispatcherPoll.cancel?.(); } catch (_) {}
+      this._msgDispatcherPoll = null;
     }
-    if (this._messageContainerStore && this._messageContainerStoreListener) {
-      try { this._messageContainerStore.removeChangeListener(this._messageContainerStoreListener); } catch (_) {}
-      this._messageContainerStore = null;
-      this._messageContainerStoreListener = null;
-    }
-    this._messageObserverRetryCount = 0;
-    this._messageContainerRef = null;
-    if (this._messageFlushTimeout) {
-      clearTimeout(this._messageFlushTimeout);
-      this._timeouts.delete(this._messageFlushTimeout);
-      this._messageFlushTimeout = null;
-    }
-    this._pendingMessageElements?.clear?.();
-    // processedMessageIds intentionally NOT cleared here. The observer
-    // restarts on every channel switch (Discord remounts the message
-    // container; our SelectedChannelStore listener re-runs
-    // setupMessageObserver). Clearing the dedup set meant every channel
-    // switch re-attributed all currently-visible messages as "new" — they
-    // passed the timestamp gate (observerStartTime is plugin-lifetime,
-    // set in init-state.js) and re-triggered user-attack pipelines and
-    // dungeon spawns from already-processed messages.
-    //
-    // Memory is already bounded by the 1000-entry LRU eviction in
-    // handleMessage. Across a session of channel switching the set
-    // stabilizes around 1000 ids. Full release happens when the plugin
-    // itself stops (the entire `this` is torn down).
+    // processedMessageIds intentionally NOT cleared here (bounded by the 1000-id
+    // LRU below). Clearing it on channel switch would re-attribute every
+    // still-cached id as "new" and re-trigger spawns/attacks. Full release
+    // happens when the plugin stops and `this` is torn down.
   },
 
-  async handleMessage(messageElement) {
-    if (!this.settings.enabled) return;
-
+  _onMessageCreate(payload) {
     try {
-      // R3: cheapest/most-likely-to-reject first — dedup check is a single
-      // attribute read + Set lookup, cheaper than the querySelector('time')
-      // + potential fiber-walk in getMessageTimestamp below.
-      const messageId = this.getMessageId(messageElement);
-      if (messageId && this.processedMessageIds.has(messageId)) return;
+      if (!this.started || !this.settings?.enabled) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
 
-      const messageTimestamp = this.getMessageTimestamp(messageElement);
-      if (messageTimestamp && messageTimestamp < this.observerStartTime) return;
+      const msg = payload && payload.message;
+      if (!msg || !msg.id || !msg.channel_id || !msg.author || !msg.author.id) return;
 
-      if (messageId) {
-        this.processedMessageIds.add(messageId);
-        // Bound set size to prevent unbounded growth
-        if (this.processedMessageIds.size > 1000) {
-          const firstId = this.processedMessageIds.values().next().value;
-          this.processedMessageIds.delete(firstId);
-        }
+      // Only react to the channel the user is actually viewing — mirrors the
+      // old DOM observer, which only ever saw rendered messages in the open
+      // channel. Without this, MESSAGE_CREATE for other subscribed channels
+      // would change spawn frequency/distribution.
+      const viewedChannelId = this._getViewedChannelId();
+      if (!viewedChannelId || msg.channel_id !== viewedChannelId) return;
+
+      // Dedup (bounded LRU — same policy as the old observer).
+      if (this.processedMessageIds.has(msg.id)) return;
+      this.processedMessageIds.add(msg.id);
+      if (this.processedMessageIds.size > 1000) {
+        const firstId = this.processedMessageIds.values().next().value;
+        this.processedMessageIds.delete(firstId);
       }
 
-      const isUserMsg = this.isUserMessage(messageElement);
-      if (!isUserMsg) return;
+      // Realtime guard: MESSAGE_CREATE is live, but keep the "ignore anything
+      // before we started" gate for safety (e.g. a late-delivered dispatch).
+      const ts = this._msgTimestampMs(msg.timestamp);
+      if (ts && this.observerStartTime && ts < this.observerStartTime) return;
 
-      const channelInfo = this.getChannelInfo() || this.getChannelInfoFromLocation();
-      if (!channelInfo) return;
+      // User message = a human's own post: not a bot, not a webhook, and a
+      // normal (0) or reply (19) message type. System messages (joins, boosts,
+      // pins…) and bots must never spawn dungeons.
+      if (msg.author.bot || msg.webhook_id) return;
+      if (msg.type !== 0 && msg.type !== 19) return;
 
-      const now = Date.now();
-      const userChannelKey = `${channelInfo.guildId}_${channelInfo.channelId}`;
+      this._processDungeonMessage(msg);
+    } catch (error) {
+      this.errorLog?.('MESSAGE_CREATE', 'handler failed', error);
+    }
+  },
 
-      const isGuild = Boolean(channelInfo.guildId) && channelInfo.guildId !== 'DM';
-      if (isGuild) {
-        const globalCooldownRaw = Number(this.settings?.globalSpawnCooldown);
-        const globalCooldownDefault = Number(this.defaultSettings?.globalSpawnCooldown) || 60000;
-        const globalCooldown = Number.isFinite(globalCooldownRaw) && globalCooldownRaw >= 0
-          ? globalCooldownRaw
-          : globalCooldownDefault;
-        const inGlobalCooldown = this._lastGlobalSpawnTime &&
-          (now - this._lastGlobalSpawnTime) < globalCooldown;
+  // Spawn + user-attack logic, driven by the message object (ported from the
+  // old handleMessage). No DOM scraping — the element is fetched on demand only
+  // for the crit bonus, below.
+  _processDungeonMessage(msg) {
+    const channelInfo = this.getChannelInfo() || this.getChannelInfoFromLocation();
+    if (!channelInfo) return;
 
-        // Fast gate: skip expensive channel discovery while global spawn cooldown is active.
-        if (!inGlobalCooldown) {
-          // Pick a spawn channel in the same guild to distribute dungeons
-          const spawnTarget = this.pickSpawnChannel(channelInfo);
-          const channelKey = spawnTarget.channelKey || userChannelKey;
-          const spawnChannelInfo = spawnTarget.channelInfo || channelInfo;
-          this.checkDungeonSpawn(channelKey, spawnChannelInfo, { messageId }).catch((err) => {
-            this.errorLog('checkDungeonSpawn failed', err);
+    const now = Date.now();
+    const userChannelKey = `${channelInfo.guildId}_${channelInfo.channelId}`;
+    const isGuild = Boolean(channelInfo.guildId) && channelInfo.guildId !== 'DM';
+
+    if (isGuild) {
+      const globalCooldownRaw = Number(this.settings?.globalSpawnCooldown);
+      const globalCooldownDefault = Number(this.defaultSettings?.globalSpawnCooldown) || 60000;
+      const globalCooldown = Number.isFinite(globalCooldownRaw) && globalCooldownRaw >= 0
+        ? globalCooldownRaw
+        : globalCooldownDefault;
+      const inGlobalCooldown = this._lastGlobalSpawnTime &&
+        (now - this._lastGlobalSpawnTime) < globalCooldown;
+
+      // Fast gate: skip channel discovery while the global spawn cooldown holds.
+      if (!inGlobalCooldown) {
+        const spawnTarget = this.pickSpawnChannel(channelInfo);
+        const channelKey = spawnTarget.channelKey || userChannelKey;
+        const spawnChannelInfo = spawnTarget.channelInfo || channelInfo;
+        this.checkDungeonSpawn(channelKey, spawnChannelInfo, { messageId: msg.id }).catch((err) => {
+          this.errorLog('checkDungeonSpawn failed', err);
+        });
+      }
+    }
+
+    if (this.settings.userActiveDungeon === userChannelKey) {
+      const userSlowMultiplier = this.getEntityAttackSlowMultiplier(userChannelKey, 'user', 'user', now);
+      const effectiveUserAttackCooldown = this.getEffectiveUserAttackCooldownMs(
+        (this.settings.userAttackCooldown || 2000) * userSlowMultiplier,
+        this.settings.userAttackCooldown || 2000
+      );
+      if (now - this.lastUserAttackTime >= effectiveUserAttackCooldown) {
+        // Stamp the cooldown at decision time so the deferred own-message path
+        // below can't be re-entered by the next message.
+        this.lastUserAttackTime = now;
+
+        // The message element is used ONLY for the crit-damage bonus:
+        // checkCriticalHit() looks for CriticalHit's `.bd-crit-hit` class, and
+        // CriticalHit only ever styles the CURRENT user's OWN crits. So:
+        //   - other authors' messages never crit -> pass null, attack now.
+        //   - own messages MIGHT crit, but CriticalHit applies `.bd-crit-hit`
+        //     ASYNCHRONOUSLY (a double-rAF after this same MESSAGE_CREATE
+        //     dispatch, sometimes a 400ms straggler). Reading it synchronously
+        //     here misses it every time. Defer the lookup + attack ~120ms to
+        //     match the old observer's incidental 100ms flush delay, which is
+        //     what let the crit bonus land. Non-crit attacks stay instant.
+        if (this._isOwnAuthor(msg.author.id)) {
+          this._setTrackedTimeout(() => {
+            if (!this.started || !this.settings?.enabled) return;
+            const el = this._findMessageElementById(msg.channel_id, msg.id);
+            Promise.resolve(this.processUserAttack(userChannelKey, el)).catch((err) => {
+              this.errorLog('processUserAttack failed', err);
+            });
+          }, 120);
+        } else {
+          Promise.resolve(this.processUserAttack(userChannelKey, null)).catch((err) => {
+            this.errorLog('processUserAttack failed', err);
           });
         }
       }
-
-      if (this.settings.userActiveDungeon === userChannelKey) {
-        const userSlowMultiplier = this.getEntityAttackSlowMultiplier(
-          userChannelKey,
-          'user',
-          'user',
-          now
-        );
-        const effectiveUserAttackCooldown = this.getEffectiveUserAttackCooldownMs(
-          (this.settings.userAttackCooldown || 2000) * userSlowMultiplier,
-          this.settings.userAttackCooldown || 2000
-        );
-        if (now - this.lastUserAttackTime >= effectiveUserAttackCooldown) {
-          await this.processUserAttack(userChannelKey, messageElement);
-          this.lastUserAttackTime = now;
-        }
-      }
-    } catch (error) {
-      this.errorLog('Error handling message', error);
     }
   },
 
-  getMessageTimestamp(messageElement) {
+  // ── small helpers ──────────────────────────────────────────────────────────
+
+  _msgTimestampMs(ts) {
+    if (ts == null) return null;
+    if (typeof ts === 'number') return ts;
+    // Discord dispatch timestamps are usually ISO strings; sometimes a
+    // moment-like object with valueOf().
+    if (typeof ts === 'object' && typeof ts.valueOf === 'function') {
+      const v = ts.valueOf();
+      return typeof v === 'number' ? v : null;
+    }
+    const t = new Date(ts).getTime();
+    return Number.isNaN(t) ? null : t;
+  },
+
+  _getViewedChannelId() {
     try {
-      const timeElement = messageElement.querySelector('time');
-      if (timeElement) {
-        const datetime = timeElement.getAttribute('datetime');
-        if (datetime) {
-          return new Date(datetime).getTime();
-        }
+      const SelectedChannelStore = BdApi.Webpack.getStore?.('SelectedChannelStore');
+      if (SelectedChannelStore && typeof SelectedChannelStore.getChannelId === 'function') {
+        return SelectedChannelStore.getChannelId();
       }
-
-      const timestamp = messageElement.getAttribute('data-timestamp');
-      if (timestamp) {
-        return parseInt(timestamp);
+      const ChannelStore = BdApi.Webpack.getStore?.('ChannelStore');
+      if (ChannelStore && typeof ChannelStore.getChannelId === 'function') {
+        return ChannelStore.getChannelId();
       }
-
-      const reactKey = Object.keys(messageElement).find(
-        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-      );
-      if (reactKey) {
-        let fiber = messageElement[reactKey];
-        for (let i = 0; i < 20 && fiber; i++) {
-          const timestamp = fiber.memoizedProps?.message?.timestamp;
-          if (timestamp) return new Date(timestamp).getTime();
-          fiber = fiber.return;
-        }
-      }
-    } catch (e) { /* swallow */ }
+    } catch (_) {}
     return null;
   },
 
-  getMessageId(messageElement) {
+  _isOwnAuthor(authorId) {
     try {
-      const listItemId =
-        messageElement.getAttribute('data-list-item-id') ||
-        messageElement.closest('[data-list-item-id]')?.getAttribute('data-list-item-id');
-      if (listItemId) return listItemId;
-
-      const id = messageElement.getAttribute('id');
-      if (id) return id;
-
-      const reactKey = Object.keys(messageElement).find(
-        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-      );
-      if (reactKey) {
-        let fiber = messageElement[reactKey];
-        for (let i = 0; i < 20 && fiber; i++) {
-          const msgId = fiber.memoizedProps?.message?.id;
-          if (msgId) return String(msgId);
-          fiber = fiber.return;
-        }
-      }
-    } catch (e) { /* swallow */ }
-    return null;
+      const UserStore = BdApi.Webpack.getStore?.('UserStore');
+      const me = UserStore && UserStore.getCurrentUser ? UserStore.getCurrentUser() : null;
+      return !!(me && me.id === authorId);
+    } catch (_) {
+      return false;
+    }
   },
 
-  isUserMessage(messageElement) {
-    // STRICT: Only messages with a visible author element count as user messages.
-    // System messages (joins, boosts, pins, etc.) lack author headings and must NOT spawn dungeons.
-    const authorElement =
-      messageElement.querySelector('span[role="heading"]') ||
-      messageElement.querySelector(dc.sel.author) ||
-      dc.query(messageElement, "username") ||
-      dc.query(messageElement, "headerText");
-
-    if (!authorElement) return false;
-
-    const botBadge =
-      messageElement.querySelector('svg[aria-label*="bot" i]') ||
-      dc.query(messageElement, "botTag") ||
-      dc.query(messageElement, "bot");
-    if (botBadge) return false;
-
-    if (dc.query(messageElement, "systemMessage") ||
-        messageElement.closest(dc.sel.systemMessage)) return false;
-
-    return true;
-  }
+  // Exact lookup of a rendered message row by id. data-list-item-id is
+  // "chat-messages-<channelId>-<messageId>". Returns the row (which carries or
+  // contains CriticalHit's `.bd-crit-hit`), or null if not currently rendered.
+  _findMessageElementById(channelId, messageId) {
+    if (!messageId) return null;
+    try {
+      return document.querySelector(`[data-list-item-id="chat-messages-${channelId}-${messageId}"]`)
+        || document.querySelector(`[data-list-item-id$="-${messageId}"]`)
+        || null;
+    } catch (_) {
+      return null;
+    }
+  },
 };

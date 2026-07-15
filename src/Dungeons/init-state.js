@@ -208,7 +208,12 @@ module.exports = {
   },
 
   _initState() {
-    this.messageObserver = null;
+    // Message handling is FluxDispatcher-driven (see message-observer.js); the
+    // old MutationObserver field is gone. Dispatcher handle/handler are lazily
+    // created in startMessageObserver.
+    this._msgDispatcher = null;
+    this._msgCreateHandler = null;
+    this._msgDispatcherPoll = null;
     this._sessionToken = 0;
     this._mobIdCounter = 0;
     this._mobSpawnQueue = new Map();
