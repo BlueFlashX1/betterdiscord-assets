@@ -356,8 +356,19 @@ module.exports = {
   // rides stale/cached data.
   async preSplitShadowArmy(forceRecalculate = false) {
     if (this._preSplitInFlight) {
-      if (!forceRecalculate) return this._preSplitInFlight;
-      try { await this._preSplitInFlight; } catch (_) {}
+      if (!forceRecalculate) {
+        const coalesced = await this._preSplitInFlight;
+        // The in-flight run snapshotted its dungeon list at START (before the
+        // sort's setTimeout(0) yields). It may not cover a dungeon that became
+        // deployed-but-unallocated AFTER that snapshot. If any deployed dungeon
+        // is still missing an allocation, don't return this stale success —
+        // fall through to a fresh run so the late dungeon gets shadows.
+        if (!this._hasDeployedDungeonMissingAllocation?.()) {
+          return coalesced;
+        }
+      } else {
+        try { await this._preSplitInFlight; } catch (_) {}
+      }
     }
     const run = (async () => {
       try {
