@@ -171,6 +171,23 @@ module.exports = {
             }
             this.settings.settingsVersion = 4;
           }
+          if (currentVersion < 5) {
+            // v5 (2026-07-14): mob→boss pacing rebalance. The old defaults made
+            // the boss a side-show (75% shadow focus + a pure 3-min timer gate
+            // with 0 required kills). Upgrade saves still on those exact old
+            // values to the new "clear mobs, then boss" defaults; leave any
+            // deliberately-customised value untouched.
+            if (Number(this.settings?.shadowMobTargetShare) === 0.25) {
+              this.settings.shadowMobTargetShare = this.defaultSettings.shadowMobTargetShare;
+            }
+            if (Number(this.settings?.bossGateMinDurationMs) === 180000) {
+              this.settings.bossGateMinDurationMs = this.defaultSettings.bossGateMinDurationMs;
+            }
+            if (Number(this.settings?.bossGateRequiredMobKills) === 0) {
+              this.settings.bossGateRequiredMobKills = this.defaultSettings.bossGateRequiredMobKills;
+            }
+            this.settings.settingsVersion = 5;
+          }
         } catch (migrationError) {
           this.errorLog?.('SETTINGS', 'Migration failed, restoring backup', migrationError);
           this.settings = preMigrationBackup;

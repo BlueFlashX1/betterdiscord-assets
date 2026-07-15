@@ -23,12 +23,23 @@ module.exports = {
       mobTierNormalShare: 0.7,
       mobTierEliteShare: 0.25,
       mobTierChampionShare: 0.05,
-      shadowMobTargetShare: 0.25,
+      // Post-unlock shadow split between mobs and boss. Raised 0.25 -> 0.5
+      // (2026-07-14) so shadows keep clearing adds while fighting the boss
+      // instead of ~75% tunnelling the boss; still shifts toward the boss at
+      // low boss HP via shadowBossTargetShareLowBossHp. While the boss is
+      // GATED, shadows already target mobs 100% (getShadowBossTargetChance
+      // returns 0), so this only governs the post-unlock phase.
+      shadowMobTargetShare: 0.5,
       shadowBossTargetShareLowBossHp: 0.85,
       shadowBossFocusLowHpThreshold: 0.4,
       bossGateEnabled: true,
-      bossGateMinDurationMs: 180000,
-      bossGateRequiredMobKills: 0,
+      // Boss gate = clear-mobs-then-boss pacing. Was a pure 3-min timer with
+      // ZERO required kills, so mobs were a side-show. Now the gate needs a
+      // real mob cull (40 kills) plus a shorter 60s floor, so the mob phase is
+      // an actual phase. Mobs spawn continuously while the boss lives, so any
+      // finite kill count is always reachable — no unwinnable risk.
+      bossGateMinDurationMs: 60000,
+      bossGateRequiredMobKills: 40,
       shadowPressureScalingEnabled: false,
       shadowPressureMobScaleStep: 0.12,
       shadowPressureBossScaleStep: 0.18,
