@@ -345,6 +345,18 @@ module.exports = {
         // Each shadow deals damage for its real elapsed time; no scaling needed.
         const scaleFactor = 1;
 
+        // ARMY POWER (2026-07-14): a deliberate, tunable flat multiplier on all
+        // shadow damage (boss AND mobs) so the shadow horde hits hard — the
+        // "sheer size overwhelms" fantasy. Applied cleanly here, NOT by
+        // restoring the old double-role/behaviour inflation bug. Default 2.0
+        // (~restores the pre-fix striker power and then some); tune via
+        // settings.shadowDamageScalar.
+        const shadowDamageScalar = this.clampNumber(
+          Number.isFinite(this.settings?.shadowDamageScalar) ? this.settings.shadowDamageScalar : 2.0,
+          0.1,
+          20
+        );
+
         // TRACE: Log combat state every 10th tick
         if (this._combatTickCount % 10 === 0) {
           this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, slice=${maxShadowsToProcess}, cursor=${dungeon._rotationCursor}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
@@ -563,7 +575,7 @@ module.exports = {
               bossHpFraction,
               roleCombatContext,
             });
-            const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier));
+            const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier * shadowDamageScalar));
             totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier * domainMultiplier);
             // Shadow vs boss damage reduction — mirrors boss→shadow 0.6x
             const shadowBossReduction = C.SHADOW_VS_BOSS_DAMAGE_MULT || 0.35;
@@ -587,7 +599,7 @@ module.exports = {
                 bossHpFraction,
                 roleCombatContext,
               });
-              const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier));
+              const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier * shadowDamageScalar));
               const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier * domainMultiplier);
               if (unscaledDamage <= 0) continue;
 

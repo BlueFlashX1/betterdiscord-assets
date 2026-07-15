@@ -33,6 +33,11 @@ module.exports = {
       // (joined + attacking). Makes joining matter instead of deploy-and-idle.
       // 0.25 = +25%. Range 0–2.
       userParticipationDamageBonus: 0.25,
+      // Deliberate flat multiplier on all shadow damage (boss + mobs) so a large
+      // shadow army overwhelms by sheer size. 2.0 = double. Raise for more
+      // steamroll, lower for more challenge. (Not the old inflation bug — this
+      // is the clean, single-source power lever.)
+      shadowDamageScalar: 2.0,
       // Healer/support shadows actively restore HP to alive-damaged shadows
       // each combat tick (scaled by healer presence). Set false to disable.
       shadowHealerRestorationEnabled: true,
