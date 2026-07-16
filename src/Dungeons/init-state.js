@@ -53,6 +53,13 @@ module.exports = {
       // tick: O(1) arithmetic, real war-scale kill counts, zero per-entity cost.
       // Kills flow through _onMobKilled (XP/essence/gate credit all batched).
       warfrontEnabled: true,
+      // SOVEREIGN'S COMMAND: a species whose Grand Marshal is fielded fights
+      // with its leader's edge — offense sovereigns raise war output, defense
+      // sovereigns cut casualties, and led frontline shadows hit harder.
+      gmLeadershipEnabled: true,
+      gmLeadershipOffenseBonus: 0.2,
+      gmLeadershipCasualtyCut: 0.4,
+      gmLeadershipFrontlineBonus: 0.1,
       // Aggregate kills per surplus shadow per combat tick (~2s). 0.015 with a
       // 100k surplus army ≈ 1,500 kills/tick ≈ 45k/min — a Monarch host
       // (250k) falls in ~5 minutes of sustained war.

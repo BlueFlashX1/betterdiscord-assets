@@ -556,6 +556,11 @@ module.exports = {
               : (this.getShadowEffectiveStatsCached(shadow) || {}).perception || 0;
           const comboMultiplier = Math.min(2.0, 1 + (finalCombatData.comboHits || 0) * shadowPerception * 0.002);
 
+          // SOVEREIGN'S COMMAND: species-GM-on-field frontline bonus (1 when unled).
+          const leadershipMult = this._getShadowLeadershipMult
+            ? this._getShadowLeadershipMult(dungeon, shadow, assignedShadows)
+            : 1;
+
           if (bossAliveNow && bossAttacks > 0) {
             const perHitBossRaw = this.shadowArmy?.calculateShadowDamage
               ? this.shadowArmy.calculateShadowDamage(shadow, {
@@ -575,7 +580,7 @@ module.exports = {
               bossHpFraction,
               roleCombatContext,
             });
-            const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier * shadowDamageScalar));
+            const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier * shadowDamageScalar * leadershipMult));
             totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier * domainMultiplier);
             // Shadow vs boss damage reduction — mirrors boss→shadow 0.6x
             const shadowBossReduction = C.SHADOW_VS_BOSS_DAMAGE_MULT || 0.35;
@@ -599,7 +604,7 @@ module.exports = {
                 bossHpFraction,
                 roleCombatContext,
               });
-              const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier * shadowDamageScalar));
+              const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier * shadowDamageScalar * leadershipMult));
               const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier * domainMultiplier);
               if (unscaledDamage <= 0) continue;
 

@@ -65,27 +65,80 @@ module.exports = {
   // replaced (re-split / deploy), so the per-tick warfront read is O(ranks),
   // not O(army). Compressed shadow records carry `rank` top-level (IDB index
   // field), so this works for both compressed and full records.
-  _getWarRankHistogram(channelKey, dungeon, assigned) {
-    const cache = dungeon._warRankHist;
-    if (cache && cache.ref === assigned) return cache.counts;
+  _getShadowSpeciesKeyDg(s) {
+    return String(
+      s?.beastFamily || s?.bf || s?.beastType || s?.bt || s?.role || s?.ro || 'shadow'
+    );
+  },
+
+  // War intel for a dungeon's allocation, cached against allocation identity:
+  // - counts: effective-rank histogram (rank + grade bump) for the war math
+  // - leaders: species → sovereign specialization ('offense'/'defense') for
+  //   every species whose GRAND MARSHAL is fielded in THIS dungeon
+  // - speciesTroops / ledOffense / ledDefense: troop tallies for the buffs
+  // Recomputed only when the allocation array is replaced — O(assigned) once,
+  // O(1) per tick.
+  _getWarIntel(dungeon, assigned) {
+    const cache = dungeon._warIntel;
+    if (cache && cache.ref === assigned) return cache;
     // GRADE BUMP (lore: named marshals ARE monarch-tier — Beru/Igris fight far
     // above their nominal rank): General +0.5, Marshal +1, Grand Marshal +2
-    // effective rank steps in the mass battle. This is what lets an invested
-    // (essence-promoted) army raid hosts above its nominal rank, and it makes
-    // the grade economy matter at war scale.
+    // effective rank steps in the mass battle.
     const GRADE_BUMP = { General: 0.5, Marshal: 1, 'Grand Marshal': 2 };
     const counts = {}; // effectiveRankIndex (may be half-steps) → count
+    const speciesTroops = {};
+    const leaders = {}; // species → 'offense' | 'defense'
     if (Array.isArray(assigned)) {
       for (let i = 0; i < assigned.length; i++) {
         const s = assigned[i];
+        const grade = s?.grade || s?.gr || '';
         const baseIdx = this.getRankIndexValue(s?.rank || 'E');
-        const bump = GRADE_BUMP[s?.grade || s?.gr || ''] || 0;
-        const key = (baseIdx + bump).toFixed(1);
+        const key = (baseIdx + (GRADE_BUMP[grade] || 0)).toFixed(1);
         counts[key] = (counts[key] || 0) + 1;
+        const species = this._getShadowSpeciesKeyDg(s);
+        speciesTroops[species] = (speciesTroops[species] || 0) + 1;
+        // SOVEREIGN'S COMMAND: the species' Grand Marshal on the field buffs
+        // its own kind, themed by the sovereign's specialization (lore: Igris
+        // the swordmaster, Tusk's Hellfire, Iron's taunt, Beru's healing).
+        if (grade === 'Grand Marshal') {
+          const archetype = this._getShadowArchetypeForRole
+            ? this._getShadowArchetypeForRole(s)
+            : 'balanced';
+          leaders[species] =
+            archetype === 'tank' || archetype === 'support' ? 'defense' : 'offense';
+        }
       }
     }
-    dungeon._warRankHist = { ref: assigned, counts };
-    return counts;
+    let ledOffense = 0;
+    let ledDefense = 0;
+    for (const [species, spec] of Object.entries(leaders)) {
+      if (spec === 'offense') ledOffense += speciesTroops[species] || 0;
+      else ledDefense += speciesTroops[species] || 0;
+    }
+    const intel = {
+      ref: assigned,
+      counts,
+      leaders,
+      speciesTroops,
+      ledOffense,
+      ledDefense,
+      total: Array.isArray(assigned) ? assigned.length : 0,
+    };
+    dungeon._warIntel = intel;
+    return intel;
+  },
+
+  // SOVEREIGN'S COMMAND (frontline): a shadow fighting under its species'
+  // fielded Grand Marshal hits harder in the object-simulated skirmish too.
+  _getShadowLeadershipMult(dungeon, shadow, assigned) {
+    try {
+      if (this.settings?.gmLeadershipEnabled === false) return 1;
+      const intel = this._getWarIntel(dungeon, assigned);
+      if (!intel || !intel.leaders) return 1;
+      if (!intel.leaders[this._getShadowSpeciesKeyDg(shadow)]) return 1;
+      const raw = Number(this.settings?.gmLeadershipFrontlineBonus);
+      return 1 + this.clampNumber(Number.isFinite(raw) ? raw : 0.1, 0, 1);
+    } catch (_) { return 1; }
   },
 
   // ── WARFRONT: aggregate army-vs-host battle (O(1) per tick) ────────────────
@@ -136,7 +189,8 @@ module.exports = {
       //   2+ below   → ~0   (fodder cannot meaningfully cull a higher host)
       //   1 above    → 10×  (one general shreds ten lessers)
       //   2+ above   → 100× cap (functional annihilation)
-      const hist = this._getWarRankHistogram(channelKey, dungeon, assigned);
+      const intel = this._getWarIntel(dungeon, assigned);
+      const hist = intel.counts;
       const hostIdx = this.getRankIndexValue(dungeon.rank);
       let effPower = 0;
       let casualtyWeight = 0;
@@ -154,6 +208,20 @@ module.exports = {
       if (dungeon.userParticipating) {
         const bonusRaw = Number(this.settings?.userParticipationDamageBonus);
         effPower *= 1 + this.clampNumber(Number.isFinite(bonusRaw) ? bonusRaw : 0.25, 0, 2);
+      }
+      // SOVEREIGN'S COMMAND: species led by their fielded Grand Marshal fight
+      // harder. Offense sovereigns (Igris' blades, Tusk's Hellfire) raise the
+      // led troops' war output; defense sovereigns (Iron's taunt, Beru's
+      // healing) cut the led troops' casualties. Scaled by the LED share of
+      // the army, so a leaderless horde gains nothing — the user-visible edge
+      // of having each species' commander on the field.
+      if (intel.total > 0 && this.settings?.gmLeadershipEnabled !== false) {
+        const offBonusRaw = Number(this.settings?.gmLeadershipOffenseBonus);
+        const offBonus = this.clampNumber(Number.isFinite(offBonusRaw) ? offBonusRaw : 0.2, 0, 1);
+        const defCutRaw = Number(this.settings?.gmLeadershipCasualtyCut);
+        const defCut = this.clampNumber(Number.isFinite(defCutRaw) ? defCutRaw : 0.4, 0, 0.9);
+        effPower *= 1 + offBonus * (intel.ledOffense / intel.total);
+        casualtyWeight *= 1 - defCut * (intel.ledDefense / intel.total);
       }
 
       const kills = Math.min(
@@ -182,8 +250,10 @@ module.exports = {
         const fallen = (dungeon.war.fallen || 0).toLocaleString();
         const reserves = dungeon.war.reserves.toLocaleString();
         const lost = (dungeon.war.shadowsFallen || 0).toLocaleString();
+        const sovereignCount = Object.keys(intel.leaders || {}).length;
+        const led = sovereignCount > 0 ? ` ${sovereignCount} sovereign${sovereignCount > 1 ? 's' : ''} command the field.` : '';
         this.showToast(
-          `⚔ Warfront ${dungeon.name}: ${fallen} of the host annihilated — ${reserves} remain. ${lost} shadows fell and rose again.`,
+          `⚔ Warfront ${dungeon.name}: ${fallen} of the host annihilated — ${reserves} remain. ${lost} shadows fell and rose again.${led}`,
           'info'
         );
       }

@@ -34,6 +34,10 @@ function tick(histogram, hostRank, reserves, { participating = false } = {}) {
     casualtyWeight += count * clamp(Math.pow(10, -diff), 0.001, 100);
   }
   if (participating) effPower *= 1.25; // commander's presence
+  // SOVEREIGN'S COMMAND: Grand-Marshal-led species share of the army.
+  const { ledOffenseShare = 0, ledDefenseShare = 0 } = arguments[3] || {};
+  effPower *= 1 + 0.2 * ledOffenseShare;
+  casualtyWeight *= 1 - 0.4 * ledDefenseShare;
   const kills = Math.min(reserves, PER_TICK_CAP, Math.floor(effPower * RATE));
   const surplus = Object.values(histogram).reduce((a, b) => a + b, 0);
   const fallen = Math.min(surplus, Math.floor(casualtyWeight * 0.0003));
@@ -97,6 +101,15 @@ for (const [name, hist, hostRank, host, opts] of scenarios) {
 const marshals = tick({ 'S|1': 10000 }, 'SS', 1e9).kills;
 const evenSS = tick({ SS: 10000 }, 'SS', 1e9).kills;
 assert(Math.abs(marshals - evenSS) <= 1, `Marshal grade = +1 effective rank (${marshals} vs ${evenSS})`);
+// 7. Sovereign's Command: an offense-led army out-kills an identical unled one
+//    by the leadership bonus; a defense-led army bleeds 40% less.
+const unled = tick({ S: 50000 }, 'S', 1e9, {});
+const offLed = tick({ S: 50000 }, 'S', 1e9, { ledOffenseShare: 1 });
+const defLed = tick({ S: 50000 }, 'S', 1e9, { ledDefenseShare: 1 });
+assert(Math.abs(offLed.kills - Math.floor(unled.kills * 1.2)) <= 1,
+  `offense sovereign: +20% war output (${offLed.kills} vs ${unled.kills} unled)`);
+assert(defLed.fallen <= Math.ceil(unled.fallen * 0.6),
+  `defense sovereign: -40% casualties (${defLed.fallen} vs ${unled.fallen} unled)`);
 
 console.log(failures === 0 ? '\nALL INVARIANTS PASS' : `\n${failures} INVARIANT(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);
