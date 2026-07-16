@@ -23,6 +23,7 @@ Object.assign(
   require('./stats-integration'),
   require('./channel-discovery'),
   require('./message-observer'),
+  require('./sovereign-doctrines'),
   require('./spawn-core'),
   require('./spawn-wave-builders'),
   require('./player-flow'),

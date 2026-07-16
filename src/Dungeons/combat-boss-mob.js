@@ -122,8 +122,11 @@ module.exports = {
       );
       // Enrage speed boost: reduces effective cooldown
       const enrageSpeedMult = this.getEntityEnrageSpeedMultiplier?.(channelKey, 'boss', 'boss', now) || 1;
+      // SOVEREIGN DOCTRINE (Glacial Dominion / Constrictor's Coils): a fielded
+      // freeze/bind sovereign slows the boss's attack cadence.
+      const sovereignSlow = 1 + (Number(dungeon.war?._sovereignBossSlow) || 0);
       const bossCooldown = this.getEffectiveAttackCooldownMs(
-        (dungeon.boss.attackCooldown || activeInterval) * bossSlowMultiplier * enrageSpeedMult,
+        (dungeon.boss.attackCooldown || activeInterval) * bossSlowMultiplier * enrageSpeedMult * sovereignSlow,
         activeInterval
       );
 

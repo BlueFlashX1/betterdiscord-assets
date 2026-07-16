@@ -212,7 +212,10 @@ module.exports = {
     if (this.settings?.shadowHealerRestorationEnabled === false) return;
 
     const ctx = this.getRoleCombatTickContext?.(channelKey);
-    const healFraction = ctx && ctx.enabled ? (ctx.shadowHealFraction || 0) : 0;
+    let healFraction = ctx && ctx.enabled ? (ctx.shadowHealFraction || 0) : 0;
+    // SOVEREIGN DOCTRINE (Beru's Grace / Battle Hymns): a fielded healer
+    // sovereign amplifies the army's restoration.
+    healFraction *= 1 + (Number(dungeon.war?._sovereignHealBoost) || 0);
     if (!(healFraction > 0)) return;
 
     const shadowHP = dungeon.shadowHP;

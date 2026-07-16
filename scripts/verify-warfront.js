@@ -111,5 +111,24 @@ assert(Math.abs(offLed.kills - Math.floor(unled.kills * 1.2)) <= 1,
 assert(defLed.fallen <= Math.ceil(unled.fallen * 0.6),
   `defense sovereign: -40% casualties (${defLed.fallen} vs ${unled.fallen} unled)`);
 
+// ── Sovereign doctrine invariants (real table from src/Dungeons/sovereign-doctrines.js) ──
+const { SPECIES_DOCTRINES: D } = require('../src/Dungeons/sovereign-doctrines');
+console.log('\n── Doctrine invariants ──');
+assert(Object.keys(D).length === 26, `all 26 species have a doctrine (${Object.keys(D).length})`);
+const names = Object.values(D).map((d) => d.name);
+assert(new Set(names).size === names.length, 'every doctrine name is unique');
+assert(D.yeti.casualtyMult === 0.6 && D.yeti.bossSlow > 0, 'Yeti freezes: casualties cut AND boss slowed');
+assert(D.tank.reflectPct > 0, 'Tank reflects attacks back at the host');
+assert(D.golem.casualtyMult <= 0.5, 'Golem taunt: largest damage soak (casualties <= 0.5x)');
+assert(D.wyvern.burnAttrition > 0 && D.dragon.burnAttrition > 0, 'Wyvern/Dragon burn over time');
+assert(D.wolf.comboRamp > 0 && D.wolf.comboMax >= 0.5, 'Wolf pack combo ramps with consecutive ticks');
+assert(D.ranger.executeBonus >= 0.5, 'Ranger executes the wounded host fastest');
+assert(D.berserker.casualtyMult > 1, 'Berserker bloodrage is a real tradeoff (more casualties)');
+assert(D.healer.healBoost > 0 && D.healer.casualtyMult < 1, 'Healer sovereign mends and shields');
+// burn pool math: 1000 kills at wyvern 0.25 -> 250 lingering kills next tick
+assert(Math.floor(1000 * D.wyvern.burnAttrition) === 250, 'Skyfire: 25% of kills linger as burn deaths');
+// combo math: wolf at 10 consecutive ticks -> +50% (capped)
+assert(Math.min(D.wolf.comboMax, 10 * D.wolf.comboRamp) === 0.5, 'Pack Momentum caps at +50%');
+
 console.log(failures === 0 ? '\nALL INVARIANTS PASS' : `\n${failures} INVARIANT(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

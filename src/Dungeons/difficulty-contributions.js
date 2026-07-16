@@ -101,19 +101,16 @@ module.exports = {
         // its own kind, themed by the sovereign's specialization (lore: Igris
         // the swordmaster, Tusk's Hellfire, Iron's taunt, Beru's healing).
         if (grade === 'Grand Marshal') {
-          const archetype = this._getShadowArchetypeForRole
-            ? this._getShadowArchetypeForRole(s)
-            : 'balanced';
-          leaders[species] =
-            archetype === 'tank' || archetype === 'support' ? 'defense' : 'offense';
+          leaders[species] = { doctrine: this._getSovereignDoctrine(species, s) };
         }
       }
     }
     let ledOffense = 0;
     let ledDefense = 0;
-    for (const [species, spec] of Object.entries(leaders)) {
-      if (spec === 'offense') ledOffense += speciesTroops[species] || 0;
-      else ledDefense += speciesTroops[species] || 0;
+    for (const [species, led] of Object.entries(leaders)) {
+      const d = led.doctrine || {};
+      if ((d.casualtyMult || 1) < 1 || d.healBoost) ledDefense += speciesTroops[species] || 0;
+      else ledOffense += speciesTroops[species] || 0;
     }
     const intel = {
       ref: assigned,
@@ -130,15 +127,18 @@ module.exports = {
 
   // SOVEREIGN'S COMMAND (frontline): a shadow fighting under its species'
   // fielded Grand Marshal hits harder in the object-simulated skirmish too.
+  // Returns { mob, boss } per-hit multipliers for a frontline shadow fighting
+  // under its species' sovereign doctrine (both 1 when unled).
   _getShadowLeadershipMult(dungeon, shadow, assigned) {
     try {
-      if (this.settings?.gmLeadershipEnabled === false) return 1;
+      if (this.settings?.gmLeadershipEnabled === false) return { mob: 1, boss: 1 };
       const intel = this._getWarIntel(dungeon, assigned);
-      if (!intel || !intel.leaders) return 1;
-      if (!intel.leaders[this._getShadowSpeciesKeyDg(shadow)]) return 1;
-      const raw = Number(this.settings?.gmLeadershipFrontlineBonus);
-      return 1 + this.clampNumber(Number.isFinite(raw) ? raw : 0.1, 0, 1);
-    } catch (_) { return 1; }
+      const led = intel?.leaders?.[this._getShadowSpeciesKeyDg(shadow)];
+      if (!led || !led.doctrine) return { mob: 1, boss: 1 };
+      const d = led.doctrine;
+      const base = 1 + this.clampNumber(Number(d.frontlineDmg) || 0, 0, 1);
+      return { mob: base, boss: base * this.clampNumber(Number(d.bossDmgMult) || 1, 1, 2) };
+    } catch (_) { return { mob: 1, boss: 1 }; }
   },
 
   // ── WARFRONT: aggregate army-vs-host battle (O(1) per tick) ────────────────
@@ -209,31 +209,47 @@ module.exports = {
         const bonusRaw = Number(this.settings?.userParticipationDamageBonus);
         effPower *= 1 + this.clampNumber(Number.isFinite(bonusRaw) ? bonusRaw : 0.25, 0, 2);
       }
-      // SOVEREIGN'S COMMAND: species led by their fielded Grand Marshal fight
-      // harder. Offense sovereigns (Igris' blades, Tusk's Hellfire) raise the
-      // led troops' war output; defense sovereigns (Iron's taunt, Beru's
-      // healing) cut the led troops' casualties. Scaled by the LED share of
-      // the army, so a leaderless horde gains nothing — the user-visible edge
-      // of having each species' commander on the field.
+      // SOVEREIGN DOCTRINES: each fielded Grand Marshal grants its species a
+      // SIGNATURE ability (Yeti freezes the host, Tank reflects, Wolf ramps a
+      // pack combo, Ranger executes the wounded…). Combined per tick from the
+      // doctrine table, weighted by led troop share — O(species).
+      let doctrine = null;
       if (intel.total > 0 && this.settings?.gmLeadershipEnabled !== false) {
-        const offBonusRaw = Number(this.settings?.gmLeadershipOffenseBonus);
-        const offBonus = this.clampNumber(Number.isFinite(offBonusRaw) ? offBonusRaw : 0.2, 0, 1);
-        const defCutRaw = Number(this.settings?.gmLeadershipCasualtyCut);
-        const defCut = this.clampNumber(Number.isFinite(defCutRaw) ? defCutRaw : 0.4, 0, 0.9);
-        effPower *= 1 + offBonus * (intel.ledOffense / intel.total);
-        casualtyWeight *= 1 - defCut * (intel.ledDefense / intel.total);
+        const hostWounded = dungeon.war.reserves < (Number(dungeon.mobs?.mobCapacity) || Infinity) * 0.5;
+        doctrine = this._combineSovereignDoctrines(dungeon, intel, hostWounded);
+        effPower *= doctrine.killMult * (1 + doctrine.executeBonus);
+        casualtyWeight *= doctrine.casualtyMult;
       }
 
-      const kills = Math.min(
+      // Skyfire/venom attrition: a share of last tick's kills lingers as
+      // damage-over-time deaths in the host, even before this tick's blows.
+      const burnPool = Math.floor(dungeon.war._doctrine?.burnPool || 0);
+
+      let kills = Math.min(
         dungeon.war.reserves,
         perTickCap,
-        Math.floor(effPower * rate)
+        Math.floor(effPower * rate) + burnPool
       );
+      // Aegis Riposte: a share of the shadows' own casualties is dealt straight
+      // back — the host bleeds for every shadow it fells.
+      if (doctrine && doctrine.reflectPct > 0) {
+        const provisionalFallen = Math.floor(casualtyWeight * 0.0003);
+        kills = Math.min(dungeon.war.reserves, kills + Math.floor(provisionalFallen * doctrine.reflectPct));
+      }
       if (kills > 0) {
         // Existing pipeline: gate-kill credit, batched XP, batched essence,
         // war-reserve depletion (all inside _onMobKilled).
         this._onMobKilled(channelKey, dungeon, dungeon.rank, kills);
+        // Hunt doctrines: extra essence from led kills (kill-equivalents fed
+        // into the existing batched essence pipeline).
+        if (doctrine && doctrine.essenceBonus > 0) {
+          dungeon._pendingEssence = (dungeon._pendingEssence || 0) + Math.floor(kills * doctrine.essenceBonus);
+        }
       }
+      if (dungeon.war._doctrine) {
+        dungeon.war._doctrine.burnPool = doctrine ? Math.max(0, Math.floor((kills - burnPool) * doctrine.burnAttrition)) : 0;
+      }
+      if (doctrine) this._advanceDoctrineState(dungeon, intel, kills);
 
       // Casualties of war (report-only — the shadows rise again): scales with
       // the host's rank advantage. Even-rank war ≈ 0.03% of engaged per tick;
