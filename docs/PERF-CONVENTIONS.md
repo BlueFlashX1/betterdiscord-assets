@@ -168,6 +168,19 @@ Dungeons level/rank toasts debug-gated); Senses jumpToMessage click-to-jump +
 card imageUrl media + duration→timeout fix; extractPresenceUpdates redundant
 direct-fallback deleted; FeedTab 300ms debounce; guild-feed batch trim.
 
+Fixed 2026-07-17 (post-feature audit — WARFRONT / SOVEREIGN'S COMMAND / COMMAND-
+HIERARCHY surface, the only code added since the last perf commit 5318be5):
+Dungeons `getBossGateRuntimeConfig` RANK_KILL_MULT object literal hoisted to a
+module-scope frozen const (was reallocated per boss-hit / per shadow-combat tick
+— R3); ShadowArmy `_buildSpeciesGradeCensus` write-gen gated (`_speciesCensusGen`
+vs `_armyWriteGen` + `genAtStart` mid-scan guard) so the 5-min periodic full-store
+census scan (281k records) SKIPS when the army is unmutated — same primitive as
+the hourly-compression gate (officer counts stay live via `_recordOfficerPromotion`;
+per-species totals move only on extraction/delete, both of which bump the gen). The
+rest of the new surface was verified R1-R10 conformant: WARFRONT genuinely O(1)/tick
+(identity-cached war intel), SOVEREIGN doctrines O(species) pure arithmetic, no new
+scans/timers/observers.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

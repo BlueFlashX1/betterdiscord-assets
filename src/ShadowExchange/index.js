@@ -625,26 +625,33 @@ module.exports = class ShadowExchange {
         return this.getFallbackShadow();
       }
 
-      const withPower = available.map((shadow) => {
-        let power = 0;
+      // Single linear pass for the global-minimum-power shadow: no intermediate
+      // array and no O(n log n) sort (this was sorting the whole available army
+      // just to read [0]). Strict `<` keeps the first-encountered minimum, which
+      // is identical to the prior stable-sort's withPower[0].
+      const shadowPower = (shadow) => {
         try {
           if (typeof saInstance.calculateShadowPowerCached === "function") {
-            power = Number(saInstance.calculateShadowPowerCached(shadow)) || 0;
-          } else if (typeof saInstance.getShadowEffectiveStats === "function") {
-            const stats = saInstance.getShadowEffectiveStats(shadow);
-            power = Object.values(stats).reduce((sum, v) => sum + (Number(v) || 0), 0);
-          } else {
-            power = Number(shadow.strength) || 0;
+            return Number(saInstance.calculateShadowPowerCached(shadow)) || 0;
           }
+          if (typeof saInstance.getShadowEffectiveStats === "function") {
+            const stats = saInstance.getShadowEffectiveStats(shadow);
+            return Object.values(stats).reduce((sum, v) => sum + (Number(v) || 0), 0);
+          }
+          return Number(shadow.strength) || 0;
         } catch (_) {
-          power = Number(shadow.strength) || 0;
+          return Number(shadow.strength) || 0;
         }
-        return { shadow, power };
-      });
-
-      withPower.sort((a, b) => a.power - b.power);
-
-      const weakest = withPower[0].shadow;
+      };
+      let weakest = available[0];
+      let weakestPower = shadowPower(weakest);
+      for (let i = 1; i < available.length; i++) {
+        const p = shadowPower(available[i]);
+        if (p < weakestPower) {
+          weakestPower = p;
+          weakest = available[i];
+        }
+      }
       return {
         id: weakest.id,
         name: weakest.roleName || weakest.role || "Shadow Soldier",
@@ -682,10 +689,6 @@ module.exports = class ShadowExchange {
       return Math.max(0, FALLBACK_SHADOWS.length - this.settings.waypoints.length);
     }
     try {
-      // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
-      const all = saInstance.getShadowSnapshot?.() || await saInstance.getAllShadows();
-      if (!Array.isArray(all)) return 0;
-
       // Exclude shadows deployed by ShadowSenses to prevent double-counting
       let sensesDeployedIds = new Set();
       try {
@@ -698,6 +701,28 @@ module.exports = class ShadowExchange {
         }
       } catch (_) { /* ShadowSenses unavailable — proceed without exclusion */ }
 
+      // WARM PATH: ShadowArmy's shared snapshot is in memory — count it exactly
+      // (identical to what the old code returned whenever the snapshot was fresh).
+      const snapshot = saInstance.getShadowSnapshot?.();
+      if (Array.isArray(snapshot)) {
+        return snapshot.filter((s) => s?.id && !this.isShadowMarked(s.id) && !sensesDeployedIds.has(String(s.id))).length;
+      }
+
+      // COLD PATH: the 2s snapshot has expired. This is a display count, so
+      // approximate from ShadowArmy's O(1) IDB record count (store.count()) minus
+      // the marked + deployed sets, instead of a full 281k-record store scan
+      // (R1 — the old fallback froze the UI for seconds). Exactness returns on the
+      // next warm snapshot; a small marked/deployed overlap only under-counts.
+      const sm = saInstance.storageManager;
+      if (sm && typeof sm.getTotalCount === "function") {
+        const total = Number(await sm.getTotalCount()) || 0;
+        const markedCount = this.getMarkedShadowIds?.()?.size || 0;
+        return Math.max(0, total - markedCount - sensesDeployedIds.size);
+      }
+
+      // Last resort (no count API exposed): the previous full read.
+      const all = await saInstance.getAllShadows();
+      if (!Array.isArray(all)) return 0;
       return all.filter((s) => s?.id && !this.isShadowMarked(s.id) && !sensesDeployedIds.has(String(s.id))).length;
     } catch (_) {
       return 0;

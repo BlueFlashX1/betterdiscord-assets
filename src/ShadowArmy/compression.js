@@ -905,7 +905,19 @@ module.exports = {
     if (!force && this._speciesCensus && now - (this._speciesCensusTime || 0) < 300000) {
       return this._speciesCensus;
     }
+    // Write-generation gate (R1): once the 5-min TTL lapses, only re-stream the
+    // whole store if the army was actually mutated since the last census. Officer
+    // counts are kept live incrementally by _recordOfficerPromotion; per-species
+    // totals only move on extraction/delete, both of which bump _armyWriteGen. So
+    // when the gen is unchanged the cached census is still exact -- skip the
+    // 281k-record scan and just extend the TTL. (Same primitive as the hourly
+    // compression pass.)
+    if (!force && this._speciesCensus && (this._armyWriteGen || 0) === (this._speciesCensusGen || 0)) {
+      this._speciesCensusTime = now;
+      return this._speciesCensus;
+    }
     if (this._speciesCensusInFlight) return this._speciesCensusInFlight;
+    const genAtStart = this._armyWriteGen || 0;
     const run = (async () => {
       const census = {};
       const bump = (s) => {
@@ -926,6 +938,10 @@ module.exports = {
         }
         this._speciesCensus = census;
         this._speciesCensusTime = Date.now();
+        // Record the gen captured BEFORE the scan: a mutation landing mid-scan
+        // bumps _armyWriteGen past genAtStart, leaving the gate dirty so the next
+        // cycle rebuilds (mid-pass mutations are never masked).
+        this._speciesCensusGen = genAtStart;
         return census;
       } finally {
         this._speciesCensusInFlight = null;

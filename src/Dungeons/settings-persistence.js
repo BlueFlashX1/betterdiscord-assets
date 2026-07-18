@@ -1,5 +1,14 @@
 const { DungeonStorageManager, MobBossStorageManager } = require('./storage');
 
+// Rank -> boss-gate kill multiplier. Hoisted to module scope (frozen) because
+// getBossGateRuntimeConfig runs on the combat hot path (per boss-hit and per
+// shadow-combat tick); rebuilding this constant literal every call was pure
+// allocation churn. (R3)
+const RANK_KILL_MULT = Object.freeze({
+  E: 0.4, D: 0.5, C: 0.75, B: 1.25, A: 2, S: 3, SS: 4, SSS: 5,
+  'SSS+': 6.5, NH: 8, Monarch: 9, 'Monarch+': 10,
+});
+
 module.exports = {
   async initStorage() {
     try {
@@ -322,10 +331,6 @@ module.exports = {
       Number.isFinite(requiredMobKillsRaw) && requiredMobKillsRaw >= 0
         ? Math.floor(requiredMobKillsRaw)
         : this.defaultSettings.bossGateRequiredMobKills;
-    const RANK_KILL_MULT = {
-      E: 0.4, D: 0.5, C: 0.75, B: 1.25, A: 2, S: 3, SS: 4, SSS: 5,
-      'SSS+': 6.5, NH: 8, Monarch: 9, 'Monarch+': 10,
-    };
     const killMult = dungeonRank != null ? (RANK_KILL_MULT[dungeonRank] ?? 1) : 1;
     let requiredMobKills = Math.max(0, Math.round(baseKills * killMult));
     // WARFRONT gate floor: when the gate's host size is known, the general
