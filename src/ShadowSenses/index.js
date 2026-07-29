@@ -10,7 +10,6 @@ const {
   STARTUP_REPORT_ARTWORK_FALLBACK_URL,
   STARTUP_TOAST_GRACE_MS,
   TRANSITION_ID,
-  WIDGET_SPACER_ID,
 } = require("./constants");
 const { loadSettings, saveSettings } = require("../shared/settings");
 const { DeploymentManager } = require("./deployment-manager");
@@ -436,30 +435,8 @@ module.exports = class ShadowSenses {
     this.settings = { ...DEFAULT_SETTINGS };
     this._stopped = true;
 
-    // Widget dirty-flag with event emission. Setter fires 'dirty' on
-    // every false→true transition so the SensesWidget React component
-    // can subscribe instead of polling every 3s. All ~8 existing write
-    // sites across this file, plugin-ui-methods.js, components.js,
-    // senses-engine-events.js go through the setter unchanged.
-    this._widgetBus = new EventTarget();
-    this.__widgetDirty = false;
-    Object.defineProperty(this, "_widgetDirty", {
-      get() { return this.__widgetDirty; },
-      set(value) {
-        const wasFalsy = !this.__widgetDirty;
-        this.__widgetDirty = !!value;
-        if (this.__widgetDirty && wasFalsy && this._widgetBus) {
-          this._widgetBus.dispatchEvent(new Event("dirty"));
-        }
-      },
-      configurable: true,
-      enumerable: true,
-    });
-
     this._dispatcherPollHandle = null;
-    this._widgetReinjectTimeout = null;
     this._unpatchContextMenu = null;
-    this._layoutBusUnsub = null;
     this.sensesEngine = null;
     this.deploymentManager = null;
     this._components = null;
@@ -500,7 +477,6 @@ module.exports = class ShadowSenses {
       this.loadSettings();
       this._stopped = false;
       this._sensesResourcesActive = false;
-      this._widgetDirty = true;
       this._panelOpen = false;
       this._transitionNavTimeout = null;
       this._transitionCleanupTimeout = null;
@@ -621,19 +597,6 @@ module.exports = class ShadowSenses {
 
     // Header icon
     this.stopSensesHeaderIcon();
-
-    // Widget + observer
-    if (this._layoutBusUnsub) {
-      this._layoutBusUnsub();
-      this._layoutBusUnsub = null;
-    }
-    clearTimeout(this._widgetReinjectTimeout);
-    this._widgetReinjectTimeout = null;
-    this.removeWidget();
-    try {
-      const spacer = document.getElementById(WIDGET_SPACER_ID);
-      if (spacer) spacer.remove();
-    } catch (_) {}
 
     // ESC handler
     if (this._escUnsub) {

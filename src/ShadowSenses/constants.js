@@ -1,8 +1,6 @@
 const PLUGIN_NAME = "ShadowSenses";
 const PLUGIN_VERSION = "1.1.5";
 const STYLE_ID = "shadow-senses-css";
-const WIDGET_ID = "shadow-senses-widget";
-const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
 const PANEL_CONTAINER_ID = "shadow-senses-panel-root";
 const TRANSITION_ID = "shadow-senses-transition-overlay";
 const GLOBAL_UTILITY_FEED_ID = "__shadow_senses_global__";
@@ -20,7 +18,6 @@ const GUILD_FEED_CAP = 5000;
 const GLOBAL_FEED_CAP = 25000;
 const FEED_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const PURGE_INTERVAL_MS = 10 * 60 * 1000;
-const WIDGET_REINJECT_DELAY_MS = 300;
 const STARTUP_TOAST_GRACE_MS = 5000;
 const DEFAULT_TYPING_ALERT_COOLDOWN_MS = 15000;
 const BURST_WINDOW_MS = 20000;
@@ -114,7 +111,4 @@ module.exports = {
   STATUS_TOAST_TIMEOUT_MS,
   STYLE_ID,
   TRANSITION_ID,
-  WIDGET_ID,
-  WIDGET_REINJECT_DELAY_MS,
-  WIDGET_SPACER_ID,
 };

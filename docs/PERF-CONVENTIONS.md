@@ -195,10 +195,41 @@ stale _domNodeAddedTime null-out). Kept deliberately (do NOT re-flag): ShadowArm
 deleteShadow/_deleteShadowsByIds (deleteShadowsBatch precedent — sound deletion API
 family); ShadowSenses getWatchFocusForUser/isPriorityTarget (added 2026-07-13 with
 watch-focus feature, awaiting wiring); HSLDockAutoHide isCursorNearBottom (documented
-DevTools debug alias). OPEN USER DECISION: ShadowSenses members-list widget
-(injectWidget/setupWidgetObserver, plugin-ui-methods.js:99-206) has NEVER been wired —
-no call site in git history since the May snapshot; restore (wire in start()) or delete
-(~120 lines + removeWidget/stop() plumbing).
+DevTools debug alias). RESOLVED 2026-07-28 (user approved delete): ShadowSenses members-list widget REMOVED
+entirely — it was never wired (no injectWidget/setupWidgetObserver call site in any
+commit; only stop()-side teardown existed) and the wired header eye-icon already
+provides identical function (unread badge + open panel). Removed: injectWidget/
+removeWidget/setupWidgetObserver/_getMembersWrap (plugin-ui-methods), SensesWidget
+component + export, the _widgetDirty defineProperty/_widgetBus EventTarget infra and
+all 11 dirty-writer sites (engine ×6, ui-methods ×3, components, index), WIDGET_*
+constants, widget CSS, stop() teardown block, now-orphaned hasSignals/hasStateChanges
+accumulators and the _PluginUtils/_ReactUtils import. Do NOT reintroduce a members-
+sidebar entry point without a fresh design decision.
+
+Fixed 2026-07-28 (V8 shape/monomorphism lens — web.dev/speed-v8 + v8.dev/elements-kinds
+rules applied to hot paths): Dungeons _lastResurrectionAttempt converted plain-object→Map
+at all 3 sites (combat-shadow-execution, combat-shadow-support LEAK-2 prune,
+difficulty-contributions batched-resurrection) — repeated `delete obj[key]` in the combat
+tick forces V8 dictionary mode; Map matches the existing _shadowLastProcessed pattern
+incl. instanceof-defensive re-init (cooldowns are combat-ephemeral; reset-on-reload
+precedent already accepted for _shadowLastProcessed). ShadowArmy decompress markers
+`_compressed`/`_ultraCompressed` REMOVED from both decompress templates — zero readers
+anywhere (the "UI-only" comment at the save-path strip site was stale); they guaranteed
+a hidden-class split between fresh and decompressed full records; the strip-site
+destructuring stays as legacy armor for in-memory records. Verified non-issues (do NOT
+re-flag): shadow creation is clean-by-construction (all growth fields in all 3 creation
+templates — the lazy guards in applyNaturalGrowth are legacy-record armor that never
+fires post-heal); no `new Array(n)` holes, no hot-path `delete` remains, compact stat
+arrays are uniformly numeric (PACKED_SMI/DOUBLE safe).
+
+Parked (V8-lens, needs own wave + runtime verification): fresh vs tier-1 vs tier-2
+decompressed full-record property ORDER harmonization (3 templates, insertion order
+defines hidden class; compression schema is delicate — field-ownership table) — only
+worth it if profiling shows army-loop polymorphism actually hurts (≤4 shapes stays
+polymorphic, not megamorphic, per V8 IC design; write-gen gating already makes the big
+loops rare). Left as-is: extraction.js:1113 delete attempts[bossId] (per-boss-defeat
+rare path); Dungeons lazy `_`-runtime-field init (small-N objects, one transition then
+stable).
 
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);

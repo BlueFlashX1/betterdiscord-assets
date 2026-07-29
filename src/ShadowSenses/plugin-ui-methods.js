@@ -3,12 +3,8 @@ const {
   PANEL_CONTAINER_ID,
   PLUGIN_NAME,
   STYLE_ID,
-  WIDGET_ID,
-  WIDGET_REINJECT_DELAY_MS,
-  WIDGET_SPACER_ID,
 } = require("./constants");
 const { buildCSS } = require("./styles");
-const { _PluginUtils, _ReactUtils } = require("./shared-utils");
 const { getCreateRoot } = require("../shared/react-dom");
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require("../shared/toolbar-tooltip");
 const { isVoiceChannelChat } = require("../shared/channel-context");
@@ -58,151 +54,8 @@ const ShadowSensesUiMethods = {
     console.error(`[${PLUGIN_NAME}][${system}]`, ...args);
   },
 
-  // Widget Injection
-
-  _getMembersWrap() {
-    try {
-      // PERF: Cache the found wrap element for 2s
-      const now = Date.now();
-      if (this._cachedMembersWrap && this._cachedMembersWrapTs && (now - this._cachedMembersWrapTs < 2000)) {
-        // PERF: isConnected is O(1) with no layout cost; offsetParent removed (forced layout flush)
-        if (this._cachedMembersWrap.isConnected) {
-          return this._cachedMembersWrap;
-        }
-        // Stale — clear and re-query
-        this._cachedMembersWrap = null;
-        this._cachedMembersWrapTs = 0;
-      }
-
-      const dc = require('../shared/discord-classes');
-      const wraps = document.querySelectorAll(dc.sel.membersWrap);
-      for (const wrap of wraps) {
-        if (wrap.offsetParent !== null) {
-          this._cachedMembersWrap = wrap;
-          this._cachedMembersWrapTs = now;
-          return wrap;
-        }
-      }
-      // Not found — clear cache
-      this._cachedMembersWrap = null;
-      this._cachedMembersWrapTs = 0;
-    } catch (err) {
-      this.debugError("Widget", "Failed to find membersWrap", err);
-    }
-    return null;
-  },
-
   _getCreateRoot() {
     return getCreateRoot();
-  },
-
-  injectWidget() {
-    try {
-      if (!this._components?.SensesWidget) {
-        this.debugError?.("Widget", "Components not initialized");
-        return;
-      }
-
-      // Clean up any existing widget
-      this.removeWidget();
-
-      const membersWrap = this._getMembersWrap();
-      if (!membersWrap) {
-        this.debugLog("Widget", "membersWrap not found, skipping widget inject");
-        return;
-      }
-
-      // Find innermost content target: membersList > membersContent (or first child)
-      const membersList = membersWrap.querySelector(require('../shared/discord-classes').sel.members);
-      const target = membersList || membersWrap;
-
-      const createRoot = this._getCreateRoot();
-      if (!createRoot) {
-        this.debugError("Widget", "createRoot not available");
-        return;
-      }
-
-      // Create spacer
-      const spacer = document.createElement("div");
-      spacer.id = WIDGET_SPACER_ID;
-      spacer.style.height = "16px";
-      spacer.style.flexShrink = "0";
-
-      // Create widget container
-      const widgetDiv = document.createElement("div");
-      widgetDiv.id = WIDGET_ID;
-      widgetDiv.style.flexShrink = "0";
-
-      // Insert at top
-      if (target.firstChild) {
-        target.insertBefore(widgetDiv, target.firstChild);
-        target.insertBefore(spacer, widgetDiv);
-      } else {
-        target.appendChild(spacer);
-        target.appendChild(widgetDiv);
-      }
-
-      // Mount React
-      const root = createRoot(widgetDiv);
-      root.render(BdApi.React.createElement(this._components.SensesWidget));
-      this._widgetReactRoot = root;
-
-      this.debugLog("Widget", "Injected into members panel");
-    } catch (err) {
-      this.debugError("Widget", "Failed to inject widget", err);
-    }
-  },
-
-  removeWidget() {
-    try {
-      if (this._widgetReactRoot) {
-        try {
-          this._widgetReactRoot.unmount();
-        } catch (_) {
-          this.debugLog?.("CLEANUP", "Widget unmount error", _);
-        }
-        this._widgetReactRoot = null;
-      }
-      const existing = document.getElementById(WIDGET_ID);
-      if (existing) existing.remove();
-      const spacer = document.getElementById(WIDGET_SPACER_ID);
-      if (spacer) spacer.remove();
-      // Clear membersWrap cache — element is gone
-      this._cachedMembersWrap = null;
-      this._cachedMembersWrapTs = 0;
-    } catch (err) {
-      this.debugError("Widget", "Failed to remove widget", err);
-    }
-  },
-
-  setupWidgetObserver() {
-    try {
-      // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
-      if (_PluginUtils?.LayoutObserverBus) {
-        this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe("ShadowSenses", () => {
-          const membersWrap = this._getMembersWrap();
-          const widgetEl = document.getElementById(WIDGET_ID);
-
-          if (membersWrap && !widgetEl) {
-            clearTimeout(this._widgetReinjectTimeout);
-            this._widgetReinjectTimeout = setTimeout(() => {
-              try {
-                this.injectWidget();
-              } catch (err) {
-                this.debugError("Widget", "Reinject failed", err);
-              }
-            }, WIDGET_REINJECT_DELAY_MS);
-          } else if (!membersWrap && widgetEl) {
-            this.removeWidget();
-          }
-        }, 500);
-        this.debugLog("Widget", "Subscribed to shared LayoutObserverBus (500ms throttle)");
-      } else {
-        this.debugError("Widget", "LayoutObserverBus not available — widget persistence disabled");
-      }
-    } catch (err) {
-      this.debugError("Widget", "Failed to setup observer", err);
-    }
   },
 
   // Panel
@@ -329,7 +182,6 @@ const ShadowSensesUiMethods = {
               try {
                 this.deploymentManager.recall(deployment.shadowId);
                 this._toast(`Recalled ${deployment.shadowName} from ${deployment.targetUsername}`);
-                this._widgetDirty = true;
               } catch (err) {
                 this.debugError("ContextMenu", "Recall failed", err);
               }
@@ -365,7 +217,6 @@ const ShadowSensesUiMethods = {
                 if (success) {
                   const targetName = user.globalName || user.username || "User";
                   this._toast(`Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`, "success");
-                  this._widgetDirty = true;
                 } else {
                   this._toast("Shadow already deployed or target already monitored", "warning");
                 }
@@ -703,8 +554,6 @@ const ShadowSensesUiMethods = {
     const updateSetting = (key, value) => {
       this.settings[key] = value;
       this.saveSettings();
-      this._widgetDirty = true;
-      if (typeof this._widgetForceUpdate === "function") this._widgetForceUpdate();
     };
 
     return ce("div", { style: { padding: "16px", background: "rgba(10, 10, 16, 0.98)", borderRadius: "2px", color: "#dcddde" } },

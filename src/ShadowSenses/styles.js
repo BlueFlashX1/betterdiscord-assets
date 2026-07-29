@@ -37,58 +37,16 @@ ${buildPortalTransitionCSS()}
    style props win without needing !important.
    Body content now inherits Discord's gg sans system font for legibility. */
 .shadow-senses-panel-title,
-.shadow-senses-widget-label,
 .shadow-senses-brand-font {
   font-family: 'Friend or Foe BB', 'gg sans', sans-serif !important;
   letter-spacing: 0.02em;
 }
 
 .shadow-senses-panel,
-.shadow-senses-widget,
 #shadow-senses-header-popup,
 .shadow-senses-feed-card,
 .shadow-senses-deploy-row {
   font-family: 'gg sans', 'Helvetica Neue', system-ui, sans-serif;
-}
-
-/* ─── Shadow Senses Widget ──────────────────────────────────────────────── */
-
-.shadow-senses-widget {
-  background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(138, 43, 226, 0.05));
-  border: 1px solid rgba(138, 43, 226, 0.4);
-  border-radius: 2px;
-  padding: 8px 10px;
-  margin: 4px 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.shadow-senses-widget:hover {
-  background: linear-gradient(135deg, rgba(138, 43, 226, 0.25), rgba(138, 43, 226, 0.1));
-  border-color: #8a2be2;
-}
-
-.shadow-senses-widget-label {
-  color: #8a2be2;
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.shadow-senses-widget-badge {
-  background: #8a2be2;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 2px;
-  min-width: 20px;
-  text-align: center;
 }
 
 /* ─── Overlay ───────────────────────────────────────────────────────────── */

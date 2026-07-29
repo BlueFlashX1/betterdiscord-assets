@@ -845,7 +845,6 @@ function buildComponents(pluginRef) {
         if (pluginRef.deploymentManager) {
           pluginRef.deploymentManager.recall(deployment.shadowId);
           setDeployments(pluginRef.deploymentManager.getDeployments());
-          pluginRef._widgetDirty = true;
         }
       } catch (err) {
         pluginRef.debugError("DeploymentsTab", "Recall failed:", err);
@@ -1584,51 +1583,7 @@ function buildComponents(pluginRef) {
     }, panelEl);
   }
 
-  // SensesWidget
-  function SensesWidget() {
-    const [, forceUpdate] = useReducer(x => x + 1, 0);
-
-    useEffect(() => {
-      // Event-driven widget repaint — replaces the prior 3s setInterval
-      // that polled pluginRef._widgetDirty. The plugin's _widgetBus
-      // emits 'dirty' on every false→true transition of _widgetDirty
-      // (setter in ShadowSenses constructor); listener clears the flag
-      // and forces React re-render.
-      pluginRef._widgetForceUpdate = forceUpdate;
-      const bus = pluginRef._widgetBus;
-      const handler = () => {
-        if (document.hidden) return;
-        if (pluginRef._widgetDirty) {
-          pluginRef._widgetDirty = false;
-          forceUpdate();
-        }
-      };
-      if (bus) bus.addEventListener("dirty", handler);
-      return () => {
-        if (bus) bus.removeEventListener("dirty", handler);
-        pluginRef._widgetForceUpdate = null;
-      };
-    }, []);
-
-    const feedCount = pluginRef.sensesEngine
-      ? pluginRef.sensesEngine.getActiveFeedCount()
-      : 0;
-    const label = "Shadow Sense";
-
-    return ce("div", {
-      className: "shadow-senses-widget",
-      onClick: () => pluginRef.openPanel(),
-    },
-    ce("span", { className: "shadow-senses-widget-label" },
-      label
-    ),
-    feedCount > 0
-      ? ce("span", { className: "shadow-senses-widget-badge" }, feedCount)
-      : null
-    );
-  }
-
-  return { SensesWidget, SensesPanel };
+  return { SensesPanel };
 }
 
 module.exports = { buildComponents };

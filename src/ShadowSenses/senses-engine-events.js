@@ -22,7 +22,6 @@ const DEFAULT_AVATAR_URL = "https://cdn.discordapp.com/embed/avatars/0.png";
 // Resolution is now multi-strategy (first hit wins), mirroring the proven
 // CriticalHit MessageActions lookup, so a single split can't break it again.
 let _messageActionsModule = null;
-let _messageActionsStrategy = "none";
 function _getMessageActions() {
   if (typeof _messageActionsModule?.jumpToMessage === "function") return _messageActionsModule;
   const W = BdApi.Webpack;
@@ -39,17 +38,15 @@ function _getMessageActions() {
     ["nested.Z", () => W.getModule?.((m) => typeof m?.Z?.jumpToMessage === "function")?.Z],
     ["nested.ZP", () => W.getModule?.((m) => typeof m?.ZP?.jumpToMessage === "function")?.ZP],
   ];
-  for (const [name, strat] of strategies) {
+  for (const [, strat] of strategies) {
     try {
       const mod = strat();
       if (typeof mod?.jumpToMessage === "function") {
         _messageActionsModule = mod;
-        _messageActionsStrategy = name;
         return mod;
       }
     } catch (_) {}
   }
-  _messageActionsStrategy = "none";
   return null;
 }
 
@@ -777,7 +774,6 @@ function notifyUnseenSignalsForGuild(ctx, guildId) {
       `Shadow Senses: ${unseenCount} signal${unseenCount > 1 ? "s" : ""} in ${guildName} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
       "info"
     );
-    ctx._plugin._widgetDirty = true;
   }
   ctx._lastSeenCount[guildId] = feed.length;
 }
@@ -900,12 +896,9 @@ function onPresenceUpdate(payload) {
     if (mergedUpdates.length === 0) return;
 
     const startupState = getStartupState(this);
-    let hasStateChanges = false;
     for (const update of mergedUpdates) {
-      hasStateChanges =
-        handlePresenceUpdateEntry(this, update, monitoredIds, startupState) || hasStateChanges;
+      handlePresenceUpdateEntry(this, update, monitoredIds, startupState);
     }
-    if (hasStateChanges) this._plugin._widgetDirty = true;
   } catch (err) {
     this._plugin.debugError("SensesEngine", "Error in PRESENCE_UPDATE handler", err);
   }
@@ -986,7 +979,6 @@ function pollMonitoredPresenceStatuses(source = "interval") {
     }
 
     if (hasStateChanges) {
-      this._plugin._widgetDirty = true;
       this._plugin.debugLog("SensesEngine", "Presence poll detected state changes", {
         source,
         monitoredCount: monitoredIds.size,
@@ -1091,7 +1083,6 @@ function onTypingStart(payload) {
     }
 
     syncLastSeenCount(this, guildId);
-    this._plugin._widgetDirty = true;
   } catch (err) {
     this._plugin.debugError("SensesEngine", "Error in TYPING_START handler", err);
   }
@@ -1113,7 +1104,6 @@ function onRelationshipChange() {
     const removedFriendIds = getRemovedFriendIds(previousFriends, nextFriends);
     if (removedFriendIds.length === 0) return;
 
-    let hasSignals = false;
     for (const removedId of removedFriendIds) {
       if (!monitoredIds.has(removedId)) continue;
       const deployment = this._plugin.deploymentManager.getDeploymentForUser(removedId);
@@ -1126,9 +1116,7 @@ function onRelationshipChange() {
           "warning", 5000
         );
       }
-      hasSignals = true;
     }
-    if (hasSignals) this._plugin._widgetDirty = true;
   } catch (err) {
     this._plugin.debugError("SensesEngine", "Error in relationship handler", err);
   }
@@ -1252,7 +1240,6 @@ function onMessageCreate(payload) {
 
     this._sessionMessageCount++;
     this._totalDetections++;
-    this._plugin._widgetDirty = true;
   } catch (err) {
     this._plugin.debugError("SensesEngine", "Error in MESSAGE_CREATE handler", err);
   }
