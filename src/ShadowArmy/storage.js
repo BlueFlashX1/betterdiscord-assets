@@ -971,6 +971,15 @@ class ShadowStorageManager {
 
                 if (transformed === null || transformed === undefined) { skipped++; return; }
 
+                // keyPath parity with updateShadowsBatch (storage.js): compressShadow/
+                // compressShadowUltra outputs carry `i` but not `id`, and the store's
+                // keyPath is 'id' — put() on an id-less object THROWS SYNCHRONOUSLY,
+                // which aborts the whole chunk transaction and errors every sibling
+                // get (the 2026-07 army-wide TRANSFORM_BATCH failure storms; latent
+                // since the wave-6 rewire onto this path, 2026-07-12).
+                transformed.id || (transformed.id = this.getCacheKey(transformed));
+                if (!transformed.id) { skipped++; return; }
+
                 const { shadow: normalizedShadow } = this.ensurePersonalityKey(transformed);
                 const putRequest = store.put(normalizedShadow);
                 putRequest.onsuccess = () => {
@@ -1004,7 +1013,12 @@ class ShadowStorageManager {
           // onabort path — the whole chunk's writes were rolled back; report
           // every id in the chunk as failed rather than silently losing them.
           uniqueChunkIds.forEach((id) => failedIds.push(id));
-          this.debugError('TRANSFORM_BATCH', `Chunk transaction aborted (${uniqueChunkIds.length} ids)`, error);
+          // DOMExceptions JSON-serialize to {} — surface name/message explicitly
+          // (the 2026-07 failure storm was undiagnosable from `{"error":{}}` logs).
+          this.debugError('TRANSFORM_BATCH', `Chunk transaction aborted (${uniqueChunkIds.length} ids)`, {
+            name: error?.name || null,
+            message: error?.message || null,
+          });
         }
       }
 

@@ -284,6 +284,23 @@ per-frame rAF reads during message storms ran against freshly-mutated layout (me
 132ms avg / 685ms worst per rAF callback, top LAST WINDOW mover). Arrow visibility needs
 ~5Hz, not 60Hz. Trailing timer cancelled at both unbind sites.
 
+CRITICAL FIX 2026-07-29 (evening): transformShadowsBatch keyPath normalization —
+compressShadow/compressShadowUltra outputs carry `i` but not `id` (store keyPath 'id');
+put() on an id-less object throws SYNCHRONOUSLY, aborting the whole 200-id chunk and
+erroring every sibling get. LATENT SINCE WAVE 6 (2026-07-12, the rewire onto
+transformShadowsBatch — the old updateShadowsBatch writer had the normalization line,
+the new path didn't). Every compression tiering pass since then failed army-wide
+(~280k get-errors + ~1.4k chunk aborts per pass) whenever the write-gen gate let one
+run; the earlier "hot-reload IDB zombie" diagnosis was WRONG (reload merely triggered
+the always-runs-after-start pass). The 2026-07-28 decompress-marker removal is
+EXONERATED. Consequence of the outage: army effectively uncompressed since mid-July
+(Discord IDB dir ~9.3GB — expect it to shrink over the first few successful passes).
+Also fixed: chunk-abort logger now surfaces DOMException name/message (they
+JSON-serialize to {} — the whole storm logged as undiagnosable `{"error":{}}`).
+Verification after next restart: compression pass should log ZERO TRANSFORM_BATCH
+errors AND counters.compressed/ultraCompressed > 0. DKB:
+bugs/shadowarmy/idb-keypath-sync-throw-aborts-chunk.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);
