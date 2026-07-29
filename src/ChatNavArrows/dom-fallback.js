@@ -1,4 +1,4 @@
-const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent, createThrottledScrollHandler } = require('./dom-helpers');
+const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent, jumpToChannelStart, createThrottledScrollHandler } = require('./dom-helpers');
 const { createTrackedTimers } = require('../shared/tracked-timers');
 
 function setArrowVisible(el, isVisible) {
@@ -104,7 +104,7 @@ function createFallbackState(plugin) {
   state.upClickHandler = () => {
     const scroller = state.currentScroller;
     if (!scroller) return;
-    scroller.scrollTop = 0;
+    jumpToChannelStart(scroller);
     updateArrowState(state);
   };
 

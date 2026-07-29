@@ -1,4 +1,4 @@
-const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent, createThrottledScrollHandler } = require('./dom-helpers');
+const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent, jumpToChannelStart, createThrottledScrollHandler } = require('./dom-helpers');
 
 function removeDomArrows(domArrowsRef) {
   const arrows = domArrowsRef.current;
@@ -259,8 +259,7 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
     }, []);
 
     const handleUpClick = React.useCallback(() => {
-      const scroller = scrollerRef.current;
-      if (scroller) scroller.scrollTop = 0;
+      jumpToChannelStart(scrollerRef.current);
     }, []);
 
     const wrapper = wrapperRef.current;

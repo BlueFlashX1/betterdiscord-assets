@@ -1,4 +1,5 @@
 const dc = require('../shared/discord-classes');
+const { getNavigationUtils } = require('../shared/navigation');
 
 // Shared between the React portal path (arrow-manager-component.js) and the
 // DOM-fallback path (dom-fallback.js) so a future selector update only needs
@@ -54,6 +55,24 @@ function jumpToPresent(wrapper, scroller) {
   }
 }
 
+// Jump to the very first message of the current channel. scrollTop = 0 only
+// reaches the top of the LOADED slice (Discord virtualizes history), so the
+// old up-arrow barely moved in long channels. Discord treats message id '0'
+// in a channel route as "beginning of channel" — same mechanism as its own
+// jump-to-start affordances. Falls back to top-of-loaded-slice when the
+// navigation module is unavailable.
+function jumpToChannelStart(scroller) {
+  try {
+    const m = String(window.location?.pathname || '').match(/^\/channels\/(@me|\d+)\/(\d+)/);
+    const nav = getNavigationUtils();
+    if (m && typeof nav?.transitionTo === 'function') {
+      nav.transitionTo(`/channels/${m[1]}/${m[2]}/0`);
+      return;
+    }
+  } catch (_) {}
+  if (scroller) scroller.scrollTop = 0;
+}
+
 // Scroll-driven arrow updates, rAF-coalesced AND min-interval gated.
 // Why the gate (profiler 2026-07-29): with the channel pinned to bottom,
 // Discord fires a scroll event per appended message; during message storms
@@ -87,4 +106,4 @@ function createThrottledScrollHandler(run, intervalMs = 200) {
   return handler;
 }
 
-module.exports = { getScrollerPair, createArrowElement, EDGE_THRESHOLD, computeArrowVisibility, jumpToPresent, createThrottledScrollHandler };
+module.exports = { getScrollerPair, createArrowElement, EDGE_THRESHOLD, computeArrowVisibility, jumpToPresent, jumpToChannelStart, createThrottledScrollHandler };
