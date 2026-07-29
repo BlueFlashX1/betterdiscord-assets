@@ -132,11 +132,9 @@ module.exports = class AAPerfSentinel {
 
     window.MutationObserver = class extends OrigMO {
       constructor(callback) {
-        if (typeof callback !== "function") {
-          super(callback);
-          return;
-        }
-        super(self._wrapCallback(self._ownerFromStack(), "observer", callback));
+        super(typeof callback === "function"
+          ? self._wrapCallback(self._ownerFromStack(), "observer", callback)
+          : callback);
       }
     };
   }
@@ -452,9 +450,6 @@ module.exports = class AAPerfSentinel {
       setInterval: window.setInterval,
       requestAnimationFrame: window.requestAnimationFrame,
       MutationObserver: window.MutationObserver,
-      fluxSubscribe: null,
-      fluxUnsubscribe: null,
-      fluxDispatch: null,
     };
 
     this._installTimerWraps();
