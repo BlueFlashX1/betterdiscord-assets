@@ -485,13 +485,38 @@ class DockEngine {
       // re-measured a frame later by the startRailFollow() rAF loop that
       // showDock()/hideDock() themselves kick off, so the one-tick-stale
       // rail read here is self-corrected before it's ever visible.
-      this.updateDockHeightVar();
-      this.updateAlertState();
-      this.updateRailGeometry();
+      // PERF PROBE (2026-07-29, debug-gated): AAPerfSentinel attributes
+      // ~5ms/tick steady + a 671ms storm tick to this interval. Section
+      // timing identifies which sub-call carries it before any semantic
+      // change (alert-rail logic must run while the dock is hidden, so
+      // blind gating is not safe). Zero cost unless debug is enabled.
+      if (this.debugEnabled) {
+        const tickT0 = performance.now();
+        const t1 = (this.updateDockHeightVar(), performance.now());
+        const t2 = (this.updateAlertState(), performance.now());
+        const t3 = (this.updateRailGeometry(), performance.now());
+        this.enforceStartupLock();
+        this.enforceAutoHideState();
+        this.applyDockStateInline();
+        const tickT1 = performance.now();
+        if (tickT1 - tickT0 > 20) {
+          this.debug("tick:slow", {
+            totalMs: Math.round(tickT1 - tickT0),
+            heightVarMs: Math.round(t1 - tickT0),
+            alertStateMs: Math.round(t2 - t1),
+            railGeomMs: Math.round(t3 - t2),
+            stateMachineMs: Math.round(tickT1 - t3),
+          }, true);
+        }
+      } else {
+        this.updateDockHeightVar();
+        this.updateAlertState();
+        this.updateRailGeometry();
 
-      this.enforceStartupLock();
-      this.enforceAutoHideState();
-      this.applyDockStateInline();
+        this.enforceStartupLock();
+        this.enforceAutoHideState();
+        this.applyDockStateInline();
+      }
 
       this.debug("tick:end", { tick: this.tickCount });
     } catch (err) {

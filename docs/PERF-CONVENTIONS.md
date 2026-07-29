@@ -240,6 +240,20 @@ loops rare). Left as-is: extraction.js:1113 delete attempts[bossId] (per-boss-de
 rare path); Dungeons lazy `_`-runtime-field init (small-N objects, one transition then
 stable).
 
+AAPerfSentinel live findings 2026-07-29 (first full-coverage session on a clean boot):
+FIXED & runtime-VERIFIED — ShadowExchange swirl reinject short-circuit (1627ms/567ms-worst
+→ 17ms/7ms-worst, ~100x); ShadowSenses feed auto-scroll near-bottom gate (steady-state
+~600ms/min → ~12ms/min). INSTRUMENTED, fix pending data — HSLDockAutoHide safeTick
+(~5ms per 1.5s tick steady, 671ms storm worst; per-section timing added under
+debugEnabled — alert-rail runs precisely while dock is hidden, so no blind gating;
+next debug session identifies which of heightVar/alertState/railGeom carries the cost).
+PARKED as accepted per-navigation cost (do NOT re-flag) — RulersAuthority guild/channel-
+switch micro-state re-application (applyMicroStateForCurrentGuild + observer setup,
+431ms worst, ~1/min; reordering risks visible unhidden-channel flash). Architecture
+verdict for the record: with full attribution coverage, Discord-internal runtime timers
+alone (~1.3s/min, 1523ms worst) out-cost the entire suite (~21ms/min steady) — channel
+transitions (CHANNEL_UPDATES/CHANNEL_SELECT) remain Discord's own worst moments.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);
