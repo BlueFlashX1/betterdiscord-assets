@@ -1,0 +1,6 @@
+{
+  "name": "AAPerfSentinel",
+  "description": "Suite-wide performance profiler. Attributes main-thread work (timers, observers, Flux listeners) to individual plugins and writes an overwriting report file. Named 'AA' so BetterDiscord loads it before every other plugin — instrumentation must install first.",
+  "version": "1.0.0",
+  "author": "Matthew Thompson"
+}
