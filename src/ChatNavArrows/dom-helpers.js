@@ -54,4 +54,37 @@ function jumpToPresent(wrapper, scroller) {
   }
 }
 
-module.exports = { getScrollerPair, createArrowElement, EDGE_THRESHOLD, computeArrowVisibility, jumpToPresent };
+// Scroll-driven arrow updates, rAF-coalesced AND min-interval gated.
+// Why the gate (profiler 2026-07-29): with the channel pinned to bottom,
+// Discord fires a scroll event per appended message; during message storms
+// the per-frame geometry read runs against a freshly-mutated layout and
+// forces a full reflow of the message list (measured 685ms worst single
+// rAF callback). Arrow visibility doesn't need 60fps — 200ms max cadence
+// with a trailing call (final state always lands after scrolling stops).
+function createThrottledScrollHandler(run, intervalMs = 200) {
+  let rafPending = false;
+  let trailingTimer = null;
+  let lastRun = 0;
+  const invoke = () => {
+    lastRun = performance.now();
+    run();
+  };
+  const handler = () => {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      const since = performance.now() - lastRun;
+      if (since >= intervalMs) {
+        invoke();
+      } else {
+        clearTimeout(trailingTimer);
+        trailingTimer = setTimeout(invoke, intervalMs - since);
+      }
+    });
+  };
+  handler.cancel = () => clearTimeout(trailingTimer);
+  return handler;
+}
+
+module.exports = { getScrollerPair, createArrowElement, EDGE_THRESHOLD, computeArrowVisibility, jumpToPresent, createThrottledScrollHandler };

@@ -277,6 +277,13 @@ FLAGGED (correctness, out of ponytail scope, NOT fixed): story-mode-core.js:151
 `const shadowCount = this._shadowCountCache || 100;` reads the cache OBJECT as a count —
 almost certainly meant `?.count ?? 100`. Needs a game-balance-aware fix.
 
+Fixed 2026-07-29 (profiler wave 3): ChatNavArrows scroll-driven geometry reads gated to
+200ms max cadence with trailing call (shared createThrottledScrollHandler, both arrow
+paths). Mechanism: pinned-at-bottom channels fire a scroll event per appended message;
+per-frame rAF reads during message storms ran against freshly-mutated layout (measured
+132ms avg / 685ms worst per rAF callback, top LAST WINDOW mover). Arrow visibility needs
+~5Hz, not 60Hz. Trailing timer cancelled at both unbind sites.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

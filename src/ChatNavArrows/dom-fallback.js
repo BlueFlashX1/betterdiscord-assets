@@ -1,4 +1,4 @@
-const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent } = require('./dom-helpers');
+const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent, createThrottledScrollHandler } = require('./dom-helpers');
 const { createTrackedTimers } = require('../shared/tracked-timers');
 
 function setArrowVisible(el, isVisible) {
@@ -50,6 +50,7 @@ function ensureArrowElements(state, wrapper) {
 function unbindScroller(state) {
   if (!state?.currentScroller || !state.scrollHandler) return;
   state.currentScroller.removeEventListener("scroll", state.scrollHandler);
+  state.scrollHandler.cancel?.();
   state.currentScroller = null;
   state.scrollHandler = null;
 }
@@ -75,15 +76,7 @@ function bindScroller(state, wrapper, scroller) {
 
   ensureArrowElements(state, wrapper);
 
-  let scrollRafPending = false;
-  state.scrollHandler = () => {
-    if (scrollRafPending) return;
-    scrollRafPending = true;
-    requestAnimationFrame(() => {
-      scrollRafPending = false;
-      updateArrowState(state);
-    });
-  };
+  state.scrollHandler = createThrottledScrollHandler(() => updateArrowState(state));
   scroller.addEventListener("scroll", state.scrollHandler, { passive: true });
   updateArrowState(state);
 }

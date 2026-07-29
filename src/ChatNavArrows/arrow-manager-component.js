@@ -1,4 +1,4 @@
-const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent } = require('./dom-helpers');
+const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent, createThrottledScrollHandler } = require('./dom-helpers');
 
 function removeDomArrows(domArrowsRef) {
   const arrows = domArrowsRef.current;
@@ -56,6 +56,7 @@ function useScrollerBinding(React, options) {
       dbg("findAndBind: binding new scroller (isConnected:", scroller.isConnected, ")");
       if (currentScroller && scrollHandler) {
         currentScroller.removeEventListener("scroll", scrollHandler);
+        scrollHandler.cancel?.();
       }
 
       currentScroller = scroller;
@@ -63,15 +64,7 @@ function useScrollerBinding(React, options) {
       wrapperRef.current = wrapper;
       if (wrapper) wrapper.style.position = "relative";
 
-      let scrollRafPending = false;
-      scrollHandler = () => {
-        if (scrollRafPending) return;
-        scrollRafPending = true;
-        requestAnimationFrame(() => {
-          scrollRafPending = false;
-          applyScrollState(scroller);
-        });
-      };
+      scrollHandler = createThrottledScrollHandler(() => applyScrollState(scroller));
 
       scroller.addEventListener("scroll", scrollHandler, { passive: true });
       scrollHandler();
@@ -120,6 +113,7 @@ function useScrollerBinding(React, options) {
       }
       if (currentScroller && scrollHandler) {
         currentScroller.removeEventListener("scroll", scrollHandler);
+        scrollHandler.cancel?.();
       }
       if (store && storeListener) {
         try { store.removeChangeListener(storeListener); } catch (_) {}
