@@ -92,3 +92,20 @@ config.local.*
 # AI agent state dirs — never track (per forked-oss-backup-workflow memory)
 .ocx/
 .opencode/
+# Added by code-review-graph
+.code-review-graph/
+
+# code-review-graph platform configs for tools not used in this repo
+# (regenerable via `code-review-graph install --platform <name>`)
+.codebuddy/
+.cursor/
+.cursorrules
+.gemini/
+.github/code-review-graph.instruction.md
+.kiro/
+.qoder/
+.windsurfrules
+CODEBUDDY.md
+GEMINI.md
+QODER.md
+opencode.jsonc
