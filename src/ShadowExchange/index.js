@@ -81,9 +81,6 @@ const {
   writeFileBackup,
 } = require("./persistence");
 
-let _ReactUtils;
-try { _ReactUtils = loadBdModuleFromPlugins('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
-
 let _PluginUtils;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
@@ -1042,6 +1039,17 @@ module.exports = class ShadowExchange {
 
   injectSwirlIcon() {
     let icon = document.getElementById(SE_SWIRL_ID);
+
+    // PERF (profiler 2026-07-29): the LayoutObserverBus fires this (debounced)
+    // on every layout churn; the anchor path below runs VC detection + a
+    // toolbar querySelector each time (331ms worst observed). If the icon is
+    // still attached to a live, visible toolbar, the churn didn't touch it —
+    // nothing to do. Channel switches replace the header subtree, which
+    // disconnects the icon and falls through to the full path.
+    if (icon && icon.isConnected && icon.parentElement && !icon.classList.contains("se-swirl-icon--hidden")) {
+      this.swirlIcon = icon;
+      return;
+    }
 
     if (!icon) {
       icon = document.createElement("div");

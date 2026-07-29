@@ -43,6 +43,7 @@ module.exports = class AAPerfSentinel {
     this._dispatchByAction = new Map();
 
     this._longTasks = { count: 0, totalMs: 0, maxMs: 0, recent: [] };
+    this._prevSnap = null; // last flush's totals, for the window-delta section
     this._lagSamples = [];
     this._lagMax = 0;
     this._skipNextLagSample = false;
@@ -240,24 +241,33 @@ module.exports = class AAPerfSentinel {
 
     this._visibilityHandler = () => {
       this._skipNextLagSample = true;
+      this._lastFrameTs = 0;
     };
     document.addEventListener("visibilitychange", this._visibilityHandler);
   }
 
   _installFrameMonitor() {
     const o = this._originals;
-    let last = 0;
+    this._lastFrameTs = 0;
     const tick = (ts) => {
       if (this._stopped) return;
-      if (last && !document.hidden) {
-        const delta = ts - last;
-        this._frames.total++;
-        if (delta > FRAME_DROP_THRESHOLD_MS) {
-          this._frames.dropped++;
-          if (delta > this._frames.worstMs) this._frames.worstMs = delta;
+      if (document.hidden) {
+        // rAF pauses while hidden; without this reset the first visible
+        // frame after un-hiding measures the whole hidden span as one
+        // "gap" (observed: a fake 110s worst frame). Baseline restarts on
+        // the next visible tick — visibilitychange also clears it.
+        this._lastFrameTs = 0;
+      } else {
+        if (this._lastFrameTs) {
+          const delta = ts - this._lastFrameTs;
+          this._frames.total++;
+          if (delta > FRAME_DROP_THRESHOLD_MS) {
+            this._frames.dropped++;
+            if (delta > this._frames.worstMs) this._frames.worstMs = delta;
+          }
         }
+        this._lastFrameTs = ts;
       }
-      last = ts;
       this._rafHandle = o.requestAnimationFrame.call(window, tick);
     };
     this._rafHandle = o.requestAnimationFrame.call(window, tick);
@@ -377,6 +387,34 @@ module.exports = class AAPerfSentinel {
       }
       lines.push("");
     }
+
+    // Window deltas — what moved since the previous flush. This is the
+    // steady-state view: startup costs live only in the cumulative tables.
+    const nowMs = Date.now();
+    const snap = { at: nowMs, longMs: this._longTasks.totalMs, longCount: this._longTasks.count, perPlugin: new Map() };
+    for (const t of totals) snap.perPlugin.set(t.owner, t.totalMs);
+    if (this._prevSnap) {
+      const windowSec = Math.max(1, Math.round((nowMs - this._prevSnap.at) / 1000));
+      const movers = [];
+      for (const [owner, totalMs] of snap.perPlugin) {
+        const delta = totalMs - (this._prevSnap.perPlugin.get(owner) || 0);
+        if (delta >= 1) movers.push({ owner, delta });
+      }
+      movers.sort((a, b) => b.delta - a.delta);
+      lines.push(`── LAST WINDOW (~${windowSec}s) — attributed ms since previous flush ──`);
+      const dLong = this._longTasks.totalMs - this._prevSnap.longMs;
+      const dLongN = this._longTasks.count - this._prevSnap.longCount;
+      lines.push(`Long tasks this window: ${dLongN} (${this._fmtMs(dLong)}ms)`);
+      if (movers.length === 0) {
+        lines.push("(no plugin accrued ≥1ms this window)");
+      }
+      for (const m of movers.slice(0, 8)) {
+        const perMin = (m.delta / (windowSec / 60)).toFixed(0);
+        lines.push(`${m.owner.padEnd(25)} +${this._fmtMs(m.delta)}ms  (~${perMin}ms/min)`);
+      }
+      lines.push("");
+    }
+    this._prevSnap = snap;
 
     lines.push("── LIMITATIONS ──");
     lines.push("- Attribution only sees timers/rAF/observers/flux listeners registered AFTER this");

@@ -9,7 +9,7 @@ const {
 
 function buildComponents(pluginRef) {
   const React = BdApi.React;
-  const { useState, useEffect, useCallback, useRef, useReducer, useMemo } = React;
+  const { useState, useEffect, useCallback, useRef, useMemo } = React;
   const ce = React.createElement;
   const EVENT_LABELS = {
     status: "STATUS",
@@ -786,9 +786,18 @@ function buildComponents(pluginRef) {
 
     useEffect(() => {
       if (feed.length > prevLenRef.current && scrollRef.current) {
-        requestAnimationFrame(() => {
-          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        });
+        // PERF (profiler 2026-07-29): scrollTop = scrollHeight forces a
+        // synchronous layout of the whole feed (~10ms/append, 669ms worst).
+        // Only auto-scroll when the user is already near the bottom — skips
+        // the forced layout entirely while they're scrolled up reading, and
+        // stops yanking their scroll position away.
+        const el = scrollRef.current;
+        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        if (nearBottom) {
+          requestAnimationFrame(() => {
+            if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          });
+        }
       }
       prevLenRef.current = feed.length;
     }, [feed.length]);
