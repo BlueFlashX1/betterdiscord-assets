@@ -1,5 +1,4 @@
-const { getScrollerPair, createArrowElement } = require('./dom-helpers');
-const EDGE_THRESHOLD = 100;
+const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent } = require('./dom-helpers');
 
 function removeDomArrows(domArrowsRef) {
   const arrows = domArrowsRef.current;
@@ -36,11 +35,9 @@ function useScrollerBinding(React, options) {
         dbg("scrollHandler: scroller disconnected");
         return;
       }
-      const { scrollTop, scrollHeight, clientHeight } = scroller;
-      const atBottom = scrollHeight - scrollTop - clientHeight < EDGE_THRESHOLD;
-      const atTop = scrollTop < EDGE_THRESHOLD;
-      setShowDown(!atBottom);
-      setShowUp(!atTop);
+      const { showDown, showUp } = computeArrowVisibility(scroller);
+      setShowDown(showDown);
+      setShowUp(showUp);
       const now = Date.now();
       if (now - lastScrollLogRef.current > 3000) {
         lastScrollLogRef.current = now;
@@ -264,18 +261,7 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
       const wrapper = wrapperRef.current;
       const scroller = scrollerRef.current;
       if (!wrapper || !scroller) return;
-
-      const nativeBar = wrapper.querySelector('div[class^="jumpToPresentBar_"]');
-      const nativeBtn = nativeBar ? nativeBar.querySelector("button") : null;
-      if (nativeBtn) {
-        nativeBar.style.display = "";
-        nativeBtn.click();
-        requestAnimationFrame(() => {
-          nativeBar.style.display = "none";
-        });
-      } else {
-        scroller.scrollTop = scroller.scrollHeight;
-      }
+      jumpToPresent(wrapper, scroller);
     }, []);
 
     const handleUpClick = React.useCallback(() => {

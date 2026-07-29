@@ -25,18 +25,7 @@ const _loadOptionalModule = (fileName, isValid) => {
 let SLUtils;
 SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 if (SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = SLUtils;
-let UnifiedSaveManager;
-try {
-  if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
-    UnifiedSaveManager = window.UnifiedSaveManager;
-  } else {
-    UnifiedSaveManager = loadBdModuleFromPlugins("UnifiedSaveManager.js") || window.UnifiedSaveManager || null;
-    if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
-  }
-} catch (error) {
-  console.warn('[LevelProgressBar] Failed to load UnifiedSaveManager:', error);
-  UnifiedSaveManager = window.UnifiedSaveManager || null;
-}
+// UnifiedSaveManager no longer used — settings are single-tier (see loadSettings).
 let getLevelProgressBarCSS = null;
 {
   const loadedStylesModule = _loadOptionalModule("LevelProgressBarStyles.js", (mod) =>
@@ -260,10 +249,6 @@ module.exports = class LevelProgressBar {
     this._debug = SLUtils
       ? SLUtils.createDebugLogger('LevelProgressBar', () => this.settings?.debugMode)
       : null;
-    this.saveManager = null;
-    if (UnifiedSaveManager) {
-      this.saveManager = new UnifiedSaveManager('LevelProgressBar');
-    }
     this._runtimeHelpers = levelProgressBarRuntimeHelpers;
     this._runtimeHelperFallbackNotified = false;
     this._debugLogLastByOp = new Map();
@@ -280,16 +265,6 @@ module.exports = class LevelProgressBar {
     this._trace('START', 'Plugin starting...');
     this.debugLog('START', 'Plugin starting');
     this.initializeWebpackModules();
-    if (this.saveManager) {
-      try {
-        await this.saveManager.init();
-        if (this._isStopped || startGeneration !== this._startGeneration) return;
-        this.debugLog('START', 'UnifiedSaveManager initialized (IndexedDB)');
-      } catch (error) {
-        this.debugError('START', error);
-        this.saveManager = null;
-      }
-    }
     await this.loadSettings();
     if (this._isStopped || startGeneration !== this._startGeneration) return;
     this._trace('START', 'Settings loaded', { debugMode: this.settings.debugMode, enabled: this.settings.enabled, position: this.settings.position });
@@ -358,116 +333,26 @@ module.exports = class LevelProgressBar {
     this.debugLog('STOP', 'Plugin stopped successfully');
   }
   // === Settings + Persistence ===
-  _getFileBackupPath() {
-    return SLUtils?.getSoloLevelingBackupFilePath?.('LevelProgressBar.json') || null;
-  }
-  readFileBackup() {
-    const filePath = this._getFileBackupPath();
-    if (!filePath) return null;
-    const readShared = SLUtils?.readJsonFileSafe;
-    if (typeof readShared === 'function') {
-      return readShared(filePath, (error) => this.debugError('LOAD_SETTINGS_FILE', error));
-    }
-    return null;
-  }
-  writeFileBackup(data) {
-    const filePath = this._getFileBackupPath();
-    if (!filePath) return false;
-    const writeShared = SLUtils?.writeJsonFileSafe;
-    if (typeof writeShared !== 'function') return false;
-    return writeShared(
-      filePath,
-      data,
-      (error) => this.debugError('SAVE_SETTINGS_FILE', error),
-      () => this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: filePath })
-    );
-  }
-  _getCandidateTimestamp(data) {
-    if (typeof SLUtils?.getSavedTimestampFromMetadata === 'function') {
-      return SLUtils.getSavedTimestampFromMetadata(data);
-    }
-    const iso = data?._metadata?.lastSave;
-    const ts = iso ? Date.parse(iso) : NaN;
-    return Number.isFinite(ts) ? ts : 0;
-  }
-  _appendSettingsCandidate(candidates, source, data) {
-    if (!data || typeof data !== 'object') return;
-    candidates.push({ source, data, ts: this._getCandidateTimestamp(data) });
-  }
-  async _loadSettingsTierCandidates() {
-    const candidates = [];
-    const tiers = [
-      { source: 'file', load: () => this.readFileBackup() },
-      {
-        source: 'indexeddb',
-        load: async () => (this.saveManager ? this.saveManager.load('settings') : null),
-      },
-      { source: 'bdapi', load: () => BdApi.Data.load(PLUGIN_ID, 'settings') },
-    ];
-    for (const tier of tiers) {
-      try {
-        const loaded = await tier.load();
-        this._appendSettingsCandidate(candidates, tier.source, loaded);
-      } catch (error) {
-        this.debugError('LOAD_SETTINGS', error, { source: tier.source });
-      }
-    }
-    return candidates;
-  }
-  _pickBestSettingsCandidate(candidates) {
-    if (typeof SLUtils?.pickNewestSettingsCandidate === 'function') {
-      return SLUtils.pickNewestSettingsCandidate(candidates, { indexeddb: 3, file: 2, bdapi: 1 });
-    }
-    if (!Array.isArray(candidates) || candidates.length === 0) return null;
-    const sourceWeight = { indexeddb: 3, file: 2, bdapi: 1 };
-    const sorted = [...candidates].sort((a, b) => {
-      const tsA = Number.isFinite(a?.ts) ? a.ts : 0;
-      const tsB = Number.isFinite(b?.ts) ? b.ts : 0;
-      if (tsA !== tsB) return tsB - tsA;
-      return (sourceWeight[b?.source] || 0) - (sourceWeight[a?.source] || 0);
-    });
-    return sorted[0] || null;
-  }
+  // Single-tier (BdApi.Data). The former tri-tier system (file backup +
+  // UnifiedSaveManager/IndexedDB + BdApi.Data with weighted newest-wins
+  // candidate picking, ~100 lines) guarded purely cosmetic UI toggles —
+  // ponytail audit 2026-07-29. saveSettings always wrote BdApi.Data, so
+  // existing installs migrate seamlessly. Deep merge preserved via SLUtils.
   async loadSettings() {
     try {
-      this.debugLog('LOAD_SETTINGS', 'Attempting to load settings from all tiers...');
-      const candidates = await this._loadSettingsTierCandidates();
-      const best = this._pickBestSettingsCandidate(candidates);
-      if (best?.data) {
-        this.debugLog('LOAD_SETTINGS', `Selected settings candidate`, {
-          source: best.source,
-          ts: best.ts ? new Date(best.ts).toISOString() : 'none',
-          candidateCount: candidates.length,
-        });
-        this.settings = SLUtils
-          ? SLUtils.mergeSettings(this.defaultSettings, best.data)
-          : structuredClone({ ...this.defaultSettings, ...best.data });
-      } else {
-        this.debugLog('LOAD_SETTINGS', 'No saved settings found, using defaults');
-      }
+      const saved = BdApi.Data.load(PLUGIN_ID, 'settings') || {};
+      delete saved._metadata; // legacy tri-tier stamp — no longer written
+      this.settings = SLUtils
+        ? SLUtils.mergeSettings(this.defaultSettings, saved)
+        : structuredClone({ ...this.defaultSettings, ...saved });
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error);
+      this.settings = structuredClone(this.defaultSettings);
     }
   }
   async saveSettings() {
     try {
-      const cleanSettings = structuredClone(this.settings);
-      cleanSettings._metadata = { lastSave: new Date().toISOString(), version: '1.5.0' };
-      if (this.saveManager) {
-        try {
-          await this.saveManager.save('settings', cleanSettings, true);
-          this.debugLog('SAVE_SETTINGS', 'Saved to IndexedDB');
-        } catch (error) {
-          this.debugError('SAVE_SETTINGS', error);
-        }
-      }
-      try {
-        BdApi.Data.save(PLUGIN_ID, 'settings', cleanSettings);
-        this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data');
-      } catch (error) {
-        this.debugError('SAVE_SETTINGS', error);
-      }
-      this.writeFileBackup(cleanSettings);
+      BdApi.Data.save(PLUGIN_ID, 'settings', this.settings);
     } catch (error) {
       this.debugError('SAVE_SETTINGS', error);
     }

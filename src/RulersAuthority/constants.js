@@ -12,9 +12,9 @@ export const RA_OBSERVER_THROTTLE_MS = 400;
 export const RA_RESIZE_MIN_WIDTH = 80;
 // 2026-07-13: was 1000 — the forced reveal-delay guardrail is gone; hover
 // show/hide is instant. The replacement guardrail is focus-based: everything
-// RA reveals is hidden immediately when the Discord window loses focus
-// (see setupHoverHandlers in panels.js).
-export const RA_PANEL_HOVER_REVEAL_MIN_MS = 0;
+// RA reveal is hidden immediately when the Discord window loses focus
+// (see setupHoverHandlers in panels.js). Hover show/hide is instant by
+// design (2026-07-13) — no delay settings exist.
 export const RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
 
 // Fallback selectors — used when Webpack module extraction fails.
@@ -86,11 +86,9 @@ export const DEFAULT_SETTINGS = {
     search: 400,
   },
 
-  // Hover config — instant by default (2026-07-13); the focus-loss guardrail
-  // replaces the old timing guardrails.
+  // Hover config — instant (2026-07-13); the focus-loss guardrail replaces
+  // the old timing guardrails.
   hoverFudgePx: 15,
-  hoverRevealDelayMs: 0,
-  hoverHideDelayMs: 0,
 
   // Per-guild micro state
   guilds: {},

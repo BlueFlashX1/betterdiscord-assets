@@ -160,37 +160,19 @@ module.exports = class SoloLevelingTitleManager {
    * @param {string|any} messageOrData - Message (if 3 params) or data (if 2 params)
    * @param {any} data - Optional data to log (only if tag provided)
    */
-  debugLog(tagOrMessage, messageOrData = null, data = null) {
-    this.settings.debugMode &&
-      (data !== null
-        ? console.log(`[TitleManager:${tagOrMessage}] ${messageOrData}`, data)
-        : messageOrData !== null && typeof messageOrData === 'object'
-        ? console.log(`[TitleManager] ${tagOrMessage}`, messageOrData)
-        : messageOrData !== null
-        ? console.log(`[TitleManager:${tagOrMessage}] ${messageOrData}`)
-        : console.log(`[TitleManager] ${tagOrMessage}`));
+  debugLog(tag, message, data = null) {
+    if (!this.settings.debugMode) return;
+    data !== null
+      ? console.log(`[TitleManager:${tag}] ${message}`, data)
+      : console.log(`[TitleManager:${tag}] ${message}`);
   }
 
-  /**
-   * Debug error helper - only logs when debug mode is enabled
-   * Supports both formats:
-   * - debugError('message', error) - Simple format
-   * - debugError('TAG', 'message', error) - Tagged format
-   * @param {string} tagOrMessage - Tag (if 3 params) or message (if 2 params)
-   * @param {string|any} messageOrError - Message (if 3 params) or error (if 2 params)
-   * @param {any} error - Optional error object (only if tag provided)
-   */
-  debugError(tagOrMessage, messageOrError = null, error = null) {
-    this.settings.debugMode &&
-      (error !== null
-        ? console.error(`[TitleManager:${tagOrMessage}] ${messageOrError}`, error)
-        : messageOrError !== null && messageOrError instanceof Error
-        ? console.error(`[TitleManager] ${tagOrMessage}`, messageOrError)
-        : messageOrError !== null && typeof messageOrError === 'object'
-        ? console.error(`[TitleManager] ${tagOrMessage}`, messageOrError)
-        : messageOrError !== null
-        ? console.error(`[TitleManager:${tagOrMessage}] ${messageOrError}`)
-        : console.error(`[TitleManager] ${tagOrMessage}`));
+  /** Debug error helper - only logs when debug mode is enabled. Tagged form only. */
+  debugError(tag, message, error = null) {
+    if (!this.settings.debugMode) return;
+    error !== null
+      ? console.error(`[TitleManager:${tag}] ${message}`, error)
+      : console.error(`[TitleManager:${tag}] ${message}`);
   }
 
   warnOnce(key, message, detail = null) {

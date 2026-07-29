@@ -77,7 +77,6 @@ import { setupResizeHandlers, removeAllResizeStyles } from "./resize";
 import {
   togglePanel,
   restorePanelStates,
-  getPushedPanelCount,
   setupHoverHandlers,
   setupSettingsGuard,
   setupGuildChangeListener,
@@ -94,7 +93,7 @@ import {
   restoreAllCrushedCategories,
   clearAllHoverStates,
 } from "./panels";
-import { updateCSSVars, buildCSS, injectCSS } from "./styles";
+import { updateCSSVars, injectCSS } from "./styles";
 import { getSettingsPanel } from "./settings";
 
 // Inject PluginUtils into hotkeys module
@@ -118,29 +117,12 @@ function ensurePanelSettingsShape(settings) {
   }
 }
 
-function normalizeHoverDelays(settings) {
-  // 2026-07-13: timing guardrails removed — reveal/hide are instant (0ms) by
-  // default and any saved legacy delay is migrated to instant. The guardrail
-  // against stuck-open panels is now focus-based: window blur hides all
-  // RA-revealed surfaces immediately (setupHoverHandlers in panels.js).
-  if (!Number.isFinite(settings.hoverRevealDelayMs) || settings.hoverRevealDelayMs < 0) {
-    settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
-  }
-  if (!Number.isFinite(settings.hoverHideDelayMs) || settings.hoverHideDelayMs < 0) {
-    settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
-  }
-  // Migrate the previously-forced legacy defaults (1000/500) to instant.
-  if (settings.hoverRevealDelayMs === 1000) settings.hoverRevealDelayMs = 0;
-  if (settings.hoverHideDelayMs === 500) settings.hoverHideDelayMs = 0;
-}
-
 function sanitizeLoadedSettings(saved, deepMerge) {
   const settings = deepMerge(DEFAULT_SETTINGS, saved);
   if (!Array.isArray(settings.grippedDMs)) settings.grippedDMs = [];
   if (!settings.defaultWidths) settings.defaultWidths = { ...DEFAULT_SETTINGS.defaultWidths };
   ensureGuildSettingsShape(settings);
   ensurePanelSettingsShape(settings);
-  normalizeHoverDelays(settings);
   return settings;
 }
 

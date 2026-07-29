@@ -1,6 +1,5 @@
-const { getScrollerPair, createArrowElement } = require('./dom-helpers');
+const { getScrollerPair, createArrowElement, computeArrowVisibility, jumpToPresent } = require('./dom-helpers');
 const { createTrackedTimers } = require('../shared/tracked-timers');
-const EDGE_THRESHOLD = 100;
 
 function setArrowVisible(el, isVisible) {
   if (!el) return;
@@ -11,11 +10,9 @@ function setArrowVisible(el, isVisible) {
 function updateArrowState(state) {
   const scroller = state?.currentScroller;
   if (!state || !scroller) return;
-  const { scrollTop, scrollHeight, clientHeight } = scroller;
-  const atBottom = scrollHeight - scrollTop - clientHeight < EDGE_THRESHOLD;
-  const atTop = scrollTop < EDGE_THRESHOLD;
-  setArrowVisible(state.downEl, !atBottom);
-  setArrowVisible(state.upEl, !atTop);
+  const { showDown, showUp } = computeArrowVisibility(scroller);
+  setArrowVisible(state.downEl, showDown);
+  setArrowVisible(state.upEl, showUp);
 }
 
 function ensureArrowElements(state, wrapper) {
@@ -107,18 +104,7 @@ function createFallbackState(plugin) {
     const wrapper = state.currentWrapper;
     const scroller = state.currentScroller;
     if (!wrapper || !scroller) return;
-
-    const nativeBar = wrapper.querySelector('div[class^="jumpToPresentBar_"]');
-    const nativeBtn = nativeBar ? nativeBar.querySelector("button") : null;
-    if (nativeBtn) {
-      nativeBar.style.display = "";
-      nativeBtn.click();
-      requestAnimationFrame(() => {
-        nativeBar.style.display = "none";
-      });
-    } else {
-      scroller.scrollTop = scroller.scrollHeight;
-    }
+    jumpToPresent(wrapper, scroller);
     updateArrowState(state);
   };
 

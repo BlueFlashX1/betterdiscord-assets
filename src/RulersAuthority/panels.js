@@ -8,7 +8,6 @@ import {
   RA_TOOLBAR_ICON_ID,
   RA_ICON_REINJECT_DELAY_MS,
   RA_OBSERVER_THROTTLE_MS,
-  RA_PANEL_HOVER_REVEAL_MIN_MS,
   RA_SETTINGS_OPEN_CLASS,
   SIDEBAR_FALLBACKS,
   MEMBERS_FALLBACKS,
@@ -275,17 +274,15 @@ function getHoverRuntime(ctx, e) {
 
   const fudge = Number(ctx.settings.hoverFudgePx) || 15;
   const edgeZonePx = Math.max(36, fudge);
-  const revealDelay = Math.max(
-    RA_PANEL_HOVER_REVEAL_MIN_MS,
-    Number(ctx.settings.hoverRevealDelayMs) || 0
-  );
+  // Hover reveal/hide is instant by design (2026-07-13) — the focus-loss
+  // guardrail replaced timing delays; the delay settings were removed.
   return {
     event: e,
     fudge,
     edgeZonePx,
-    hideDelay: Math.max(0, Number(ctx.settings.hoverHideDelayMs) || 0),
-    revealDelay,
-    panelRevealDelay: revealDelay,
+    hideDelay: 0,
+    revealDelay: 0,
+    panelRevealDelay: 0,
     viewportWidth: window.innerWidth,
     sidebarHoverEnabled,
     membersHoverEnabled,
