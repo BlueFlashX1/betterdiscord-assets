@@ -155,9 +155,11 @@ class DockEngine {
     this._cachedComposerEl = null;
     this._cachedComposerResult = false;
 
-    // Debug
+    // Debug — persisted opt-in so the safeTick section-timing probe can be
+    // enabled across restarts via __HSLDockAutoHideDebug.setEnabled(true).
     this.tickCount = 0;
-    this.debugEnabled = false;
+    this.debugEnabled =
+      (typeof BdApi !== "undefined" && BdApi?.Data?.load?.("HSLDockAutoHide", "engineDebug")) === true;
     this.debugConsole = false;
     this.debugFileEnabled = false;
     this.debugMaxEntries = 2200;

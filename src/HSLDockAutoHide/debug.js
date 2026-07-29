@@ -74,6 +74,13 @@ function installDebugApi(engine) {
       },
       state: () => snapshotState(engine),
       filePath: () => engine.debugFilePath,
+      // Persisted toggle for the safeTick section-timing probe (2026-07-29):
+      // __HSLDockAutoHideDebug.setEnabled(true) from DevTools, survives restarts.
+      setEnabled: (v) => {
+        engine.debugEnabled = !!v;
+        try { BdApi.Data.save("HSLDockAutoHide", "engineDebug", !!v); } catch (_) {}
+        return engine.debugEnabled;
+      },
       clear: () => {
         engine.debugBuffer.length = 0;
         engine.debugSeq = 0;
