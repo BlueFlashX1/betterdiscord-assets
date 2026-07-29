@@ -168,10 +168,6 @@ module.exports = {
   
       // Only track if channel actually changed
       if (channelId !== lastChannelId) {
-        // Invalidate chat container cache on channel switch (DOM likely changed)
-        this._cachedChatContainer = null;
-        this._cachedChatContainerTs = 0;
-  
         // Reduced verbosity - only log if verbose mode enabled (frequent operation)
         this.debugLog('HANDLE_CHANNEL_CHANGE', 'Channel changed detected', {
           oldChannelId: lastChannelId,

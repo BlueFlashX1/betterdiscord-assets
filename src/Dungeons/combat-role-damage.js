@@ -52,15 +52,6 @@ module.exports = {
     return this.clampNumber(baseBossShare - mobPressurePenalty, 0.05, 0.95);
   },
 
-  applyBehaviorModifier(behavior, attackDamage) {
-    const behaviorMultipliers = {
-      aggressive: 1.3,
-      balanced: 1.0,
-      tactical: 0.85,
-    };
-    return Math.floor(attackDamage * (behaviorMultipliers[behavior] || 1.0));
-  },
-
   isRoleCombatModelEnabled() {
     const version = Number.isFinite(this.settings?.roleCombatModelVersion)
       ? this.settings.roleCombatModelVersion

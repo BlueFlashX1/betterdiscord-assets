@@ -80,11 +80,6 @@ class ItemVaultStorage {
     return this._cache.get(itemId)?.amount ?? 0;
   }
 
-  /** Get full record for an item */
-  getRecord(itemId) {
-    return this._cache.get(itemId) || null;
-  }
-
   /** Get all records as a plain object { itemId: amount } */
   getAllBalances() {
     const balances = {};

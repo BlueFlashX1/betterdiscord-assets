@@ -153,11 +153,6 @@ class EquipmentStorage {
     return result;
   }
 
-  /** Returns the instanceId in the given slot, or null if empty. */
-  getEquippedInstanceId(slot) {
-    return this._equipped.get(slot) ?? null;
-  }
-
   /**
    * O(1) lookup of a single inventory instance (2026-07-13). Callers used to
    * rebuild a full instanceId→item Map (or run a linear .find()) for a single

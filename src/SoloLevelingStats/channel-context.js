@@ -86,27 +86,6 @@ module.exports = {
     return true;
   },
 
-  buildMessageContextFromStore(message, messageText = '') {
-    const channelId = message?.channel_id || this.getCurrentChannelId();
-    const channelType = this.getChannelTypeById(channelId);
-    const mentionCount = Array.isArray(message?.mentions)
-      ? message.mentions.length + (message?.mention_everyone ? 1 : 0)
-      : this.extractMentionCountFromText(messageText);
-  
-    return {
-      source: 'store',
-      channelId,
-      channelType,
-      mentionCount,
-      hasMentions: mentionCount > 0,
-      isReply: !!(message?.message_reference || message?.referenced_message),
-      isThread:
-        this.isThreadLikeChannelType(channelType) ||
-        /\/threads\/\d+/.test(window.location?.pathname || ''),
-      isForumThread: channelType === 11 || channelType === 12,
-    };
-  },
-
   buildMessageContextFromView(messageText = '', messageElement = null) {
     const channelInfo = this.getCurrentChannelInfo() || {};
     const rawChannelId = channelInfo.rawChannelId || null;
@@ -317,51 +296,6 @@ module.exports = {
     }
   },
 
-  _getPrimaryChatContainer() {
-    // PERF: 2s TTL cache — avoids 6 sequential querySelector calls on every hot-path invocation
-    const now = Date.now();
-    if (this._cachedChatContainer && this._cachedChatContainerTs && (now - this._cachedChatContainerTs < 2000)) {
-      if (this._cachedChatContainer.isConnected) return this._cachedChatContainer;
-      this._cachedChatContainer = null;
-      this._cachedChatContainerTs = 0;
-    }
-  
-    const el =
-      document.querySelector(`main${dc.sel.chatContent}`) ||
-      document.querySelector(`section${dc.sel.chatContent}[role="main"]`) ||
-      document.querySelector(`div${dc.sel.chatContent}:not([role="complementary"])`) ||
-      document.querySelector(`div${dc.sel.chat}:not(${dc.sel.chatLayerWrapper})`) ||
-      document.querySelector('div[class*="chat-"]:not([class*="chatLayerWrapper"])');
-  
-    if (el) {
-      this._cachedChatContainer = el;
-      this._cachedChatContainerTs = now;
-    }
-    return el;
-  },
-
-  _getMessageInputAreaInPrimaryChat() {
-    const mainChat = this._getPrimaryChatContainer();
-    if (!mainChat) return null;
-  
-    const messageInputArea =
-      mainChat.querySelector(dc.sel.channelTextArea) ||
-      mainChat.querySelector(dc.sel.textArea)?.parentElement ||
-      mainChat.querySelector(dc.sel.slateTextArea)?.parentElement;
-  
-    if (!messageInputArea || !messageInputArea.parentElement) return null;
-  
-    // Safety: don't inject inside dialogs/modals (Forward To, etc.)
-    if (
-      messageInputArea.closest('[role="dialog"]') ||
-      messageInputArea.closest(dc.sel.layerContainer)
-    ) {
-      return null;
-    }
-  
-    return messageInputArea;
-  },
-
   _canShowChatUIInCurrentView() {
     // Show chat UI in all guild text channels unconditionally.
     // Previously also required a writable message input, which caused the UI to
@@ -540,62 +474,6 @@ module.exports = {
     }
   
     return messageId;
-  },
-
-  getMessageTimestamp(messageElement) {
-    try {
-      // Method 1: Try React props (most reliable)
-      const reactKey = this.getReactFiberKey(messageElement);
-      if (reactKey) {
-        let fiber = messageElement[reactKey];
-        for (let i = 0; i < 20 && fiber; i++) {
-          const timestamp =
-            fiber.memoizedProps?.message?.timestamp ||
-            fiber.memoizedState?.message?.timestamp ||
-            fiber.memoizedProps?.message?.createdTimestamp;
-          if (timestamp) {
-            // Discord timestamps can be in seconds or milliseconds
-            return typeof timestamp === 'string'
-              ? new Date(timestamp).getTime()
-              : timestamp < 1000000000000
-              ? timestamp * 1000
-              : timestamp;
-          }
-          fiber = fiber.return;
-        }
-      }
-  
-      // Method 2: Try to find timestamp element in DOM
-      const timestampElement = messageElement.querySelector(dc.sel.timestamp);
-      if (timestampElement) {
-        const timeAttr =
-          timestampElement.getAttribute('datetime') || timestampElement.getAttribute('title');
-        if (timeAttr) {
-          const parsed = new Date(timeAttr).getTime();
-          if (!isNaN(parsed)) return parsed;
-        }
-      }
-  
-      // Method 3: Check if message was just added (within last 5 seconds = likely new)
-      // This is a fallback for messages without timestamp data
-      const addedTime = this._domNodeAddedTime?.get(messageElement);
-      const elementAge = Date.now() - (addedTime || Date.now());
-      if (elementAge < 5000) {
-        // Assume it's new if added within last 5 seconds
-        return Date.now();
-      }
-  
-      return null;
-    } catch (error) {
-      this.debugError('GET_MESSAGE_TIMESTAMP', error);
-      return null;
-    }
-  },
-
-  isSystemMessage(messageElement) {
-    const systemClasses = ['systemMessage', 'systemText', 'joinMessage', 'leaveMessage'];
-    const classes = Array.from(messageElement.classList || []);
-    return classes.some((c) => systemClasses.some((sc) => c.includes(sc)));
   },
 
   isOwnMessage(messageElement, currentUserId) {

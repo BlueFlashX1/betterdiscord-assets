@@ -354,35 +354,6 @@ ${childSel} {
 
   // FONT LOADING HELPERS
 
-  _getPluginsFolderFromBdApi() {
-    if (typeof BdApi !== 'undefined' && BdApi.Plugins?.folder) {
-      const pluginsFolder = BdApi.Plugins.folder;
-      return pluginsFolder.endsWith('/') ? pluginsFolder : `${pluginsFolder}/`;
-    }
-    return null;
-  },
-
-  _getPluginsFolderFromScript() {
-    try {
-      const scripts = Array.from(document.getElementsByTagName('script'));
-      const pluginScript = scripts.find(
-        (script) => script.src && script.src.includes('CriticalHit.plugin.js')
-      );
-
-      if (pluginScript?.src) {
-        const URLConstructor = typeof URL !== 'undefined' ? URL : null;
-        const scriptUrl = URLConstructor
-          ? new URLConstructor(pluginScript.src)
-          : { pathname: pluginScript.src };
-        const scriptPath = scriptUrl.pathname;
-        return scriptPath.substring(0, scriptPath.lastIndexOf('/'));
-      }
-    } catch (error) {
-      // Script parsing failed
-    }
-    return null;
-  },
-
   _normalizeFontNameForId(fontName) {
     return fontName.replace(/\s+/g, '-').toLowerCase();
   },

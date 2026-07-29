@@ -337,7 +337,6 @@ module.exports = {
       this._mutationDebounceTimer = null;
     }
     this._pendingMutationNodes = [];
-    this._domNodeAddedTime = null;
     if (this.processedMessageIds) {
       this.processedMessageIds.clear();
       this.processedMessageIds = null;

@@ -112,12 +112,6 @@ module.exports = {
     }
   },
 
-  allocateStatPoint(statName) {
-    // Back-compat single-point shim. New callers should use
-    // allocateStatPoints(statName, amount) directly for bulk allocation.
-    return this.allocateStatPoints(statName, 1);
-  },
-
   allocateStatPoints(statName, amount = 1, options = {}) {
     // Normalize stat name (handle case variations)
     if (!statName) {

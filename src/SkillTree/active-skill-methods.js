@@ -548,11 +548,6 @@ const ActiveSkillMethods = {
     return this._cloneDungeonCombatSkillState(states[skillId]);
   },
 
-  getDungeonCombatSkillCooldownRemaining(skillId, now = Date.now()) {
-    const state = this.getDungeonCombatSkillState(skillId);
-    return Math.max(0, state.cooldownUntil - now);
-  },
-
   _getOffensiveCooldownReduction() {
     const bonuses =
       typeof this.calculateSkillBonuses === "function" ? this.calculateSkillBonuses() || {} : {};

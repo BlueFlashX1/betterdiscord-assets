@@ -91,7 +91,6 @@ const {
   createModal,
   buildKeyValueSection,
   buildPermissionsSection,
-  buildGrid,
 } = require("./modal-utils");
 const {
   getPlatformIntel,
@@ -1511,10 +1510,6 @@ module.exports = class ShadowRecon {
 
   _buildPermissionsSection(title, summary) {
     return buildPermissionsSection(title, summary);
-  }
-
-  _buildGrid(rows) {
-    return buildGrid(rows);
   }
 
   // ---- Counts / Stores -------------------------------------------------

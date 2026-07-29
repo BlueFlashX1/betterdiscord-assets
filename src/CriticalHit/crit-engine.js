@@ -62,15 +62,6 @@ module.exports = {
     }
   },
 
-  _loadEquipmentCritDamage() {
-    try {
-      const bonuses = window.EquipmentManager?.getTotalEquippedBonuses?.();
-      return Number(bonuses?.critDamage) || 0;
-    } catch (_) {
-      return 0;
-    }
-  },
-
   simpleHash(str) {
     // Delegates to the shared djb2Hash util in ./hash.js — previously
     // duplicated across crit-engine.js, restoration.js, id-extraction.js.

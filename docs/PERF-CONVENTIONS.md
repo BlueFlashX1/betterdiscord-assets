@@ -181,6 +181,25 @@ rest of the new surface was verified R1-R10 conformant: WARFRONT genuinely O(1)/
 (identity-cached war intel), SOVEREIGN doctrines O(species) pure arithmetic, no new
 scans/timers/observers.
 
+Fixed 2026-07-28 (graph-verified dead-code wave — code-review-graph MCP + suite-wide
+ref-count + git-history check per candidate): removed 16 dead functions + orphaned
+cascades (~230 lines) across CriticalHit (_loadEquipmentCritDamage, both
+_getPluginsFolderFrom* font helpers), Dungeons (applyBehaviorModifier — leftover of the
+e533037 triple-stack fix, removal locks that fix in; _isBossStunned), EquipmentManager
+(getEquippedInstanceId), ItemVault (getRecord), ShadowRecon (_buildGrid wrapper +
+buildGrid import), SkillTree (getDungeonCombatSkillCooldownRemaining), SLS
+(buildMessageContextFromStore, _getMessageInputAreaInPrimaryChat, getMessageTimestamp,
+isSystemMessage [SLS copy; CriticalHit's own copy is live], allocateStatPoint shim,
+_getPrimaryChatContainer + its _cachedChatContainer* invalidations in xp-processing,
+stale _domNodeAddedTime null-out). Kept deliberately (do NOT re-flag): ShadowArmy
+deleteShadow/_deleteShadowsByIds (deleteShadowsBatch precedent — sound deletion API
+family); ShadowSenses getWatchFocusForUser/isPriorityTarget (added 2026-07-13 with
+watch-focus feature, awaiting wiring); HSLDockAutoHide isCursorNearBottom (documented
+DevTools debug alias). OPEN USER DECISION: ShadowSenses members-list widget
+(injectWidget/setupWidgetObserver, plugin-ui-methods.js:99-206) has NEVER been wired —
+no call site in git history since the May snapshot; restore (wire in start()) or delete
+(~120 lines + removeWidget/stop() plumbing).
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

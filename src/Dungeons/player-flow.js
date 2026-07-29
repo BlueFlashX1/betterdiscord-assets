@@ -1689,10 +1689,6 @@ module.exports = {
     return debuff ? debuff.resistReduction : 0;
   },
 
-  _isBossStunned(dungeon) {
-    return !!this._getActiveDebuff(dungeon, 'rulers_force');
-  },
-
   _getBloodlustStatReduction(dungeon) {
     const debuff = this._getActiveDebuff(dungeon, 'bloodlust_stats');
     return debuff?.statReduction || 0;
