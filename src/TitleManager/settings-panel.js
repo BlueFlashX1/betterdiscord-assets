@@ -1,5 +1,4 @@
-const TM_ESCAPE_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-const escapeHtml = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => TM_ESCAPE_MAP[c]);
+const { escapeHtml } = require("../shared/escape-html");
 
 function buildTitleManagerSettingsPanel(plugin) {
   plugin.detachTitleManagerSettingsPanelHandlers();

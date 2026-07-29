@@ -17,14 +17,7 @@ const HEADER_TOOLBAR_SELECTORS = [
   'header [class*="toolbar_"]',
 ];
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
+const { escapeHtml } = require('../shared/escape-html');
 
 module.exports = {
   startDungeonHeaderWidget() {

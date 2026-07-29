@@ -1,4 +1,3 @@
-const CacheManager = require('./cache-manager');
 const { UnifiedSaveManager } = require('./bootstrap-runtime');
 
 module.exports = {
@@ -232,7 +231,6 @@ module.exports = {
     this._mobGenerationCache = new Map();
     this._mobCacheTTL = 60000;
 
-    this.cache = new CacheManager();
 
     this._cache = {
       pluginInstances: {},

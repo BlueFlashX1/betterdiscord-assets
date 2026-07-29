@@ -104,43 +104,24 @@ module.exports = {
         return;
       }
 
-      const deployBtn = target.closest?.('.dungeon-deploy-btn');
-      if (deployBtn) {
+      // deploy/recall/join/leave share one shape: closest(selector) →
+      // data-channel-key → guarded runner. Collapsed from 4 identical
+      // blocks (ponytail audit 2026-07-29). combat-skill and the
+      // widget-action switch above differ and stay explicit.
+      const simpleActions = [
+        ['.dungeon-deploy-btn', 'deploy', (key) => this.deployShadows(key)],
+        ['.dungeon-recall-btn', 'recall', (key) => this.recallShadows(key)],
+        ['.dungeon-join-btn', 'join', (key) => this.selectDungeon(key)],
+        ['.dungeon-leave-btn', 'leave', (key) => this.leaveDungeon(key)],
+      ];
+      for (const [selector, action, runner] of simpleActions) {
+        const btn = target.closest?.(selector);
+        if (!btn) continue;
         e.preventDefault();
         e.stopPropagation();
-        const channelKey = deployBtn.getAttribute('data-channel-key');
+        const channelKey = btn.getAttribute('data-channel-key');
         if (!channelKey) return;
-        runGuardedDungeonAction('deploy', channelKey, () => this.deployShadows(channelKey));
-        return;
-      }
-
-      const recallBtn = target.closest?.('.dungeon-recall-btn');
-      if (recallBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        const channelKey = recallBtn.getAttribute('data-channel-key');
-        if (!channelKey) return;
-        runGuardedDungeonAction('recall', channelKey, () => this.recallShadows(channelKey));
-        return;
-      }
-
-      const joinBtn = target.closest?.('.dungeon-join-btn');
-      if (joinBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        const channelKey = joinBtn.getAttribute('data-channel-key');
-        if (!channelKey) return;
-        runGuardedDungeonAction('join', channelKey, () => this.selectDungeon(channelKey));
-        return;
-      }
-
-      const leaveBtn = target.closest?.('.dungeon-leave-btn');
-      if (leaveBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        const channelKey = leaveBtn.getAttribute('data-channel-key');
-        if (!channelKey) return;
-        runGuardedDungeonAction('leave', channelKey, () => this.leaveDungeon(channelKey));
+        runGuardedDungeonAction(action, channelKey, () => runner(channelKey));
         return;
       }
 

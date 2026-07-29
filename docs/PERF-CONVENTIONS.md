@@ -254,6 +254,29 @@ verdict for the record: with full attribution coverage, Discord-internal runtime
 alone (~1.3s/min, 1523ms worst) out-cost the entire suite (~21ms/min steady) — channel
 transitions (CHANNEL_UPDATES/CHANNEL_SELECT) remain Discord's own worst moments.
 
+Ponytail wave 2026-07-29 (4-agent fleet audit + central verification; ~320 lines cut):
+FIXED — LPB tri-tier settings→single-tier BdApi.Data (cosmetic toggles; BdApi tier was
+always written); ChatNavArrows edge/jump logic → dom-helpers (computeArrowVisibility/
+jumpToPresent); TitleManager debugLog/debugError dual-signature collapsed; RA hover-delay
+keys deleted (provably 0, instant-hover decision); ShadowRecon snowflake dup derived;
+SE dead 'debug' key; SAB _createRow dead label; escapeHtml 5 copies → shared/escape-html
+(5-replace superset); ARISE_SVG 9.9KB dup → shared/arise-svg; Dungeons CacheManager
+DELETED with the LEGACY _shadowCountCache kept as survivor (inverts the audit suggestion:
+player-flow.js:1397 + story-mode-core.js:151 read the legacy field directly — the
+"centralized" layer was the redundant one); Dungeons ui-delegation 4 identical action
+blocks → table+loop.
+REFUTED (do NOT re-propose): EqM/ItemVault _getUrlChannelType/_visibleChannelHeaders →
+shared installVoiceChatBodyAttr — NOT equivalent: Rule 2 (exactly-one-visible-header) is
+INJECTION TARGETING (picks the canonical header when the VC overlay adds a second one),
+which CSS hiding cannot replace; and the body-attr watcher is only installed by
+SoloLevelingTheme, so gating on it couples icon correctness to another plugin being
+enabled. escapeHtml consolidation stands; the channel-detection pair stays local.
+PARKED — LPB _invokeRuntimeHelper dispatch table (dies in the planned runtime-helpers
+migration; interim refactor risks subtle fallback drift).
+FLAGGED (correctness, out of ponytail scope, NOT fixed): story-mode-core.js:151
+`const shadowCount = this._shadowCountCache || 100;` reads the cache OBJECT as a count —
+almost certainly meant `?.count ?? 100`. Needs a game-balance-aware fix.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

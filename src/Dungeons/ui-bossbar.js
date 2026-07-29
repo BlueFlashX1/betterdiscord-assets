@@ -1,12 +1,6 @@
 const dc = require("../shared/discord-classes");
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+const { escapeHtml } = require('../shared/escape-html');
 
 module.exports = {
   _buildBossBarCombatSkillButtonHtml(skillState, channelKey) {

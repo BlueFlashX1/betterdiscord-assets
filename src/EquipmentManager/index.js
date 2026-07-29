@@ -57,13 +57,7 @@ function _visibleChannelHeaders() {
   ).filter((el) => el.offsetParent !== null);
 }
 
-function escapeHtml(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+const { escapeHtml } = require('../shared/escape-html');
 
 module.exports = class EquipmentManager {
   constructor() {

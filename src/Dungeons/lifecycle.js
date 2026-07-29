@@ -199,7 +199,6 @@ module.exports = {
     if (this._memberWidthCache) this._memberWidthCache.clear();
     if (this._containerCache) this._containerCache.clear();
     if (this._mobSpawnQueue) this._mobSpawnQueue.clear();
-    if (this.cache) this.cache.clear();
     if (this.extractionEvents) this.extractionEvents.clear();
     if (this._mobGenerationCache) this._mobGenerationCache.clear();
     if (this._dungeonUiActionLocks) this._dungeonUiActionLocks.clear();

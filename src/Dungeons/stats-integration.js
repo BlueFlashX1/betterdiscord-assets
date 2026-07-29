@@ -41,13 +41,10 @@ module.exports = {
   },
 
   async getShadowCount() {
-    // Check centralized cache first
-    const cached = this.cache.get('shadowCount');
-    if (cached !== null) {
-      return cached;
-    }
-
-    // Check legacy cache (for backwards compatibility during transition)
+    // 5s TTL count cache. (A parallel generic CacheManager layer holding
+    // only this key was removed — ponytail audit 2026-07-29. THIS field is
+    // the survivor because player-flow.js and story-mode-core.js read it
+    // directly.)
     const now = Date.now();
     if (this._shadowCountCache && now - this._shadowCountCache.timestamp < 5000) {
       return this._shadowCountCache.count;
@@ -76,8 +73,6 @@ module.exports = {
         count = this._shadowCountCache?.count ?? 0;
       }
 
-      // Cache in both systems (centralized + legacy)
-      this.cache.set('shadowCount', count, 5000);
       this._shadowCountCache = { count, timestamp: now };
       return count;
     } catch (error) {
@@ -95,8 +90,6 @@ module.exports = {
 
   invalidateShadowCountCache() {
     this._shadowCountCache = null;
-    // Also clear centralized CacheManager entry
-    this.cache?.delete?.('shadowCount');
   },
 
   getSkillTreeBonuses() {
