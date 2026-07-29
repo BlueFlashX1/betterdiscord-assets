@@ -217,7 +217,6 @@ module.exports = {
       _healV: compressed.hv || 0,
       grade: compressed.gr || 'Common',
       customName: compressed.cn || null,
-      _ultraCompressed: true,
     };
   },
 
@@ -273,7 +272,6 @@ module.exports = {
       _healV: compressed.hv || 0,
       grade: compressed.gr || 'Common',
       customName: compressed.cn || null,
-      _compressed: true,
     };
   },
 

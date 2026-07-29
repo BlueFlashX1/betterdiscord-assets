@@ -633,7 +633,7 @@ module.exports = {
 
     // PERF: Batched resurrection — one mana write-back for all deaths this tick
     if (newlyDead.length > 0 && this.soloLevelingStats) {
-      if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
+      if (!(dungeon._lastResurrectionAttempt instanceof Map)) dungeon._lastResurrectionAttempt = new Map();
       const now = Date.now();
 
       // BUGFIX: Parallel mode uses per-dungeon mana budget; defer write-back to post-Promise.all
@@ -649,7 +649,7 @@ module.exports = {
 
       let resurrectedCount = 0;
       for (const { shadowId, targetShadow, shadowHPData } of newlyDead) {
-        dungeon._lastResurrectionAttempt[shadowId] = now;
+        dungeon._lastResurrectionAttempt.set(shadowId, now);
         const cost = this.getResurrectionCost(targetShadow.rank || 'E');
 
         if (manaPool >= cost) {
@@ -663,7 +663,7 @@ module.exports = {
           shadowHPData.hp = shadowHPData.maxHp || 1;
           shadowHP.set(shadowId, { ...shadowHPData });
           deadShadows.delete(shadowId);
-          delete dungeon._lastResurrectionAttempt[shadowId];
+          dungeon._lastResurrectionAttempt.delete(shadowId);
         }
       }
 

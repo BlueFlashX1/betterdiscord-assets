@@ -150,7 +150,9 @@ module.exports = {
 
         // Resurrect dead shadows each tick (breaks early when mana runs out); skip when hidden
         if (isWindowVisible) {
-          if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
+          // Map (not plain object): repeated delete-on-object forces V8 dictionary
+          // mode on a combat-tick structure. Same pattern as _shadowLastProcessed.
+          if (!(dungeon._lastResurrectionAttempt instanceof Map)) dungeon._lastResurrectionAttempt = new Map();
           const nowResurrection = Date.now();
 
           for (const shadow of assignedShadows) {
@@ -160,10 +162,10 @@ module.exports = {
             const hpData = shadowHP.get(shadowId);
             if (!hpData || hpData.hp > 0) continue;
 
-            const lastAttempt = dungeon._lastResurrectionAttempt[shadowId] || 0;
+            const lastAttempt = dungeon._lastResurrectionAttempt.get(shadowId) || 0;
             if (nowResurrection - lastAttempt < 2000) continue;
 
-            dungeon._lastResurrectionAttempt[shadowId] = nowResurrection;
+            dungeon._lastResurrectionAttempt.set(shadowId, nowResurrection);
             const resurrected = await this.attemptAutoResurrection(shadow, channelKey);
             if (resurrected) {
               if (!hpData.maxHp || hpData.maxHp <= 0) {
@@ -174,7 +176,7 @@ module.exports = {
               shadowHP.set(shadowId, { ...hpData });
               deadShadows.delete(shadowId);
               if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
-              delete dungeon._lastResurrectionAttempt[shadowId];
+              dungeon._lastResurrectionAttempt.delete(shadowId);
             } else {
               // Mana ran out — stop trying, remaining dead shadows wait for regen
               break;

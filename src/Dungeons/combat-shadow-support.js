@@ -69,10 +69,10 @@ module.exports = {
     }
 
     // LEAK-2: Prune stale resurrection attempt timestamps (only keep assigned shadows)
-    if (dungeon._lastResurrectionAttempt) {
-      for (const shadowId of Object.keys(dungeon._lastResurrectionAttempt)) {
+    if (dungeon._lastResurrectionAttempt instanceof Map) {
+      for (const shadowId of dungeon._lastResurrectionAttempt.keys()) {
         if (!assignedIds.has(shadowId)) {
-          delete dungeon._lastResurrectionAttempt[shadowId];
+          dungeon._lastResurrectionAttempt.delete(shadowId);
         }
       }
     }
