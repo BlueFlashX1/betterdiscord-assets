@@ -114,9 +114,18 @@ permanent will-change (re-promotion per hover would cost more).
 Parked (wave 6 additions): bulk-vs-bulk same-event-loop-tick cap overshoot sliver (needs atomic
 slot reservation — extraction redesign for a grandfathered-anyway edge); themes/variables/ token
 system adoption (built, never @imported, 100+ hardcoded rgba repeats — dedicated refactor wave);
-dead 71MB+28MB GIFs deletion, MyTheme.theme.css scaffold removal, Tier-2 video-element
-background (USER DECISIONS pending); combat-allocation 45-60s staleness after mid-dungeon
-rank-up (deliberate tradeoff — leave).
+Tier-2 video-element background (USER DECISION pending); combat-allocation 45-60s staleness
+after mid-dungeon rank-up (deliberate tradeoff — leave).
+RESOLVED 2026-07-29 (dead-weight sweep): 49MB themes/SLEndingBest.gif git-rm'd from HEAD —
+zero live references (delivery is SHA-pinned to the 9.2MB .webp at commit 91a45d9, served from
+history regardless of HEAD; only a docs/history mention remained). The old "71MB+28MB GIFs"
+sizes in the wave-6 note were stale. MyTheme.theme.css scaffold: already gone (no file on
+disk). ShadowAwayBridge stale runtime.js: already resolved 2026-07-13 (de-bundled into real
+source, commit "refactor(awaybridge)"). Suite-wide V8 static sweep completed: remaining
+`delete` sites are cold-path (migrations/teardown/10-min purges) or small-N effect buckets
+that are persistence-coupled (activeBuffs/activeDebuffs/dots ride the dungeon JSON save —
+Map conversion would drop active buffs on reload; left deliberately). spawn-wave-builders
+mobTemplates new Array(n)+fill → map() (holey→packed).
 
 Parked (refreshed wave 5): Dungeons mobs `extracted` flag — DESIGN DECISION NEEDED: the mobs
 IDB store is write-only at runtime (only batchSaveMobs writes it; nothing ever reads), every

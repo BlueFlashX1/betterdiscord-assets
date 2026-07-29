@@ -558,16 +558,14 @@ module.exports = {
           });
         }
 
-        // Cache generated mobs (template for future spawns to prevent crashes)
-        const mobTemplates = new Array(newMobs.length);
-        for (let i = 0; i < newMobs.length; i++) {
-          const m = newMobs[i];
-          mobTemplates[i] = {
-            ...m,
-            id: undefined, // Remove ID for template
-            spawnedAt: undefined, // Remove timestamp for template
-          };
-        }
+        // Cache generated mobs (template for future spawns to prevent crashes).
+        // map() (not new Array(n) + indexed fill) keeps the array packed —
+        // new Array(n) starts holey and V8 never un-holes it (v8.dev/blog/elements-kinds).
+        const mobTemplates = newMobs.map((m) => ({
+          ...m,
+          id: undefined, // Remove ID for template
+          spawnedAt: undefined, // Remove timestamp for template
+        }));
         this._mobGenerationCache.set(cacheKey, { mobs: mobTemplates, timestamp: now });
 
         // Limit cache size to prevent memory issues
