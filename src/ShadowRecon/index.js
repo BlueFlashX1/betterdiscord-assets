@@ -1569,12 +1569,8 @@ module.exports = class ShadowRecon {
   // ---- Utility ---------------------------------------------------------
 
   _safeDateFromSnowflake(id) {
-    const num = this._toBigInt(id);
-    if (num === 0n) return "Unknown";
-    const discordEpoch = 1420070400000n;
-    const ts = Number((num >> 22n) + discordEpoch);
-    if (!Number.isFinite(ts) || ts <= 0) return "Unknown";
-    return new Date(ts).toLocaleString();
+    const ts = this._safeTimestampFromSnowflake(id);
+    return ts > 0 ? new Date(ts).toLocaleString() : "Unknown";
   }
 
   _toBigInt(value) {

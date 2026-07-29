@@ -223,7 +223,6 @@ module.exports = class ShadowExchange {
       this.defaultSettings = {
         waypoints: [],
         sortBy: "created",
-        debug: false,
         animationEnabled: true,
         respectReducedMotion: false,
         animationDuration: 550,

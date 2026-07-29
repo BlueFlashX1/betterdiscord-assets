@@ -512,7 +512,7 @@ module.exports = class ShadowAwayBridge {
     label.textContent = labelText;
     label.style.cssText = "display:block;margin-bottom:6px;font-weight:600;color:#dcddde;";
     row.appendChild(label);
-    return { row, label };
+    return row;
   }
 
   _createCheckbox(labelText, key) {
@@ -531,7 +531,7 @@ module.exports = class ShadowAwayBridge {
   }
 
   _createTextInput(labelText, key, { placeholder = "", type = "text" } = {}) {
-    const { row } = this._createRow(labelText);
+    const row = this._createRow(labelText);
     const input = document.createElement("input");
     input.type = type;
     input.value = String(this.settings[key] || "");
@@ -546,7 +546,7 @@ module.exports = class ShadowAwayBridge {
   }
 
   _createNumberInput(labelText, key, { min, max, step = 1 } = {}) {
-    const { row } = this._createRow(labelText);
+    const row = this._createRow(labelText);
     const input = document.createElement("input");
     input.type = "number";
     input.min = String(min);
