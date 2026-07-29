@@ -942,6 +942,16 @@ class ShadowStorageManager {
     let skipped = 0;
     const failedIds = [];
 
+    // Error-log storm cap (2026-07-29): the keyPath outage produced ~280k
+    // identical per-item error lines PER PASS — roughly 30-60s of main-thread
+    // time spent logging plus ~70MB of log growth per session, amplifying the
+    // outage it was reporting. Errors stay UNCONDITIONAL (loud is correct —
+    // it's how the outage was found); only repetition is bounded: first
+    // ERR_LOG_CAP lines per error class, then one summary after the batch.
+    const ERR_LOG_CAP = 5;
+    const errCounts = { threw: 0, get: 0, put: 0, abort: 0 };
+    let lastErrorName = null;
+
     for (let i = 0; i < ids.length; i += chunkSize) {
       const rawChunk = ids.slice(i, i + chunkSize);
       const uniqueChunkIds = Array.from(
@@ -964,7 +974,9 @@ class ShadowStorageManager {
                 try {
                   transformed = transformFn(freshRecord);
                 } catch (error) {
-                  this.debugError('TRANSFORM_BATCH', `transformFn threw for id ${id}`, error);
+                  if (++errCounts.threw <= ERR_LOG_CAP) {
+                    this.debugError('TRANSFORM_BATCH', `transformFn threw for id ${id}`, error);
+                  }
                   failedIds.push(id);
                   return;
                 }
@@ -994,18 +1006,26 @@ class ShadowStorageManager {
                   event.preventDefault();
                   event.stopPropagation();
                   failedIds.push(id);
-                  this.debugError('TRANSFORM_BATCH', `Failed to put transformed record ${id}`, {
-                    error: putRequest.error,
-                  });
+                  lastErrorName = putRequest.error?.name || lastErrorName;
+                  if (++errCounts.put <= ERR_LOG_CAP) {
+                    this.debugError('TRANSFORM_BATCH', `Failed to put transformed record ${id}`, {
+                      name: putRequest.error?.name || null,
+                      message: putRequest.error?.message || null,
+                    });
+                  }
                 };
               };
               getRequest.onerror = (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 failedIds.push(id);
-                this.debugError('TRANSFORM_BATCH', `Failed to get record ${id} for transform`, {
-                  error: getRequest.error,
-                });
+                lastErrorName = getRequest.error?.name || lastErrorName;
+                if (++errCounts.get <= ERR_LOG_CAP) {
+                  this.debugError('TRANSFORM_BATCH', `Failed to get record ${id} for transform`, {
+                    name: getRequest.error?.name || null,
+                    message: getRequest.error?.message || null,
+                  });
+                }
               };
             });
           });
@@ -1013,18 +1033,30 @@ class ShadowStorageManager {
           // onabort path — the whole chunk's writes were rolled back; report
           // every id in the chunk as failed rather than silently losing them.
           uniqueChunkIds.forEach((id) => failedIds.push(id));
+          lastErrorName = error?.name || lastErrorName;
           // DOMExceptions JSON-serialize to {} — surface name/message explicitly
           // (the 2026-07 failure storm was undiagnosable from `{"error":{}}` logs).
-          this.debugError('TRANSFORM_BATCH', `Chunk transaction aborted (${uniqueChunkIds.length} ids)`, {
-            name: error?.name || null,
-            message: error?.message || null,
-          });
+          if (++errCounts.abort <= ERR_LOG_CAP) {
+            this.debugError('TRANSFORM_BATCH', `Chunk transaction aborted (${uniqueChunkIds.length} ids)`, {
+              name: error?.name || null,
+              message: error?.message || null,
+            });
+          }
         }
       }
 
       if (i + chunkSize < ids.length) {
         await new Promise((r) => setTimeout(r, 0));
       }
+    }
+
+    const totalErrs = errCounts.threw + errCounts.get + errCounts.put + errCounts.abort;
+    if (totalErrs > ERR_LOG_CAP) {
+      this.debugError(
+        'TRANSFORM_BATCH',
+        `Batch finished with ${failedIds.length}/${ids.length} failed ids (per-class error lines capped at ${ERR_LOG_CAP})`,
+        { errorCounts: errCounts, lastErrorName }
+      );
     }
 
     return { completed, skipped, failedIds };
