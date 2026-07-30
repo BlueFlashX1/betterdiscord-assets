@@ -553,6 +553,21 @@ const ShadowArmy = class ShadowArmy {
           .catch((error) => {
             console.error('[ShadowArmy] Hierarchy restructure failed (will retry next start):', error);
             this.debugError('GRADE', 'Hierarchy restructure failed', error);
+            // Persist the reason. The console line is only readable by someone
+            // with devtools open at the right moment; this survives to disk and
+            // can be read after the fact. saveSettings debounces 3s, which a
+            // 43-minute session flushes many times over, so an unset flag with
+            // no error recorded here means the pass never RESOLVED rather than
+            // threw — a different bug, and worth being able to tell apart.
+            try {
+              if (this.settings?.shadowEssence) {
+                this.settings.shadowEssence.hierarchyReconcileError = {
+                  message: String(error?.message || error).slice(0, 300),
+                  at: new Date().toISOString(),
+                };
+                this.saveSettings();
+              }
+            } catch (_) {}
           });
       }, 15000);
     }
