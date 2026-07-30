@@ -97,7 +97,19 @@ module.exports = {
             this._critTrace(msg.id, `${via}:gone`);
             return;
           }
-          const idEl = document.querySelector(`[data-message-id="${msg.id}"]`);
+          // RESOLVE MULTI-STRATEGY (2026-07-30). This was
+          // `document.querySelector('[data-message-id="<id>"]')`, which never
+          // matched: the crit trace showed 9/9 crits failing here at both the
+          // rAF and the 400ms attempt, up to 1.5s after send — while the
+          // message was already visibly crit-coloured. The colour survives
+          // because buildMessageCSSRule targets FOUR patterns (selA
+          // [data-message-id], selB [id$="-<id>"], selC [data-list-item-id*=],
+          // and #message-content-<id>); the consumer only tried the first.
+          // requeryMessageElement tries the same attribute first and then
+          // falls back to matching getMessageIdentifier across message
+          // elements, which is the id="chat-messages-..." form Discord
+          // actually renders here.
+          const idEl = this.requeryMessageElement(msg.id);
           if (!idEl) {
             this._critTrace(msg.id, `${via}:no-el`);
             return;
