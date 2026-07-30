@@ -1176,14 +1176,23 @@ module.exports = class AAPerfSentinel {
       lines.push(`── TRENDS over ${spanMin.toFixed(1)} min (${this._trend.length} samples — rising floor = leak) ──`);
       lines.push(`JS heap:    ${fmtSlope(first.heapMB, last.heapMB, "MB")}`);
       lines.push(`DOM nodes:  ${fmtSlope(first.domNodes, last.domNodes, "")}`);
+      lines.push("            (Discord's message list dominates this — cross-check DOM FOOTPRINT below;");
+      lines.push("             plugin-owned element counts are the per-plugin leak signal, not this total)");
       lines.push(`Live listeners (adds-removes): ${fmtSlope(first.listeners, last.listeners, "")}`);
       const heaps = this._trend.map((x) => x.heapMB).filter((x) => x != null);
-      if (heaps.length >= 3) {
+      if (heaps.length >= 4) {
+        // Compare post-GC FLOORS, not averages (corrected 2026-07-30): heap
+        // sawtooths hard, so half-averages flagged "RISING" on a session whose
+        // first and last samples were both low. Only the floor — the level GC
+        // can no longer reclaim below — indicates retention.
         const mid = Math.floor(heaps.length / 2);
-        const avgA = heaps.slice(0, mid).reduce((x, y) => x + y, 0) / mid;
-        const avgB = heaps.slice(mid).reduce((x, y) => x + y, 0) / (heaps.length - mid);
-        lines.push(`  heap first-half avg ${avgA.toFixed(0)}MB vs second-half avg ${avgB.toFixed(0)}MB ` +
-          `— ${avgB - avgA > 25 ? "RISING (investigate)" : "stable (GC is reclaiming)"}`);
+        const floorA = Math.min(...heaps.slice(0, mid));
+        const floorB = Math.min(...heaps.slice(mid));
+        const peakA = Math.max(...heaps.slice(0, mid));
+        const peakB = Math.max(...heaps.slice(mid));
+        lines.push(`  heap FLOOR (post-GC, the leak signal): ${floorA}MB -> ${floorB}MB ` +
+          `— ${floorB - floorA > 40 ? "RISING (retention — investigate)" : "stable (GC reclaims to the same level)"}`);
+        lines.push(`  heap peak (churn, NOT a leak signal): ${peakA}MB -> ${peakB}MB`);
       }
       lines.push("");
     }
