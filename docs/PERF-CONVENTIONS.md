@@ -43,6 +43,27 @@ speed up the work; prove the work doesn't need to happen at that frequency.
   temp plugin writing JSON to `BdApi.Plugins.folder` (NOT ~/Documents — Discord lacks TCC
   write there; `__filename` is a bare basename, don't realpath it).
 
+## 3b. MEASURED BASELINE (2026-07-30, end of the AAPerfSentinel campaign)
+
+What "healthy" looks like on this machine, so a future session can tell drift from noise.
+Idle-to-light load (1 active dungeon, ~40 msg/min), AAPerfSentinel v4.3:
+
+| Signal | Healthy value |
+|---|---|
+| Renderer CPU | 0.7-4% of one core |
+| Frames under 33ms | 97-99% |
+| Long tasks per 30s window | ~10 (750ms total) |
+| ShadowArmy attributed | absent from LAST WINDOW movers (<1ms) |
+| Whole suite steady-state | ~20ms/min attributed |
+| Heap floor (post-GC) | stable across a session; peaks are churn, not leaks |
+| Per-plugin DOM footprint | 1-4 elements each, flat |
+| Burst captures | none firing |
+
+Campaign trajectory for ShadowArmy's window cost: 23,020ms/min -> 6,609ms/min -> absent.
+If a future report shows ShadowArmy back in the movers, or renderer CPU sitting above ~5%
+at idle, something regressed — read the newest AAPerfSentinel-burst-*.log first, it names
+the caller chain three frames deep.
+
 ## 4. Do-not-refix registry (fixed or refuted — re-reporting is a defect)
 
 Fixed 2026-07: SLS backup-cache + 20s save coalescing + not-own WeakSet/batch-dedup/fiber
