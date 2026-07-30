@@ -423,6 +423,31 @@ re-open ":has() is expensive" as a finding without evidence of a DOCUMENT-scoped
 Instrument note: the audit strips /* */ comments before counting — the first run reported
 162 "universal selectors" in a token file with none (every comment's closing " */" matched).
 
+Closed 2026-07-30 (final open-items pass):
+- BOSS HP BUG (gameplay, not perf): calculateBossHP was CALLED by story-mode-core but never
+  existed — Demon Castle bosses were flat 50000 HP forever, never rank-scaled. Implemented in
+  combat-primitives mirroring spawn-core's formula (100 + vit*10 + rankBonus) * staticMult *
+  armyMult, FLOORED at 50000 so no floor gets easier. shadowCount param accepted (existing
+  call site passes it) but deliberately unused as a multiplier — army reaches 281k.
+- WORSE BUG found in the same block: calculateBossBaseStats?.(bossConfig.rank) passed a rank
+  STRING where a rank INDEX is expected → Math.min("Monarch", 11) = NaN → stat-table lookup
+  undefined → EVERY Demon Castle boss had NaN strength/agility/intelligence/vitality, and the
+  `|| fallback` never fired because the NaN-filled object is truthy. Now passes rankIndex
+  (already computed two lines above). Demon Castle bosses have been statless since story mode
+  shipped.
+- combat-primitives.js was missing `const C = require('./constants')` — the new code would
+  have thrown ReferenceError at runtime while esbuild bundled it happily. Caught by grepping
+  the file for the import, NOT by the build. Green build != correct (section 3) earned again.
+- MOB `extracted` FLAG: question is MOOT — mob persistence was removed entirely (553f36f),
+  zero references survive. Do not re-open.
+- ShadowStep 494ms: debugMode-gated PHASE PROBE added to openPanel (container-append vs
+  react-mount split) instead of refactoring on one measurement. Enable ShadowStep debugMode
+  and open the panel to get the breakdown.
+- AAPerfSentinel v4.3 BURST CAPTURE: when a plugin's window delta exceeds 2500ms, a
+  timestamped AAPerfSentinel-burst-*.log is frozen (never overwritten, max 12/session) — the
+  155/min walk burst was lost to the 30s overwrite and never recurred while anyone was
+  looking.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

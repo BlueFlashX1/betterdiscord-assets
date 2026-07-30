@@ -137,7 +137,13 @@ module.exports = {
     if (isBossFloor) {
       const bossConfig = DC.DEMON_CASTLE_BOSSES[floor];
       const bossMult = DC.DEMON_CASTLE_BOSS_MULTIPLIERS[floor] || { hpMult: 1, dmgMult: 1 };
-      const baseStats = this.calculateBossBaseStats?.(bossConfig.rank) || {
+      // FIX (2026-07-30): passed bossConfig.rank (a STRING like "Monarch")
+      // where calculateBossBaseStats expects a rank INDEX. Downstream,
+      // Math.min("Monarch", 11) is NaN and the stat-table lookup returns
+      // undefined — so every Demon Castle boss had NaN strength/agility/
+      // intelligence/vitality. The `|| fallback` never fired because the
+      // returned OBJECT was truthy. rankIndex is already computed above.
+      const baseStats = this.calculateBossBaseStats?.(rankIndex) || {
         strength: 500 + rankIndex * 200,
         agility: 400 + rankIndex * 150,
         intelligence: 300 + rankIndex * 100,

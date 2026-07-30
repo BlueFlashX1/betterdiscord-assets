@@ -62,6 +62,7 @@ module.exports = class AAPerfSentinel {
     this._trend = []; // per-flush {t, heapMB, domNodes, listeners} for slope detection
     this._cssAudit = null; // expensive-selector scan of injected CSS
     this._loafProbe = { pluginRows: 0, unresolved: 0, sampleUrls: new Set() };
+    this._burstsWritten = 0; // capped per session
     this._txnOwners = null; // WeakMap IDBTransaction -> owner (set at creation)
     this._domWrapMap = null; // WeakMap listener -> wrapped (or identity)
     this._lastCpu = null; // last process.getCPUUsage() percent, per flush
@@ -1076,6 +1077,7 @@ module.exports = class AAPerfSentinel {
         const perMin = (m.delta / (windowSec / 60)).toFixed(0);
         lines.push(`${m.owner.padEnd(25)} +${this._fmtMs(m.delta)}ms  (~${perMin}ms/min)`);
       }
+      this._pendingBurstMovers = movers;
 
       // Per-SITE window movers — what exactly is hot right now.
       if (this._prevSiteSnap) {
@@ -1298,6 +1300,28 @@ module.exports = class AAPerfSentinel {
     return lines.join("\n") + "\n";
   }
 
+  // A transient spike (the 155/min full-store-walk burst) is invisible in a
+  // report that gets overwritten every 30s. When a plugin's window delta
+  // crosses the threshold, freeze a timestamped copy that is NEVER
+  // overwritten, so the evidence outlives the moment.
+  _maybeCaptureBurst(report, movers) {
+    if (this._burstsWritten >= 12) return; // bound disk use per session
+    const worst = movers && movers[0];
+    if (!worst || worst.delta < 2500) return; // >2.5s attributed in one ~30s window
+    this._burstsWritten++;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const file = path.join(
+      BdApi.Plugins.folder,
+      `AAPerfSentinel-burst-${stamp}-${worst.owner}.log`
+    );
+    const header =
+      `BURST CAPTURE — ${worst.owner} accrued ${Math.round(worst.delta)}ms in one window\n` +
+      `Captured because it crossed the 2500ms threshold. This file is NOT overwritten.\n\n`;
+    try {
+      fs.writeFile(file, header + report, () => {});
+    } catch (_) { /* best-effort */ }
+  }
+
   _flush(force = false) {
     if (!force && !this._dirty) return;
     this._dirty = false;
@@ -1313,6 +1337,10 @@ module.exports = class AAPerfSentinel {
     }
     this._sampleTrend();
     const report = this._buildReport();
+    if (this._pendingBurstMovers) {
+      this._maybeCaptureBurst(report, this._pendingBurstMovers);
+      this._pendingBurstMovers = null;
+    }
     fs.writeFile(this._reportPath(), report, (err) => {
       if (err) {
         if (this._debugMode) console.error(`[${OWN_NAME}] report write failed:`, err);

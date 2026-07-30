@@ -1,3 +1,5 @@
+const C = require('./constants');
+
 module.exports = {
   calculateHPSync(vitality, rank = 'E') {
     const safeVitalityRaw = Number(vitality);
@@ -153,6 +155,38 @@ module.exports = {
     const perception = Math.floor(avgCore * multiplier * 0.5);
 
     return { strength, agility, intelligence, vitality, perception };
+  },
+
+  /**
+   * Boss HP for a given rank. IMPLEMENTED 2026-07-30 — this method was
+   * CALLED by story-mode-core (`this.calculateBossHP?.(rank, shadowCount)`)
+   * but never existed anywhere in the codebase, so the optional-call always
+   * returned undefined and Demon Castle bosses fell through to a flat 50000
+   * HP. They have never rank-scaled.
+   *
+   * Mirrors the normal-dungeon formula in spawn-core.js (base + vitality*10 +
+   * rank bonus, times the static rank multiplier and the army multiplier) so
+   * story bosses scale on the same curve as everything else.
+   *
+   * `shadowCount` is accepted because the existing call site passes it, but
+   * is deliberately NOT used as a multiplier: army size reaches 281k here, and
+   * scaling boss HP by it would produce absurd values. Army pressure is
+   * already represented by BOSS_HP_ARMY_MULTIPLIER.
+   *
+   * Floored at the historical 50000 so no existing floor gets EASIER than it
+   * is today — this can only raise high-rank bosses, never nerf anything.
+   */
+  calculateBossHP(rank, shadowCount = 0) {
+    const rankList = this.getDungeonRankList?.() || [];
+    const idx = rankList.indexOf(rank);
+    const rankIndex = idx >= 0 ? idx : 0;
+    const base = this.calculateBossBaseStats(rankIndex);
+    const vitality = Number(base?.vitality) || 0;
+    const rankBonus = this._bossHPBonusTable?.[rankIndex] || 0;
+    const staticMult = this.getStaticBossHpMultiplier?.(rankIndex) ?? 1;
+    const armyMult = C.BOSS_HP_ARMY_MULTIPLIER || 8;
+    const hp = Math.floor((100 + vitality * 10 + rankBonus) * staticMult * armyMult);
+    return Math.max(50000, Number.isFinite(hp) ? hp : 50000);
   },
 
   calculateMobBaseStats(rankIndex) {

@@ -576,9 +576,17 @@ module.exports = class ShadowStep {
       return;
     }
 
+    // PHASE PROBE (2026-07-30): AAPerfSentinel measured 494ms for one panel
+    // open, and a diagnosis pass found nothing inside ShadowStep to blame
+    // (zero layout reads, anchors capped at ~10). Rather than refactor on a
+    // guess, time each phase and let the next real open say where it goes.
+    // debugMode-gated: zero cost otherwise.
+    const _t = this.settings?.debugMode ? [performance.now()] : null;
+
     const container = document.createElement("div");
     container.id = PANEL_CONTAINER_ID;
     document.body.appendChild(container);
+    _t && _t.push(performance.now()); // [1] container create + body append
 
     const createRoot = BdApi.ReactDOM?.createRoot;
     if (createRoot) {
@@ -601,6 +609,15 @@ module.exports = class ShadowStep {
     }
 
     this._panelOpen = true;
+    if (_t) {
+      _t.push(performance.now()); // [2] react root create + render
+      this.debugLog("Panel", "OPEN TIMING", {
+        totalMs: +(_t[2] - _t[0]).toFixed(1),
+        containerAppendMs: +(_t[1] - _t[0]).toFixed(1),
+        reactMountMs: +(_t[2] - _t[1]).toFixed(1),
+        anchors: (this.settings?.anchors || []).length,
+      });
+    }
     this.debugLog("Panel", "Opened");
   }
 
