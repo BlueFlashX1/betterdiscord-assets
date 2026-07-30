@@ -304,7 +304,24 @@ module.exports = {
     }
     if (!this.canInjectWidgetInCurrentView()) {
       document.getElementById('shadow-army-widget')?.remove();
-      this._scheduleMemberListSetupRetry(1500);
+      // POLL REMOVED (2026-07-30). canInjectWidgetInCurrentView is decided
+      // purely by the ROUTE (guild channel / thread + channel type), so the
+      // only thing that can change its answer is a navigation — and the
+      // NavigationBus subscription in setupWatchers already re-runs this
+      // method on every URL change. Retrying every 1.5s therefore re-asked a
+      // question whose answer could not have changed, forever, for as long as
+      // the user sat in a DM or any non-guild view.
+      //
+      // Measured cost of that poll: 355 calls / 1046ms in an 18-minute
+      // session, with a single 1580ms outlier — each call re-parses the route,
+      // hits ChannelStore, and (on the paths that get further) forces a
+      // synchronous layout via the offsetParent read.
+      //
+      // The retry is kept ONLY for the case where the bus is unavailable, since
+      // then nothing else would ever re-arm the widget.
+      if (typeof this._navBusUnsub !== 'function') {
+        this._scheduleMemberListSetupRetry(1500);
+      }
       return;
     }
 
