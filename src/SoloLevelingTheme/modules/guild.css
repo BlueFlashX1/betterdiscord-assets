@@ -36,12 +36,19 @@ div[class^="page_"] div[class^="channelTextArea_"] {
   box-shadow: none !important;
 }
 div[class^="page_"] div[class^="scrollableContainer_"][class*="themedBackground_"],
-div[class^="page_"] form[class^="form_"] {
+form[class^="form_"] {
   background: transparent !important;
   background-image: none !important;
 }
-/* Kill the gradient ::before on the form that Discord uses for fade effect */
-div[class^="page_"] form[class^="form_"]::before {
+/* Kill the gradient ::before on the form that Discord uses for fade effect.
+   2026-07-30: the `div[class^="page_"]` ancestor gate was DROPPED — Discord
+   moved the composer form out from under page_-prefixed ancestry, the rule
+   stopped matching, and the native black fade reappeared above the text
+   input. `form[class^="form_"]` is already specific (the chat composer is
+   the only stem-matching form in the app), so the ancestor bought nothing
+   but breakage. Same class of DOM churn as the 2026-07 server-rail change
+   (DKB: discord-2026-07-server-rail-dom-change). */
+form[class^="form_"]::before {
   background: none !important;
   display: none !important;
 }

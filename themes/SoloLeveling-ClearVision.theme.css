@@ -1232,12 +1232,15 @@ div[class^="page_"] div[class^="channelTextArea_"] {
   box-shadow: none !important;
 }
 div[class^="page_"] div[class^="scrollableContainer_"][class*="themedBackground_"],
-div[class^="page_"] form[class^="form_"] {
+form[class^="form_"] {
   background: transparent !important;
   background-image: none !important;
 }
-/* Kill the gradient ::before on the form that Discord uses for fade effect */
-div[class^="page_"] form[class^="form_"]::before {
+/* Kill the gradient ::before on the form that Discord uses for fade effect.
+   2026-07-30: dropped the div[class^="page_"] ancestor gate — Discord moved
+   the composer form out of page_-prefixed ancestry and the native black fade
+   came back above the text input. Keep this selector ancestor-free. */
+form[class^="form_"]::before {
   background: none !important;
   display: none !important;
 }
