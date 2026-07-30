@@ -1068,7 +1068,7 @@ module.exports = class AAPerfSentinel {
 
     if (this._listenerSites.size > 0) {
       const top = [...this._listenerSites.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
-      if (top[0][1] > 20) {
+      if (top[0][1] > 5) {
         lines.push("── TOP LISTENER-ADD SITES (high counts = re-subscribe churn or leak) ──");
         for (const [key, count] of top) {
           lines.push(`${key.slice(0, 70).padEnd(71)} ${String(count).padStart(6)} adds`);

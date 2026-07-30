@@ -84,14 +84,20 @@ module.exports = {
     try {
       const fs = require('fs');
 
+      // Rotation by RENAME, not copy (2026-07-30, profiler): this used to
+      // readFileSync + writeFileSync each generation, so one save moved the
+      // same bytes through 5 full read+write cycles (11 fs ops per save,
+      // measured ~3 saves/min). rename is a metadata-only operation — same
+      // rotation semantics, no data movement. Crash-safety is unchanged: the
+      // new file lands via the tmp+rename below, and recovery already scans
+      // every .bakN candidate (see the getCandidate loop above).
       const maxBackups = 5;
       for (let i = maxBackups - 1; i >= 0; i--) {
         const src = i === 0 ? this.fileBackupPath : `${this.fileBackupPath}.bak${i}`;
         const dest = `${this.fileBackupPath}.bak${i + 1}`;
         if (fs.existsSync(src)) {
           try {
-            const content = fs.readFileSync(src);
-            fs.writeFileSync(dest, content);
+            fs.renameSync(src, dest);
           } catch (e) {
             this.debugError('ROTATE_BACKUP', e);
           }

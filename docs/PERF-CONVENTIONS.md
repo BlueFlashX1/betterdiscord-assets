@@ -386,6 +386,17 @@ total. Re-measure via the profiler's sites table before refactoring — do NOT
 speculatively rebuild the panel lifecycle). Same class, separate code: SoloLevelingToasts
 729ms on:click (plain DOM builder, no React — not a shared cause).
 
+MEASURED 2026-07-30 (AAPerfSentinel v3.3 fs-level instrumentation — R4 quantified at last):
+synchronous config writes are REAL but CHEAP in practice: SLS ~6.6 saves/min totalling
+7.0ms over 5 minutes, max 1.5ms per write; SkillTree 5.4/min = 8.4ms; Dungeons 2/min.
+The OS page cache absorbs the 128KB rewrites. CONCLUSION: keep R4's coalescing (it is
+what holds the rates this low) but do NOT chase further debouncing for perf — measured
+cost is ~2ms/min suite-wide. Do not re-open this without new measurements.
+FIXED same pass: SLS writeFileBackup rotated 5 generations by readFileSync+writeFileSync
+(11 fs ops/save, same bytes moved 5x) → renameSync (metadata-only, identical semantics,
+recovery path already scans every .bakN). NOTE: BdApi.Data.save is NON-WRITABLE — it
+cannot be wrapped; disk-write instrumentation must go through fs.writeFileSync.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);
