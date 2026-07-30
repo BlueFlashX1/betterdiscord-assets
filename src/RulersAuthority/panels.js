@@ -952,9 +952,12 @@ export function setupToolbarObserver(ctx) {
   // rAF-coalesced) replaces the broader, non-hidden-gated LayoutObserverBus
   // subscription — this plugin's own pre-extraction toolbar-lookup logic is
   // what the hub was adapted from; migrating onto it closes that gap.
-  ctx._toolbarUnwatch = watchToolbar(() => {
+  ctx._toolbarUnwatch = watchToolbar((hubToolbar) => {
     const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-    const toolbar = getChannelHeaderToolbar(ctx);
+    // Use the hub's single batched read when provided (2026-07-30) — this
+    // callback previously forced its own layout flush, and with ~6 subscribers
+    // doing read->write in one loop the tick thrashed layout (76ms avg).
+    const toolbar = hubToolbar || getChannelHeaderToolbar(ctx);
     // Skip layout-driven reinject while we're in a hide state —
     // injectToolbarIcon already handles the hide path; we don't want a
     // stale layout tick to pull the icon back to the toolbar between

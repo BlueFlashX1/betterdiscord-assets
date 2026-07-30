@@ -1240,6 +1240,11 @@ module.exports = class AAPerfSentinel {
     lines.push("- Per-plugin CPU: no per-JS-context CPU API exists; the attributed-ms tables ARE the");
     lines.push("  per-plugin split of main-thread CPU. Renderer CPU line above is the whole process.");
     lines.push("- 'discord/other' rows = work whose registration stack showed no .plugin.js frame.");
+    lines.push("- SHARED-SINGLETON MISATTRIBUTION (verified 2026-07-30): work inside a shared");
+    lines.push("  window.__SL_* hub (ToolbarHub fireAll, LayoutObserverBus, DomBus) is attributed to");
+    lines.push("  whichever plugin WON THE STARTUP RACE to create the singleton — not to the");
+    lines.push("  subscriber whose callback actually cost the time. A hub row naming one plugin means");
+    lines.push("  'this hub', not 'this plugin'. Check the hub's subscriber list before blaming.");
     lines.push("- STILL NOT MEASURABLE from inside the renderer, by design of the platform:");
     lines.push("  GPU/compositor time, per-plugin heap share (measureUserAgentSpecificMemory needs");
     lines.push("  cross-origin isolation), work inside Discord's own native/WASM code, and cost in");

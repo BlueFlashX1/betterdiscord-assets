@@ -45,7 +45,17 @@ module.exports = {
         if (this._navChangeTimeout === navTimeoutId) {
           this._navChangeTimeout = null;
         }
-        this.setupMemberListWatcher();
+        // rAF-scheduled (2026-07-30, profiler: 149ms avg / 328ms worst per URL
+        // change). setupMemberListWatcher's offsetParent read forces a
+        // synchronous layout, and at +200ms Discord's channel-view rebuild is
+        // often still in flight — so the flush pays off DISCORD's pending
+        // layout debt (big message list, embeds) and it gets charged to us.
+        // Inside rAF the read rides the frame's natural layout pass instead of
+        // forcing an out-of-band recalc against a dirty tree.
+        requestAnimationFrame(() => {
+          if (this._isStopped) return;
+          this.setupMemberListWatcher();
+        });
       }, 200);
       this._navChangeTimeout = navTimeoutId;
       this._retryTimeouts?.add?.(navTimeoutId);

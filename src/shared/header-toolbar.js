@@ -121,13 +121,23 @@ function _getToolbarHub() {
     _onVisibility: null,
 
     // Coalesce a burst of triggers into one rAF tick, fan out to all callbacks.
+    // BATCHED READ (2026-07-30, profiler: 76ms avg / 183ms worst per tick):
+    // every subscriber used to resolve the toolbar itself, so one tick ran
+    // read(offsetParent) -> write(inject) -> read -> write ... across ~6
+    // consumers: textbook layout thrashing, since each write invalidates the
+    // layout the next read forces recomputation of. The hub now performs ONE
+    // read up front and passes the element to every callback; subscribers
+    // that accept the argument skip their own lookup entirely. Callbacks that
+    // ignore the argument keep working exactly as before.
     fireAll() {
       if (this._rafScheduled || document.hidden) return;
       this._rafScheduled = true;
       requestAnimationFrame(() => {
         this._rafScheduled = false;
+        let toolbar = null;
+        try { toolbar = getChannelHeaderToolbar(); } catch (_) { toolbar = null; }
         for (const cb of this.callbacks) {
-          try { cb(); } catch (_) {}
+          try { cb(toolbar); } catch (_) {}
         }
       });
     },
