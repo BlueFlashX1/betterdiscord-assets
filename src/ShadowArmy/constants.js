@@ -88,22 +88,12 @@ const DEFAULT_SETTINGS = {
     maxBossAttemptsPerDay: 3,
     bossAttemptResetHour: 0,
   },
-  rankPromotionConfig: {
-    enabled: true,
-    minLevelByRank: {
-      D: 5,
-      C: 10,
-      B: 18,
-      A: 30,
-      S: 45,
-      SS: 65,
-      SSS: 90,
-      'SSS+': 120,
-      NH: 160,
-      Monarch: 210,
-      'Monarch+': 280,
-    },
-  },
+  // rankPromotionConfig REMOVED 2026-07-30. minLevelByRank died with the XP
+  // write path (levels stopped advancing); a minDaysByRank replacement was
+  // tried and dropped — rank is gated on STATS, per design preference. The
+  // gate now reads a shadow's INTRINSIC stats (base + combat growth +
+  // veterancy) instead of its Monarch-scaled combat stats, which is what makes
+  // the stat gate real. See progression.js getRankUpEligibility.
   dungeonExtractionAttempts: {},
   specialArise: {
     lastDate: null,

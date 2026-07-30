@@ -293,7 +293,11 @@ module.exports = {
     shadow.xp = Math.max(0, Math.min(newReq - 1, carriedXp));
   },
 
-  getShadowEffectiveStats(shadow) {
+  getShadowEffectiveStats(shadow, options = null) {
+    // intrinsic:true returns what the shadow itself has earned — base stats,
+    // growth from combat XP, and veterancy — WITHOUT the Shadow Monarch
+    // replacement. Rank promotion gates on this; see getRankUpEligibility.
+    const intrinsicOnly = options?.intrinsic === true;
     if (!shadow) return this.createZeroStatBlock();
 
     // PERF: skip the re-decompress when caller already passed a decompressed
@@ -347,13 +351,29 @@ module.exports = {
     // closer to you, but never to 100%). This REPLACES the base/growth/grade computation
     // above and supersedes the old flat Monarch's Aura. getSoloLevelingData is cached, so
     // the per-shadow read is cheap even across a 10k+ army aggregation.
-    const soloData = this.getSoloLevelingData?.();
+    const vetMultiplier = this._getVeterancyMultiplier(shadow);
+    let monarchScaled = false;
+    const soloData = intrinsicOnly ? null : this.getSoloLevelingData?.();
     if (soloData?.rank === 'Shadow Monarch') {
       const playerStats = soloData.stats || {};
       const factor = SHADOW_SCALE_FACTOR_BY_RANK[shadow.rank] ?? 0.50;
+      // VETERANCY UNDER THE MONARCH PERK (2026-07-30): age CLOSES THE GAP to
+      // the Monarch instead of multiplying past them. Applying the veterancy
+      // multiplier after this replacement (as it is for non-SM shadows) broke
+      // the perk's stated invariant — a 4-year Monarch+ shadow measured 1.71x
+      // the player, and "never reach (let alone exceed) the player's stats" is
+      // the whole point of the per-rank factor table.
+      //
+      //     factor' = 1 - (1 - factor) / vet
+      //
+      // Halving the remaining distance to 1.0 as age grows: asymptotic, so it
+      // approaches the Monarch without ever touching them, and rank ordering
+      // survives because a higher base factor stays closer at every age.
+      const vetFactor = vetMultiplier > 1 ? 1 - (1 - factor) / vetMultiplier : factor;
       statKeys.forEach((stat) => {
-        effective[stat] = Math.floor((Number(playerStats[stat]) || 0) * factor);
+        effective[stat] = Math.floor((Number(playerStats[stat]) || 0) * vetFactor);
       });
+      monarchScaled = true;
     }
 
     // MONARCH'S NAMING: a named general carries the Monarch's favor — +5% all
@@ -370,10 +390,11 @@ module.exports = {
     // including the Shadow Monarch block that REPLACES effective[] outright.
     // An additive term placed earlier would be silently wiped for SM players,
     // i.e. exactly the players with the oldest armies.
-    const vet = this._getVeterancyMultiplier(shadow);
-    if (vet > 1) {
+    // Skipped when the Monarch perk already folded veterancy into its scale
+    // factor above — applying it twice is what exceeded the player's stats.
+    if (!monarchScaled && vetMultiplier > 1) {
       statKeys.forEach((stat) => {
-        effective[stat] = Math.floor(effective[stat] * vet);
+        effective[stat] = Math.floor(effective[stat] * vetMultiplier);
       });
     }
 
@@ -461,7 +482,20 @@ module.exports = {
     // Shadow Monarch is player-exclusive.
     if (nextRank === 'Shadow Monarch') return { eligible: false, reason: 'monarch_locked' };
 
-    const effectiveStats = this.getShadowEffectiveStats(shadow);
+    // THE GATE IS STATS — but the shadow's OWN stats, not its combat stats.
+    //
+    // Gating on getShadowEffectiveStats() looked like a stat gate and was not
+    // one: while the player is Shadow Monarch that function REPLACES a shadow's
+    // stats with playerStats x rankFactor, so every rank cleared its next
+    // baseline by 100-650x. Worse, the factor RISES with rank (0.50 at E to
+    // 0.97 at Monarch+), so each promotion made the next easier — a ladder that
+    // climbs itself.
+    //
+    // The intrinsic view is what the shadow actually earned: its base stats,
+    // growth banked from combat XP, and veterancy from time served. It cannot
+    // be inflated by the player getting stronger, so a promotion means the
+    // shadow grew, which is the point.
+    const effectiveStats = this.getShadowEffectiveStats(shadow, { intrinsic: true });
     const nextRankMultiplier = this.rankStatMultipliers[nextRank] || 1.0;
     const baselineForNextRank = this.getRankBaselineStats(nextRank, nextRankMultiplier);
 
