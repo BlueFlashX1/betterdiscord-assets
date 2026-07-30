@@ -59,6 +59,9 @@ module.exports = class AAPerfSentinel {
     this._netGauge = new Map(); // owner -> {calls, totalMs} for fetch/XHR
     this._cssGauge = new Map(); // owner -> {added, removed} for BdApi.DOM styles
     this._listenerSites = new Map(); // "owner site on:type" -> add count
+    this._trend = []; // per-flush {t, heapMB, domNodes, listeners} for slope detection
+    this._cssAudit = null; // expensive-selector scan of injected CSS
+    this._loafProbe = { pluginRows: 0, unresolved: 0, sampleUrls: new Set() };
     this._txnOwners = null; // WeakMap IDBTransaction -> owner (set at creation)
     this._domWrapMap = null; // WeakMap listener -> wrapped (or identity)
     this._lastCpu = null; // last process.getCPUUsage() percent, per flush
@@ -407,6 +410,18 @@ module.exports = class AAPerfSentinel {
           for (const s of entry.scripts || []) {
             const src = String(s.sourceURL || "");
             const m = PLUGIN_FILE_RE.exec(src);
+            // ATTRIBUTION PROBE: no plugin row has EVER appeared here. Either
+            // the suite genuinely causes no long frames, or LoAF can't resolve
+            // BD-injected script URLs. Record which sourceURL shapes arrive so
+            // the report can state which case we're in instead of implying the
+            // flattering one.
+            if (m) this._loafProbe.pluginRows++;
+            else {
+              this._loafProbe.unresolved++;
+              if (this._loafProbe.sampleUrls.size < 6) {
+                this._loafProbe.sampleUrls.add(src ? src.slice(0, 90) : "(empty sourceURL)");
+              }
+            }
             const owner = m ? m[1] : (src.includes("discord") ? "discord/other" : "unknown");
             const fn = s.sourceFunctionName || s.invoker || "(anonymous)";
             const key = `${owner} ${String(fn).slice(0, 40)}`;
@@ -657,6 +672,7 @@ module.exports = class AAPerfSentinel {
             g.added++;
             g.bytes += typeof css === "string" ? css.length : 0;
             self._cssGauge.set(owner, g);
+            self._auditCss(owner, css);
           }
           return o.addStyle(id, css);
         };
@@ -673,6 +689,73 @@ module.exports = class AAPerfSentinel {
         }
       }
     } catch (_) { /* BdApi.DOM shape differs — skip */ }
+  }
+
+  // Expensive-selector audit. Style-recalc cost scales with selector work,
+  // and LoAF attributes multi-second forced style/layout to Discord's own
+  // code — which OUR selectors can inflate. :has() re-evaluates on subtree
+  // changes; [class*=] substring-matches every candidate; bare universal
+  // touches everything. Counted at inject time (once), never per frame.
+  _auditCss(owner, css) {
+    if (typeof css !== "string" || !css) return;
+    if (!this._cssAudit) this._cssAudit = new Map();
+    const a = this._cssAudit.get(owner) || { rules: 0, has: 0, contains: 0, universal: 0, deep: 0, bytes: 0 };
+    a.bytes += css.length;
+    a.rules += (css.match(/\{/g) || []).length;
+    a.has += (css.match(/:has\(/g) || []).length;
+    a.contains += (css.match(/\[class\*=/g) || []).length;
+    a.universal += (css.match(/(^|[\s,>+~])\*(?![\w-])/g) || []).length;
+    for (const chunk of css.split("}")) {
+      const sel = (chunk.split("{")[0] || "").trim();
+      if (!sel || sel.startsWith("@")) continue;
+      const parts = sel.split(/\s+/).filter((x) => x && !",>+~".includes(x));
+      if (parts.length >= 4) a.deep++;
+    }
+    this._cssAudit.set(owner, a);
+  }
+
+  // Trend sampling — a rising FLOOR across flushes is how slow leaks reveal
+  // themselves. Single-point heap/DOM numbers can't separate "busy now" from
+  // "never releases".
+  _sampleTrend() {
+    try {
+      const mem = performance.memory;
+      let listeners = 0;
+      for (const g of this._domGauge.values()) listeners += g.adds - g.removes;
+      this._trend.push({
+        t: Date.now(),
+        heapMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : null,
+        domNodes: document.getElementsByTagName("*").length,
+        listeners,
+      });
+      if (this._trend.length > 120) this._trend.shift();
+    } catch (_) { /* best-effort */ }
+  }
+
+  // Per-plugin DOM footprint by id/class prefix — catches element leaks the
+  // listener gauge cannot see.
+  _countPluginDom() {
+    const out = new Map();
+    const probes = [
+      ["ShadowArmy", "[id^='shadow-army'],[class^='shadow-army']"],
+      ["ShadowSenses", "[id^='shadow-senses'],[class^='shadow-senses'],[class^='ss-']"],
+      ["ShadowExchange", "[id^='se-'],[class^='se-']"],
+      ["Dungeons", "[id^='dungeon'],[class^='dungeon']"],
+      ["CriticalHit", "[class^='crit-']"],
+      ["SoloLevelingToasts", "[class^='sl-toast'],[id^='sl-toast']"],
+      ["RulersAuthority", "[id^='ra-'],[class^='ra-']"],
+      ["HSLDockAutoHide", "[class^='sl-hsl'],[class^='sl-dock']"],
+      ["EquipmentManager", "[id^='eq-'],[class^='eq-']"],
+      ["ItemVault", "[id^='itemvault'],[class^='itemvault']"],
+      ["ShadowRecon", "[id^='shadow-recon'],[class^='recon-']"],
+    ];
+    for (const [name, sel] of probes) {
+      try {
+        const n = document.querySelectorAll(sel).length;
+        if (n > 0) out.set(name, n);
+      } catch (_) { /* skip */ }
+    }
+    return out;
   }
 
   _installLongTaskObserver() {
@@ -1077,6 +1160,76 @@ module.exports = class AAPerfSentinel {
       }
     }
 
+    // Trend lines — slope, not snapshots. This is the only section that can
+    // distinguish a leak from a busy moment.
+    if (this._trend.length >= 3) {
+      const first = this._trend[0];
+      const last = this._trend[this._trend.length - 1];
+      const spanMin = Math.max(0.5, (last.t - first.t) / 60000);
+      const fmtSlope = (a, b, unit) => {
+        if (a == null || b == null) return "n/a";
+        const d = b - a;
+        const per = d / spanMin;
+        const dir = d > 0 ? "+" : "";
+        return `${a}${unit} -> ${b}${unit} (${dir}${d}${unit}, ${dir}${per.toFixed(1)}${unit}/min)`;
+      };
+      lines.push(`── TRENDS over ${spanMin.toFixed(1)} min (${this._trend.length} samples — rising floor = leak) ──`);
+      lines.push(`JS heap:    ${fmtSlope(first.heapMB, last.heapMB, "MB")}`);
+      lines.push(`DOM nodes:  ${fmtSlope(first.domNodes, last.domNodes, "")}`);
+      lines.push(`Live listeners (adds-removes): ${fmtSlope(first.listeners, last.listeners, "")}`);
+      const heaps = this._trend.map((x) => x.heapMB).filter((x) => x != null);
+      if (heaps.length >= 3) {
+        const mid = Math.floor(heaps.length / 2);
+        const avgA = heaps.slice(0, mid).reduce((x, y) => x + y, 0) / mid;
+        const avgB = heaps.slice(mid).reduce((x, y) => x + y, 0) / (heaps.length - mid);
+        lines.push(`  heap first-half avg ${avgA.toFixed(0)}MB vs second-half avg ${avgB.toFixed(0)}MB ` +
+          `— ${avgB - avgA > 25 ? "RISING (investigate)" : "stable (GC is reclaiming)"}`);
+      }
+      lines.push("");
+    }
+
+    // Per-plugin DOM footprint.
+    const domCounts = this._countPluginDom();
+    if (domCounts.size > 0) {
+      lines.push("── DOM FOOTPRINT (elements matching each plugin's id/class prefix) ──");
+      for (const [name, n] of [...domCounts.entries()].sort((a, b) => b[1] - a[1])) {
+        lines.push(`${name.padEnd(25)} ${String(n).padStart(6)} elements`);
+      }
+      lines.push("");
+    }
+
+    // Expensive-selector audit.
+    if (this._cssAudit && this._cssAudit.size > 0) {
+      const rows = [...this._cssAudit.entries()]
+        .map(([owner, a]) => ({ owner, ...a, score: a.has * 3 + a.contains + a.universal * 5 + a.deep }))
+        .sort((a, b) => b.score - a.score);
+      lines.push("── CSS SELECTOR AUDIT (style-recalc pressure; :has re-evaluates on subtree changes) ──");
+      lines.push("plugin                     rules   :has()  [class*=]  universal  deep(4+)   KB");
+      for (const r of rows.slice(0, 12)) {
+        lines.push(
+          `${r.owner.padEnd(25)} ${String(r.rules).padStart(6)} ${String(r.has).padStart(8)} ${String(r.contains).padStart(10)} ${String(r.universal).padStart(10)} ${String(r.deep).padStart(9)} ${String(Math.round(r.bytes / 1024)).padStart(5)}`
+        );
+      }
+      lines.push("");
+    }
+
+    // LoAF attribution verdict — states which case we're in.
+    if (this._loaf && this._loaf.supported) {
+      const p = this._loafProbe;
+      if (p.pluginRows === 0 && p.unresolved > 0) {
+        lines.push("── LoAF ATTRIBUTION VERDICT ──");
+        lines.push(`No plugin script has EVER resolved in ${p.unresolved} attributed script entries.`);
+        lines.push("Sample sourceURLs actually seen:");
+        for (const u of p.sampleUrls) lines.push(`  ${u}`);
+        lines.push("If these are all discord.com/assets or empty, LoAF cannot see BD-injected");
+        lines.push("scripts and this section is BLIND to the suite — do NOT read it as 'plugins are clean'.");
+        lines.push("");
+      } else if (p.pluginRows > 0) {
+        lines.push(`── LoAF attribution VERIFIED WORKING: ${p.pluginRows} plugin-attributed script entries ──`);
+        lines.push("");
+      }
+    }
+
     lines.push("── LIMITATIONS ──");
     lines.push("- Attribution only sees timers/rAF/observers/flux/IDB/DOM-listener work registered");
     lines.push("  AFTER this plugin started. It loads first alphabetically, so a full Discord");
@@ -1110,6 +1263,7 @@ module.exports = class AAPerfSentinel {
     } catch (_) {
       this._lastCpu = null;
     }
+    this._sampleTrend();
     const report = this._buildReport();
     fs.writeFile(this._reportPath(), report, (err) => {
       if (err) {
