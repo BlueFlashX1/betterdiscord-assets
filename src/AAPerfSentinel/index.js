@@ -21,6 +21,15 @@ const fs = require("fs");
 const path = require("path");
 
 const REPORT_BASENAME = "AAPerfSentinel-report.log";
+// Longitudinal history. The report is OVERWRITTEN every flush by design (no
+// flooding), which means a long session leaves no record of WHEN things went
+// wrong — a spike three hours ago is invisible by the time you read it. The
+// history file keeps one compact line per sample so the shape of a long run
+// survives, while staying bounded: HISTORY_CAP lines, rewritten whole, so it
+// can never grow without limit.
+const HISTORY_BASENAME = "AAPerfSentinel-history.log";
+const HISTORY_INTERVAL_MS = 300000; // one sample per 5 min
+const HISTORY_CAP = 300; // ~25h of samples, ~35KB
 const FLUSH_INTERVAL_MS = 30000;
 const LAG_PROBE_INTERVAL_MS = 200;
 const LAG_RING_SIZE = 300; // 60s of probe samples
@@ -63,6 +72,10 @@ module.exports = class AAPerfSentinel {
     this._cssAudit = null; // expensive-selector scan of injected CSS
     this._loafProbe = { pluginRows: 0, unresolved: 0, sampleUrls: new Set() };
     this._burstsWritten = 0; // capped per session
+    this._historyLines = []; // formatted samples, capped at HISTORY_CAP, restart-persistent
+    this._lastHistoryAt = 0;
+    this._historyDirty = false;
+    this._peaks = new Map(); // owner -> { delta, at } worst single window seen
     this._txnOwners = null; // WeakMap IDBTransaction -> owner (set at creation)
     this._domWrapMap = null; // WeakMap listener -> wrapped (or identity)
     this._lastCpu = null; // last process.getCPUUsage() percent, per flush
@@ -1145,6 +1158,7 @@ module.exports = class AAPerfSentinel {
         lines.push(`${m.owner.padEnd(25)} +${this._fmtMs(m.delta)}ms  (~${perMin}ms/min)`);
       }
       this._pendingBurstMovers = movers;
+      this._recordHistory(nowMs, movers, snap.perPlugin);
 
       // Per-SITE window movers — what exactly is hot right now.
       if (this._prevSiteSnap) {
@@ -1167,6 +1181,11 @@ module.exports = class AAPerfSentinel {
     const siteSnap = new Map();
     for (const [key, s] of this._bySite) siteSnap.set(key, s.totalMs);
     this._prevSiteSnap = siteSnap;
+
+    // Rendered AFTER the window block above, because _recordHistory runs there
+    // — building it earlier would show the timeline one flush stale and omit
+    // the sample just taken.
+    this._pushTimelineSection(lines);
 
     // Long Animation Frames — the browser's OWN attribution. Catches script
     // scheduled through paths we never wrapped AND the style/layout cost that
@@ -1389,6 +1408,172 @@ module.exports = class AAPerfSentinel {
     } catch (_) { /* best-effort */ }
   }
 
+  _historyPath() {
+    return path.join(BdApi.Plugins.folder, HISTORY_BASENAME);
+  }
+
+  /**
+   * Inline slice of the history, so a long run's shape is visible without
+   * opening the second file. Answers the question the overwritten report
+   * cannot: "was it always like this, or did something change an hour ago?"
+   */
+  _pushTimelineSection(lines) {
+    if (!this._historyLines || this._historyLines.length === 0) return;
+    const shown = Math.min(12, this._historyLines.length);
+    lines.push(`── PERFORMANCE TIMELINE (5-min samples, last ${shown} of ${this._historyLines.length}) ──`);
+    lines.push(
+      `  Full history (survives restarts): ${HISTORY_BASENAME} — capped at ${HISTORY_CAP} samples, ~25h.`
+    );
+    lines.push("  time | span | cpu | frames<33ms | heap | longtasks | top plugins that span");
+    for (const line of this._historyLines.slice(-12)) lines.push(`  ${line}`);
+    if (this._peaks.size > 0) {
+      const peaks = [...this._peaks.entries()].sort((a, b) => b[1].delta - a[1].delta);
+      lines.push("  worst single window per plugin (whole session):");
+      for (const [owner, p] of peaks.slice(0, 5)) {
+        lines.push(
+          `    ${owner.padEnd(23)} ${this._fmtMs(p.delta).padStart(9)}ms at ${new Date(p.at).toLocaleTimeString()}`
+        );
+      }
+    }
+    lines.push("");
+  }
+
+  /**
+   * Record one longitudinal sample every HISTORY_INTERVAL_MS.
+   *
+   * Peaks are updated on EVERY window (not just sample boundaries) — a spike
+   * that lands between samples would otherwise be averaged away, and the whole
+   * point of this file is catching what the overwritten report loses.
+   *
+   * Deltas are measured against the previous SAMPLE, not the previous flush,
+   * so each line describes its own full span rather than an arbitrary 30s
+   * slice of it.
+   */
+  _recordHistory(nowMs, movers, perPluginCumulative) {
+    for (const m of movers) {
+      const prev = this._peaks.get(m.owner);
+      if (!prev || m.delta > prev.delta) {
+        this._peaks.set(m.owner, { delta: m.delta, at: nowMs });
+      }
+    }
+
+    if (this._lastHistoryAt && nowMs - this._lastHistoryAt < HISTORY_INTERVAL_MS) return;
+    const spanSec = this._lastHistoryAt
+      ? Math.max(1, Math.round((nowMs - this._lastHistoryAt) / 1000))
+      : Math.max(1, Math.round((nowMs - this._startedAt) / 1000));
+    this._lastHistoryAt = nowMs;
+
+    const pf = this._histPrevFrames || { total: 0, dropped: 0 };
+    const dFrames = this._frames.total - pf.total;
+    const dDropped = this._frames.dropped - pf.dropped;
+    this._histPrevFrames = { total: this._frames.total, dropped: this._frames.dropped };
+
+    const pl = this._histPrevLong || { count: 0, ms: 0 };
+    const dLongN = this._longTasks.count - pl.count;
+    const dLongMs = this._longTasks.totalMs - pl.ms;
+    this._histPrevLong = { count: this._longTasks.count, ms: this._longTasks.totalMs };
+
+    // Per-plugin cost for THIS span, from cumulative totals.
+    const prevPer = this._histPrevPerPlugin || new Map();
+    const spanMovers = [];
+    for (const [owner, totalMs] of perPluginCumulative) {
+      const d = totalMs - (prevPer.get(owner) || 0);
+      if (d >= 1) spanMovers.push({ owner, d });
+    }
+    spanMovers.sort((a, b) => b.d - a.d);
+    this._histPrevPerPlugin = new Map(perPluginCumulative);
+
+    let heapMB = null;
+    try {
+      const mem = performance.memory;
+      if (mem) heapMB = Math.round(mem.usedJSHeapSize / 1048576);
+    } catch (_) {}
+
+    const fr = dFrames > 0 ? `${((1 - dDropped / dFrames) * 100).toFixed(1)}%` : "n/a";
+    const cpu =
+      this._lastCpu === null || this._lastCpu === undefined ? "n/a" : `${this._lastCpu.toFixed(1)}%`;
+    const heap = heapMB === null ? "n/a" : `${heapMB}MB`;
+    const top = spanMovers.length
+      ? spanMovers
+          .slice(0, 3)
+          .map((m) => `${m.owner} ${this._fmtMs(m.d)}ms`)
+          .join(" · ")
+      : "(quiet)";
+
+    this._historyLines.push(
+      `${new Date(nowMs).toLocaleTimeString().padEnd(11)} ${String(spanSec).padStart(4)}s  ` +
+        `cpu ${cpu.padStart(6)}  fr ${fr.padStart(6)}  heap ${heap.padStart(7)}  ` +
+        `lt ${String(dLongN).padStart(3)}/${this._fmtMs(dLongMs).padStart(7)}ms  | ${top}`
+    );
+    this._trimHistory();
+    this._historyDirty = true;
+  }
+
+  _trimHistory() {
+    if (this._historyLines.length > HISTORY_CAP) {
+      this._historyLines.splice(0, this._historyLines.length - HISTORY_CAP);
+    }
+  }
+
+  /**
+   * Carry history across restarts. Without this the file is truncated to the
+   * current session on every Discord launch, which defeats the point — the
+   * interesting comparison is usually "today vs yesterday", and a crash or
+   * restart is exactly when you most want the preceding hours.
+   *
+   * Lines are kept as opaque formatted strings rather than re-parsed into
+   * objects: there is nothing to parse wrongly, and a malformed or
+   * hand-edited file degrades to "fewer lines" instead of throwing.
+   *
+   * One synchronous read of a <40KB file at start() only — deliberately not on
+   * any hot path (see R4).
+   */
+  _loadHistory() {
+    this._historyLines = [];
+    try {
+      const raw = fs.readFileSync(this._historyPath(), "utf8");
+      for (const line of raw.split("\n")) {
+        // Sample and session-marker lines only; headers and the peaks block
+        // are regenerated each write.
+        if (/^\d{1,2}:\d{2}:\d{2}/.test(line) || line.startsWith("──── session")) {
+          this._historyLines.push(line.replace(/\s+$/, ""));
+        }
+      }
+      this._trimHistory();
+    } catch (_) {
+      // No prior history (first run) or unreadable — start clean.
+    }
+    this._historyLines.push(
+      `──── session start ${new Date().toLocaleString()} ────`
+    );
+    this._historyDirty = true;
+  }
+
+  _buildHistoryFile() {
+    const out = [];
+    out.push("AAPerfSentinel — performance history (one line per 5 min, newest last)");
+    out.push(
+      `Survives restarts. Capped at ${HISTORY_CAP} samples (~25h) — oldest lines are dropped, ` +
+        "so this file never grows without bound."
+    );
+    out.push(
+      "Columns: time | span | cpu (% of one core) | frames under 33ms | JS heap | long tasks count/ms | top 3 plugins by attributed ms in that span"
+    );
+    out.push("");
+    for (const line of this._historyLines) out.push(line);
+    if (this._peaks.size > 0) {
+      out.push("");
+      out.push("── WORST SINGLE WINDOW PER PLUGIN (current session only) ──");
+      const peaks = [...this._peaks.entries()].sort((a, b) => b[1].delta - a[1].delta);
+      for (const [owner, p] of peaks.slice(0, 15)) {
+        out.push(
+          `${owner.padEnd(25)} ${this._fmtMs(p.delta).padStart(9)}ms  at ${new Date(p.at).toLocaleTimeString()}`
+        );
+      }
+    }
+    return out.join("\n") + "\n";
+  }
+
   _flush(force = false) {
     if (!force && !this._dirty) return;
     this._dirty = false;
@@ -1415,6 +1600,16 @@ module.exports = class AAPerfSentinel {
       }
       this._flushes++;
     });
+
+    // Only rewritten when a new sample landed (every 5 min), not every flush.
+    if (this._historyDirty) {
+      this._historyDirty = false;
+      fs.writeFile(this._historyPath(), this._buildHistoryFile(), (err) => {
+        if (err && this._debugMode) {
+          console.error(`[${OWN_NAME}] history write failed:`, err);
+        }
+      });
+    }
   }
 
   // ── BD lifecycle ───────────────────────────────────────────────────────
@@ -1424,6 +1619,7 @@ module.exports = class AAPerfSentinel {
     this._startedAt = Date.now();
     this._flushes = 0;
     this._debugMode = BdApi.Data.load(OWN_NAME, "debugMode") ?? false;
+    this._loadHistory();
 
     this._originals = {
       setTimeout: window.setTimeout,
