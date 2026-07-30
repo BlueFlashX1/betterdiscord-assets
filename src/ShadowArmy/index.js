@@ -543,7 +543,17 @@ const ShadowArmy = class ShadowArmy {
               this.saveSettings();
             }
           })
-          .catch((error) => this.debugError('GRADE', 'Hierarchy restructure failed', error));
+          // UNCONDITIONAL (2026-07-30): this was debugError, i.e. silent unless
+          // debug mode was on. The flag `hierarchyReconciledV1` is still unset
+          // on a long-running profile, so this "one-shot" pass has been
+          // re-running every startup — 10,581 IDB callbacks, ~50% of all IDB
+          // traffic, the single largest cost now that army-wide XP is gone. A
+          // migration that never records completion has to say why, loudly, or
+          // it just gets paid for forever.
+          .catch((error) => {
+            console.error('[ShadowArmy] Hierarchy restructure failed (will retry next start):', error);
+            this.debugError('GRADE', 'Hierarchy restructure failed', error);
+          });
       }, 15000);
     }
     const gradePromoteInterval = this.settings?.shadowEssence?.autoPromoteIntervalMs ?? 30000;
