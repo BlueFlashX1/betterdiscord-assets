@@ -580,25 +580,36 @@ class ShadowStorageManager {
    */
   async getShadowsByKeyPage(lastKey, limit) {
     const safeLimit = Math.max(1, Math.floor(Number(limit) || 1));
+    // GETALL (2026-07-30): was openCursor + cursor.continue(), which fires one
+    // IDBRequest.onsuccess PER RECORD despite the "page" in the name. Measured
+    // over a 174-minute session it was the single largest request source in
+    // the suite — 641,504 callbacks, 42.2% of all IDB request traffic — the
+    // same per-record anti-pattern already removed from forEachShadowBatch.
+    // getAll(range, limit) returns the identical slice in the same primary-key
+    // order for ONE callback. The cursor's `nextKey` was always the primary
+    // key, and the store's keyPath is 'id', so the last record's id is an
+    // exact substitute.
     return this._withStore('readonly', (store, _tx, resolve, reject) => {
       const range = lastKey == null ? null : IDBKeyRange.lowerBound(lastKey, true);
-      const request = range ? store.openCursor(range) : store.openCursor();
-      const results = [];
-      let nextKey = null;
+      const request = store.getAll(range, safeLimit);
 
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (!cursor) {
+      request.onsuccess = () => {
+        const results = request.result || [];
+        if (results.length === 0) {
           resolve({ shadows: results, lastKey: null, exhausted: true });
           return;
         }
-        results.push(cursor.value);
-        nextKey = cursor.key;
-        if (results.length >= safeLimit) {
-          resolve({ shadows: results, lastKey: nextKey, exhausted: false });
+        // Short page = the range is drained. Matches the cursor's behaviour of
+        // resolving exhausted:true only once it ran past the final record.
+        if (results.length < safeLimit) {
+          resolve({ shadows: results, lastKey: null, exhausted: true });
           return;
         }
-        cursor.continue();
+        resolve({
+          shadows: results,
+          lastKey: results[results.length - 1]?.id ?? null,
+          exhausted: false,
+        });
       };
       request.onerror = () => reject(request.error);
     });
