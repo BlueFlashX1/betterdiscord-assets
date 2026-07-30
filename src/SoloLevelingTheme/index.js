@@ -52,6 +52,7 @@ const cssProfile       = require('./modules/profile.css');
 const cssDiscover      = require('./modules/discover.css');
 const cssToolbarOrg    = require('./modules/toolbar-org.css');
 const cssSettings      = require('./modules/settings.css');
+const { mountWallpaperVideo, unmountWallpaperVideo } = require('./wallpaper-video');
 const cssSnippets      = require('./modules/snippets.css');
 
 // External stylesheet URLs that must be loaded as <link> elements
@@ -116,6 +117,14 @@ module.exports = class SoloLevelingTheme {
       }
     }
 
+    // Animated video wallpaper — OFF by default, opt-in from settings.
+    // GPU-composited <video> rather than an animated CSS background (which
+    // repaints the whole viewport on the main thread every frame — the
+    // reason the previous animated wallpaper had to be reverted).
+    if (BdApi.Data.load(this.meta.name, 'animatedWallpaper') === true) {
+      try { mountWallpaperVideo(); } catch (_) {}
+    }
+
     // Install the body-attr watcher. Refcounted, safe to call alongside
     // any other plugin that also installs. Stores the unsubscribe so we
     // can release on stop().
@@ -156,6 +165,8 @@ module.exports = class SoloLevelingTheme {
   }
 
   stop() {
+    try { unmountWallpaperVideo(); } catch (_) {}
+
     // Cancel a pending class-substitution sweep.
     if (this._substTimer) {
       clearTimeout(this._substTimer);
@@ -270,6 +281,36 @@ module.exports = class SoloLevelingTheme {
     desc.textContent = 'Toggle individual CSS modules on/off for debugging. Changes take effect immediately.';
     desc.style.cssText = 'margin: 0 0 16px 0; font-size: 13px; color: #7a7a8a;';
     panel.appendChild(desc);
+
+    // Animated wallpaper toggle
+    const wallRow = document.createElement('div');
+    wallRow.style.cssText =
+      'display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:14px;' +
+      'background:rgba(138,43,226,0.08);border:1px solid rgba(138,43,226,0.35);border-radius:2px;';
+    const wallBox = document.createElement('input');
+    wallBox.type = 'checkbox';
+    wallBox.checked = BdApi.Data.load(this.meta.name, 'animatedWallpaper') === true;
+    wallBox.style.cursor = 'pointer';
+    wallBox.addEventListener('change', () => {
+      BdApi.Data.save(this.meta.name, 'animatedWallpaper', wallBox.checked);
+      try {
+        wallBox.checked ? mountWallpaperVideo() : unmountWallpaperVideo();
+      } catch (_) {}
+    });
+    const wallLabel = document.createElement('div');
+    const wallTitle = document.createElement('div');
+    wallTitle.textContent = 'Animated wallpaper (video)';
+    wallTitle.style.cssText = 'font-size:14px;font-weight:600;color:#d4b0ff;';
+    const wallDesc = document.createElement('div');
+    wallDesc.textContent =
+      'GPU-composited looping video instead of a static image. Pauses while Discord is ' +
+      'in the background and respects reduced-motion. Costs battery on a laptop.';
+    wallDesc.style.cssText = 'font-size:12px;color:#7a7a8a;margin-top:2px;';
+    wallLabel.appendChild(wallTitle);
+    wallLabel.appendChild(wallDesc);
+    wallRow.appendChild(wallBox);
+    wallRow.appendChild(wallLabel);
+    panel.appendChild(wallRow);
 
     for (const mod of CSS_MODULES) {
       const row = document.createElement('div');

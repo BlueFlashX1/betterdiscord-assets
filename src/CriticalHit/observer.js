@@ -128,12 +128,25 @@ module.exports = {
     // worse, the give-up left the channel-change listener DEAD (see re-arm
     // fix below). Skip silently but KEEP the subscription alive so the next
     // real channel re-triggers observation.
+    // HARDENED 2026-07-30: originally called isVoiceChannelChat(), whose
+    // paths 3-4 (voice-connect cross-check, document-wide DOM marker scan)
+    // can FALSE-POSITIVE when the stores haven't resolved yet — which is
+    // exactly the situation at startup, when this runs. A false positive
+    // here silently disables crit detection for the whole session. Use only
+    // the authoritative URL + ChannelStore type check: skip when we are
+    // CERTAIN it's voice/stage, retry normally in every ambiguous case.
+    // Burning 20 retries in a real VC is cheap; missing crits is not.
     try {
-      if (isVoiceChannelChat()) {
-        this.setupChannelChangeListener();
-        return;
+      const m = String(window.location?.pathname || '').match(/^\/channels\/(?:@me|\d+)\/(\d+)/);
+      if (m) {
+        const ch = BdApi?.Webpack?.getStore?.('ChannelStore')?.getChannel?.(m[1]);
+        const t = Number(ch?.type);
+        if (t === 2 || t === 13) {
+          this.setupChannelChangeListener();
+          return;
+        }
       }
-    } catch (_) {}
+    } catch (_) { /* ambiguous — fall through and observe normally */ }
 
     const messageContainer = this._findMessageContainer();
 
