@@ -1489,7 +1489,12 @@ module.exports = class AAPerfSentinel {
       if (mem) heapMB = Math.round(mem.usedJSHeapSize / 1048576);
     } catch (_) {}
 
-    const fr = dFrames > 0 ? `${((1 - dDropped / dFrames) * 100).toFixed(1)}%` : "n/a";
+    // "bg" not "n/a": zero frames sampled means rAF never ran for the span,
+    // which in practice means the window was backgrounded or minimised
+    // (Chromium throttles rAF when hidden). That is a real, useful state —
+    // reporting it as "n/a" reads like the instrument failed, the same
+    // ambiguity that made the heap-floor line misleading during bulk passes.
+    const fr = dFrames > 0 ? `${((1 - dDropped / dFrames) * 100).toFixed(1)}%` : "bg";
     const cpu =
       this._lastCpu === null || this._lastCpu === undefined ? "n/a" : `${this._lastCpu.toFixed(1)}%`;
     const heap = heapMB === null ? "n/a" : `${heapMB}MB`;
@@ -1558,6 +1563,9 @@ module.exports = class AAPerfSentinel {
     );
     out.push(
       "Columns: time | span | cpu (% of one core) | frames under 33ms | JS heap | long tasks count/ms | top 3 plugins by attributed ms in that span"
+    );
+    out.push(
+      'fr "bg" = no frames sampled that span (window backgrounded/minimised; Chromium throttles rAF when hidden) — not a measurement failure.'
     );
     out.push("");
     for (const line of this._historyLines) out.push(line);
