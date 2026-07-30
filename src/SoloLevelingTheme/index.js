@@ -122,7 +122,11 @@ module.exports = class SoloLevelingTheme {
     // repaints the whole viewport on the main thread every frame — the
     // reason the previous animated wallpaper had to be reverted).
     if (BdApi.Data.load(this.meta.name, 'animatedWallpaper') === true) {
-      try { mountWallpaperVideo(); } catch (_) {}
+      try {
+        mountWallpaperVideo();
+      } catch (err) {
+        console.error('[SoloLevelingTheme] wallpaper video mount failed:', err);
+      }
     }
 
     // Install the body-attr watcher. Refcounted, safe to call alongside
@@ -295,7 +299,11 @@ module.exports = class SoloLevelingTheme {
       BdApi.Data.save(this.meta.name, 'animatedWallpaper', wallBox.checked);
       try {
         wallBox.checked ? mountWallpaperVideo() : unmountWallpaperVideo();
-      } catch (_) {}
+      } catch (err) {
+        // Never swallow this — a silent catch here is why the toggle looked
+        // inert while the real cause (an OS reduce-motion veto) was invisible.
+        console.error('[SoloLevelingTheme] wallpaper video toggle failed:', err);
+      }
     });
     const wallLabel = document.createElement('div');
     const wallTitle = document.createElement('div');

@@ -23,8 +23,19 @@ const WALLPAPER_VIDEO_DATA_URL = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlz
 
 function mountWallpaperVideo() {
   if (document.getElementById(WALLPAPER_VIDEO_ID)) return;
+
+  // NOTE (2026-07-30): this used to SILENTLY RETURN when the OS reported
+  // prefers-reduced-motion — and this machine has macOS Reduce Motion on, so
+  // ticking the toggle appeared to do nothing at all. An explicit opt-in beats
+  // an OS-wide hint: the user asked for this specific animation by checking a
+  // box. Reduced motion is now only reported, never a silent veto.
   try {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
+      console.log(
+        "[SoloLevelingTheme] OS reduce-motion is ON; honouring the explicit " +
+        "animated-wallpaper toggle anyway (untick it in plugin settings to stop)."
+      );
+    }
   } catch (_) {}
 
   const video = document.createElement("video");
