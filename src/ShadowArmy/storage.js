@@ -287,12 +287,23 @@ class ShadowStorageManager {
       }
       const key = `${names.length ? names.join('<') : '(anon)'} [${mode}]`;
       callers.set(key, (callers.get(key) || 0) + 1);
+      this.__saLastCaller = key;
     } catch (_) {}
 
     if (!this.db) await this.init();
     if (!this.db) throw new Error('ShadowArmy: Database not initialized');
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], mode, { durability: 'relaxed' });
+      // REQUEST ATTRIBUTION (2026-07-30). Counting TRANSACTIONS was not enough:
+      // a 2-minute session showed 571,309 IDBRequest.onsuccess callbacks
+      // costing 16.4s of main thread (the largest single cost in the suite,
+      // and the reason rAF callbacks land 700-2000ms late) against only ~38
+      // transactions — i.e. ~15,000 requests inside single transactions. The
+      // transaction-level probe cannot say which caller issues them, and the
+      // arithmetic fits several candidates, so tag the transaction with the
+      // caller and let AAPerfSentinel count requests per caller instead of
+      // guessing. Cost: one property write per transaction.
+      try { transaction.__saCaller = this.__saLastCaller; } catch (_) {}
       const store = transaction.objectStore(this.storeName);
       transaction.onerror = () => reject(transaction.error);
       fn(store, transaction, resolve, reject);

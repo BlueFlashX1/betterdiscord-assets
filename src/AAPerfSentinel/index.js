@@ -261,6 +261,14 @@ module.exports = class AAPerfSentinel {
               return fn.apply(this, a);
             } finally {
               const txn = holder.transaction || holder;
+              // Per-caller request attribution: storage.js tags the
+              // transaction with the storage method that opened it.
+              if (kindLabel === "request.onsuccess" && txn && txn.__saCaller) {
+                self._idbReqByCaller.set(
+                  txn.__saCaller,
+                  (self._idbReqByCaller.get(txn.__saCaller) || 0) + 1
+                );
+              }
               const info = self._txnOwners.get(txn);
               self._record(
                 info ? info.owner : "discord/other",
@@ -274,6 +282,14 @@ module.exports = class AAPerfSentinel {
       });
       return desc;
     };
+
+    // REQUEST-LEVEL ATTRIBUTION (2026-07-30). The per-plugin totals proved
+    // ShadowArmy's IDBRequest.onsuccess callbacks are the suite's single
+    // largest main-thread cost (571,309 calls / 16,425ms in a 2-minute
+    // session) but could not say WHICH storage caller issues them — request
+    // count and transaction count disagreed by three orders of magnitude.
+    // storage.js now tags each transaction with its caller; count against it.
+    this._idbReqByCaller = new Map();
 
     o.idbReqSuccess = wrapHandlerDescriptor(IDBRequest.prototype, "onsuccess", "request.onsuccess");
     o.idbReqError = wrapHandlerDescriptor(IDBRequest.prototype, "onerror", "request.onerror");
@@ -997,6 +1013,28 @@ module.exports = class AAPerfSentinel {
           const perMin = (count / (uptimeMs / 60000)).toFixed(1);
           lines.push(`${key.slice(0, 60).padEnd(61)} ${String(count).padStart(8)}  (~${perMin}/min)`);
         }
+        lines.push("");
+      }
+    } catch (_) {}
+
+    // Per-caller IDB REQUEST counts. Transactions alone were misleading: the
+    // expensive callers are the ones issuing thousands of individual requests
+    // inside ONE transaction, which a transaction counter renders as "1".
+    // This names the driver of the suite's largest main-thread cost.
+    try {
+      const reqByCaller = this._idbReqByCaller;
+      if (reqByCaller && reqByCaller.size > 0) {
+        lines.push("── IDB REQUESTS BY CALLER (onsuccess callbacks — the real cost driver) ──");
+        const sorted = [...reqByCaller.entries()].sort((a, b) => b[1] - a[1]);
+        const totalReq = sorted.reduce((s, [, n]) => s + n, 0);
+        for (const [key, count] of sorted.slice(0, 12)) {
+          const perMin = (count / (uptimeMs / 60000)).toFixed(0);
+          const pct = ((count / totalReq) * 100).toFixed(1);
+          lines.push(
+            `${key.slice(0, 52).padEnd(53)} ${String(count).padStart(9)}  (~${perMin}/min, ${pct}%)`
+          );
+        }
+        lines.push(`  total attributed requests: ${totalReq}`);
         lines.push("");
       }
     } catch (_) {}
