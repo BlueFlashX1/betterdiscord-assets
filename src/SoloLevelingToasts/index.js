@@ -891,9 +891,19 @@ module.exports = class SoloLevelingToasts {
     toast.addEventListener("click", () => {
       this._clearToastFadeTimeout(toast);
       if (typeof opts.onClick === "function") {
-        try {
-          opts.onClick();
-        } catch (_) {}
+        // Deferred by one frame (2026-07-30, profiler: 729ms click measured).
+        // opts.onClick is CALLER-supplied and can be arbitrarily expensive —
+        // ShadowSenses passes portalJump, which reaches Discord's own
+        // transitionTo router and tears down/rebuilds the whole chat view
+        // SYNCHRONOUSLY inside this click task. Deferring lets the dismiss
+        // animation start and the frame paint before that runs; the user sees
+        // an instant response instead of a frozen click. Same pattern
+        // startFadeOut already uses for its own DOM writes.
+        requestAnimationFrame(() => {
+          try {
+            opts.onClick();
+          } catch (_) {}
+        });
       }
       this.startFadeOut(toast);
       this._setTrackedTimeout(

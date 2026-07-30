@@ -383,8 +383,22 @@ agent could not attribute the cost inside ShadowStep's own code and suspects Dis
 React commit / other suite observers reacting to the body mutation; the proposed
 persistent-root refactor targets createRoot churn, likely a small fraction of the
 total. Re-measure via the profiler's sites table before refactoring — do NOT
-speculatively rebuild the panel lifecycle). Same class, separate code: SoloLevelingToasts
-729ms on:click (plain DOM builder, no React — not a shared cause).
+speculatively rebuild the panel lifecycle). CORRECTED 2026-07-30 — the earlier note "SoloLevelingToasts 729ms on:click (plain DOM
+builder, no React — not a shared cause)" was WRONG and would have led a future audit to
+re-decline a real fix. The toast's own listener is trivial; the cost is the CALLER-supplied
+opts.onClick invoked synchronously inside the click task — ShadowSenses passes portalJump,
+which reaches Discord's own transitionTo router and tears down/rebuilds the chat view.
+FIXED: onClick deferred one frame (SoloLevelingToasts/index.js card-toast handler), so the
+dismiss animation paints before navigation runs. Fix lives in Toasts, so it holds for ANY
+caller's onClick.
+ShadowStep openPanel 494ms — STILL PARKED, now by ELIMINATION not assumption: zero
+layout-forcing reads exist anywhere in src/ShadowStep (verified by grep), the anchor list is
+capped at ~10, and the only two body-scoped observers in the suite (HSLDock one-shot,
+RA settings-guard) do trivial per-node work. Nothing inside the plugin accounts for it;
+most likely Discord's own React commit on the new body subtree. DELIBERATELY NOT applying
+the persistent-root refactor: keeping AnchorPanel mounted behind display:none would leave
+its ESC handler live while hidden and skip the focus effect on open — real behavior
+regressions for speculative gain on a single measurement.
 
 MEASURED 2026-07-30 (AAPerfSentinel v3.3 fs-level instrumentation — R4 quantified at last):
 synchronous config writes are REAL but CHEAP in practice: SLS ~6.6 saves/min totalling
