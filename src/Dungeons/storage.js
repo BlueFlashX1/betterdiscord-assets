@@ -248,36 +248,34 @@ class DungeonStorageManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
-      // Index-scoped scans instead of a full store.openCursor() — 'completed' and
-      // 'failed' are already-populated indices (see init() above), so this walks
-      // only matching records instead of every dungeon ever created.
-      const seenKeys = new Set();
+      // FIX (2026-07-30): the previous index-scoped scans used
+      // IDBKeyRange.only(true) — booleans are NOT valid IDB keys, so this
+      // threw synchronously on every 5-min GC run since dbVersion 2 (the
+      // recurring 'Failed to cleanup completed dungeons' error), and the
+      // completed/failed indices were permanently EMPTY anyway (IDB never
+      // indexes boolean values). Plain cursor + JS filter is correct AND
+      // cheap: normal completion deletes records directly within ~30s, so
+      // steady-state population ≈ concurrently-active dungeons only. The
+      // dead indices (completed/failed/status_rank/active_rank) are flagged
+      // for removal at the next dbVersion bump.
       let deleted = 0;
-
-      const scanIndex = (indexName) => {
-        const request = store.index(indexName).openCursor(IDBKeyRange.only(true));
-        request.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (!cursor) return;
-          // A dungeon could in principle match both indices; dedupe by primary key
-          // so it's only counted/deleted once.
-          if (!seenKeys.has(cursor.primaryKey)) {
-            seenKeys.add(cursor.primaryKey);
-            const deleteRequest = cursor.delete();
-            // R8: a bad record must not abort the whole cleanup transaction.
-            deleteRequest.onerror = (delEvent) => {
-              delEvent.preventDefault();
-              delEvent.stopPropagation();
-            };
-            deleted++;
-          }
-          cursor.continue();
-        };
-        request.onerror = () => reject(request.error);
+      const request = store.openCursor();
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) return;
+        const d = cursor.value;
+        if (d && (d.completed === true || d.failed === true)) {
+          const deleteRequest = cursor.delete();
+          // R8: a bad record must not abort the whole cleanup transaction.
+          deleteRequest.onerror = (delEvent) => {
+            delEvent.preventDefault();
+            delEvent.stopPropagation();
+          };
+          deleted++;
+        }
+        cursor.continue();
       };
-
-      scanIndex('completed');
-      scanIndex('failed');
+      request.onerror = () => reject(request.error);
 
       transaction.oncomplete = () => resolve({ deleted });
       transaction.onerror = () => reject(transaction.error);
