@@ -314,6 +314,22 @@ defeat/aliveness checks only need the ASSIGNED shadows (getShadowsByIds on
 dungeon.shadowAllocation, ~dozens not 281k); ShadowArmy's shared snapshot windows
 (2s) could also be event-invalidated instead of time-gated.
 
+SOLVED 2026-07-29 (the 370M-callback churn — _withStore probe verdict): the walker was
+forEachShadowBatch (per-record openCursor/continue = 281k IDB events PER WALK), driven
+~7/min by legitimate order-free consumers: the ShadowArmy panel's grade tally (60s cache
+zeroed by every grade promotion), totalPower recalc on army-count change (constant during
+combat), and armyStats streams. Earlier Dungeons-TTL fix (bc525c4) was a MISDIAGNOSIS
+(pattern-matched cadence, async-cut hid the caller — kept anyway as valid hygiene).
+STRUCTURAL FIX: forEachShadowBatchPaged — paged store.getAll() keyset on the unique
+primary key, ~500 records per IDB event (~560 events/walk, 500x fewer); panel tally +
+both army-stats streams switched (all order-free). Cursor variant retained for ordered
+consumers (getAllShadowsRaw). _withStore caller probe (window.__SA_STORE_CALLERS)
+retained until verified, then remove. Expected: ShadowArmy idb attribution collapses
+from ~6s/min to <100ms/min; verify via SHADOWARMY _withStore CALLERS + sites table.
+CONFIRMED separately: Dungeons 5-min GC IDBKeyRange.only(boolean) throws — booleans are
+not valid IDB keys, index-scoped mob GC has NEVER worked; feeds the parked
+mobs-extracted-flag USER DECISION (do not silently fix).
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

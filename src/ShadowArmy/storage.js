@@ -666,8 +666,55 @@ class ShadowStorageManager {
   }
 
   /**
+   * UNORDERED full-store stream using paged getAll() on the PRIMARY key
+   * (unique → keyset-safe, no boundary loss). ~batchSize records per IDB
+   * event instead of ONE per record: openCursor/continue costs 281k
+   * onsuccess callbacks per walk at army scale (AAPerfSentinel 2026-07-29
+   * measured 370M callbacks/2.5h across all walkers — the "idle churn").
+   * Use for anything order-insensitive: tallies, sums, censuses, power
+   * accumulation. onBatch must be synchronous (runs in the live txn).
+   */
+  async forEachShadowBatchPaged(onBatch, { batchSize = 500 } = {}) {
+    if (typeof onBatch !== 'function') {
+      throw new Error('forEachShadowBatchPaged requires an onBatch callback');
+    }
+    const size = Math.max(50, Math.floor(batchSize) || 500);
+    let scanned = 0;
+    let batches = 0;
+
+    return this._withStore('readonly', (store, _tx, resolve, reject) => {
+      const issue = (lastId) => {
+        const range = lastId === null ? null : IDBKeyRange.lowerBound(lastId, true);
+        const req = store.getAll(range, size);
+        req.onsuccess = () => {
+          const page = req.result || [];
+          if (page.length > 0) {
+            try {
+              onBatch(page);
+            } catch (error) {
+              reject(error);
+              return;
+            }
+            scanned += page.length;
+            batches++;
+          }
+          if (page.length < size) {
+            resolve({ scanned, batches });
+            return;
+          }
+          issue(page[page.length - 1].id);
+        };
+        req.onerror = () => reject(req.error);
+      };
+      issue(null);
+    });
+  }
+
+  /**
    * Stream shadows in fixed-size batches without materializing the whole table.
    * IMPORTANT: onBatch must be synchronous (no awaits) — runs inside live IDB transaction.
+   * NOTE: per-record cursor iteration (1 IDB event per record). Prefer
+   * forEachShadowBatchPaged when ordering doesn't matter.
    */
   async forEachShadowBatch(
     onBatch,

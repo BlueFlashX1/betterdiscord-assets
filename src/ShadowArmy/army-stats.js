@@ -118,13 +118,18 @@ module.exports = {
 
     if (this.storageManager) {
       try {
-        const streamResult = await this.storageManager.forEachShadowBatch(
+        // Power accumulation is order-free — paged walker (500/IDB event)
+        // instead of per-record cursor (profiler 2026-07-29: 281k events/walk).
+        const streamPower = this.storageManager.forEachShadowBatchPaged
+          ? this.storageManager.forEachShadowBatchPaged.bind(this.storageManager)
+          : this.storageManager.forEachShadowBatch.bind(this.storageManager);
+        const streamResult = await streamPower(
           (batch) => {
             for (let i = 0; i < batch.length; i++) {
               this._accumulateShadowPower(batch[i], totals);
             }
           },
-          { batchSize: 250, sortBy: 'extractedAt', sortOrder: 'desc' }
+          { batchSize: 500 }
         );
 
         // Re-guard with optional chain: plugin.stop() can null storageManager
@@ -379,14 +384,19 @@ module.exports = {
       return { aggregatedData, sampleShadow, scanned: 0, batches: 0 };
     }
 
-    const streamResult = await this.storageManager.forEachShadowBatch(
+    // Stats aggregation is order-free (sums + any-record sample) — paged
+    // walker instead of per-record cursor (profiler 2026-07-29).
+    const streamStats = this.storageManager.forEachShadowBatchPaged
+      ? this.storageManager.forEachShadowBatchPaged.bind(this.storageManager)
+      : this.storageManager.forEachShadowBatch.bind(this.storageManager);
+    const streamResult = await streamStats(
       (batch) => {
         if (!sampleShadow && batch.length > 0) sampleShadow = batch[0];
         for (let i = 0; i < batch.length; i++) {
           this._accumulateArmyStatsForShadow(aggregatedData, batch[i], statKeys);
         }
       },
-      { batchSize, sortBy: 'extractedAt', sortOrder: 'desc' }
+      { batchSize: Math.max(batchSize, 500) }
     );
 
     return {

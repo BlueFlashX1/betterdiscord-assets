@@ -117,7 +117,12 @@ function buildWidgetComponents(pluginInstance) {
                 gradeCounts = pluginInstance._cachedGradeCounts;
               } else if (sm.forEachShadowBatch) {
                 const gradeMap = {};
-                await sm.forEachShadowBatch((batch) => {
+                // Paged walker when available: grade tally is order-free, and the
+                // cursor variant costs 281k IDB events per walk (profiler 2026-07-29).
+                const stream = sm.forEachShadowBatchPaged
+                  ? sm.forEachShadowBatchPaged.bind(sm)
+                  : sm.forEachShadowBatch.bind(sm);
+                await stream((batch) => {
                   for (const s of batch) {
                     const g = s.grade || 'Common';
                     gradeMap[g] = (gradeMap[g] || 0) + 1;
