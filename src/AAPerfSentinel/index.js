@@ -725,6 +725,11 @@ module.exports = class AAPerfSentinel {
     const map = target || (this._cssAudit || (this._cssAudit = new Map()));
     const a = map.get(owner) || { rules: 0, has: 0, contains: 0, universal: 0, deep: 0, bytes: 0 };
     a.bytes += css.length;
+    // Strip /* */ comments FIRST (2026-07-30): the first run reported 162
+    // "universal" selectors for a token file with none — every comment's
+    // closing " */" matched the universal pattern, and comment prose inflated
+    // the deep-chain count. Measuring the artifact, not the CSS.
+    css = css.replace(/\/\*[\s\S]*?\*\//g, " ");
     a.rules += (css.match(/\{/g) || []).length;
     a.has += (css.match(/:has\(/g) || []).length;
     a.contains += (css.match(/\[class\*=/g) || []).length;

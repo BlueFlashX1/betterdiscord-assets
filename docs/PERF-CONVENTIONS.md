@@ -411,6 +411,18 @@ FIXED same pass: SLS writeFileBackup rotated 5 generations by readFileSync+write
 recovery path already scans every .bakN). NOTE: BdApi.Data.save is NON-WRITABLE — it
 cannot be wrapped; disk-write instrumentation must go through fs.writeFileSync.
 
+MEASURED 2026-07-30 (v4.2 CSS selector audit — style-recalc pressure quantified):
+sl-theme-dialogs carries 65 :has() selectors (verified against source, comment-stripped),
+the most in the suite; guild 3, shadow-senses ~19. VERDICT: NOT a problem and NOT to be
+"fixed" — every dialogs :has() is ELEMENT-scoped (div[class^="layer_"]:has(...),
+.bd-modal-root:has(...)), never body/document-scoped, so evaluation is bounded to modal
+layer subtrees that exist only while a dialog is open. Document-scoped :has() count in
+dialogs.css: ZERO. The one genuinely document-scoped case (guild.css body:has(
+chatLayerWrapper_)) was already refuted 2026-07-13 for lack of a driving event. Do NOT
+re-open ":has() is expensive" as a finding without evidence of a DOCUMENT-scoped instance.
+Instrument note: the audit strips /* */ comments before counting — the first run reported
+162 "universal selectors" in a token file with none (every comment's closing " */" matched).
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);
