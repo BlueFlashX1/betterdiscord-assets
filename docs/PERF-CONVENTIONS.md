@@ -467,6 +467,19 @@ so the reflow was pure waste.
 NOT exhaustively swept: class (d) one-shot sites beyond the 4 above (agent stopped after the
 pattern repeated 3x); severity floor is a single user action, so this is a deliberate stop.
 
+SOLVED 2026-07-30 (the recurring full-store-walk burst — caught by v4.3 BURST CAPTURE):
+attemptAutoRankUp called getTotalShadowPower(TRUE) — a FORCED full-army walk — on EVERY
+shadow rank-up (guarded only by _batchXpInProgress, so all combat/dungeon rank-ups outside
+an XP batch hit it). Burst files recorded 540 paged walks in one 4-minute window (~135/min)
+with the caller chain naming it. It ALSO zeroed cachedTotalPowerShadowCount first, which
+guaranteed the next non-forced call ALSO walked the store (count mismatch) — two full walks
+per rank-up. Replaced with the pre-existing incremental _applyTotalPowerDelta (race-safe
+serialized chain): army total moves by exactly this shadow's power change, O(1) vs O(281k).
+The count-zeroing line is removed for the same reason. This is the same phenomenon as the
+earlier "155/min paged walk" burst that could not be reproduced on demand — the burst-capture
+instrument is what finally named it, after a cadence-guess had already produced one wrong fix
+(bc525c4, kept as hygiene).
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

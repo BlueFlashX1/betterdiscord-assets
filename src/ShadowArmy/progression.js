@@ -435,6 +435,9 @@ module.exports = {
 
     const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
     const oldXp = Math.max(0, Number(shadow.xp) || 0);
+    // Capture pre-promotion power so the cached army total can be adjusted by
+    // the DELTA instead of recomputed from the whole store (see below).
+    const prevPower = this._getShadowPowerValue?.(shadow) ?? (Number(shadow.strength) || 0);
     shadow.rank = nextRank;
 
     this._applyRankPromotionProgressCarry(shadow, currentRank, nextRank);
@@ -443,17 +446,30 @@ module.exports = {
     shadow.strength = this.calculateShadowStrength(newEffectiveStats, 1);
 
     this.invalidateShadowPowerCache(shadow);
-    this.settings.cachedTotalPowerShadowCount = 0;
     this.clearShadowPowerCache();
     // Rank-up mutates shadow.strength — bump the write-gen counter the
     // hourly compression gate uses (see army-stats.js:_applyTotalPowerDelta).
     this._armyWriteGen = (this._armyWriteGen || 0) + 1;
 
     if (!this._batchXpInProgress) {
-      // Skip per-rank-up power recalc during batch XP — grantShadowXP does one post-batch recalc
-      this.getTotalShadowPower(true).catch((error) => {
-        this.debugError('POWER_CALC', 'Failed to refresh total shadow power after rank up', error);
-      });
+      // INCREMENTAL (2026-07-30, burst capture): this used to call
+      // getTotalShadowPower(true) — a FORCED full-store walk of the entire
+      // army — on EVERY rank-up. The profiler's burst capture caught 540
+      // paged walks in one 4-minute window (~135/min) during combat, all
+      // from this line. The army total only moves by this one shadow's power
+      // change, and the incremental path already exists and is race-safe
+      // (serialized promise chain). O(1) instead of O(281k).
+      // NOTE: cachedTotalPowerShadowCount is deliberately NOT zeroed here
+      // anymore — zeroing it made the next getTotalShadowPower(false) see a
+      // count mismatch and walk the store anyway, defeating the delta.
+      const newPower = this._getShadowPowerValue?.(shadow) ?? (Number(shadow.strength) || 0);
+      const powerDelta = newPower - prevPower;
+      if (powerDelta !== 0 && typeof this._applyTotalPowerDelta === 'function') {
+        this._applyTotalPowerDelta({ strength: Math.abs(powerDelta) }, powerDelta > 0 ? 'increment' : 'decrement')
+          .catch?.((error) => {
+            this.debugError('POWER_CALC', 'Failed to apply rank-up power delta', error);
+          });
+      }
     }
 
     return {
