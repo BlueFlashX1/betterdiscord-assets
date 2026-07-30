@@ -36,6 +36,70 @@ module.exports = {
     return formatter(totalSeconds);
   },
 
+  /**
+   * ARMY-WIDE aggregates for the modal (2026-07-30).
+   *
+   * The modal loads at most SHADOW_ARMY_MODAL_LOAD_LIMIT (2,500) shadows, and
+   * getShadows returns them ordered by power — so the loaded set is the TOP
+   * 2,500, not a random sample. Deriving the rank/grade distributions from it
+   * reported "E: 0, D: 0, C: 0 ... SSS: 754 (30.2%)" for an army of 235,280,
+   * which is not a rounding error: every low rank reads exactly 0 because none
+   * of them are strong enough to be in the top 2,500. Percentages were of
+   * 2,500 too, so they summed to 100% of the wrong denominator.
+   *
+   * Counts come from the rank INDEX (cheap: one count() per rank, no records
+   * read). The grade tally needs a walk, so it reuses the same
+   * _cachedGradeCounts / _gradeCacheTs pair the header widget already
+   * maintains — opening the modal within the 60s TTL costs nothing extra, and
+   * a modal-triggered tally is reused by the widget in turn.
+   */
+  async _loadArmyAggregates() {
+    const sm = this.storageManager;
+    if (!sm?.getCountByRank) return null;
+
+    try {
+      const ranks = C.SHADOW_RANKS;
+      const counts = await Promise.all(ranks.map((rank) => sm.getCountByRank(rank)));
+      const rankCounts = ranks.reduce((acc, rank, i) => {
+        acc[rank] = Number(counts[i]) || 0;
+        return acc;
+      }, {});
+
+      const totalCount =
+        (await sm.getTotalCount?.()) ||
+        ranks.reduce((sum, rank) => sum + rankCounts[rank], 0);
+
+      // Shared 60s grade cache (see components.js header widget).
+      const GRADE_CACHE_TTL = 60000;
+      const now = Date.now();
+      let gradeCounts = this._cachedGradeCounts;
+      if (!gradeCounts || now - (this._gradeCacheTs || 0) >= GRADE_CACHE_TTL) {
+        const stream = sm.forEachShadowBatchPaged
+          ? sm.forEachShadowBatchPaged.bind(sm)
+          : sm.forEachShadowBatch?.bind(sm);
+        if (stream) {
+          const gradeMap = {};
+          await stream((batch) => {
+            for (const s of batch) {
+              const g = s.grade || s.gr || 'Common';
+              gradeMap[g] = (gradeMap[g] || 0) + 1;
+            }
+          });
+          this._cachedGradeCounts = gradeMap;
+          this._gradeCacheTs = now;
+          gradeCounts = gradeMap;
+        }
+      }
+
+      return { totalCount, rankCounts, gradeCounts: gradeCounts || null };
+    } catch (error) {
+      // Fall back to sample-derived numbers rather than showing nothing — the
+      // render labels them as a sample when this is null.
+      this.debugError('UI', 'Failed to load army-wide aggregates for modal', error);
+      return null;
+    }
+  },
+
   computeShadowArmyUiData(shadows) {
     // PERF: this method is called synchronously from ShadowArmyModal's render
     // body, which re-renders on every _widgetBus 'dirty' event. The full
@@ -461,27 +525,45 @@ module.exports = {
       );
       const avgVetDays = shadows.length > 0 ? Math.floor(totalVetDays / shadows.length) : 0;
 
-      // Army capacity (from SoloLevelingStats integration)
+      // Army capacity (from SoloLevelingStats integration).
+      // Uses the REAL army size — showing shadows.length here displayed the
+      // modal's 2,500-row load cap as though it were the whole army.
+      const armySizeForCapacity =
+        pluginRef._modalAggregates?.totalCount || shadows.length;
       let capacityStr = '—';
       try {
         const soloData = pluginRef.getSoloLevelingData?.();
         if (soloData) {
           const cap = pluginRef.getShadowArmyCap?.(soloData.rank || 'E', soloData.stats?.intelligence || 0);
           if (cap === Infinity) {
-            capacityStr = shadows.length.toLocaleString() + ' / ∞';
+            capacityStr = armySizeForCapacity.toLocaleString() + ' / ∞';
           } else if (typeof cap === 'number' && cap > 0) {
-            capacityStr = shadows.length.toLocaleString() + ' / ' + cap.toLocaleString();
+            capacityStr = armySizeForCapacity.toLocaleString() + ' / ' + cap.toLocaleString();
           }
         }
       } catch (_) {}
 
-      const rankCounts = shadows.reduce((counts, shadow) => {
+      // Army-wide counts when available; the loaded `shadows` array is the top
+      // N by power and would report 0 for every rank that did not make the cut.
+      const agg = pluginRef._modalAggregates || null;
+      // Total Power: settings.cachedTotalPower is maintained army-wide by
+      // army-stats.js. totalArmyPower here only sums the loaded top-N, so on a
+      // 235k army it under-reported by orders of magnitude. Prefer the cached
+      // army figure and fall back to the sample only if it is missing.
+      // Marks the cards that are still computed from the loaded slice only.
+      const sampleSuffix = shadows.length < (agg?.totalCount || shadows.length);
+      const cachedArmyPower = Number(pluginRef.settings?.cachedTotalPower) || 0;
+      const displayTotalPower = cachedArmyPower > totalArmyPower ? cachedArmyPower : totalArmyPower;
+      const isSampled = !agg;
+      const armyTotal = agg?.totalCount || shadows.length;
+
+      const rankCounts = agg?.rankCounts || shadows.reduce((counts, shadow) => {
         const r = shadow.rank || 'E';
         counts[r] = (counts[r] || 0) + 1;
         return counts;
       }, {});
 
-      const gradeCounts = shadows.reduce((counts, shadow) => {
+      const gradeCounts = agg?.gradeCounts || shadows.reduce((counts, shadow) => {
         const g = shadow.grade || 'Common';
         counts[g] = (counts[g] || 0) + 1;
         return counts;
@@ -541,33 +623,38 @@ module.exports = {
           },
             ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' } },
               ce(StatCard, { value: capacityStr, label: 'Army Capacity', color: '#8a2be2' }),
-              ce(StatCard, { value: totalArmyPower.toLocaleString(), label: 'Total Power', color: '#fbbf24' }),
+              ce(StatCard, { value: displayTotalPower.toLocaleString(), label: 'Total Power', color: '#fbbf24' }),
               ce(StatCard, { value: essenceTotal, label: 'Essence', color: '#9370db' }),
               ce(StatCard, { value: totalExtractions, label: 'Extracted', color: '#34d399' })
             ),
             ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' } },
-              ce(StatCard, { value: `${avgVetDays}d`, label: 'Avg Served', color: '#22c55e' }),
-              ce(StatCard, { value: totalCombatTime, label: 'Total Combat', color: '#ef4444' }),
-              ce(StatCard, { value: promotionsAffordable > 0 ? promotionsAffordable : '—', label: 'Promotions Ready', color: '#f59e0b' }),
+              ce(StatCard, { value: `${avgVetDays}d`, label: sampleSuffix ? 'Avg Served*' : 'Avg Served', color: '#22c55e' }),
+              ce(StatCard, { value: totalCombatTime, label: sampleSuffix ? 'Total Combat*' : 'Total Combat', color: '#ef4444' }),
+              ce(StatCard, { value: promotionsAffordable > 0 ? promotionsAffordable : '—', label: sampleSuffix ? 'Promotions Ready*' : 'Promotions Ready', color: '#f59e0b' }),
               ce(StatCard, { value: Object.keys(gradeCounts).filter(g => g !== 'Common' && (gradeCounts[g] || 0) > 0).length + ' / ' + (gradeOrder.length - 1), label: 'Grades Unlocked', color: '#ff6b2b' })
             ),
+            sampleSuffix
+              ? ce('div', {
+                  style: { color: '#72767d', fontSize: '10px', textAlign: 'center', marginTop: '-6px', marginBottom: '10px' },
+                }, `* measured from the strongest ${shadows.length.toLocaleString()} shadows loaded, not all ${armyTotal.toLocaleString()}`)
+              : null,
 
             ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '2px', padding: '12px', marginBottom: '12px' } },
-              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Rank Distribution'),
+              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, isSampled ? `Shadow Rank Distribution (top ${shadows.length.toLocaleString()} only)` : 'Shadow Rank Distribution'),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
-                RANKS_SA.map((rank) => ce(RankCell, { key: rank, rank, count: rankCounts[rank] || 0, total: shadows.length }))
+                RANKS_SA.map((rank) => ce(RankCell, { key: rank, rank, count: rankCounts[rank] || 0, total: armyTotal }))
               )
             ),
 
             ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '2px', padding: '12px', marginBottom: '12px' } },
-              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Grade Distribution'),
+              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, isSampled ? `Shadow Grade Distribution (top ${shadows.length.toLocaleString()} only)` : 'Shadow Grade Distribution'),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
-                SHADOW_GRADES.map((grade) => ce(GradeCell, { key: grade, grade, count: gradeCounts[grade] || 0, total: shadows.length }))
+                SHADOW_GRADES.map((grade) => ce(GradeCell, { key: grade, grade, count: gradeCounts[grade] || 0, total: armyTotal }))
               )
             ),
 
             ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '2px', padding: '12px' } },
-              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Army Composition by Role/Class'),
+              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, `Army Composition by Role/Class${shadows.length < armyTotal ? ` — strongest ${shadows.length.toLocaleString()} of ${armyTotal.toLocaleString()}` : ''}`),
               ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' } },
                 sortedRoles.map(([role, data]) => ce(RoleCard, { key: role, role, data }))
               )
@@ -624,6 +711,9 @@ module.exports = {
             });
           }
           shadows = await this.storageManager.getShadows({}, 0, loadCount);
+          // Army-wide truth for the distribution panels — `shadows` above is
+          // only the top `loadCount` by power and cannot describe the army.
+          this._modalAggregates = await this._loadArmyAggregates();
         } catch (err) {
           this.debugError('UI', 'Could not get shadows from IndexedDB', err);
           shadows = this.settings.shadows || [];
