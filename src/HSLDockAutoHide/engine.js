@@ -586,21 +586,40 @@ class DockEngine {
 
   // Timer Management
 
+  // DEADLINE-BASED (2026-07-30, profiler): this used to clearTimeout +
+  // setTimeout on EVERY mouse-move rAF tick (refreshPointerState calls it
+  // unconditionally) — measured 12,515 timer creations in 9 minutes, ~23/sec
+  // while the mouse moves. Now the deadline is just a number that moves; the
+  // single timer re-arms itself for the remainder when it fires early. One
+  // timer per hide cycle instead of one per frame. Behaviour identical: the
+  // dock still hides exactly hideDelayMs after the last qualifying move.
   scheduleHide(delayMs) {
     if (this.shouldKeepDockOpen()) { this.clearHideTimer(); return; }
-    this.clearHideTimer();
     const ms = Number(delayMs);
     if (!Number.isFinite(ms) || ms <= 0) {
+      this.clearHideTimer();
       if (!this.shouldKeepDockOpen()) this.hideDock();
       return;
     }
+    this._hideDeadline = Date.now() + ms;
+    if (this.hideTimer) return; // existing timer will re-arm to the new deadline
+    this._armHideTimer(ms);
+  }
+
+  _armHideTimer(ms) {
     this.hideTimer = setTimeout(() => {
       this.hideTimer = null;
+      const remaining = (this._hideDeadline || 0) - Date.now();
+      if (remaining > 1) {
+        this._armHideTimer(remaining); // deadline moved while we waited
+        return;
+      }
       if (!this.shouldKeepDockOpen()) this.hideDock();
     }, ms);
   }
 
   clearHideTimer() {
+    this._hideDeadline = 0;
     if (!this.hideTimer) return;
     clearTimeout(this.hideTimer);
     this.hideTimer = null;
