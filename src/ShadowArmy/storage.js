@@ -774,7 +774,36 @@ class ShadowStorageManager {
             resolve({ scanned, batches });
             return;
           }
-          issue(page[page.length - 1].id);
+          // HANG FIX (2026-07-30). This was a bare `issue(page[last].id)`. A
+          // record with no `id` makes that `undefined`, and
+          // IDBKeyRange.lowerBound(undefined, true) THROWS — inside an IDB
+          // event handler, where the exception escapes to the event loop
+          // instead of reaching reject(). The promise then never settles:
+          // no resolve, no reject, no error anywhere.
+          //
+          // That is precisely how reconcileGradeHierarchy has been failing.
+          // Its "one-shot" completion flag is set in a .then() that could
+          // never run, so the pass re-ran on every startup — for a long time
+          // the largest single IDB cost in the suite — while the catch()
+          // recorded nothing, because nothing was ever rejected.
+          //
+          // A missing key means the keyset walk cannot continue, so stop
+          // cleanly and report it. Either outcome is observable; a hang is not.
+          const lastId = page[page.length - 1]?.id;
+          if (lastId === undefined || lastId === null) {
+            this.debugError?.(
+              'STORAGE',
+              `forEachShadowBatchPaged: record without an id after ${scanned} scanned — stopping walk early`,
+              null
+            );
+            resolve({ scanned, batches, truncated: true });
+            return;
+          }
+          try {
+            issue(lastId);
+          } catch (error) {
+            reject(error);
+          }
         };
         req.onerror = () => reject(req.error);
       };
