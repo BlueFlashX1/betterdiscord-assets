@@ -785,12 +785,20 @@ class ShadowStorageManager {
    * as the getShadows() call sites this replaces.
    */
   async getAllShadowsRaw({ batchSize = 500 } = {}) {
+    // PAGED (2026-07-30): now streams via forEachShadowBatchPaged — primary-
+    // key order, ~500 records per IDB event instead of one per record (each
+    // cursor walk here cost 281k onsuccess events; these walks were the last
+    // ~1.7M events/12min after the tally/stats walkers were switched).
+    // ORDER CHANGE audited across every consumer 2026-07-30: compression
+    // sorts by power itself, migrations/XP-enum build id sets, census/stats
+    // tally, snapshot consumers count/filter/min-scan (order only breaks
+    // ties between equal-power shadows). Nothing reads recency order.
     const collected = [];
-    await this.forEachShadowBatch(
+    await this.forEachShadowBatchPaged(
       (batch) => {
         for (let i = 0; i < batch.length; i++) collected.push(batch[i]);
       },
-      { batchSize, sortBy: 'extractedAt', sortOrder: 'desc' }
+      { batchSize }
     );
     return collected;
   }
