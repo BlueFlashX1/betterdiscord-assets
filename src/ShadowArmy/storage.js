@@ -267,6 +267,20 @@ class ShadowStorageManager {
    * Eliminates boilerplate for db init check, transaction creation, error handling.
    */
   async _withStore(mode, fn) {
+    // DIAGNOSTIC PROBE (2026-07-29, AAPerfSentinel wave): count callers by
+    // name. External profilers can't see past the async boundary, but HERE
+    // the true caller is one synchronous frame up. AAPerfSentinel's report
+    // reads window.__SA_STORE_CALLERS. Cost: one stack capture per
+    // TRANSACTION (~28/min measured) — negligible. Remove once the
+    // full-store-walk driver is confirmed and fixed.
+    try {
+      const callers = (window.__SA_STORE_CALLERS ||= new Map());
+      const frame = (new Error().stack || '').split('\n')[2] || '';
+      const fm = /\bat\s+(?:async\s+)?([\w$.<>[\]]+)/.exec(frame);
+      const key = `${fm ? fm[1] : '(anon)'} [${mode}]`;
+      callers.set(key, (callers.get(key) || 0) + 1);
+    } catch (_) {}
+
     if (!this.db) await this.init();
     if (!this.db) throw new Error('ShadowArmy: Database not initialized');
     return new Promise((resolve, reject) => {
