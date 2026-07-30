@@ -596,25 +596,26 @@ module.exports = {
     }
 
     const grantStartedAt = Date.now();
-    let xpGrantSucceeded = false;
-    let postXpShadows = [];
-
-    // One XP batch grant for all contributing shadows (avoids repeated full-table scans).
-    try {
-      const xpResult = await this.shadowArmy.grantShadowXP(
-        0,
-        `dungeon_${dungeon.rank}_${channelKey}`,
-        xpTargetIds,
-        {
-          perShadowAmounts: xpByShadowId,
-          skipPowerRecalc: true,
-        }
-      );
-      xpGrantSucceeded = true;
-      postXpShadows = xpResult?.updatedShadows || [];
-    } catch (err) {
-      this.errorLog('Failed to grant dungeon shadow XP batch', err);
-    }
+    // SHADOW XP GRANT REMOVED (2026-07-30). Shadows are no longer awarded XP at
+    // all: their power comes from the Shadow Monarch scaling (a fraction of the
+    // PLAYER's stats) plus veterancy, and dungeon kills feed the PLAYER's XP,
+    // not theirs. Writing per-shadow XP here was therefore work with no effect
+    // on any number the game reads — and it was the single largest IDB cost in
+    // the suite once army-wide XP was removed: 310,192 request callbacks,
+    // 29.3% of all traffic, because a deploy can target up to 200,000 shadows
+    // and this wrote a get+put for every one of them.
+    //
+    // Combat GROWTH is deliberately kept and still runs below: dungeon hours
+    // bank naturalGrowthStats per shadow (progression.js), which is real earned
+    // progression and is what the intrinsic rank-up gate reads. Only the XP
+    // write is gone.
+    //
+    // postXpShadows was this grant's in-memory result, used downstream purely
+    // as a cache to skip a re-fetch. With no grant there is nothing to cache,
+    // so the post-process takes its documented fallback path and fetches the
+    // contributors it needs.
+    const xpGrantSucceeded = true;
+    const postXpShadows = [];
 
     if (!xpGrantSucceeded) {
       return {
