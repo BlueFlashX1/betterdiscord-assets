@@ -61,7 +61,37 @@ function mountWallpaperVideo() {
   });
 
   (document.body || document.documentElement).appendChild(video);
-  video.play?.().catch(() => { /* autoplay blocked — muted video normally is not */ });
+  video.play?.().catch((err) => {
+    console.error("[SoloLevelingTheme] wallpaper video play() rejected:", err?.name, err?.message);
+  });
+
+  // SELF-REPORT (2026-07-30): a paused video's first frame is visually
+  // identical to the static wallpaper (same artwork), so "is it playing?"
+  // cannot be answered by looking. Log hard state once, 3s after mount, into
+  // the BD debug log where it can be read without DevTools.
+  setTimeout(() => {
+    try {
+      const t1 = video.currentTime;
+      setTimeout(() => {
+        const cs = getComputedStyle(video);
+        console.log("[SoloLevelingTheme] WALLPAPER VIDEO STATE", {
+          connected: video.isConnected,
+          paused: video.paused,
+          advancing: video.currentTime > t1,
+          currentTime: +video.currentTime.toFixed(2),
+          readyState: video.readyState,      // 4 = HAVE_ENOUGH_DATA
+          networkState: video.networkState,  // 3 = NO_SOURCE (blocked/failed)
+          errorCode: video.error?.code ?? null,
+          videoWidth: video.videoWidth,
+          zIndex: cs.zIndex,
+          opacity: cs.opacity,
+          display: cs.display,
+          visibility: cs.visibility,
+          bodyAttr: document.body?.getAttribute("data-sl-video-wallpaper"),
+        });
+      }, 1000);
+    } catch (_) {}
+  }, 3000);
 
   // Pause while hidden: a backgrounded window should not be decoding video.
   const onVis = () => {
