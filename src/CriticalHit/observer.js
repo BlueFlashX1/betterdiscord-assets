@@ -7,6 +7,7 @@
 
 const C = require('./constants');
 const dc = require('../shared/discord-classes');
+const { isVoiceChannelChat } = require('../shared/channel-context');
 
 module.exports = {
 
@@ -122,6 +123,18 @@ module.exports = {
       this.messageObserver = null;
     }
 
+    // VC gate (2026-07-30): voice/stage channels have no message container by
+    // design — retrying 20×500ms then logging an error was pure waste, and
+    // worse, the give-up left the channel-change listener DEAD (see re-arm
+    // fix below). Skip silently but KEEP the subscription alive so the next
+    // real channel re-triggers observation.
+    try {
+      if (isVoiceChannelChat()) {
+        this.setupChannelChangeListener();
+        return;
+      }
+    } catch (_) {}
+
     const messageContainer = this._findMessageContainer();
 
     if (!messageContainer) {
@@ -131,6 +144,11 @@ module.exports = {
         this.debugError('START_OBSERVING', 'Message container not found after max retries — giving up until next explicit startObserving() call', {
           retries: retryCount,
         });
+        // RE-ARM FIX (2026-07-30): _handleChannelChange tears down the
+        // channel-change listener BEFORE scheduling this retry chain, and
+        // the listener was only reinstalled on SUCCESS — so any give-up
+        // left channel-change detection dead for the rest of the session.
+        this.setupChannelChangeListener();
         return;
       }
       this.debug?.verbose &&
@@ -343,6 +361,9 @@ module.exports = {
         this.debugError('START_OBSERVING', 'observe() kept throwing after max retries — giving up until next explicit startObserving() call', {
           retries: retryCount,
         });
+        // RE-ARM FIX (2026-07-30): same as the container-not-found give-up —
+        // keep channel-change detection alive after abandoning this channel.
+        this.setupChannelChangeListener();
         return;
       }
       this._setTrackedTimeout(() => this.startObserving(retryCount + 1), C.OBSERVER_ERROR_RETRY_DELAY_MS);

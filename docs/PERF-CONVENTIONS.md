@@ -361,6 +361,30 @@ clearCompletedDungeons uses the same IDBKeyRange.only(boolean) broken pattern on
 completed/failed indices (dungeon archival GC likely never runs — same bug class,
 dungeon store kept, needs its own fix decision).
 
+Fixed 2026-07-30 (late wave): getAllShadowsRaw → forEachShadowBatchPaged (last
+cursor-per-record walker; order change extractedAt-desc→primary-key audited across
+every consumer — all sort/tally/id-set/min-scan, none read recency; ties between
+EQUAL-power shadows may resolve differently in weakest-selection, accepted).
+clearCompletedDungeons → plain openCursor + JS filter (IDBKeyRange.only(true) threw
+every 5min since dbVersion 2; completed/failed/status_rank/active_rank indices are
+PERMANENTLY EMPTY — IDB never indexes booleans; flagged for removal at next version
+bump alongside orphaned mobs stores. GC kept — unlike mobs, dungeon records ARE read
+back by restoreActiveDungeons). CriticalHit: voice-channel gate on startObserving
+(VC has no message container by design — was burning 20×500ms retries + an error log
+per VC visit) AND re-arm setupChannelChangeListener on BOTH give-up branches — the
+listener was torn down unconditionally by _handleChannelChange but reinstalled only on
+SUCCESS, so any give-up killed channel-change detection FOR THE REST OF THE SESSION
+(general failure-mode class: unconditional-teardown + resubscribe-only-on-happy-path —
+worth grep-checking elsewhere). AAPerfSentinel: Load-context report line (active
+dungeons + message rate) so frame/lag stats are comparable across sessions.
+PARKED with reasoning — ShadowStep openPanel 494ms (ONE measurement; the diagnosing
+agent could not attribute the cost inside ShadowStep's own code and suspects Discord's
+React commit / other suite observers reacting to the body mutation; the proposed
+persistent-root refactor targets createRoot churn, likely a small fraction of the
+total. Re-measure via the profiler's sites table before refactoring — do NOT
+speculatively rebuild the panel lifecycle). Same class, separate code: SoloLevelingToasts
+729ms on:click (plain DOM builder, no React — not a shared cause).
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);
