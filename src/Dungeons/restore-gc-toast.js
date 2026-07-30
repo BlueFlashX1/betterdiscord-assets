@@ -425,18 +425,6 @@ module.exports = {
       }
     }
 
-    // Clean up old extracted mobs from database (24+ hours old)
-    if (this.mobBossStorageManager) {
-      try {
-        const cleanupResult = await this.mobBossStorageManager.cleanupOldExtractedMobs();
-        if (cleanupResult.deleted > 0) {
-          this.debugLog(`Cleaned up ${cleanupResult.deleted} old extracted mobs from database`);
-        }
-      } catch (error) {
-        this.errorLog('Failed to cleanup old extracted mobs', error);
-      }
-    }
-
     // Clean up stale caches
     const now = Date.now();
 

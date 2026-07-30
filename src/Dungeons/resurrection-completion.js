@@ -636,7 +636,6 @@ module.exports = {
       // 30 seconds covers normal extraction + dismiss flow before records are removed.
       this._setTrackedTimeout?.(() => {
         this.storageManager?.deleteDungeon?.(channelKey);
-        this.mobBossStorageManager?.deleteMobsByDungeon?.(channelKey);
       }, 30000);
     } else {
       if (this.storageManager) {
@@ -644,14 +643,6 @@ module.exports = {
           await this.storageManager.deleteDungeon(channelKey);
         } catch (error) {
           this.errorLog('Failed to delete dungeon from storage', error);
-        }
-      }
-
-      if (this.mobBossStorageManager) {
-        try {
-          await this.mobBossStorageManager.deleteMobsByDungeon(channelKey);
-        } catch (error) {
-          this.errorLog('Failed to cleanup mobs from database', error);
         }
       }
     }

@@ -298,7 +298,8 @@ module.exports = {
       return;
     }
 
-    const memberRoot = this.getMemberListElements()?.membersWrap || null;
+    const memberElements = this.getMemberListElements();
+    const memberRoot = memberElements?.membersWrap || null;
     const chatContent = this._findMainChatContainer();
 
     // PERF (2026-07-14): observe membersWrap DIRECTLY, not its parent. The
@@ -502,8 +503,10 @@ module.exports = {
       }
     }, 3000);
 
-    // Immediate pass in case member list is already mounted
-    this.injectShadowRankWidget();
+    // Immediate pass in case member list is already mounted — reuse this
+    // tick's canInject + member-element lookups (widget.js hints param)
+    // instead of re-running both forced-layout reads.
+    this.injectShadowRankWidget({ canInject: true, memberElements });
   },
 
 };

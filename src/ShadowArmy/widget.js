@@ -96,7 +96,13 @@ module.exports = {
    * Inject shadow rank widget into member list sidebar.
    * Fast injection with smart retry logic.
    */
-  async injectShadowRankWidget() {
+  // `hints` (optional): { canInject: true, memberElements } — passed by
+  // setupMemberListWatcher, which computed BOTH in the same tick.
+  // canInjectWidgetInCurrentView/getMemberListElements read offsetParent
+  // (forced layout flush); on channel switches the duplicated pair ran the
+  // flush twice mid-Discord-rebuild (profiler 2026-07-29: 76ms avg / 468ms
+  // worst per URL change). Same-tick reuse is state-identical.
+  async injectShadowRankWidget(hints = null) {
     if (this._isStopped) return;
 
     // Widget requires both shadow_extraction and shadow_preservation unlocked
@@ -106,7 +112,7 @@ module.exports = {
       return;
     }
 
-    if (!this.canInjectWidgetInCurrentView()) {
+    if (!(hints?.canInject === true || this.canInjectWidgetInCurrentView())) {
       this.removeShadowRankWidget();
       return;
     }
@@ -120,7 +126,7 @@ module.exports = {
     // Stale widget — clean up before reinserting
     existingWidget && this.removeShadowRankWidget();
 
-    const memberElements = this.getMemberListElements();
+    const memberElements = hints?.memberElements || this.getMemberListElements();
     const membersList = memberElements?.membersList || null;
     if (!membersList) return;
 

@@ -265,7 +265,17 @@ class UnifiedSaveManager {
   async cleanupOldBackups(key) {
     if (!this.db) await this.init();
 
-    const backups = await this.getBackups(key, 20); // Get more than we need
+    // Throttle (2026-07-30, profiler): this ran after EVERY backed-up save —
+    // a getBackups index cursor walk + up to 10 deletes riding each write.
+    // Backups only need pruning eventually; once per 5 minutes per key keeps
+    // the same 10-backup ceiling (overshoot between pulses is bounded and
+    // trimmed on the next pass). Strictly-less-work change, shared-safe.
+    if (!this._lastBackupCleanup) this._lastBackupCleanup = new Map();
+    const lastCleanup = this._lastBackupCleanup.get(key) || 0;
+    if (Date.now() - lastCleanup < 300000) return;
+    this._lastBackupCleanup.set(key, Date.now());
+
+    const backups = await this.getBackups(key, 30); // Get more than we need
     if (backups.length <= 10) return; // Keep last 10
 
     // Delete oldest backups

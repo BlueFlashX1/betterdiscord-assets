@@ -341,17 +341,6 @@ module.exports = {
       );
     }
 
-    // Flush any pending mob writes before fully stopping
-    if (!this.mobBossStorageManager?.flushAll) {
-      this.storageManager?.close?.();
-      this.mobBossStorageManager?.close?.();
-      return;
-    }
-    try {
-      await this.mobBossStorageManager.flushAll('plugin-stop');
-    } catch (error) {
-      this.errorLog('Failed to flush pending mobs on stop', error);
-    }
     this.storageManager?.close?.();
     this.mobBossStorageManager?.close?.();
   }

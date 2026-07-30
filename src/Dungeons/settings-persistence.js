@@ -408,10 +408,12 @@ module.exports = {
       return;
     }
     if (!this._combatSettingsFallbackFlushTimer && typeof this._setTrackedTimeout === 'function') {
+      // Aligned with _combatSettingsFlushIntervalMs (force=true bypasses the
+      // gate — a 2.5s fallback would defeat the 10s floor entirely).
       this._combatSettingsFallbackFlushTimer = this._setTrackedTimeout(() => {
         this._combatSettingsFallbackFlushTimer = null;
         this.flushCombatSettingsDirty(Date.now(), true);
-      }, 2500);
+      }, 12000);
     }
   },
 

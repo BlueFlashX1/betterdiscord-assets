@@ -277,13 +277,6 @@ module.exports = {
       `[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${mobsToFlush.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total}, queuedLeft=${queuedOverflow.length})`
     );
 
-    // CRITICAL: Save mobs to dedicated database (cached for migration)
-    if (this.mobBossStorageManager && mobsToFlush.length > 0) {
-      this.mobBossStorageManager.enqueueMobs(mobsToFlush, channelKey).catch((error) => {
-        this.errorLog('Failed to queue mobs for caching', error);
-      });
-    }
-
     if (queuedOverflow.length > 0) {
       this._mobSpawnQueue.set(channelKey, queuedOverflow);
     } else {

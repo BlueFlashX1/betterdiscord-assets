@@ -301,7 +301,12 @@ module.exports = {
     };
     this._combatSettingsDirty = false;
     this._combatSettingsLastFlushAt = 0;
-    this._combatSettingsFlushIntervalMs = 1500;
+    // 10s (was 1500ms — profiler 2026-07-30): the 1.5s floor drove a full
+    // settings sanitize+IDB save every ~3s of combat (505ms-class stalls +
+    // the USM backup train). Boss-death/completion saves stay immediate;
+    // SLS precedent is 20s coalescing. Crash window: ≤10s of mana/XP drift,
+    // covered by existing catch-up mechanics.
+    this._combatSettingsFlushIntervalMs = 10000;
     this._combatSettingsFallbackFlushTimer = null;
 
     this.hiddenComments = new Map();

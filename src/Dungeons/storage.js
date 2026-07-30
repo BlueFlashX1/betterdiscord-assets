@@ -294,19 +294,19 @@ class DungeonStorageManager {
  * MobBossStorageManager - IndexedDB storage manager for Mobs and Bosses
  * Handles persistent storage of mob and boss data for caching and migration
  */
+// 2026-07-30: mob persistence REMOVED (user decision, ponytail follow-up).
+// The mobs/mobs_dead stores were write-only at runtime (nothing ever read
+// them back), and the extracted-index GC had never worked (boolean keys are
+// invalid in IDB). This manager now persists BOSSES only. Existing installs
+// keep orphaned empty mobs stores (harmless); physically dropping them would
+// need a dbVersion bump + deleteObjectStore — deliberately not done.
 class MobBossStorageManager {
   constructor(userId) {
     this.userId = userId || 'default';
     this.dbName = `MobBossDB_${this.userId}`;
     this.dbVersion = 2; // Incremented for performance optimizations
-    this.mobStoreName = 'mobs';
     this.bossStoreName = 'bosses';
-    this.deadMobsStoreName = 'mobs_dead'; // Hot/cold separation
     this.db = null;
-    this._pendingMobs = new Map();
-    this._pendingTimers = new Map();
-    this._flushIntervalMs = 5000; // Debounce writes to reduce IndexedDB churn
-    this._flushThreshold = 300; // Flush immediately when large batches accumulate
     this._lastBossSaveFraction = new Map(); // Throttle boss saves on HP delta
     this._logHandlers = {
       debug: null,
@@ -361,16 +361,6 @@ class MobBossStorageManager {
         const db = event.target.result;
         const oldVersion = event.oldVersion;
 
-        // Create mobs object store (V1)
-        if (!db.objectStoreNames.contains(this.mobStoreName)) {
-          const mobStore = db.createObjectStore(this.mobStoreName, { keyPath: 'id' });
-          mobStore.createIndex('dungeonKey', 'dungeonKey', { unique: false });
-          mobStore.createIndex('extracted', 'extracted', { unique: false });
-          mobStore.createIndex('rank', 'rank', { unique: false });
-          mobStore.createIndex('beastType', 'beastType', { unique: false });
-          mobStore.createIndex('spawnedAt', 'spawnedAt', { unique: false });
-        }
-
         // Create bosses object store (V1)
         if (!db.objectStoreNames.contains(this.bossStoreName)) {
           const bossStore = db.createObjectStore(this.bossStoreName, { keyPath: 'id' });
@@ -379,34 +369,6 @@ class MobBossStorageManager {
           bossStore.createIndex('spawnedAt', 'spawnedAt', { unique: false });
         }
 
-        // V2: Performance optimizations
-        if (oldVersion < 2) {
-          const transaction = event.target.transaction;
-
-          // Create dead mobs store for hot/cold data separation
-          if (!db.objectStoreNames.contains(this.deadMobsStoreName)) {
-            const deadMobStore = db.createObjectStore(this.deadMobsStoreName, { keyPath: 'id' });
-            deadMobStore.createIndex('dungeonKey', 'dungeonKey', { unique: false });
-            deadMobStore.createIndex('killedAt', 'killedAt', { unique: false });
-            deadMobStore.createIndex('extractedAt', 'extractedAt', { unique: false });
-          }
-
-          // Add compound indexes to mobs store
-          const mobStore = transaction.objectStore(this.mobStoreName);
-          if (!mobStore.indexNames.contains('dungeonKey_extracted')) {
-            mobStore.createIndex('dungeonKey_extracted', ['dungeonKey', 'extracted'], {
-              unique: false,
-            });
-          }
-          if (!mobStore.indexNames.contains('dungeonKey_rank')) {
-            mobStore.createIndex('dungeonKey_rank', ['dungeonKey', 'rank'], { unique: false });
-          }
-          if (!mobStore.indexNames.contains('extracted_rank')) {
-            mobStore.createIndex('extracted_rank', ['extracted', 'rank'], { unique: false });
-          }
-
-          // V2 upgrade complete
-        }
       },
       onBlocked: () => {
         // See DungeonStorageManager.init above for rationale.
@@ -429,122 +391,6 @@ class MobBossStorageManager {
       const store = transaction.objectStore(storeName);
       operation(store, transaction, resolve, reject);
     });
-  }
-
-  /**
-   * Batch save mobs (for performance)
-   */
-  async batchSaveMobs(mobs, dungeonKey) {
-    if (!this.db) await this.init();
-    if (!mobs || mobs.length === 0) return { saved: 0 };
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.mobStoreName], 'readwrite');
-      const store = transaction.objectStore(this.mobStoreName);
-      let saved = 0;
-      let errors = 0;
-
-      mobs.forEach((mob) => {
-        const mobData = {
-          ...mob,
-          dungeonKey,
-          cachedAt: Date.now(),
-          extracted: false,
-        };
-        const request = store.put(mobData);
-        request.onsuccess = () => saved++;
-        request.onerror = (event) => {
-          // R8: prevent one bad mob record from aborting the whole batch —
-          // mirrors ShadowArmy/storage.js saveShadowsBatch.
-          event.preventDefault();
-          event.stopPropagation();
-          errors++;
-        };
-      });
-
-      transaction.oncomplete = () => resolve({ saved, errors });
-      transaction.onerror = () => reject(transaction.error);
-    });
-  }
-
-  /**
-   * Queue mobs for throttled batch persistence.
-   * Flushes immediately if threshold exceeded, otherwise debounced.
-   */
-  async enqueueMobs(mobs, dungeonKey) {
-    if (!mobs || mobs.length === 0) return { queued: 0, flushed: false };
-
-    const current = this._pendingMobs.get(dungeonKey) || [];
-    current.push(...mobs);
-    this._pendingMobs.set(dungeonKey, current);
-
-    // Flush immediately if threshold exceeded
-    if (current.length >= this._flushThreshold) {
-      const result = await this.flushMobs(dungeonKey, 'threshold');
-      return { queued: current.length, flushed: true, ...result };
-    }
-
-    // Debounce flush
-    if (!this._pendingTimers.has(dungeonKey)) {
-      const timer = setTimeout(() => {
-        this.flushMobs(dungeonKey, 'interval').catch((error) => {
-          this._logWarn(
-            'Failed to flush mobs (interval)',
-            { dungeonKey, error: error?.message || String(error) },
-            `flush-interval-failed:${dungeonKey}`
-          );
-        });
-      }, this._flushIntervalMs);
-      this._pendingTimers.set(dungeonKey, timer);
-    }
-
-    return { queued: mobs.length, flushed: false };
-  }
-
-  /**
-   * Flush queued mobs for a specific dungeon key.
-   */
-  async flushMobs(dungeonKey, reason = 'manual') {
-    const pending = this._pendingMobs.get(dungeonKey);
-    if (!pending || pending.length === 0) return { saved: 0, errors: 0 };
-
-    // Clear debounce timer if present
-    if (this._pendingTimers.has(dungeonKey)) {
-      clearTimeout(this._pendingTimers.get(dungeonKey));
-      this._pendingTimers.delete(dungeonKey);
-    }
-
-    // Swap out pending array before writing
-    this._pendingMobs.set(dungeonKey, []);
-    try {
-      const result = await this.batchSaveMobs(pending, dungeonKey);
-      if (result.errors > 0) {
-        this._logDebug('Flush completed with write errors', {
-          dungeonKey,
-          saved: result.saved,
-          errors: result.errors,
-          reason,
-        });
-      }
-      return result;
-    } catch (error) {
-      this._logError(
-        'Failed to flush mobs',
-        { dungeonKey, reason },
-        error
-      );
-      return { saved: 0, errors: pending.length };
-    }
-  }
-
-  /**
-   * Flush all pending mobs for all dungeons (e.g., on plugin stop).
-   */
-  async flushAll(reason = 'stop') {
-    const keys = Array.from(this._pendingMobs.keys());
-    for (const key of keys) {
-      await this.flushMobs(key, reason);
-    }
   }
 
   /**
@@ -576,60 +422,6 @@ class MobBossStorageManager {
       };
       request.onerror = () => reject(request.error);
       }
-    );
-  }
-
-  async _deleteMobCursorMatches(openCursor, shouldDelete) {
-    return this._withSingleStore(this.mobStoreName, 'readwrite', (store, _tx, resolve, reject) => {
-      const request = openCursor(store);
-      let deleted = 0;
-
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (!cursor) {
-          resolve({ deleted });
-          return;
-        }
-
-        if (shouldDelete(cursor.value)) {
-          const deleteRequest = cursor.delete();
-          // R8: a bad record must not abort the whole cleanup transaction.
-          deleteRequest.onerror = (delEvent) => {
-            delEvent.preventDefault();
-            delEvent.stopPropagation();
-          };
-          deleted++;
-        }
-
-        cursor.continue();
-      };
-
-      request.onerror = () => reject(request.error);
-    });
-  }
-
-  /**
-   * Clean up old extracted mobs (older than 24 hours)
-   */
-  async cleanupOldExtractedMobs() {
-    const cutoffTime = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
-    // Index-scoped scan instead of a full store.openCursor() — 'extracted' is an
-    // already-populated index (see init() above), so this walks only extracted
-    // mobs instead of every mob ever created. mob.extracted is guaranteed by the
-    // index range, so only the age check remains in the (much smaller) callback.
-    return this._deleteMobCursorMatches(
-      (store) => store.index('extracted').openCursor(IDBKeyRange.only(true)),
-      (mob) => mob.extractedAt && mob.extractedAt < cutoffTime
-    );
-  }
-
-  /**
-   * Delete mobs by dungeon key (cleanup when dungeon completes)
-   */
-  async deleteMobsByDungeon(dungeonKey) {
-    return this._deleteMobCursorMatches(
-      (store) => store.index('dungeonKey').openCursor(IDBKeyRange.only(dungeonKey)),
-      () => true
     );
   }
 

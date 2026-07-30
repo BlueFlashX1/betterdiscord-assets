@@ -148,7 +148,13 @@ module.exports = {
       baseStats.agility = Math.floor(baseStats.agility * bossMult.dmgMult);
       baseStats.intelligence = Math.floor(baseStats.intelligence * bossMult.dmgMult);
 
-      const shadowCount = this._shadowCountCache || 100;
+      // FIX (2026-07-30): was `this._shadowCountCache || 100` — assigning the
+      // cache OBJECT ({count, timestamp}), which made the downstream
+      // preSplitShadowArmy rebalance comparisons NaN (silently disabling two
+      // of the three reinforcement triggers until deployment overwrote
+      // expectedShadowCount). bossHp is unaffected: calculateBossHP does not
+      // exist anywhere, so that term was always the 50000 fallback.
+      const shadowCount = this._shadowCountCache?.count ?? 100;
       const bossHp = Math.floor((this.calculateBossHP?.(bossConfig.rank, shadowCount) || 50000) * bossMult.hpMult);
 
       boss = {

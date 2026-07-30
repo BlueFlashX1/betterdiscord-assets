@@ -330,6 +330,37 @@ CONFIRMED separately: Dungeons 5-min GC IDBKeyRange.only(boolean) throws — boo
 not valid IDB keys, index-scoped mob GC has NEVER worked; feeds the parked
 mobs-extracted-flag USER DECISION (do not silently fix).
 
+Diagnosis-fleet wave 2026-07-30 (4 agents + central verification; items 4-8 + 1b + 2):
+FIXED — Dungeons handleUserDefeat aliveness check iterates dungeon.shadowHP directly
+(was full-army getAllShadows just for ids; shadowHP provably pruned to assigned);
+SkillTree startup/reset skill-event broadcasts staggered one macrotask per event (5
+plugins' activations no longer stack into one block; all listeners have retry
+fallbacks); ShadowPortalCore portal glow → pre-painted radial-gradient sibling with
+opacity-only tweens (was ANIMATED filter property, 58-104ms frames; breathing tweens
+untouched; VISUAL CHECK pending user's next portal jump); ShadowArmy
+setupMemberListWatcher/injectShadowRankWidget duplicate forced-reflow pair deduped via
+hints param (76ms avg/468ms worst per URL change); story-mode-core shadowCount
+?.count fix (was cache OBJECT → NaN silently disabled 2 of 3 reinforcement triggers;
+bossHp unaffected — calculateBossHP does not exist, term always fell back to 50000);
+MOB PERSISTENCE REMOVED per user decision (b) — 17 sites, zero readers verified,
+corpse/extraction pipelines memory-only confirmed, bosses store untouched, orphaned
+mobs/mobs_dead stores left in place (physical drop needs dbVersion bump — deliberately
+skipped); combat settings flush floor 1500ms→10s + fallback 2.5s→12s + dungeon-blob
+debounce 2s→5s (boss-death/completion immediate saves untouched); UnifiedSaveManager
+cleanupOldBackups throttled to 1/5min per key (ran after EVERY backed-up save —
+getBackups cursor walk + deletes riding each write; shared-safe strictly-less-work).
+DECLINED as designed-correct (do NOT re-flag): combat-shadow-execution:982 deploy-pool
+full fetch + combat-shadow-allocation:500 fair-share full fetch (genuinely army-wide,
+TTL/gen-gated). PARKED: sanitizeDungeonForStorage double-deep-clone + replacer +
+uncapped shadowHP/shadowCombatData maps (needs Map-content verification before replacer
+drop); markCombatSettingsDirty semantic decouple from dungeon saves (flush-floor raise
+captures most of the win); USM compound plugin+dataKey index (cross-plugin SCHEMA_VERSION
+migration — HIGH). FLAGGED for user: calculateBossHP was never implemented — Demon
+Castle boss HP has never rank-scaled (design gap); DungeonStorageManager
+clearCompletedDungeons uses the same IDBKeyRange.only(boolean) broken pattern on
+completed/failed indices (dungeon archival GC likely never runs — same bug class,
+dungeon store kept, needs its own fix decision).
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

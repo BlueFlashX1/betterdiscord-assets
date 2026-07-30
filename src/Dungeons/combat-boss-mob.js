@@ -967,7 +967,7 @@ module.exports = {
           .catch((err) => this.errorLog('Failed to save dungeon', err));
       }
       this.markCombatSettingsDirty('debounced-dungeon-save');
-    }, 2000);
+    }, 5000);
     this._dungeonSaveTimers.set(channelKey, timerId);
   }
 };
