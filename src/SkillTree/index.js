@@ -250,17 +250,25 @@ module.exports = class SkillTree {
   _broadcastCurrentSkillLevels() {
     const levels = this.settings?.skillLevels;
     if (!levels) return;
-    for (const [skillId, level] of Object.entries(levels)) {
-      if ((level || 0) >= 1) {
-        try {
-          document.dispatchEvent(
-            new CustomEvent('SkillTree:skillLevelChanged', {
-              detail: { skillId, level },
-            })
-          );
-        } catch (_) { /* ignore dispatch errors */ }
-      }
-    }
+    // One macrotask per event (profiler 2026-07-29): the synchronous loop
+    // collapsed up to 5 plugins' one-time activation pipelines (131/42/34/
+    // 27/24ms measured) into a single unbroken main-thread block at startup.
+    // Chained tracked timeouts preserve dispatch order; every listener
+    // already tolerates delayed activation (each has its own retry fallback).
+    const queue = Object.entries(levels).filter(([, level]) => (level || 0) >= 1);
+    const dispatchNext = () => {
+      const next = queue.shift();
+      if (!next) return;
+      try {
+        document.dispatchEvent(
+          new CustomEvent('SkillTree:skillLevelChanged', {
+            detail: { skillId: next[0], level: next[1] },
+          })
+        );
+      } catch (_) { /* ignore dispatch errors */ }
+      if (queue.length) this._setTrackedTimeout(dispatchNext, 0);
+    };
+    dispatchNext();
   }
 
   _setTrackedTimeout(callback, delayMs) {
@@ -693,9 +701,14 @@ module.exports = class SkillTree {
       this.saveSettings();
       this.saveSkillBonuses();
 
-      // Broadcast level=0 for all previously unlocked skills so listeners can react
-      // (e.g. Stealth locks itself, ShadowArmy tears down extraction resources)
-      previouslyUnlocked.forEach((skillId) => {
+      // Broadcast level=0 for all previously unlocked skills so listeners can
+      // react (e.g. Stealth locks itself, ShadowArmy tears down extraction
+      // resources). One macrotask per event — same staggering as
+      // _broadcastCurrentSkillLevels, teardowns tolerate delay equally.
+      const resetQueue = [...previouslyUnlocked];
+      const dispatchNextReset = () => {
+        const skillId = resetQueue.shift();
+        if (skillId === undefined) return;
         try {
           document.dispatchEvent(
             new CustomEvent('SkillTree:skillLevelChanged', {
@@ -703,7 +716,9 @@ module.exports = class SkillTree {
             })
           );
         } catch (_) { /* ignore dispatch errors */ }
-      });
+        if (resetQueue.length) this._setTrackedTimeout(dispatchNextReset, 0);
+      };
+      dispatchNextReset();
 
       BdApi?.UI?.showToast?.(`Skills Reset! You have ${expectedSP} SP for level ${currentLevel}`, {
         type: 'success',

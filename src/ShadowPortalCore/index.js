@@ -714,6 +714,24 @@ const methods = {
       // Store layer refs for individual GSAP animation
       cssPortalEl._inner = portalInner;
       cssPortalEl._core = portalCore;
+
+      // Static-glow sibling (profiler 2026-07-29): GSAP previously ANIMATED
+      // the `filter` drop-shadow property — every tween tick invalidates
+      // style and repaints the filter surface (58-104ms frames measured).
+      // The portal silhouette is a circle, so its drop-shadow is a radially
+      // symmetric rim: pre-paint it once as a radial-gradient sibling and
+      // let the timeline tween only its OPACITY (compositor-only). Radii in
+      // px mirror the old 24px/48px shadows at the same colors/strengths.
+      const glowR = portalDiam / 2;
+      const glowEl = document.createElement("div");
+      glowEl.className = "ss-portal-glow";
+      glowEl.style.cssText =
+        "position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);" +
+        "pointer-events:none;border-radius:50%;opacity:0;" +
+        `width:${portalDiam + 120}px;height:${portalDiam + 120}px;` +
+        `background:radial-gradient(circle closest-side, rgba(0,0,0,0) ${Math.max(0, glowR - 6)}px, rgba(123,63,191,0.7) ${glowR + 10}px, rgba(90,45,138,0.4) ${glowR + 30}px, rgba(0,0,0,0) ${glowR + 60}px);`;
+      overlay.appendChild(glowEl); // before cssPortalEl → renders behind the artwork
+      cssPortalEl._glow = glowEl;
       overlay.appendChild(cssPortalEl);
     }
 
@@ -1143,24 +1161,25 @@ const methods = {
         duration: expandDur,
         ease: "power2.inOut",
       }, revealAt);
-      // Boost CSS portal glow to be clearly visible from the start
-      tl.set(cssPortalEl, {
-        filter: "contrast(2.2) drop-shadow(0 0 24px rgba(123,63,191,0.7)) drop-shadow(0 0 48px rgba(90,45,138,0.4))",
-      }, 0);
-      // Shadow envelope: gradually dim CSS portal glow as darkness creeps in (25→40%)
-      tl.to(cssPortalEl, {
-        filter: "contrast(2.2) drop-shadow(0 0 0px rgba(123,63,191,0)) drop-shadow(0 0 0px rgba(90,45,138,0))",
+      // Boost CSS portal glow from the start. Filter is STATIC (contrast
+      // only, set once — never animated); the glow halo lives on the
+      // pre-painted sibling and animates via opacity (compositor-only).
+      tl.set(cssPortalEl, { filter: "contrast(2.2)" }, 0);
+      tl.set(cssPortalEl._glow, { opacity: 1 }, 0);
+      // Shadow envelope: gradually dim portal glow as darkness creeps in (25→40%)
+      tl.to(cssPortalEl._glow, {
+        opacity: 0,
         duration: dur * 0.15,
         ease: "power2.in",
       }, dur * 0.25);
       // Restore strong glow when reveal punches through (60→74%)
-      tl.to(cssPortalEl, {
-        filter: "contrast(2.2) drop-shadow(0 0 24px rgba(123,63,191,0.7)) drop-shadow(0 0 48px rgba(90,45,138,0.4))",
+      tl.to(cssPortalEl._glow, {
+        opacity: 1,
         duration: dur * 0.14,
         ease: "power3.out",
       }, dur * 0.60);
       // Fade out near the end — let the portal be visible through most of the burst
-      tl.to(cssPortalEl, {
+      tl.to([cssPortalEl, cssPortalEl._glow], {
         opacity: 0,
         duration: dur * 0.08,
         ease: "power2.in",
