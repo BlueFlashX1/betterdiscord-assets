@@ -1001,6 +1001,35 @@ module.exports = class AAPerfSentinel {
       }
     } catch (_) {}
 
+    // CriticalHit crit-consumption probe (in-plugin, 2026-07-30). Traces each
+    // crit from queue to animation mount. A run ending in anything other than
+    // anim:MOUNTED names the exact stage that dropped it.
+    try {
+      const chTrace = window.__CH_CRIT_TRACE;
+      if (Array.isArray(chTrace) && chTrace.length > 0) {
+        lines.push("── CRITICALHIT CRIT TRACE (queue -> animation, newest last) ──");
+        const byId = new Map();
+        for (const e of chTrace) {
+          if (!byId.has(e.id)) byId.set(e.id, []);
+          byId.get(e.id).push(e);
+        }
+        for (const [id, events] of [...byId.entries()].slice(-10)) {
+          const t0 = events[0].at;
+          const chain = events
+            .map((e) => `${e.stage}${e.extra ? `(${e.extra})` : ""}+${e.at - t0}ms`)
+            .join(" -> ");
+          const mounted = events.some((e) => e.stage === "anim:MOUNTED");
+          lines.push(`  ...${id} ${mounted ? "OK  " : "FAIL"} ${chain}`);
+        }
+        const total = byId.size;
+        const ok = [...byId.values()].filter((ev) =>
+          ev.some((e) => e.stage === "anim:MOUNTED")
+        ).length;
+        lines.push(`  ${ok}/${total} traced crits reached anim:MOUNTED`);
+        lines.push("");
+      }
+    } catch (_) {}
+
     // Wrapped DOM listener gauge — adds vs removes per plugin. A steadily
     // growing live count = listener leak.
     if (this._domGauge.size > 0) {

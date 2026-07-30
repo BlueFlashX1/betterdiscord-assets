@@ -266,6 +266,7 @@ module.exports = {
       const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000;
       const messageTimestamp = Number(BigInt(messageId) >> 22n) + DISCORD_EPOCH;
       if (Date.now() - messageTimestamp > MESSAGE_AGE_GATE_MS) {
+        this._critTrace(messageId, 'anim:age-gate');
         return; // Old message — silent restore only, no animation
       }
     }
@@ -273,14 +274,19 @@ module.exports = {
     if (messageId && this.animatedMessages.has(messageId)) {
       const existingData = this.animatedMessages.get(messageId);
       if (!this._shouldAllowAnimation(messageId, messageElement, existingData)) {
+        this._critTrace(messageId, 'anim:dup-blocked');
         return;
       }
       this.animatedMessages.delete(messageId);
     }
 
-    if (this.settings?.animationEnabled === false) { return; }
+    if (this.settings?.animationEnabled === false) {
+      this._critTrace(messageId, 'anim:disabled');
+      return;
+    }
 
     if (!messageElement?.classList || !messageElement.isConnected) {
+      this._critTrace(messageId, 'anim:el-gone');
       this._clearAnimationTracking(messageId);
       return;
     }
@@ -288,6 +294,7 @@ module.exports = {
     if (!messageElement?.classList?.contains('bd-crit-hit')) {
       requestAnimationFrame(() => {
         if (!messageElement.classList?.contains('bd-crit-hit')) {
+          this._critTrace(messageId, 'anim:no-crit-class');
           this._clearAnimationTracking(messageId);
           return;
         }
@@ -312,9 +319,13 @@ module.exports = {
 
     const position = this.getMessageAreaPosition();
     const container = this.getAnimationContainer();
-    if (!container) { return; }
+    if (!container) {
+      this._critTrace(messageId, 'anim:no-container');
+      return;
+    }
 
     if (this.hasDuplicateInDOM(container, messageId, position)) {
+      this._critTrace(messageId, 'anim:dup-in-dom');
       return;
     }
 
@@ -322,6 +333,7 @@ module.exports = {
 
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
+    this._critTrace(messageId, 'anim:MOUNTED', `combo=${combo}`);
     this.activeAnimations.add(textElement);
     combo > 1 && this._animateComboCountUp(textElement, combo);
     this._scheduleCritVisualRecheck(messageElement, messageId);

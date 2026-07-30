@@ -111,4 +111,39 @@ module.exports = {
       // console.error itself failed (extremely rare). Nothing to do.
     }
   },
+
+  /**
+   * Crit-consumption probe (2026-07-30).
+   *
+   * Symptom being chased: messages turn crit-coloured but the "CRITICAL HIT!"
+   * animation and combo never fire. The colour is injected as per-message CSS
+   * the instant the roll succeeds, while the animation is QUEUED and must be
+   * claimed by one of three consumers (double-rAF, 400ms timer, id-swap
+   * observer). Stats/history are deliberately deferred into that consumer —
+   * so "0 crits in messageHistory while non-crits log fine" means no consumer
+   * ever claimed the entry, but it cannot say WHICH path failed or why.
+   *
+   * diagLog can't answer it either: it is throttled and console-only, and the
+   * interesting events land within ~400ms of each other on the same id.
+   *
+   * Records the outcome of every stage onto a bounded global that
+   * AAPerfSentinel dumps into its report. Cheap by construction — a handful of
+   * array pushes per CRIT only, capped at CAP entries total.
+   */
+  _critTrace(messageId, stage, extra) {
+    try {
+      let t = window.__CH_CRIT_TRACE;
+      if (!t) t = window.__CH_CRIT_TRACE = [];
+      const CAP = 60;
+      if (t.length >= CAP) t.shift();
+      t.push({
+        id: String(messageId || '').slice(-6),
+        stage,
+        extra: extra === undefined ? '' : String(extra).slice(0, 40),
+        at: Date.now(),
+      });
+    } catch (_) {
+      // Probe must never break the crit path.
+    }
+  },
 };

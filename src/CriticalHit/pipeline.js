@@ -90,17 +90,26 @@ module.exports = {
         // element is already mounted; the observer path still covers
         // mount-after-dispatch, and processedMessages inside the consumer
         // guarantees exactly one path wins.
-        const tryImmediateConsume = () => {
-          if (!this._pendingAnimations?.has(msg.id)) return;
+        this._critTrace(msg.id, 'queued');
+
+        const tryImmediateConsume = (via) => {
+          if (!this._pendingAnimations?.has(msg.id)) {
+            this._critTrace(msg.id, `${via}:gone`);
+            return;
+          }
           const idEl = document.querySelector(`[data-message-id="${msg.id}"]`);
-          if (!idEl) return;
+          if (!idEl) {
+            this._critTrace(msg.id, `${via}:no-el`);
+            return;
+          }
           const messageEl = idEl.closest('li[class*="messageListItem"]') || idEl;
+          this._critTrace(msg.id, `${via}:found`, messageEl === idEl ? 'idEl-fallback' : 'li');
           this._consumePendingCritAnimation(msg.id, messageEl);
         };
-        requestAnimationFrame(() => requestAnimationFrame(tryImmediateConsume));
+        requestAnimationFrame(() => requestAnimationFrame(() => tryImmediateConsume('raf')));
         // Straggler net: covers the id-attribute swap landing a few frames
         // after the dispatch (slow renders). Harmless if already consumed.
-        this._setTrackedTimeout(tryImmediateConsume, 400);
+        this._setTrackedTimeout(() => tryImmediateConsume('t400'), 400);
 
         this.diagLog('DISPATCHER_CRIT', 'Crit via FluxDispatcher', {
           messageId: msg.id,

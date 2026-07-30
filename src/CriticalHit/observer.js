@@ -279,6 +279,7 @@ module.exports = {
         const swappedId = el?.getAttribute?.('data-message-id');
         if (!swappedId || !this._pendingAnimations?.has(swappedId)) continue;
         const messageEl = el.closest?.('li[class*="messageListItem"]') || el;
+        this._critTrace(swappedId, 'idswap:found');
         this._consumePendingCritAnimation(swappedId, messageEl);
       }
 
@@ -440,13 +441,22 @@ module.exports = {
     // below decline to process it.
     const pendingAnim = this._pendingAnimations.get(messageId);
     if (pendingAnim) this._pendingAnimations.delete(messageId);
-    if (!pendingAnim || this.processedMessages.has(messageId)) return false;
+    if (!pendingAnim) {
+      this._critTrace(messageId, 'consume:no-pending');
+      return false;
+    }
+    if (this.processedMessages.has(messageId)) {
+      this._critTrace(messageId, 'consume:already-processed');
+      return false;
+    }
     if (!messageElement || !messageElement.isConnected) {
       // Element vanished between lookup and consume — requeue so the other
       // consumer path can still claim it before the trim cap expires it.
+      this._critTrace(messageId, 'consume:not-connected');
       this._pendingAnimations.set(messageId, pendingAnim);
       return false;
     }
+    this._critTrace(messageId, 'consume:OK');
 
     // CRITICAL: Stats/history/processedMessages intentionally deferred from
     // _onMessageCreate so a consumer with the element in hand can trigger
