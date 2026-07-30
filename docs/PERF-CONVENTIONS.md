@@ -64,6 +64,35 @@ If a future report shows ShadowArmy back in the movers, or renderer CPU sitting 
 at idle, something regressed — read the newest AAPerfSentinel-burst-*.log first, it names
 the caller chain three frames deep.
 
+**Known-good exception — the hourly compression pass.** ShadowArmy legitimately spikes to
+~6000ms in a single window at `start + 10 min` and hourly after, via
+`processShadowCompression` -> `transformShadowsBatch`. Measured 2026-07-30: 5948ms across
+819 chunk transactions (~7.3ms each, awaited per chunk so the event loop yields), frames
+held at 97.2% under 33ms, and it fell back to 380ms four minutes later with heap dropping
+1112MB -> 458MB. This is NOT a regression — it is the tiering work the keyPath outage had
+been silently skipping. Before treating any ShadowArmy spike as a defect, check that it is
+**scheduled** (fires on the 10min/hourly cadence, not continuously), **yielding** (per-chunk
+cost in single-digit ms), and **gated** (tier filters exclude already-correct records, so
+each pass shrinks). All three true -> wait one flush and re-read. Full reasoning:
+DKB `learnings/patterns/discord/bd-post-fix-catchup-burst-reads-as-regression.md`.
+
+Corollary: the report's `heap FLOOR ... RISING` verdict is unreliable during a bulk pass —
+it compares session start to now and cannot tell a leak from 160k records legitimately
+warmed into memory. Trust it only at steady state.
+
+### Open, measured, not yet fixed
+
+- **`header-toolbar.js` `fireAll` costs ~126ms per fire** (10 fires/session, 1264ms total;
+  a second site `_onVisibility>fireAll` averages 97.5ms over 9 calls). Attributed to
+  SoloLevelingTheme only because it won the shared-singleton startup race — the cost is the
+  hub notifying ~7 subscribers, each rebuilding its icon. The single-resolve fix already
+  landed (toolbar resolved once, passed to all callbacks); this is the remaining
+  per-subscriber rebuild cost. Next step is measuring which subscriber dominates before
+  touching anything.
+- **Video wallpaper costs nothing measurable.** `<video>` is GPU-composited and registers
+  zero JS callbacks; verified 2026-07-30 with the element live. Do not re-audit it as a
+  suspect — SoloLevelingTheme's attributed time is the toolbar hub above.
+
 ## 4. Do-not-refix registry (fixed or refuted — re-reporting is a defect)
 
 Fixed 2026-07: SLS backup-cache + 20s save coalescing + not-own WeakSet/batch-dedup/fiber
