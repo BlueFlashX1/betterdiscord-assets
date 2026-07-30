@@ -696,10 +696,34 @@ module.exports = class AAPerfSentinel {
   // code — which OUR selectors can inflate. :has() re-evaluates on subtree
   // changes; [class*=] substring-matches every candidate; bare universal
   // touches everything. Counted at inject time (once), never per frame.
-  _auditCss(owner, css) {
+  // Scan INJECTED <style> elements directly instead of relying on wrapping
+  // BdApi.DOM.addStyle (2026-07-30: that wrap silently failed — the audit
+  // section never appeared — almost certainly because BdApi methods are
+  // non-writable, exactly like BdApi.Data.save). Reading the live DOM works
+  // regardless of how the CSS got there, and BD's convention of naming the
+  // style element after the plugin gives us attribution for free.
+  _scanInjectedCss() {
+    const found = new Map();
+    let scanned = 0;
+    try {
+      for (const el of document.querySelectorAll("style[id]")) {
+        const id = el.id || "";
+        const css = el.textContent || "";
+        if (!css) continue;
+        scanned++;
+        // "EquipmentManager-styles" / "shadow-senses-css" / "SoloLevelingTheme"
+        let owner = id.replace(/[-_]?(styles?|css)$/i, "").trim() || id;
+        this._auditCss(owner, css, found);
+      }
+    } catch (_) { /* best-effort */ }
+    this._cssScanned = scanned;
+    return found;
+  }
+
+  _auditCss(owner, css, target) {
     if (typeof css !== "string" || !css) return;
-    if (!this._cssAudit) this._cssAudit = new Map();
-    const a = this._cssAudit.get(owner) || { rules: 0, has: 0, contains: 0, universal: 0, deep: 0, bytes: 0 };
+    const map = target || (this._cssAudit || (this._cssAudit = new Map()));
+    const a = map.get(owner) || { rules: 0, has: 0, contains: 0, universal: 0, deep: 0, bytes: 0 };
     a.bytes += css.length;
     a.rules += (css.match(/\{/g) || []).length;
     a.has += (css.match(/:has\(/g) || []).length;
@@ -711,7 +735,7 @@ module.exports = class AAPerfSentinel {
       const parts = sel.split(/\s+/).filter((x) => x && !",>+~".includes(x));
       if (parts.length >= 4) a.deep++;
     }
-    this._cssAudit.set(owner, a);
+    map.set(owner, a);
   }
 
   // Trend sampling — a rising FLOOR across flushes is how slow leaks reveal
@@ -1208,8 +1232,13 @@ module.exports = class AAPerfSentinel {
     }
 
     // Expensive-selector audit.
-    if (this._cssAudit && this._cssAudit.size > 0) {
-      const rows = [...this._cssAudit.entries()]
+    const cssScan = this._scanInjectedCss();
+    if (cssScan.size === 0) {
+      lines.push(`── CSS SELECTOR AUDIT ── no injected <style id> elements found (scanned ${this._cssScanned || 0}) — section unavailable`);
+      lines.push("");
+    }
+    if (cssScan.size > 0) {
+      const rows = [...cssScan.entries()]
         .map(([owner, a]) => ({ owner, ...a, score: a.has * 3 + a.contains + a.universal * 5 + a.deep }))
         .sort((a, b) => b.score - a.score);
       lines.push("── CSS SELECTOR AUDIT (style-recalc pressure; :has re-evaluates on subtree changes) ──");
