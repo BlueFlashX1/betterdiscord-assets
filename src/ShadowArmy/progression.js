@@ -66,26 +66,146 @@ module.exports = {
    * grantShadowXP/processXpBatch machinery. Called on a 10-minute timer and
    * synchronously (awaited) before teardown in stop().
    */
+  /** BdApi.Data key for the in-flight XP lap (user-scoped). */
+  _xpLapDataKey() {
+    return this.userId ? `xpLap_${this.userId}` : 'xpLap';
+  },
+
+  /** Restore the in-flight XP lap at startup so a restart resumes mid-army. */
+  _restoreXpLap() {
+    try {
+      const stored = BdApi.Data.load('ShadowArmy', this._xpLapDataKey()) || {};
+      this._xpLapAmount = Math.max(0, Math.floor(Number(stored.amount) || 0));
+      this._xpLapKey = stored.key == null ? null : String(stored.key);
+    } catch (error) {
+      this.debugError('SHADOW_XP_SHARE', 'Failed to restore XP lap', error);
+      this._xpLapAmount = 0;
+      this._xpLapKey = null;
+    }
+  },
+
+  _persistXpLap() {
+    try {
+      BdApi.Data.save('ShadowArmy', this._xpLapDataKey(), {
+        amount: this._xpLapAmount || 0,
+        key: this._xpLapKey ?? null,
+      });
+    } catch (error) {
+      this.debugError('SHADOW_XP_SHARE', 'Failed to persist XP lap', error);
+    }
+  },
+
+  /**
+   * Apply accumulated army-wide shared XP one SLICE per flush (lap rotation,
+   * 2026-07-30).
+   *
+   * Previously every flush granted XP to the entire army in one pass. Measured
+   * on a 281,345-shadow store: ~562,000 IDB request callbacks and ~29 SECONDS
+   * of CPU per flush (AAPerfSentinel attributed 1,890,998 requests to this path
+   * alone, 87% of all IDB traffic suite-wide). The work itself is unavoidable
+   * per shadow — decompress, add XP, run the level-up loop, recompress — so the
+   * only lever is not touching every shadow at once.
+   *
+   * Lap contract (totals are preserved exactly):
+   *   - A lap begins by snapshotting the accumulator into _xpLapAmount and
+   *     zeroing the accumulator. New XP earned during the lap accrues to the
+   *     NEXT lap; it is never lost and never double-counted.
+   *   - Each flush grants _xpLapAmount to one slice and advances the keyset
+   *     cursor. Every shadow in the lap receives the identical amount.
+   *   - When the cursor drains, the lap closes and the next flush starts a new
+   *     one from whatever has since accumulated.
+   *
+   * Trade-off: a shadow receives its XP up to one lap later than before, so
+   * level-ups can lag by that much. Totals, ordering within a shadow, and the
+   * merge-on-write guarantees in processXpBatch are unaffected.
+   *
+   * Same rotation pattern as autoPromoteGrades (_gradePromoteLastKey), which
+   * already walks this store a slice at a time.
+   */
   async flushPendingSharedXp() {
-    const amount = Math.floor(this._pendingSharedXp || 0);
-    if (amount <= 0) return { updatedShadows: [] };
     // Reuse the existing _batchXpInProgress guard (set/cleared by grantShadowXP's
     // try/finally) instead of introducing a second in-progress flag — a flush and
     // any other concurrent grant are mutually exclusive by construction.
     if (this._batchXpInProgress) return { updatedShadows: [] };
+    if (!this.storageManager?.getShadowKeyPage) {
+      // No keyset pager (older storage wiring) — fall back to the whole-army
+      // grant rather than silently dropping XP.
+      const amount = Math.floor(this._pendingSharedXp || 0);
+      if (amount <= 0) return { updatedShadows: [] };
+      this._pendingSharedXp = 0;
+      try {
+        const result = await this.grantShadowXP(amount, 'shared', null);
+        this._persistPendingSharedXp();
+        return result;
+      } catch (error) {
+        this._pendingSharedXp += amount;
+        this._persistPendingSharedXp();
+        this.debugError('SHADOW_XP_SHARE', 'Failed to flush pending shared XP', error);
+        return { updatedShadows: [] };
+      }
+    }
 
-    this._pendingSharedXp = 0;
+    // Resume an in-flight lap, or open a new one from the accumulator.
+    let lapAmount = Math.floor(this._xpLapAmount || 0);
+    if (lapAmount <= 0) {
+      lapAmount = Math.floor(this._pendingSharedXp || 0);
+      if (lapAmount <= 0) return { updatedShadows: [] };
+      this._pendingSharedXp = 0;
+      this._xpLapAmount = lapAmount;
+      this._xpLapKey = null;
+      this._persistPendingSharedXp();
+      this._persistXpLap();
+    }
+
+    const sliceSize = Math.max(
+      1000,
+      Math.floor(Number(this.settings?.xpLapSliceSize) || C.XP_LAP_SLICE_SIZE || 30000)
+    );
+
+    let page;
+    try {
+      page = await this.storageManager.getShadowKeyPage(this._xpLapKey ?? null, sliceSize);
+    } catch (error) {
+      this.debugError('SHADOW_XP_SHARE', 'Failed to page shadow ids for XP lap', error);
+      return { updatedShadows: [] }; // lap state untouched — retried next flush
+    }
+
+    const ids = (page?.ids || []).map((id) => String(id)).filter(Boolean);
+
+    if (ids.length === 0) {
+      // Empty slice: the store drained (or is empty). Close the lap so the
+      // accumulated XP is not stranded behind a cursor that never advances.
+      this._xpLapAmount = 0;
+      this._xpLapKey = null;
+      this._persistXpLap();
+      return { updatedShadows: [] };
+    }
+
     try {
       // 'shared' reflects the merged sources — grantShadowXP's `reason` param
       // has no functional effect (never read beyond the function signature),
       // so this label is for debug-log clarity only.
-      const result = await this.grantShadowXP(amount, 'shared', null);
-      this._persistPendingSharedXp();
+      const result = await this.grantShadowXP(lapAmount, 'shared', ids);
+
+      if (page.exhausted) {
+        this._xpLapAmount = 0;
+        this._xpLapKey = null;
+      } else {
+        this._xpLapKey = page.lastKey;
+      }
+      this._persistXpLap();
+
+      this.debugLog(
+        'SHADOW_XP_SHARE',
+        `XP lap slice: ${ids.length} shadows @ ${lapAmount} xp${page.exhausted ? ' (lap complete)' : ''}`
+      );
       return result;
     } catch (error) {
-      this._pendingSharedXp += amount; // don't lose XP on failure
-      this._persistPendingSharedXp();
-      this.debugError('SHADOW_XP_SHARE', 'Failed to flush pending shared XP', error);
+      // Cursor deliberately NOT advanced — the same slice retries next flush.
+      // Re-granting a slice is safer than skipping one: XP is additive and a
+      // duplicate grant is visible/correctable, whereas a skipped slice is a
+      // silent permanent shortfall for those shadows.
+      this.debugError('SHADOW_XP_SHARE', 'Failed to flush XP lap slice', error);
       return { updatedShadows: [] };
     }
   },

@@ -191,6 +191,14 @@ const DEFAULT_SETTINGS = {
 
 // SHADOW RANK SYSTEM — Solo Leveling Rank Hierarchy (E → Shadow Monarch)
 
+// Shadows granted shared XP per flush (lap rotation — see
+// progression.js flushPendingSharedXp). The whole-army grant it replaced cost
+// ~29s of CPU and ~562k IDB callbacks per flush on a 281k store. At 30k a lap
+// is ~10 flushes, so a shadow's XP arrives up to ~10 flush intervals later than
+// before; totals are unchanged. Raise for less lag and bigger spikes, lower for
+// the reverse. Overridable per-user via settings.xpLapSliceSize.
+const XP_LAP_SLICE_SIZE = 30000;
+
 const { RANK_ORDER: SHADOW_RANKS } = require("../shared/rank-utils");
 
 // SHADOW ROLES — 26 Types (8 Humanoid + 18 Magic Beast)
@@ -455,6 +463,7 @@ module.exports = {
   DEFAULT_SETTINGS,
   // Rank system
   SHADOW_RANKS,
+  XP_LAP_SLICE_SIZE,
   SHADOW_ROLES,
   SHADOW_ROLE_STAT_WEIGHTS,
   RANK_PROBABILITY_MULTIPLIERS,

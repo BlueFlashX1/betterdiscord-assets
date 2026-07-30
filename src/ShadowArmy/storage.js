@@ -616,6 +616,39 @@ class ShadowStorageManager {
   }
 
   /**
+   * Keyset page of shadow IDs only (2026-07-30).
+   *
+   * store.getAllKeys returns primary keys without materialising the records,
+   * which is what an id-only enumeration actually needs. getShadowsByKeyPage
+   * would deserialise every record in the slice just to read `.id` off it —
+   * fine when the caller wants the records, pure waste when it does not.
+   *
+   * One request per page, same keyset contract as getShadowsByKeyPage:
+   * `{ ids, lastKey, exhausted }`, lastKey null once the range is drained.
+   */
+  async getShadowKeyPage(lastKey, limit) {
+    const safeLimit = Math.max(1, Math.floor(Number(limit) || 1));
+    return this._withStore('readonly', (store, _tx, resolve, reject) => {
+      const range = lastKey == null ? null : IDBKeyRange.lowerBound(lastKey, true);
+      const request = store.getAllKeys(range, safeLimit);
+
+      request.onsuccess = () => {
+        const keys = request.result || [];
+        if (keys.length === 0) {
+          resolve({ ids: [], lastKey: null, exhausted: true });
+          return;
+        }
+        if (keys.length < safeLimit) {
+          resolve({ ids: keys, lastKey: null, exhausted: true });
+          return;
+        }
+        resolve({ ids: keys, lastKey: keys[keys.length - 1], exhausted: false });
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
    * Get shadows with pagination and filters (optimized with indexes).
    */
   async getShadows(

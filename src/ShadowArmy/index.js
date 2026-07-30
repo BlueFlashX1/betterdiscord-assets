@@ -203,6 +203,7 @@ const ShadowArmy = class ShadowArmy {
 
     // Restore any shared XP that hadn't been flushed before the last stop/crash
     this._restorePendingSharedXp();
+    this._restoreXpLap();
 
     try {
       this.storageManager = new ShadowStorageManager(
@@ -851,15 +852,17 @@ const ShadowArmy = class ShadowArmy {
       this._batchExtractionListener = null;
     }
 
-    // Flush any pending shared XP before closing storage — awaited (unlike the
-    // fire-and-forget settings save above) because it needs storageManager to
-    // still be open; skipped entirely when nothing is pending.
-    if (this._pendingSharedXp > 0 && this.storageManager) {
-      try {
-        await this.flushPendingSharedXp();
-      } catch (error) {
-        console.error('[ShadowArmy] Failed to flush pending shared XP on stop:', error);
-      }
+    // Persist pending shared XP + the in-flight lap cursor, do NOT grant here.
+    // Before lap rotation (2026-07-30) stop() ran a full army-wide grant so the
+    // XP wasn't lost while storageManager was still open. That is no longer
+    // needed: both the accumulator and the lap cursor live in BdApi.Data and
+    // are restored at start(), so nothing is lost by deferring. Running a slice
+    // here would just add seconds to shutdown for work the next launch resumes.
+    try {
+      this._persistPendingSharedXp();
+      this._persistXpLap();
+    } catch (error) {
+      console.error('[ShadowArmy] Failed to persist pending shared XP on stop:', error);
     }
 
     // Close IndexedDB connection
