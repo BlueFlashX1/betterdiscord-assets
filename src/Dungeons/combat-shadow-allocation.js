@@ -219,7 +219,10 @@ module.exports = {
           if (growthUpdates.length <= 50 && typeof shadowStorage.updateShadowsBatch === 'function') {
             await shadowStorage.updateShadowsBatch(growthUpdates);
           } else if (typeof shadowStorage.saveShadowsChunked === 'function') {
-            await shadowStorage.saveShadowsChunked(growthUpdates, 10);
+            // 100/chunk (2026-07-30, burst capture): 10 made a 500-shadow
+            // growth save cost 50 transactions — the suite's top storage
+            // caller at ~123/min with 3 dungeons running.
+            await shadowStorage.saveShadowsChunked(growthUpdates, 100);
           } else {
             await Promise.all(growthUpdates.map((shadow) => shadowStorage.saveShadow(shadow)));
           }

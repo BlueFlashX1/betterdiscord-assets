@@ -520,10 +520,19 @@ class ShadowStorageManager {
   }
 
   /**
-   * Chunked batch save — writes shadows in small sequential IDB transactions
-   * with event-loop yields between chunks to prevent OOM.
+   * Chunked batch save — writes shadows in sequential IDB transactions with
+   * event-loop yields between chunks to keep the UI responsive.
+   *
+   * Default raised 10 -> 100 (2026-07-30, burst capture): at 10 per chunk a
+   * 500-shadow combat growth save cost FIFTY transactions, and the profiler
+   * measured 369 saveShadowsBatch transactions in 3 minutes (~123/min) with
+   * 3 dungeons active — the top storage caller in the suite. Every other
+   * batch path here already uses 200-400 per transaction (getShadowsByIds
+   * 200, transformShadowsBatch 200, compression tiering 400), so 10 was an
+   * outlier, not a considered limit. Records are ~1KB, so 100/txn is well
+   * inside safe territory and the inter-chunk yield is preserved.
    */
-  async saveShadowsChunked(shadows, chunkSize = 10) {
+  async saveShadowsChunked(shadows, chunkSize = 100) {
     if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
       return { completed: 0, failedIndices: [] };
     }
