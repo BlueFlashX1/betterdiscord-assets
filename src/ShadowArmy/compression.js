@@ -926,8 +926,12 @@ module.exports = {
         if (entry.officers[grade] !== undefined) entry.officers[grade]++;
       };
       try {
-        if (this.storageManager?.forEachShadowBatch) {
-          await this.storageManager.forEachShadowBatch(
+        // PAGED (2026-07-30): was forEachShadowBatch (openCursor, one IDB
+        // request per record). A census only counts — iteration order is
+        // irrelevant — so the paged reader is a drop-in at ~1/500th the
+        // request volume. See shadow-management.js for the measurement.
+        if (this.storageManager?.forEachShadowBatchPaged) {
+          await this.storageManager.forEachShadowBatchPaged(
             (batch) => { for (let i = 0; i < batch.length; i++) bump(batch[i]); },
             { batchSize: 500 }
           );
@@ -1027,8 +1031,12 @@ module.exports = {
         });
       }
     };
-    if (this.storageManager?.forEachShadowBatch) {
-      await this.storageManager.forEachShadowBatch(
+    // PAGED (2026-07-30): was forEachShadowBatch (openCursor, one IDB request
+    // per record). Pass 2 below re-sorts every species pool best-first by
+    // rank/strength/level, so the order records arrive in is discarded — the
+    // paged reader is equivalent at ~1/500th the request volume.
+    if (this.storageManager?.forEachShadowBatchPaged) {
+      await this.storageManager.forEachShadowBatchPaged(
         (batch) => { for (let i = 0; i < batch.length; i++) collect(batch[i]); },
         { batchSize: 500 }
       );

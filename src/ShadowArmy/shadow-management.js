@@ -110,9 +110,17 @@ module.exports = {
         top.sort((a, b) => a.strength - b.strength);
       };
 
-      if (this.storageManager?.forEachShadowBatch) {
+      // PAGED (2026-07-30): was forEachShadowBatch, an openCursor walk that
+      // fires one IDBRequest.onsuccess PER RECORD — measured at 89% of all
+      // IDB request callbacks suite-wide and the dominant main-thread cost.
+      // The paged variant reads ~500 records per request instead.
+      // Safe: insertTop is a top-K-by-STRENGTH selection over the entire scan
+      // with no early termination, so cursor order never affected the result —
+      // the non-IDB fallback below iterates plain array order and yields the
+      // same generals. The old sortBy:'extractedAt' was inert here.
+      if (this.storageManager?.forEachShadowBatchPaged) {
         try {
-          await this.storageManager.forEachShadowBatch(
+          await this.storageManager.forEachShadowBatchPaged(
             (batch) => {
               for (let i = 0; i < batch.length; i++) {
                 const sourceShadow = batch[i];
@@ -121,7 +129,7 @@ module.exports = {
                 insertTop(shadow, strength);
               }
             },
-            { batchSize: 250, sortBy: 'extractedAt', sortOrder: 'desc' }
+            { batchSize: 500 }
           );
         } catch (error) {
           this.debugError('STORAGE', 'Failed to stream shadows for top generals', error);
