@@ -1,5 +1,4 @@
 const dc = require('../shared/discord-classes');
-const { getNavigationUtils } = require('../shared/navigation');
 
 // Shared between the React portal path (arrow-manager-component.js) and the
 // DOM-fallback path (dom-fallback.js) so a future selector update only needs
@@ -57,17 +56,56 @@ function jumpToPresent(wrapper, scroller) {
 
 // Jump to the very first message of the current channel. scrollTop = 0 only
 // reaches the top of the LOADED slice (Discord virtualizes history), so the
-// old up-arrow barely moved in long channels. Discord treats message id '0'
-// in a channel route as "beginning of channel" — same mechanism as its own
-// jump-to-start affordances. Falls back to top-of-loaded-slice when the
-// navigation module is unavailable.
+// old up-arrow barely moved in long channels.
+//
+// FIX (2026-07-30): the first attempt used NavigationUtils.transitionTo with
+// a /0 route — but the up arrow is always clicked while ALREADY IN the
+// channel, and a same-channel transitionTo is a no-op that won't re-scroll
+// (DKB: bd-jumptomessage-split-module). jumpToMessage is the correct actor:
+// messageId '0' makes Discord fetch "around 0" = the channel's oldest
+// messages, scrolling to the true beginning. Resolved multi-strategy per the
+// same DKB entry (Discord splits/reshuffles MessageActions across builds).
+let _messageActionsCache = null;
+let _messageActionsWarned = false;
+function _getMessageActions() {
+  if (typeof _messageActionsCache?.jumpToMessage === 'function') return _messageActionsCache;
+  const W = BdApi.Webpack;
+  const strategies = [
+    () => W.getByKeys?.('jumpToMessage'),
+    () => W.getModule?.((m) => typeof m?.jumpToMessage === 'function'),
+    () => W.getModule?.((m) => m?.jumpToMessage && m?.sendMessage && (m?.receiveMessage || m?.editMessage)),
+  ];
+  for (const strat of strategies) {
+    try {
+      const mod = strat();
+      if (typeof mod?.jumpToMessage === 'function') {
+        _messageActionsCache = mod;
+        return mod;
+      }
+    } catch (_) {}
+  }
+  if (!_messageActionsWarned) {
+    _messageActionsWarned = true;
+    console.warn('[ChatNavArrows] jumpToMessage unresolved (all strategies) — up arrow falls back to top-of-loaded-slice scroll');
+  }
+  return null;
+}
+
 function jumpToChannelStart(scroller) {
   try {
     const m = String(window.location?.pathname || '').match(/^\/channels\/(@me|\d+)\/(\d+)/);
-    const nav = getNavigationUtils();
-    if (m && typeof nav?.transitionTo === 'function') {
-      nav.transitionTo(`/channels/${m[1]}/${m[2]}/0`);
-      return;
+    const channelId = m ? m[2] : null;
+    const actions = channelId ? _getMessageActions() : null;
+    if (actions) {
+      try {
+        actions.jumpToMessage({ channelId, messageId: '0', flash: false });
+        return;
+      } catch (_) {
+        try {
+          actions.jumpToMessage(channelId, '0'); // legacy positional signature
+          return;
+        } catch (_) {}
+      }
     }
   } catch (_) {}
   if (scroller) scroller.scrollTop = 0;
