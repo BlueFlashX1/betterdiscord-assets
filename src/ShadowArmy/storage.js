@@ -275,9 +275,17 @@ class ShadowStorageManager {
     // full-store-walk driver is confirmed and fixed.
     try {
       const callers = (window.__SA_STORE_CALLERS ||= new Map());
-      const frame = (new Error().stack || '').split('\n')[2] || '';
-      const fm = /\bat\s+(?:async\s+)?([\w$.<>[\]]+)/.exec(frame);
-      const key = `${fm ? fm[1] : '(anon)'} [${mode}]`;
+      // 3 frames (2026-07-30): frame[2] alone names the storage method, which
+      // told us WHICH primitive runs but not WHO drives it — paged walks
+      // jumped 0.7/min -> 155/min and the caller was unidentifiable. Capture
+      // the chain instead of guessing again.
+      const lines = (new Error().stack || '').split('\n');
+      const names = [];
+      for (let i = 2; i < lines.length && names.length < 3; i++) {
+        const fm = /\bat\s+(?:async\s+)?([\w$.<>[\]]+)/.exec(lines[i] || '');
+        if (fm && fm[1] !== 'Object.<anonymous>') names.push(fm[1]);
+      }
+      const key = `${names.length ? names.join('<') : '(anon)'} [${mode}]`;
       callers.set(key, (callers.get(key) || 0) + 1);
     } catch (_) {}
 
