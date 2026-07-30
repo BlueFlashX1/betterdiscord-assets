@@ -52,8 +52,15 @@ function mountWallpaperVideo() {
   // cover-sized static image — so it was perfectly hidden and the background
   // looked unchanged. The static layer is now suppressed while the video is
   // mounted; body::after (overlay, -1) still composites on top as before.
+  // object-position mirrors the static layer's --background-position
+  // (default "center 0%", i.e. TOP-anchored). The source is 1100x1100 square
+  // on a wide viewport, so object-fit:cover overflows vertically — with the
+  // default centre crop, the top of the frame (where Sung Jinwoo's silhouette
+  // sits) was cut off. Reusing the same variable keeps the video and the
+  // static wallpaper framed identically, and one edit retunes both.
   video.style.cssText =
     "position:fixed;inset:0;width:100%;height:100%;object-fit:cover;" +
+    "object-position:var(--background-position,center 0%);" +
     "z-index:-2;pointer-events:none;opacity:var(--sl-bg-opacity,1);";
 
   if (!document.getElementById(WALLPAPER_VIDEO_STYLE_ID)) {
