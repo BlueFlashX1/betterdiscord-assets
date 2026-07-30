@@ -445,13 +445,17 @@ module.exports = {
 
     let shadowsWereAlive = false;
     if (dungeon) {
-      const allShadows = await this.getAllShadows();
-      const shadowHP = dungeon.shadowHP || new Map();
+      // Assigned-only aliveness check (2026-07-29 HIGH item): this previously
+      // fetched the ENTIRE army via getAllShadows() just to use shadow ids as
+      // keys into dungeon.shadowHP — a Map already pruned to assigned ids
+      // (combat-shadow-support LEAK-2 prune). Iterating the Map directly is
+      // behavior-identical (non-assigned ids never had shadowHP entries) and
+      // removes a full-store fetch from the defeat path.
+      const shadowHP = dungeon.shadowHP instanceof Map ? dungeon.shadowHP : new Map();
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
-      for (const s of allShadows) {
-        if (!s || !s.id) continue;
-        if (deadShadows.has(s.id)) continue;
-        if (shadowHP.get(s.id)?.hp > 0) {
+      for (const [id, hpData] of shadowHP) {
+        if (deadShadows.has(id)) continue;
+        if (hpData?.hp > 0) {
           shadowsWereAlive = true;
           break;
         }
