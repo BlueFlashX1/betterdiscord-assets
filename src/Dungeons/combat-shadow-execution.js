@@ -867,12 +867,17 @@ module.exports = {
   },
 
   async getAllShadows(useCache = true) {
-    // PERF: 10s TTL — shadow data only changes on extraction/rank-up/growth,
-    // all of which call invalidateShadowsCache() explicitly. Old 1s TTL caused
-    // redundant IDB reads and was the root cause of ~5s cold-cache first-deploy.
+    // PERF: 60s TTL (2026-07-29, AAPerfSentinel v2 finding). The 10s TTL +
+    // ShadowArmy's 2s-fresh snapshot meant this fell through to a FULL
+    // 281k-record cursor walk + full decompress every ~10s for the entire
+    // duration of any active dungeon (~3.7M IDB callbacks per 2.5min,
+    // measured). Correctness is carried by the EXPLICIT invalidations
+    // (extraction/rank-up/army-change → invalidateShadowsCache()); the TTL
+    // is only a safety net, and 60s matches the staleness class already
+    // accepted for combat allocation (registry: 45-60s deliberate tradeoff).
     if (useCache && this._shadowsCache) {
       const now = Date.now();
-      if (now - this._shadowsCache.timestamp < 10000) {
+      if (now - this._shadowsCache.timestamp < 60000) {
         return this._shadowsCache.shadows;
       }
     }

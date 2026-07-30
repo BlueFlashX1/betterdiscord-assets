@@ -301,6 +301,19 @@ Verification after next restart: compression pass should log ZERO TRANSFORM_BATC
 errors AND counters.compressed/ultraCompressed > 0. DKB:
 bugs/shadowarmy/idb-keypath-sync-throw-aborts-chunk.
 
+Fixed 2026-07-29 (AAPerfSentinel v2 IDB funnel — the "idle churn" find): Dungeons
+getAllShadows fell through its 10s TTL + ShadowArmy's 2s-fresh snapshot to a FULL
+281k-record cursor walk + full decompress every ~10s during ANY active dungeon
+(~3.7M IDB callbacks / 2.5min measured, ~6s/min main thread + invisible microtask
+decompress; predates all 2026-07 waves — v1 instrumentation couldn't see IDB).
+TTL raised 10s→60s: correctness rides the explicit invalidateShadowsCache() hooks
+(allocation, lifecycle, army-change listener); 60s matches the already-accepted
+combat-allocation staleness class. HIGH follow-up registered (own wave, game-feel
+review needed): combat consumers should stop using getAllShadows entirely —
+defeat/aliveness checks only need the ASSIGNED shadows (getShadowsByIds on
+dungeon.shadowAllocation, ~dozens not 281k); ShadowArmy's shared snapshot windows
+(2s) could also be event-invalidated instead of time-gated.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);
