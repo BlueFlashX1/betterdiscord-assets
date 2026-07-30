@@ -275,7 +275,7 @@ module.exports = class EquipmentManager {
     popup.id = POPUP_ID;
     popup.style.cssText = `
       position: fixed; z-index: 10001;
-      width: ${POPUP_WIDTH}px; max-height: calc(100vh - 80px);
+      width: ${POPUP_WIDTH}px;
       overflow-y: auto;
       background: linear-gradient(165deg, rgba(22,18,32,0.97) 0%, rgba(13,12,20,0.97) 55%, rgba(10,10,16,0.98) 100%);
       border: 1px solid rgba(138,43,226,0.32);
@@ -474,7 +474,13 @@ module.exports = class EquipmentManager {
     let left = rect.right - POPUP_WIDTH;
     left = Math.max(margin, Math.min(left, vw - POPUP_WIDTH - margin));
     popup.style.left = `${left}px`;
-    popup.style.top = `${rect.bottom + 8}px`;
+    const top = rect.bottom + 8;
+    popup.style.top = `${top}px`;
+    // Height must be derived from where the popup ACTUALLY starts. The old
+    // static `max-height: calc(100vh - 80px)` assumed a ~64px top; whenever
+    // the header icon sat lower, the panel ran past the viewport bottom and
+    // the last inventory rows became unreachable (no scroll left to give).
+    popup.style.maxHeight = `${Math.max(200, window.innerHeight - top - margin)}px`;
   }
 
   _refreshPopup() {
@@ -556,6 +562,36 @@ module.exports = class EquipmentManager {
     // ── Inventory list (unequipped items only) ─────────────────────────────
     const equippedInstanceIds = new Set(Object.values(equipped).filter(Boolean));
     const unequipped = inventory.filter(i => !equippedInstanceIds.has(i.instanceId));
+
+    // Sort for scannability (2026-07-30): equippable-now first (level-locked
+    // items sink to the bottom where they can't be acted on anyway), then
+    // grouped by slot in the same order as the equipped grid above, then
+    // strongest rarity first, then highest level requirement. Turns a random
+    // drop-order pile into "here are your weapons, best first".
+    const invSlotOrder = Object.keys(C.EQUIPMENT_SLOTS);
+    const slotRank = (slot) => {
+      const i = invSlotOrder.indexOf(slot === 'ring' ? 'ring1' : slot);
+      return i === -1 ? invSlotOrder.length : i;
+    };
+    const rarityRank = (rarity) => {
+      const i = C.RARITY_ORDER.indexOf(rarity);
+      return i === -1 ? -1 : i;
+    };
+    unequipped.sort((a, b) => {
+      const da = C.getEquipmentById(a.equipmentId);
+      const db = C.getEquipmentById(b.equipmentId);
+      if (!da || !db) return da ? -1 : db ? 1 : 0;
+      const ea = this.canEquip(da.id).canEquip ? 0 : 1;
+      const eb = this.canEquip(db.id).canEquip ? 0 : 1;
+      if (ea !== eb) return ea - eb;
+      const sa = slotRank(da.slot);
+      const sb = slotRank(db.slot);
+      if (sa !== sb) return sa - sb;
+      const ra = rarityRank(da.rarity);
+      const rb = rarityRank(db.rarity);
+      if (ra !== rb) return rb - ra;
+      return (db.levelReq || db.levelRequirement || 0) - (da.levelReq || da.levelRequirement || 0);
+    });
 
     // Duplicate count drives the bulk-salvage button. Single source of truth
     // shared with the click handler's confirmation copy.
