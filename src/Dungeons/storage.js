@@ -134,7 +134,21 @@ class DungeonStorageManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
-      const request = store.put(sanitizedDungeon);
+      let request;
+      try {
+        request = store.put(sanitizedDungeon);
+      } catch (error) {
+        // store.put() throws SYNCHRONOUSLY on a non-cloneable value, which
+        // aborts the whole transaction (2026-07 keyPath incident). Retry once
+        // through the old JSON sanitizer rather than losing the save.
+        try {
+          request = store.put(this._jsonSanitizeFallback(sanitizedDungeon));
+          console.warn('[Dungeons] structured clone rejected a dungeon value — used JSON fallback:', error?.name || error);
+        } catch (fallbackError) {
+          reject(fallbackError);
+          return;
+        }
+      }
       request.onsuccess = () => resolve({ success: true });
       request.onerror = () => reject(request.error);
     });
@@ -179,33 +193,70 @@ class DungeonStorageManager {
         next.corpsePile = next.corpsePile.slice(-500);
       }
 
-      // Convert Map fields to plain objects for JSON serialization
-      if (next.shadowHP instanceof Map) {
+      // Convert Map fields to plain objects, CAPPED (2026-07-30, profiler:
+      // saves averaged 517ms, worst 1306ms). activeMobs and corpsePile were
+      // already capped; these two were not, and their live size is bounded
+      // only by deploy allocation — uncapped (Infinity) at Shadow Monarch
+      // rank, so thousands of entries at high rank/large army. Restore-side
+      // is already safe: combat-shadow-execution treats a missing entry as
+      // uninitialized and recreates it fresh.
+      // Both maps MUST be filtered against ONE shared key set — slicing them
+      // independently would desync HP from combat data for the same shadow.
+      const MAX_SHADOW_STATE = 400;
+      const hpIsMap = next.shadowHP instanceof Map;
+      const cdIsMap = next.shadowCombatData instanceof Map;
+      const hpKeys = hpIsMap ? [...next.shadowHP.keys()] : Object.keys(next.shadowHP || {});
+      // Keep the most recently added entries (tail) — same policy as corpsePile.
+      const keepIds = hpKeys.length > MAX_SHADOW_STATE
+        ? new Set(hpKeys.slice(-MAX_SHADOW_STATE))
+        : null;
+
+      if (hpIsMap || next.shadowHP) {
         const shadowHPObj = {};
-        next.shadowHP.forEach((value, key) => { shadowHPObj[key] = value; });
+        const src = hpIsMap ? next.shadowHP : new Map(Object.entries(next.shadowHP || {}));
+        src.forEach((value, key) => {
+          if (!keepIds || keepIds.has(key)) shadowHPObj[key] = value;
+        });
         next.shadowHP = shadowHPObj;
       }
-      if (next.shadowCombatData instanceof Map) {
+      if (cdIsMap || next.shadowCombatData) {
         const combatObj = {};
-        next.shadowCombatData.forEach((value, key) => { combatObj[key] = value; });
+        const src = cdIsMap ? next.shadowCombatData : new Map(Object.entries(next.shadowCombatData || {}));
+        src.forEach((value, key) => {
+          if (!keepIds || keepIds.has(key)) combatObj[key] = value;
+        });
         next.shadowCombatData = combatObj;
       }
+
+      // Runtime-only Maps that slip past the field deletes above — they are
+      // never read back (restore recreates them via instanceof guards), so
+      // drop them here instead of paying to serialize them.
+      delete next._lastResurrectionAttempt;
+      delete next._pooledMobRankGroups;
+      delete next._shadowLastProcessed;
 
       return next;
     })();
 
-    // Deep clone to avoid modifying original
-    const sanitized = JSON.parse(
-      JSON.stringify(prunedDungeon, (key, value) => {
-        // Skip Promise values
-        if (value instanceof Promise) {
-          return undefined;
-        }
-        // Skip function values
-        if (typeof value === 'function') {
-          return undefined;
-        }
-        // Convert any remaining Maps to objects
+    // No manual deep clone (2026-07-30). This used to be
+    // JSON.parse(JSON.stringify(pruned, replacer)) — a full deep clone WITH a
+    // per-value callback — and then store.put() performed IndexedDB's own
+    // structured clone of the same object: TWO deep-clone passes per save.
+    // The pre-prune above already shallow-copies every container it mutates,
+    // so the original dungeon is not modified, and structured clone handles
+    // Maps/Sets/Dates natively. saveDungeon() keeps a DataCloneError fallback
+    // to the old JSON path, so an unforeseen non-cloneable value degrades to
+    // the previous behaviour instead of throwing (a put() throw aborts the
+    // transaction — see the 2026-07 keyPath incident).
+    return prunedDungeon;
+  }
+
+  /** Last-resort JSON sanitize — only used if structured clone rejects a value. */
+  _jsonSanitizeFallback(dungeon) {
+    return JSON.parse(
+      JSON.stringify(dungeon, (key, value) => {
+        if (value instanceof Promise) return undefined;
+        if (typeof value === 'function') return undefined;
         if (value instanceof Map) {
           const obj = {};
           value.forEach((v, k) => { obj[k] = v; });
@@ -214,8 +265,6 @@ class DungeonStorageManager {
         return value;
       })
     );
-
-    return sanitized;
   }
 
   async getAllDungeons() {
