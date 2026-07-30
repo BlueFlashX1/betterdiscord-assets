@@ -390,8 +390,13 @@ module.exports = class EquipmentManager {
     };
     popup.addEventListener('click', this._popupClickHandler);
 
+    // Measure the anchor BEFORE rendering content into the popup
+    // (2026-07-30, forced-layout sweep) — _positionPopup reads the button's
+    // rect, which does not depend on the popup's contents, so reading after
+    // the innerHTML write forced a layout for nothing.
+    const anchorRect = btn.getBoundingClientRect();
     this._renderPopupContent(popup);
-    this._positionPopup(popup, btn);
+    this._positionPopup(popup, btn, anchorRect);
 
     // Close when clicking outside the popup or the anchor button
     this._popupDocClick = (e) => {
@@ -466,8 +471,10 @@ module.exports = class EquipmentManager {
     _toast('Cannot show confirmation dialog — salvage aborted.', 'error');
   }
 
-  _positionPopup(popup, btn) {
-    const rect = btn.getBoundingClientRect();
+  _positionPopup(popup, btn, prereadRect = null) {
+    // prereadRect: caller may pass a rect captured BEFORE its DOM writes, so
+    // positioning doesn't force a second synchronous layout.
+    const rect = prereadRect || btn.getBoundingClientRect();
     const vw = window.innerWidth;
     const margin = 12;
     const POPUP_WIDTH = 560;

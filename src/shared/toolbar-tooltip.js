@@ -81,6 +81,12 @@ function ensureTooltipCSS() {
  * @param {string}      label     - Text to display
  */
 function showToolbarTooltip(icon, tooltipId, label) {
+  // Read the anchor's geometry BEFORE any DOM write (2026-07-30, forced-layout
+  // sweep). Appending the tooltip first and measuring the icon afterwards
+  // forced a synchronous layout for a rect that never depended on the tooltip.
+  // This helper is shared by 7 plugins and fires on every toolbar-icon hover.
+  const rect = icon.getBoundingClientRect();
+
   let tip = document.getElementById(tooltipId);
   if (!tip) {
     tip = document.createElement("div");
@@ -89,7 +95,6 @@ function showToolbarTooltip(icon, tooltipId, label) {
     (document.body || document.documentElement).appendChild(tip);
   }
 
-  const rect = icon.getBoundingClientRect();
   tip.textContent = label;
 
   // PERF: Cache tooltip height after first render to avoid repeated offsetHeight reflows.

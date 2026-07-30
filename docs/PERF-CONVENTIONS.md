@@ -448,6 +448,25 @@ Closed 2026-07-30 (final open-items pass):
   155/min walk burst was lost to the 30s overwrite and never recurred while anyone was
   looking.
 
+FORCED-LAYOUT SWEEP 2026-07-30 (suite-wide, every layout-reading API grepped, callers read
+for write-ordering) — HEADLINE NEGATIVE: ZERO read-after-write sites on channel-switch,
+per-message, or pointer-handler paths. The suite does not trigger the forced style/layout
+that LoAF bills to Discord's own code; those hot-path reads are all clean reads (CriticalHit
+pipeline offsetParent gates are correctly FIRST per R3; RA resize/mousemove read-then-write
+ordering is already right). Do NOT re-open "our plugins cause Discord's reflow" without a
+NEW measurement.
+FIXED (read-after-write, all confirmed): Dungeons ui-header-widget renderDungeonHeaderPopup
+wrote popup.innerHTML then synchronously called positionDungeonHeaderPopup (which reads
+button.getBoundingClientRect) — on a 3s tick while the popup is open, the only RECURRING
+instance in the suite; the rAF-deferred queueDungeonHeaderPopupPosition already existed in
+the same file, unused. Plus 4 one-shot popup/tooltip sites now read the anchor rect BEFORE
+their DOM writes: shared/toolbar-tooltip showToolbarTooltip (shared by 7 plugins, fires per
+icon hover), EquipmentManager _positionPopup (prereadRect param), ItemVault popup, ShadowSenses
+_positionSensesPopup (prereadRect param). The anchor's geometry never depended on the popup,
+so the reflow was pure waste.
+NOT exhaustively swept: class (d) one-shot sites beyond the 4 above (agent stopped after the
+pattern repeated 3x); severity floor is a single user action, so this is a deliberate stop.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

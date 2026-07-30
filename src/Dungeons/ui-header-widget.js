@@ -385,7 +385,13 @@ module.exports = {
           <div class="dungeons-header-popup-empty">No active dungeons right now.</div>
         </div>
       `;
-      this.positionDungeonHeaderPopup();
+      // rAF-deferred (2026-07-30, forced-layout sweep): this block writes
+      // popup.innerHTML immediately above, and positionDungeonHeaderPopup
+      // reads button.getBoundingClientRect() — a read straight after a write
+      // forces synchronous layout. This render runs on a 3s tick while the
+      // popup is open, so it was the only recurring read-after-write in the
+      // suite. The deferred variant already existed here, unused.
+      this.queueDungeonHeaderPopupPosition();
       return;
     }
 
@@ -499,7 +505,8 @@ module.exports = {
       if (newContentEl) newContentEl.scrollTop = savedScrollTop;
     }
 
-    this.positionDungeonHeaderPopup();
+    // rAF-deferred — same read-after-write reason as the empty-state branch.
+    this.queueDungeonHeaderPopupPosition();
   },
 
   focusDungeonChannel(channelKey) {

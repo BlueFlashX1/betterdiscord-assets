@@ -448,10 +448,13 @@ const ShadowSensesUiMethods = {
       font-family: 'gg sans', 'Helvetica Neue', system-ui, sans-serif;
     `;
 
+    // Anchor read BEFORE the append (2026-07-30, forced-layout sweep).
+    const anchorRect = anchorEl ? anchorEl.getBoundingClientRect() : null;
+
     document.body.appendChild(popup);
 
     // Position below anchor
-    this._positionSensesPopup(popup, anchorEl);
+    this._positionSensesPopup(popup, anchorEl, anchorRect);
 
     // Mount React panel inside popup
     const root = createRoot(popup);
@@ -482,9 +485,10 @@ const ShadowSensesUiMethods = {
     this.debugLog("Popup", "Opened");
   },
 
-  _positionSensesPopup(popup, anchorEl) {
+  _positionSensesPopup(popup, anchorEl, prereadRect = null) {
     if (!anchorEl || !popup) return;
-    const rect = anchorEl.getBoundingClientRect();
+    // prereadRect: captured by the caller before its DOM writes.
+    const rect = prereadRect || anchorEl.getBoundingClientRect();
     const vpW = window.innerWidth;
     const vpH = window.innerHeight;
 

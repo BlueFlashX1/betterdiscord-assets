@@ -287,11 +287,16 @@ module.exports = class ItemVault {
       scrollbar-width: thin;
       scrollbar-color: rgba(138,43,226,0.85) rgba(8,8,13,0.55);
     `;
+    // Anchor geometry read BEFORE the append (2026-07-30, forced-layout
+    // sweep): the anchor's rect never depends on this popup, so measuring
+    // after the write forced a synchronous layout for nothing.
+    const anchorRect = anchorEl ? anchorEl.getBoundingClientRect() : null;
+
     document.body.appendChild(popup);
 
     // Position
     if (anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
+      const rect = anchorRect;
       const vpW = window.innerWidth;
       let top = rect.bottom + 8;
       let left = rect.right - POPUP_WIDTH;
