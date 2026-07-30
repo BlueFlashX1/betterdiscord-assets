@@ -203,7 +203,6 @@ const ShadowArmy = class ShadowArmy {
 
     // Restore any shared XP that hadn't been flushed before the last stop/crash
     this._restorePendingSharedXp();
-    this._restoreXpLap();
 
     try {
       this.storageManager = new ShadowStorageManager(
@@ -860,7 +859,6 @@ const ShadowArmy = class ShadowArmy {
     // here would just add seconds to shutdown for work the next launch resumes.
     try {
       this._persistPendingSharedXp();
-      this._persistXpLap();
     } catch (error) {
       console.error('[ShadowArmy] Failed to persist pending shared XP on stop:', error);
     }

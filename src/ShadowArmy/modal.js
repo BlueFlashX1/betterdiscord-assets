@@ -69,6 +69,7 @@ module.exports = {
             return acc;
           }, {}),
           totalLevel: 0,
+          totalVetDays: 0,
           isMagicBeast: this.shadowRoles?.[role]?.isMagicBeast || false,
           gradeCounts: {},
           highestRank: 'E',
@@ -82,6 +83,9 @@ module.exports = {
         return totalStats;
       }, stats[role].totalStats);
       stats[role].totalLevel += shadow?.level || 1;
+      stats[role].totalVetDays += shadow?.extractedAt
+        ? Math.max(0, (Date.now() - shadow.extractedAt) / 86400000)
+        : 0;
       // Track grade distribution per role
       const grade = shadow?.grade || 'Common';
       stats[role].gradeCounts[grade] = (stats[role].gradeCounts[grade] || 0) + 1;
@@ -102,6 +106,7 @@ module.exports = {
           return avgStats;
         }, {}),
         avgLevel: Math.floor((data.totalLevel || 0) / count),
+        avgVetDays: Math.floor((data.totalVetDays || 0) / count),
       };
       acc[role].avgPower = Math.floor(
         statKeys.reduce((sum, key) => sum + (acc[role].avgStats?.[key] || 0), 0) / statKeys.length
@@ -205,7 +210,7 @@ module.exports = {
           ce('span', { style: { color: '#34d399', fontSize: '11px', fontWeight: 'bold' } }, data.count)
         ),
         ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', fontSize: '9px', color: '#b5bac1', marginBottom: '4px' } },
-          ce('div', null, 'Lvl: ', ce('span', { style: { color: '#34d399' } }, data.avgLevel)),
+          ce('div', null, 'Served: ', ce('span', { style: { color: '#34d399' } }, `${data.avgVetDays ?? 0}d`)),
           ce('div', null, 'Pwr: ', ce('span', { style: { color: '#8a2be2' } }, data.avgPower)),
           ce('div', null, 'STR: ', ce('span', { style: { color: '#ef4444' } }, data.avgStats?.strength ?? 0)),
           ce('div', null, 'INT: ', ce('span', { style: { color: '#3b82f6' } }, data.avgStats?.intelligence ?? 0))
@@ -247,9 +252,15 @@ module.exports = {
           ? pluginRef.calculateShadowPower(effectiveStats, 1)
           : 0;
 
-      const xp = Number.isFinite(safeShadow.xp) ? safeShadow.xp : (parseInt(safeShadow.xp, 10) || 0);
-      const xpNeeded = pluginRef.getShadowXpForNextLevel(level, safeShadow.rank);
-      const xpProgress = xpNeeded > 0 ? Math.max(0, Math.min(100, (xp / xpNeeded) * 100)) : 0;
+      // Veterancy (time served) replaced the XP bar — see the card below.
+      const vetMultiplier = pluginRef._getVeterancyMultiplier?.(safeShadow) ?? 1;
+      const vetPercent = Math.round((vetMultiplier - 1) * 1000) / 10;
+      const vetDays = safeShadow.extractedAt
+        ? Math.max(0, Math.floor((Date.now() - safeShadow.extractedAt) / 86400000))
+        : 0;
+      // Bar fills toward a 1-year veteran; past that it simply stays full
+      // rather than shrinking as the scale grows.
+      const vetProgress = Math.max(0, Math.min(100, (Math.sqrt(vetDays) / Math.sqrt(365)) * 100));
       const combatTime = pluginRef.formatCombatHours(safeShadow.totalCombatTime || 0);
       const role = safeShadow.role || safeShadow.roleName || 'Unknown';
       const isMagicBeast = pluginRef.shadowRoles?.[role]?.isMagicBeast || false;
@@ -319,13 +330,17 @@ module.exports = {
                 : null,
               ce('span', { style: { color: '#34d399', marginLeft: 'auto', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 } }, Math.floor(totalPower || 0).toLocaleString())
             ),
+            // VETERANCY replaces the Level / XP bar (2026-07-30). Army-wide XP
+            // no longer exists — shadows grow from time served instead, so an
+            // XP bar would sit frozen and a level would never move. Age is the
+            // number that actually drives their stats now.
             ce('div', { style: { marginBottom: '8px' } },
               ce('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#b5bac1', marginBottom: '2px' } },
-                ce('span', null, `Level ${level}`),
-                ce('span', null, `${xp.toLocaleString()} / ${xpNeeded.toLocaleString()} XP`)
+                ce('span', null, `Veterancy ${vetDays.toLocaleString()}d`),
+                ce('span', { style: { color: '#fbbf24' } }, `+${vetPercent}% stats`)
               ),
               ce('div', { style: { background: 'rgba(0,0,0,0.3)', height: '6px', borderRadius: '2px', overflow: 'hidden' } },
-                ce('div', { style: { background: 'linear-gradient(90deg, #fbbf24, #f59e0b)', width: `${xpProgress}%`, height: '100%', transition: 'width 0.3s' } })
+                ce('div', { style: { background: 'linear-gradient(90deg, #fbbf24, #f59e0b)', width: `${vetProgress}%`, height: '100%', transition: 'width 0.3s' } })
               )
             ),
             ce('div', { style: { background: 'rgba(0, 0, 0, 0.3)', borderRadius: '2px', padding: '8px', marginBottom: '8px' } },
@@ -340,7 +355,7 @@ module.exports = {
             ),
             ce('div', { style: { display: 'flex', gap: '12px', fontSize: '11px' } },
               ce('div', { style: { color: '#34d399' } }, `${combatTime} Combat`),
-              ce('div', { style: { color: '#8a2be2' } }, `Level ${level}`),
+              ce('div', { style: { color: '#8a2be2' } }, `${vetDays.toLocaleString()}d served`),
               ce('div', { style: { color: '#fbbf24', marginLeft: 'auto' } }, `ID: ${shortId}`)
             )
           )
@@ -435,8 +450,16 @@ module.exports = {
       const totalExtractions = (pluginRef.settings.totalShadowsExtracted || 0).toLocaleString();
 
       // Average army level
-      const totalLevels = shadows.reduce((sum, s) => sum + (s.level || 1), 0);
-      const avgLevel = shadows.length > 0 ? Math.floor(totalLevels / shadows.length) : 0;
+      // Avg veterancy replaced avg level (2026-07-30): levels are frozen for
+      // all but the shadows that see combat, so the old average only drifted
+      // downward as new shadows were extracted. Days served always means
+      // something.
+      const nowMs = Date.now();
+      const totalVetDays = shadows.reduce(
+        (sum, s) => sum + (s?.extractedAt ? Math.max(0, (nowMs - s.extractedAt) / 86400000) : 0),
+        0
+      );
+      const avgVetDays = shadows.length > 0 ? Math.floor(totalVetDays / shadows.length) : 0;
 
       // Army capacity (from SoloLevelingStats integration)
       let capacityStr = '—';
@@ -523,7 +546,7 @@ module.exports = {
               ce(StatCard, { value: totalExtractions, label: 'Extracted', color: '#34d399' })
             ),
             ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' } },
-              ce(StatCard, { value: avgLevel, label: 'Avg Level', color: '#22c55e' }),
+              ce(StatCard, { value: `${avgVetDays}d`, label: 'Avg Served', color: '#22c55e' }),
               ce(StatCard, { value: totalCombatTime, label: 'Total Combat', color: '#ef4444' }),
               ce(StatCard, { value: promotionsAffordable > 0 ? promotionsAffordable : '—', label: 'Promotions Ready', color: '#f59e0b' }),
               ce(StatCard, { value: Object.keys(gradeCounts).filter(g => g !== 'Common' && (gradeCounts[g] || 0) > 0).length + ' / ' + (gradeOrder.length - 1), label: 'Grades Unlocked', color: '#ff6b2b' })

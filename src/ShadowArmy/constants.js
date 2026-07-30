@@ -138,6 +138,21 @@ const DEFAULT_SETTINGS = {
       Marshal: 50000,        // General → Marshal: highest evolution (Igris, Beru)
       'Grand Marshal': 500000, // Marshal → Grand Marshal: Bellion-tier, legendary
     },
+    // --- Spending: RANK promotion costs (added 2026-07-30) ---
+    // Rank (E → D → ... → Monarch+) is the power tier, separate from grade.
+    // Rank-up used to be free, gated on shadow LEVEL + stats. The army-wide XP
+    // broadcast that raised levels is gone (see progression.js veterancy), so
+    // most shadows never level again and the level gate would freeze the
+    // ladder. Essence replaces it as the scarce resource.
+    // Priced below the grade table at equivalent tiers: every shadow climbs the
+    // rank ladder, while only chosen few are promoted through grades.
+    // 'Shadow Monarch' is intentionally absent — that rank is player-exclusive
+    // and already blocked in attemptAutoRankUp.
+    rankPromotionCost: {
+      D: 50, C: 150, B: 500, A: 1500, S: 5000, SS: 15000,
+      SSS: 50000, 'SSS+': 150000, NH: 500000,
+      Monarch: 1500000, 'Monarch+': 5000000,
+    },
     // Grade stat multipliers — higher grade = proportionally stronger shadow.
     // Applied as a multiplier to all effective stats during combat.
     gradeStatMultiplier: {
@@ -191,13 +206,14 @@ const DEFAULT_SETTINGS = {
 
 // SHADOW RANK SYSTEM — Solo Leveling Rank Hierarchy (E → Shadow Monarch)
 
-// Shadows granted shared XP per flush (lap rotation — see
-// progression.js flushPendingSharedXp). The whole-army grant it replaced cost
-// ~29s of CPU and ~562k IDB callbacks per flush on a 281k store. At 30k a lap
-// is ~10 flushes, so a shadow's XP arrives up to ~10 flush intervals later than
-// before; totals are unchanged. Raise for less lag and bigger spikes, lower for
-// the reverse. Overridable per-user via settings.xpLapSliceSize.
-const XP_LAP_SLICE_SIZE = 30000;
+// VETERANCY — how fast a shadow's stats grow with time since extraction.
+// Derived at read time (progression.js _getVeterancyMultiplier), never stored:
+// multiplier = 1 + VETERANCY_RATE * sqrt(ageDays).
+//   1 day ~ +2%  |  100 days ~ +20%  |  400 days ~ +40%  |  4 years ~ +78%
+// Replaces the army-wide XP grant, which cost ~29s of CPU and ~562k IDB
+// callbacks per flush to write the same "everyone got stronger" outcome.
+// Overridable per-user via settings.veterancyRate.
+const VETERANCY_RATE = 0.02;
 
 const { RANK_ORDER: SHADOW_RANKS } = require("../shared/rank-utils");
 
@@ -463,7 +479,7 @@ module.exports = {
   DEFAULT_SETTINGS,
   // Rank system
   SHADOW_RANKS,
-  XP_LAP_SLICE_SIZE,
+  VETERANCY_RATE,
   SHADOW_ROLES,
   SHADOW_ROLE_STAT_WEIGHTS,
   RANK_PROBABILITY_MULTIPLIERS,

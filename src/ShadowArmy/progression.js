@@ -16,22 +16,27 @@ const SHADOW_SCALE_FACTOR_BY_RANK = {
 module.exports = {
   // SHADOW GROWTH & LEVELING SYSTEM
 
-  shareShadowXP(xpAmount, source = 'message') {
-    const amount = Math.max(0, Math.floor(Number(xpAmount) || 0));
-    if (amount <= 0) return { updatedShadows: [] };
-
-    // shareShadowXP never targets specific shadows (no shadowIds param) — every
-    // call is an army-wide broadcast. Each grant used to trigger a full
-    // 281k-row IDB scan + decompress-all + army-wide XP loop + write-back on
-    // every distinct source event (chat message, quest completion, etc).
-    // Coalesce ALL sources into one accumulator instead of granting
-    // synchronously — flushPendingSharedXp() applies the sum via the normal
-    // grantShadowXP/processXpBatch path on a 10-minute timer (index.js) and
-    // on stop(). The per-shadow XP application in processXpBatch is
-    // source-agnostic (grantShadowXP's `reason` param is never read past the
-    // function signature), so merging sources here changes only arrival
-    // timing, never total XP awarded or how it's applied.
-    this._pendingSharedXp = (this._pendingSharedXp || 0) + amount;
+  /**
+   * Army-wide XP broadcast — NO-OP since 2026-07-30, kept as a stable entry
+   * point for its external callers (SoloLevelingStats chat/quest XP).
+   *
+   * This never targeted specific shadows: every call meant "give XP to all
+   * 281,345 of them". Even fully coalesced into a 10-minute accumulator, each
+   * flush had to decompress, mutate and recompress the entire store — ~562,000
+   * IDB callbacks and ~29 SECONDS of CPU per flush, 87% of all IDB traffic in
+   * the suite (AAPerfSentinel, 2026-07-30).
+   *
+   * Army-wide growth is now DERIVED instead of written: see
+   * _getVeterancyMultiplier, which scales every shadow's stats by time since
+   * extraction at read time, for zero writes. Veterans stay ahead, newer
+   * shadows accrue at the same rate, nobody's progress was erased.
+   *
+   * TARGETED XP still works and is unaffected — grantShadowXP(amount, reason,
+   * ids) is bounded by the id list, so Dungeons combat XP and extraction XP
+   * continue to level the specific shadows that earned it. Only the
+   * everybody-gets-some broadcast is gone.
+   */
+  shareShadowXP(_xpAmount, _source = 'message') {
     return { updatedShadows: [] };
   },
 
@@ -61,153 +66,16 @@ module.exports = {
   },
 
   /**
-   * Apply accumulated army-wide shared XP (all shareShadowXP sources — chat
-   * messages, quests, etc — merged into one counter) via the existing
-   * grantShadowXP/processXpBatch machinery. Called on a 10-minute timer and
-   * synchronously (awaited) before teardown in stop().
-   */
-  /** BdApi.Data key for the in-flight XP lap (user-scoped). */
-  _xpLapDataKey() {
-    return this.userId ? `xpLap_${this.userId}` : 'xpLap';
-  },
-
-  /** Restore the in-flight XP lap at startup so a restart resumes mid-army. */
-  _restoreXpLap() {
-    try {
-      const stored = BdApi.Data.load('ShadowArmy', this._xpLapDataKey()) || {};
-      this._xpLapAmount = Math.max(0, Math.floor(Number(stored.amount) || 0));
-      this._xpLapKey = stored.key == null ? null : String(stored.key);
-    } catch (error) {
-      this.debugError('SHADOW_XP_SHARE', 'Failed to restore XP lap', error);
-      this._xpLapAmount = 0;
-      this._xpLapKey = null;
-    }
-  },
-
-  _persistXpLap() {
-    try {
-      BdApi.Data.save('ShadowArmy', this._xpLapDataKey(), {
-        amount: this._xpLapAmount || 0,
-        key: this._xpLapKey ?? null,
-      });
-    } catch (error) {
-      this.debugError('SHADOW_XP_SHARE', 'Failed to persist XP lap', error);
-    }
-  },
-
-  /**
-   * Apply accumulated army-wide shared XP one SLICE per flush (lap rotation,
-   * 2026-07-30).
+   * NO-OP since 2026-07-30 (kept: called by a timer in index.js and by stop()).
    *
-   * Previously every flush granted XP to the entire army in one pass. Measured
-   * on a 281,345-shadow store: ~562,000 IDB request callbacks and ~29 SECONDS
-   * of CPU per flush (AAPerfSentinel attributed 1,890,998 requests to this path
-   * alone, 87% of all IDB traffic suite-wide). The work itself is unavoidable
-   * per shadow — decompress, add XP, run the level-up loop, recompress — so the
-   * only lever is not touching every shadow at once.
-   *
-   * Lap contract (totals are preserved exactly):
-   *   - A lap begins by snapshotting the accumulator into _xpLapAmount and
-   *     zeroing the accumulator. New XP earned during the lap accrues to the
-   *     NEXT lap; it is never lost and never double-counted.
-   *   - Each flush grants _xpLapAmount to one slice and advances the keyset
-   *     cursor. Every shadow in the lap receives the identical amount.
-   *   - When the cursor drains, the lap closes and the next flush starts a new
-   *     one from whatever has since accumulated.
-   *
-   * Trade-off: a shadow receives its XP up to one lap later than before, so
-   * level-ups can lag by that much. Totals, ordering within a shadow, and the
-   * merge-on-write guarantees in processXpBatch are unaffected.
-   *
-   * Same rotation pattern as autoPromoteGrades (_gradePromoteLastKey), which
-   * already walks this store a slice at a time.
+   * Formerly applied the accumulated army-wide XP by walking all 281k shadows.
+   * That work is replaced by derived veterancy (_getVeterancyMultiplier), which
+   * needs no flush, no accumulator, and no writes. The lap-rotation scheme that
+   * briefly split this walk into slices is gone with it — there is nothing left
+   * to slice.
    */
   async flushPendingSharedXp() {
-    // Reuse the existing _batchXpInProgress guard (set/cleared by grantShadowXP's
-    // try/finally) instead of introducing a second in-progress flag — a flush and
-    // any other concurrent grant are mutually exclusive by construction.
-    if (this._batchXpInProgress) return { updatedShadows: [] };
-    if (!this.storageManager?.getShadowKeyPage) {
-      // No keyset pager (older storage wiring) — fall back to the whole-army
-      // grant rather than silently dropping XP.
-      const amount = Math.floor(this._pendingSharedXp || 0);
-      if (amount <= 0) return { updatedShadows: [] };
-      this._pendingSharedXp = 0;
-      try {
-        const result = await this.grantShadowXP(amount, 'shared', null);
-        this._persistPendingSharedXp();
-        return result;
-      } catch (error) {
-        this._pendingSharedXp += amount;
-        this._persistPendingSharedXp();
-        this.debugError('SHADOW_XP_SHARE', 'Failed to flush pending shared XP', error);
-        return { updatedShadows: [] };
-      }
-    }
-
-    // Resume an in-flight lap, or open a new one from the accumulator.
-    let lapAmount = Math.floor(this._xpLapAmount || 0);
-    if (lapAmount <= 0) {
-      lapAmount = Math.floor(this._pendingSharedXp || 0);
-      if (lapAmount <= 0) return { updatedShadows: [] };
-      this._pendingSharedXp = 0;
-      this._xpLapAmount = lapAmount;
-      this._xpLapKey = null;
-      this._persistPendingSharedXp();
-      this._persistXpLap();
-    }
-
-    const sliceSize = Math.max(
-      1000,
-      Math.floor(Number(this.settings?.xpLapSliceSize) || C.XP_LAP_SLICE_SIZE || 30000)
-    );
-
-    let page;
-    try {
-      page = await this.storageManager.getShadowKeyPage(this._xpLapKey ?? null, sliceSize);
-    } catch (error) {
-      this.debugError('SHADOW_XP_SHARE', 'Failed to page shadow ids for XP lap', error);
-      return { updatedShadows: [] }; // lap state untouched — retried next flush
-    }
-
-    const ids = (page?.ids || []).map((id) => String(id)).filter(Boolean);
-
-    if (ids.length === 0) {
-      // Empty slice: the store drained (or is empty). Close the lap so the
-      // accumulated XP is not stranded behind a cursor that never advances.
-      this._xpLapAmount = 0;
-      this._xpLapKey = null;
-      this._persistXpLap();
-      return { updatedShadows: [] };
-    }
-
-    try {
-      // 'shared' reflects the merged sources — grantShadowXP's `reason` param
-      // has no functional effect (never read beyond the function signature),
-      // so this label is for debug-log clarity only.
-      const result = await this.grantShadowXP(lapAmount, 'shared', ids);
-
-      if (page.exhausted) {
-        this._xpLapAmount = 0;
-        this._xpLapKey = null;
-      } else {
-        this._xpLapKey = page.lastKey;
-      }
-      this._persistXpLap();
-
-      this.debugLog(
-        'SHADOW_XP_SHARE',
-        `XP lap slice: ${ids.length} shadows @ ${lapAmount} xp${page.exhausted ? ' (lap complete)' : ''}`
-      );
-      return result;
-    } catch (error) {
-      // Cursor deliberately NOT advanced — the same slice retries next flush.
-      // Re-granting a slice is safer than skipping one: XP is additive and a
-      // duplicate grant is visible/correctable, whereas a skipped slice is a
-      // silent permanent shortfall for those shadows.
-      this.debugError('SHADOW_XP_SHARE', 'Failed to flush XP lap slice', error);
-      return { updatedShadows: [] };
-    }
+    return { updatedShadows: [] };
   },
 
   async grantShadowXP(baseAmount, reason = 'message', shadowIds = null, options = {}) {
@@ -219,6 +87,21 @@ module.exports = {
     const targetFetchChunkSize = Math.max(25, Math.floor(Number(options?.fetchChunkSize) || 300));
 
     if (baseAmount <= 0 && !perShadowAmounts) return { updatedShadows: [] };
+
+    // UNTARGETED GRANTS REFUSED (2026-07-30). Without ids this walked all
+    // 281,345 shadows: ~562k IDB callbacks and ~29s of CPU per call. Army-wide
+    // growth is now derived (see _getVeterancyMultiplier), so the only
+    // legitimate callers left pass an explicit id list (Dungeons combat XP,
+    // extraction XP) and stay bounded by it. Returning empty rather than
+    // silently walking the store keeps the cost impossible to reintroduce by
+    // accident; the log line names the caller if one ever tries.
+    if (!Array.isArray(shadowIds) && !perShadowAmounts) {
+      this.debugLog(
+        'SHADOW_XP',
+        `grantShadowXP called with no target ids (amount=${baseAmount}, reason=${reason}) — ignored; army-wide XP is derived now`
+      );
+      return { updatedShadows: [] };
+    }
 
     let hasPersistedUpdates = false;
     const allUpdatedShadows = [];
@@ -482,7 +365,48 @@ module.exports = {
       });
     }
 
+    // VETERANCY (2026-07-30) — time served, DERIVED, never stored.
+    // Applied last and as a MULTIPLIER so it composes with everything above,
+    // including the Shadow Monarch block that REPLACES effective[] outright.
+    // An additive term placed earlier would be silently wiped for SM players,
+    // i.e. exactly the players with the oldest armies.
+    const vet = this._getVeterancyMultiplier(shadow);
+    if (vet > 1) {
+      statKeys.forEach((stat) => {
+        effective[stat] = Math.floor(effective[stat] * vet);
+      });
+    }
+
     return effective;
+  },
+
+  /**
+   * Veterancy multiplier from time since extraction. Pure function of the
+   * clock — nothing is written, ever.
+   *
+   * This replaces the XP grant path, which cost ~29s of CPU and ~562k IDB
+   * callbacks per flush because it decompressed, mutated and recompressed all
+   * 281k shadows to add a number. Age already sits on every record
+   * (`extractedAt`, indexed, survives both compression levels), so the same
+   * "shadows get stronger over time" behaviour comes free at read time.
+   *
+   * sqrt curve: growth is real but decelerating, so an old shadow stays ahead
+   * without a new one being hopeless. Linear would make a 1-year shadow 365x a
+   * 1-day shadow. At the default rate (0.02):
+   *     1 day ~ +2%   |  100 days ~ +20%  |  400 days ~ +40%  |  4 years ~ +78%
+   *
+   * Veterans keep their edge permanently (age only grows), and newer shadows
+   * accrue at the same rate from their own extraction date, so there is no
+   * permanent caste split between shadows raised before and after this change.
+   */
+  _getVeterancyMultiplier(shadow) {
+    const extractedAt = Number(shadow?.extractedAt) || 0;
+    if (!extractedAt) return 1; // unknown age = no bonus, never a penalty
+    const ageMs = Date.now() - extractedAt;
+    if (!(ageMs > 0)) return 1; // clock skew / future timestamp
+    const rate = Number(this.settings?.veterancyRate ?? C.VETERANCY_RATE);
+    if (!Number.isFinite(rate) || rate <= 0) return 1;
+    return 1 + rate * Math.sqrt(ageMs / 86400000);
   },
 
   getRoleRankUpThresholdFactor(roleKey) {
@@ -509,31 +433,34 @@ module.exports = {
 
   // AUTO RANK-UP SYSTEM
 
-  attemptAutoRankUp(shadow) {
-    if (!shadow || !shadow.rank) return { success: false };
+  /**
+   * Can this shadow rank up on STATS alone? (essence is charged by the caller)
+   *
+   * Extracted 2026-07-30 so the essence pre-check in autoPromoteGrades and the
+   * promotion itself run the identical gate. Two copies of this test would
+   * drift, and the failure mode is silent: essence charged for a promotion the
+   * transform then declines, i.e. the player pays for nothing.
+   *
+   * The old LEVEL gate is gone. Levels still advance for shadows that earn
+   * TARGETED xp (Dungeons combat, extraction), but the army-wide broadcast that
+   * levelled everyone else is derived now, so the vast majority of shadows will
+   * never gain another level. A level requirement would therefore be
+   * permanently unsatisfiable for them and would freeze the rank ladder for the
+   * whole army except the handful that happen to see combat. Stats carry the
+   * gate instead, and they keep growing for everyone: veterancy
+   * (_getVeterancyMultiplier) raises effective stats with age.
+   *
+   * @returns {{eligible: boolean, nextRank?: string, reason?: string}}
+   */
+  getRankUpEligibility(shadow) {
+    if (!shadow || !shadow.rank) return { eligible: false, reason: 'no_shadow' };
 
-    const currentRank = shadow.rank;
-    const currentRankIndex = this.shadowRanks.indexOf(currentRank);
+    const currentRankIndex = this.shadowRanks.indexOf(shadow.rank);
     const nextRank = this.shadowRanks[currentRankIndex + 1];
+    if (!nextRank) return { eligible: false, reason: 'max_rank' };
+    // Shadow Monarch is player-exclusive.
+    if (nextRank === 'Shadow Monarch') return { eligible: false, reason: 'monarch_locked' };
 
-    if (!nextRank) return { success: false };
-    if (nextRank === 'Shadow Monarch') return { success: false };
-
-    // GATE 1: Level requirement
-    const promotionConfig = this.settings?.rankPromotionConfig || this.defaultSettings.rankPromotionConfig;
-    if (promotionConfig?.enabled !== false) {
-      const currentLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
-      const requiredLevelRaw = promotionConfig?.minLevelByRank?.[nextRank];
-      const requiredLevel = Math.max(1, Math.floor(Number(requiredLevelRaw) || 0));
-      if (requiredLevel > 0 && currentLevel < requiredLevel) {
-        return {
-          success: false, reason: 'level_gate',
-          currentLevel, requiredLevel, targetRank: nextRank,
-        };
-      }
-    }
-
-    // GATE 2: Stat requirement
     const effectiveStats = this.getShadowEffectiveStats(shadow);
     const nextRankMultiplier = this.rankStatMultipliers[nextRank] || 1.0;
     const baselineForNextRank = this.getRankBaselineStats(nextRank, nextRankMultiplier);
@@ -546,12 +473,20 @@ module.exports = {
     const requiredTotal = totalBaseline * 0.8 * roleThresholdFactor;
 
     if (totalEffective < requiredTotal) {
-      return { success: false, reason: 'stats_gate' };
+      return { eligible: false, reason: 'stats_gate', nextRank };
     }
+    return { eligible: true, nextRank };
+  },
 
-    // NOTE: Essence is NOT used for rank promotion (E→D→C etc.).
-    // Essence is spent on GRADE promotion (Common→Elite→Knight etc.) — see autoPromoteGrades().
-    // Rank promotion uses only level + stats gates.
+  attemptAutoRankUp(shadow) {
+    const gate = this.getRankUpEligibility(shadow);
+    if (!gate.eligible) return { success: false, reason: gate.reason };
+    const nextRank = gate.nextRank;
+
+    // Essence for rank promotion is charged by the CALLER (autoPromoteGrades),
+    // which is the only place that can query and spend the ItemVault balance —
+    // this function runs inside a synchronous transformShadowsBatch callback
+    // and cannot await anything.
 
     const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
     const oldXp = Math.max(0, Number(shadow.xp) || 0);

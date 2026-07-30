@@ -783,7 +783,78 @@ module.exports = {
       this.debugLog?.('GRADE', `Auto-promoted ${promoted} shadows (${essenceSpent.toLocaleString()} essence spent, ${remainingEssence.toLocaleString()} remaining)`);
     }
 
-    return { promoted, essenceSpent, remainingEssence };
+    // RANK PROMOTION (2026-07-30) — runs in this same pass, on this same
+    // already-paged batch, out of the same essence pool.
+    //
+    // Rank-up used to be a side effect of the XP grant: it fired inside
+    // processXpBatch whenever a shadow levelled. That path is gone (it cost
+    // ~29s of CPU per flush to walk all 281k shadows), which left
+    // attemptAutoRankUp with NO caller — the rank ladder would have frozen
+    // silently, with nothing in the logs to say so. This is its new driver.
+    //
+    // Eligibility is checked with the SAME predicate the promotion itself uses
+    // (getRankUpEligibility), so essence is never charged for a promotion the
+    // transform then declines.
+    const rankResult = { rankUps: 0, rankEssenceSpent: 0 };
+    try {
+      const rankCosts = essenceConfig?.rankPromotionCost
+        || this.defaultSettings?.shadowEssence?.rankPromotionCost;
+      if (rankCosts && remainingEssence > 0 && promotable.length > 0) {
+        const idsToRankUp = [];
+        for (let i = 0; i < promotable.length && rankResult.rankUps < batchSize; i++) {
+          const raw = promotable[i]?.raw;
+          if (!raw) continue;
+          const gate = this.getRankUpEligibility?.(this.getShadowData(raw) || raw);
+          if (!gate?.eligible) continue;
+          const cost = Number(rankCosts[gate.nextRank]) || 0;
+          if (cost <= 0 || remainingEssence < cost) continue;
+
+          remainingEssence -= cost;
+          rankResult.rankEssenceSpent += cost;
+          rankResult.rankUps++;
+          const id = this.getCacheKey?.(raw) || raw?.id || raw?.i;
+          if (id) idsToRankUp.push(id);
+        }
+
+        if (idsToRankUp.length > 0 && this.storageManager?.transformShadowsBatch) {
+          const { failedIds } = await this.storageManager.transformShadowsBatch(
+            idsToRankUp,
+            (freshRecord) => {
+              // Re-gate against the FRESH record: the batch snapshot above may
+              // be stale, and attemptAutoRankUp re-runs the stat check anyway.
+              const shadow = this.getShadowData(freshRecord);
+              if (!shadow) return null;
+              const res = this.attemptAutoRankUp(shadow);
+              if (!res?.success) return null;
+              return this.prepareShadowForSave(shadow);
+            }
+          );
+          if (failedIds.length > 0) {
+            this.debugError('RANK_UP', `transformShadowsBatch: ${failedIds.length} rank-up(s) failed to save`, { failedIds });
+          }
+        }
+
+        if (rankResult.rankEssenceSpent > 0) {
+          essenceConfig.essence = Math.max(0, (essenceConfig.essence || 0) - rankResult.rankEssenceSpent);
+          this._invalidateSnapshot?.();
+          this.saveSettings();
+          this.debugLog?.(
+            'RANK_UP',
+            `Auto-ranked ${rankResult.rankUps} shadows (${rankResult.rankEssenceSpent.toLocaleString()} essence spent)`
+          );
+        }
+      }
+    } catch (error) {
+      // Never let rank promotion take down the grade pass that precedes it.
+      this.debugError('RANK_UP', 'Rank promotion pass failed', error);
+    }
+
+    return {
+      promoted,
+      essenceSpent: essenceSpent + rankResult.rankEssenceSpent,
+      remainingEssence,
+      rankUps: rankResult.rankUps,
+    };
   },
 
   // DATA ACCESS & SAVE PREP
