@@ -427,7 +427,13 @@ module.exports = {
                 // scan as the true last resort. Capped, so large armies may under-count;
                 // logged so that's visible rather than silent.
                 this.debugError('UPDATE_SHADOW_POWER', 'No cached power available; running capped diagnostic scan (10000 cap, may undercount)');
-                const direct = await shadowArmy.storageManager.getShadows({}, 0, 10000);
+                // KEYSET PAGE (2026-07-30): one getAll instead of 10,000
+                // per-record cursor callbacks. Safe — unfiltered, offset 0, and
+                // the rows are only summed by _sumShadowPower, so order is
+                // unobservable.
+                const direct = shadowArmy.storageManager.getShadowsByKeyPage
+                  ? (await shadowArmy.storageManager.getShadowsByKeyPage(null, 10000))?.shadows || []
+                  : await shadowArmy.storageManager.getShadows({}, 0, 10000);
                 if (direct?.length > 0) {
                   const manualPower = this._sumShadowPower(shadowArmy, direct);
                   if (manualPower > 0) {
@@ -488,7 +494,11 @@ module.exports = {
         try {
           if (!shadowArmy.storageManager.db) await shadowArmy.storageManager.init();
           this.debugError('UPDATE_SHADOW_POWER', 'No cached power available; running capped last-resort scan (10000 cap, may undercount on large armies)');
-          const shadows = await shadowArmy.storageManager.getShadows({}, 0, 10000);
+          // KEYSET PAGE (2026-07-30): see the sibling call above — summed only,
+          // so primary-key order is fine and this costs one callback not 10,000.
+          const shadows = shadowArmy.storageManager.getShadowsByKeyPage
+            ? (await shadowArmy.storageManager.getShadowsByKeyPage(null, 10000))?.shadows || []
+            : await shadowArmy.storageManager.getShadows({}, 0, 10000);
           if (shadows?.length > 0) {
             const totalPower = this._sumShadowPower(shadowArmy, shadows);
             this._commitShadowPower(totalPower, shadowArmy);

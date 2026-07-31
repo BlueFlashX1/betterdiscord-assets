@@ -325,8 +325,28 @@ module.exports = {
       if (candidates.length < minHealthyPool) {
         const remaining = this.clampNumber(hardLimit - candidates.length, 0, hardLimit);
         if (remaining > 0) {
-          const rows = await shadowStorage.getShadows({}, 0, remaining);
-          pushCandidates(rows);
+          // KEYSET PAGE (2026-07-30). This was getShadows({}, 0, remaining),
+          // which takes getShadows' unfiltered "paged fast path" — still an
+          // openCursor + continue() walk firing ONE IndexedDB callback PER
+          // RECORD, bounded only by `remaining` (up to hardLimit = 100,000).
+          // The profiler measured 92,829 callbacks from this single line:
+          // 92.1% of ALL IDB traffic in the suite, refreshed on the 120s pool
+          // TTL for as long as a dungeon runs.
+          //
+          // getShadowsByKeyPage is one store.getAll(range, limit) — a single
+          // callback for the same rows, and the same array materialised either
+          // way, so memory is unchanged.
+          //
+          // Safe here specifically because this call is unfiltered, offset 0,
+          // and order-independent: the pool is re-sorted by power in
+          // _buildSortedShadowCache before use, and duplicates are already
+          // removed by the seenIds Set in pushCandidates. Primary-key order
+          // instead of extractedAt-desc order is therefore not observable.
+          // getShadows itself is deliberately left unchanged — its filtered
+          // path supports offset>0 and descending order, which getAll cannot
+          // express, and no caller needs that today.
+          const page = await shadowStorage.getShadowsByKeyPage(null, remaining);
+          pushCandidates(page?.shadows || []);
         }
       }
 

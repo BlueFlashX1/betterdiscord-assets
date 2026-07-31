@@ -463,7 +463,12 @@ module.exports = {
                   totalCount,
                 });
               } else {
-                const freshShadows = await pluginRef.storageManager.getShadows({}, 0, totalCount);
+                // KEYSET PAGE (2026-07-30): one getAll instead of one cursor
+                // callback per record. Unfiltered, offset 0, and the modal
+                // re-sorts by power itself (computeShadowArmyUiData), so
+                // primary-key order is unobservable here.
+                const freshShadows =
+                  (await pluginRef.storageManager.getShadowsByKeyPage(null, totalCount))?.shadows || [];
                 if (freshShadows && freshShadows.length > 0) {
                   setShadows(freshShadows.map((s) => pluginRef.getShadowData(s)));
                 }
@@ -710,7 +715,9 @@ module.exports = {
               loaded: loadCount,
             });
           }
-          shadows = await this.storageManager.getShadows({}, 0, loadCount);
+          // KEYSET PAGE (2026-07-30): same reasoning as the refresh path above —
+          // unfiltered, offset 0, re-sorted by power downstream.
+          shadows = (await this.storageManager.getShadowsByKeyPage(null, loadCount))?.shadows || [];
           // Army-wide truth for the distribution panels — `shadows` above is
           // only the top `loadCount` by power and cannot describe the army.
           this._modalAggregates = await this._loadArmyAggregates();
