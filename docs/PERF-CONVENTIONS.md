@@ -611,6 +611,21 @@ earlier "155/min paged walk" burst that could not be reproduced on demand — th
 instrument is what finally named it, after a cadence-guess had already produced one wrong fix
 (bc525c4, kept as hygiene).
 
+FIXED 2026-07-31 (the doubled dungeon-completion fetch — sentinel duplicate-row verdict):
+after 98b48a8 removed per-shadow XP writes, grantShadowDungeonXP still passed postXpShadows
+as [], so _runDeferredDungeonXpPostProcess ALWAYS took its IDB "fallback" — re-fetching the
+exact contributor set grantShadowDungeonXP had fetched moments earlier (arise-extraction
+~:493). Sentinel showed it as two IDENTICAL getShadowsByIds<_fetchDungeon rows (61 calls /
+12,043 request callbacks each over 105min = ~228 req/min, 45.8% of ShadowArmy IDB traffic,
+~14s of 33.6s attributed) and it stacked with growth saves at the completion moment (the
+2500ms burst trips). NOT a regression of a7f1776 (different path; that fix was confirmed in
+the running build). Fix: grant-time fetch passed through as prefetchedShadows; records can't
+change in between (no writes since 98b48a8), same staleness class as the original postXp
+cache design. prepareShadowForSave now unconditional in the post-process — the skip-prep
+branch was for grant-pipeline records that no longer exist (was dead: usingPostXpCache
+always false). IDB fallback retained for defensive paths. Expected: the paired rows drop to
+one row at ~half the request rate; verify via IDB REQUESTS BY CALLER table.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

@@ -611,11 +611,14 @@ module.exports = {
     // write is gone.
     //
     // postXpShadows was this grant's in-memory result, used downstream purely
-    // as a cache to skip a re-fetch. With no grant there is nothing to cache,
-    // so the post-process takes its documented fallback path and fetches the
-    // contributors it needs.
+    // as a cache to skip a re-fetch. With the grant gone it was passed empty,
+    // which sent the post-process down its IDB fallback — re-fetching the exact
+    // contributor set fetched above (line ~493) on every dungeon completion, a
+    // 1:1 duplicate read (~200 records × ~61 completions/session = 45% of
+    // ShadowArmy's IDB traffic, sentinel 2026-07-31). Nothing writes these
+    // records between that fetch and the deferred task anymore, so the
+    // grant-time fetch IS the current state: pass it through instead.
     const xpGrantSucceeded = true;
-    const postXpShadows = [];
 
     if (!xpGrantSucceeded) {
       return {
@@ -634,7 +637,7 @@ module.exports = {
       beforeStatesEntries: Array.from(beforeStates.entries()),
       combatHours,
       growthHoursByShadowId,
-      postXpShadows,
+      prefetchedShadows: allShadows,
     });
 
     const elapsedMs = Date.now() - grantStartedAt;

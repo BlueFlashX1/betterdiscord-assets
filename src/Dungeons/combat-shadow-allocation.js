@@ -68,7 +68,7 @@ module.exports = {
     beforeStatesEntries,
     combatHours,
     growthHoursByShadowId,
-    postXpShadows,
+    prefetchedShadows,
   }) {
     const uniqueIds = this._normalizeShadowIds(xpTargetIds);
     if (uniqueIds.length === 0) return false;
@@ -96,7 +96,7 @@ module.exports = {
         beforeStatesEntries,
         combatHours,
         growthHoursByShadowId,
-        postXpShadows,
+        prefetchedShadows,
       }).catch((error) => {
         this.errorLog('Deferred dungeon shadow XP post-processing failed', error);
         try { this.showToast('Shadow XP post-processing failed — XP may be incomplete.', 'error'); } catch (_) {}
@@ -115,31 +115,34 @@ module.exports = {
     beforeStatesEntries,
     combatHours,
     growthHoursByShadowId,
-    postXpShadows,
+    prefetchedShadows,
   }) {
     const startMs = Date.now();
     const beforeStates = new Map(beforeStatesEntries || []);
     const shadowStorage = this.shadowArmy?.storageManager;
 
     try {
-      // Build post-XP shadow map: prefer in-memory data from grantShadowXP,
-      // fall back to IDB fetch only when postXpShadows is empty/missing
+      // Build the shadow map from the grant-time fetch when provided. Since
+      // the XP grant was removed (98b48a8) nothing writes these records
+      // between grantShadowDungeonXP's fetch and this deferred task, so the
+      // prefetched records ARE the current state — re-fetching the same ids
+      // from IDB was a 1:1 duplicate read of ~200 records per dungeon
+      // completion (45% of ShadowArmy IDB traffic, sentinel 2026-07-31).
       let updatedMap = new Map();
-      const usingPostXpCache = Array.isArray(postXpShadows) && postXpShadows.length > 0;
+      const usingPrefetched = Array.isArray(prefetchedShadows) && prefetchedShadows.length > 0;
 
-      if (usingPostXpCache) {
-        // Use in-memory post-XP shadows — no IDB read needed
-        for (const shadow of postXpShadows) {
+      if (usingPrefetched) {
+        for (const shadow of prefetchedShadows) {
           const sid = String(this.getShadowIdValue(shadow) || '');
           if (sid && beforeStates.has(sid)) {
             updatedMap.set(sid, shadow);
           }
         }
         this.settings.debug && console.log(
-          `[Dungeons] ⚡ POST-XP CACHE HIT: ${updatedMap.size}/${xpTargetIds.length} shadows from grantShadowXP (skipped IDB fetch)`
+          `[Dungeons] ⚡ PREFETCH REUSE: ${updatedMap.size}/${xpTargetIds.length} shadows from grant-time fetch (skipped IDB re-fetch)`
         );
       } else {
-        // Fallback: re-fetch from IDB (postXpShadows missing or partial failure)
+        // Fallback: fetch from IDB (no prefetched records — defensive path)
         const updatedShadows = await this._fetchDungeonShadowsByIds(xpTargetIds);
         for (const shadow of updatedShadows) {
           const sid = String(this.getShadowIdValue(shadow) || '');
@@ -148,8 +151,7 @@ module.exports = {
           }
         }
         this.settings.debug && console.log(
-          `[Dungeons] 📦 POST-XP FALLBACK: fetched ${updatedMap.size}/${xpTargetIds.length} shadows from IDB` +
-          (Array.isArray(postXpShadows) ? ` (postXpShadows was empty)` : ' (no postXpShadows)')
+          `[Dungeons] 📦 POST-PROCESS FALLBACK: fetched ${updatedMap.size}/${xpTargetIds.length} shadows from IDB (no prefetchedShadows)`
         );
       }
 
@@ -203,12 +205,12 @@ module.exports = {
             }
           }
 
-          // Fast path: postXpShadows already prepped by grantShadowXP pipeline;
-          // applyNaturalGrowth + attemptAutoRankUp mutate in-place and recalculate strength.
-          // Fallback path: raw IDB records may be compressed — must go through full prep.
-          const prepared = usingPostXpCache
-            ? shadow
-            : (this.shadowArmy.prepareShadowForSave?.(shadow) ?? shadow);
+          // Both branches hold records straight from _fetchDungeonShadowsByIds
+          // (raw IDB → getShadowData), never from a write pipeline, so full
+          // save prep always applies. (The old postXpShadows skip-prep path
+          // died with the XP grant in 98b48a8 — usingPostXpCache was always
+          // false by then, so unconditional prep matches prior runtime behavior.)
+          const prepared = this.shadowArmy.prepareShadowForSave?.(shadow) ?? shadow;
           prepared && growthUpdates.push(prepared);
         }
 
