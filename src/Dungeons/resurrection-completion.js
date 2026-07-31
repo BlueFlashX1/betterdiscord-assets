@@ -667,12 +667,26 @@ module.exports = {
     }
 
     // XP gains (compact, combined)
-    if (stats.userXP > 0 || stats.shadowTotalXP > 0) {
-      const gains = [];
-      if (stats.userXP > 0) gains.push(`You: +${stats.userXP} XP`);
-      if (stats.shadowTotalXP > 0)
-        gains.push(`Shadows: +${stats.shadowTotalXP.toLocaleString()} XP`);
-      lines.push(gains.join(' | '));
+    // XP REPORTING CORRECTED (2026-07-30). This read:
+    //     You: +5000 XP | Shadows: +3000 XP
+    // which was wrong twice over. First, the shadow figure is already INSIDE
+    // the player figure — line ~603 does `userXP += shadowShareXP` at a 100%
+    // share, so the same XP was printed twice as if it were two awards.
+    // Second, shadows no longer keep any XP at all: their power comes from
+    // Monarch scaling plus veterancy, and the grant that used to write it was
+    // removed. Labelling it "Shadows: +N" claimed an award that does not
+    // happen.
+    //
+    // The number is still worth showing — it is how much of your XP your army
+    // earned for you — so it is reported as a breakdown rather than a
+    // separate gain.
+    if (stats.userXP > 0) {
+      const fromShadows = Number(stats.shadowTotalXP) || 0;
+      lines.push(
+        fromShadows > 0
+          ? `You: +${stats.userXP.toLocaleString()} XP (${fromShadows.toLocaleString()} earned by your shadows)`
+          : `You: +${stats.userXP.toLocaleString()} XP`
+      );
     }
 
     // Show single toast (no damage stats, no extraction spam)

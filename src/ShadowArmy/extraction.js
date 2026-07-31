@@ -568,11 +568,13 @@ module.exports = {
             this.settings.totalShadowsExtracted++;
             this.settings.lastExtractionTime = now;
 
-            // Grant XP
-            const extractedShadowId = shadow?.id || shadow?.i;
-            await this.grantShadowXP(2, 'extraction', extractedShadowId ? [String(extractedShadowId)] : null, {
-              skipPowerRecalc: true,
-            });
+            // XP GRANT REMOVED (2026-07-30). This awarded 2 XP to each newly
+            // extracted shadow. Shadows are no longer awarded XP at all —
+            // their power is Monarch scaling plus veterancy, nothing reads a
+            // shadow's level, and rank promotion gates on intrinsic stats. The
+            // grant cost a read-modify-write (decompress, mutate, recompress)
+            // per extraction to move a number nothing consumes. A shadow's
+            // veterancy clock starts at extractedAt, which is already set.
 
             this.saveSettings();
 
@@ -980,13 +982,10 @@ module.exports = {
 
         this.settings.totalShadowsExtracted = (this.settings.totalShadowsExtracted || 0) + totalExtracted;
         this.settings.lastExtractionTime = Date.now();
-        const uniqueExtractedIds = Array.from(new Set(extractedShadowIds));
-        if (uniqueExtractedIds.length > 0) {
-          await this.grantShadowXP(2, 'extraction', uniqueExtractedIds, {
-            skipPowerRecalc: true,
-            fetchChunkSize: 250,
-          });
-        }
+        // XP GRANT REMOVED (2026-07-30) — batch counterpart of the single
+        // extraction path above. This one wrote 2 XP to EVERY shadow in an
+        // extraction batch, so a large ARISE cost a get+put per shadow for a
+        // value nothing reads.
         this.saveSettings();
 
         this._armyStatsCache = null;
