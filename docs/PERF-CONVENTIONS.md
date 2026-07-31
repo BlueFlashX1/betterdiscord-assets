@@ -93,6 +93,87 @@ warmed into memory. Trust it only at steady state.
   zero JS callbacks; verified 2026-07-30 with the element live. Do not re-audit it as a
   suspect — SoloLevelingTheme's attributed time is the toolbar hub above.
 
+## 3c. ARCHITECTURE CHANGE — shadow growth is DERIVED (2026-07-30)
+
+Read this before touching anything XP-, level-, or cache-shaped in ShadowArmy.
+The suite no longer works the way older comments in the code describe.
+
+**Shadows do not earn XP. At all.** `grantShadowXP` has ZERO call sites and is
+unreachable; `shareShadowXP` is a no-op. Army-wide XP cost ~562k IDB callbacks
+and ~29s of CPU per flush; dungeon combat XP added 310k more; extraction added a
+get+put per shadow. All removed. Do not "restore" any of them — nothing reads a
+shadow's level, and the XP number fed no gate.
+
+**Growth comes from three places now:**
+1. **Veterancy** — derived at read time from `extractedAt`, never stored:
+   `1 + VETERANCY_RATE * sqrt(ageDays)`. Zero writes.
+2. **Combat growth** — dungeon hours bank `naturalGrowthStats` per shadow. This
+   IS implemented (progression.js) and is real earned progression.
+3. **Shadow Monarch scaling** — replaces stats with a fraction of the PLAYER's.
+   Veterancy composes with it by closing the gap (`1 - (1-factor)/vet`), never
+   by multiplying past it. The perk's invariant is that a shadow NEVER reaches
+   the player's stats; verified max 0.9938x across all ranks out to 100 years.
+
+**Rank promotion** gates on INTRINSIC stats (`getShadowEffectiveStats(shadow,
+{intrinsic:true})`) plus an essence cost. It must NOT gate on plain effective
+stats: under the Monarch perk those are player-derived, which cleared every
+baseline by 100-650x and made each promotion make the next one easier. The old
+level gate is gone because levels no longer advance.
+
+**Dungeon XP goes to the PLAYER.** `shadowTotalXP` is the amount the army earned
+FOR the player at a 100% share, already folded into `userXP`. It is not an award
+to shadows. The completion summary reports it as a breakdown, not a second gain.
+
+### Deliberately stale caches — do NOT "fix" these
+
+`getTopGenerals` and `getAggregatedArmyStats` intentionally serve results up to
+5 minutes old and IGNORE `getArmyStatsCacheKey` changes. This looks like a bug
+and is not. That key encodes {timestamp, count, version} of the power cache, so
+every extraction busts it; at ~60 msg/min that forced a full 281k walk roughly
+every 30s to re-pick the same 7 shadows (20,831 + 12,949 callbacks, 45% of all
+traffic combined). Top-7 membership and army-wide aggregates are stable enough
+that staleness is the right trade. `getAggregatedArmyStats(true)` bypasses the
+cache when a caller genuinely needs current numbers.
+
+### getShadows is a trap at scale — use the keyset primitives
+
+`getShadows()` still walks with `openCursor` on BOTH its paths: one IDB callback
+PER RECORD. It is fine for small limits and is retained because its filtered
+path supports `offset > 0` and descending order, which `getAll` cannot express.
+
+**Never pass it a large limit.** `_warmDeployStarterPool` passed up to 100,000
+and produced 92,829 callbacks — 92.1% of all IDB traffic in the suite. Use
+instead:
+- `getShadowsByKeyPage(lastKey, limit)` — records, one `getAll` per page
+- `getShadowKeyPage(lastKey, limit)` — ids only, via `getAllKeys`
+- `forEachShadowBatchPaged(onBatch)` — full walk, ~500 records per callback
+- `getShadowsByRankLimited(...)` — bounded rank query
+
+**Landmine, flagged not fixed:** `src/Dungeons/combat-shadow-execution.js:915`
+calls `getShadows({}, 0, Infinity)`, which takes the FILTERED path and walks the
+entire store. It is dead today only because a `getAllShadowsRaw` existence check
+always passes. If that primary is ever removed, this fires and scans 281k
+records per call.
+
+### The recurring failure mode in this codebase
+
+Four separate bugs today were the same shape: **code that appears to do
+something and silently does nothing.**
+- A promise stranded forever because a throw inside an `IDBRequest.onsuccess`
+  handler escapes to the event loop instead of reaching `reject()` — no error,
+  no log, work silently re-running every startup.
+- `getAggregatedArmyStats(true)` — callers passed a force flag the function
+  never declared, so it was discarded exactly when fresh data mattered most.
+- A `.catch()` that logged through `debugError`, invisible unless debug mode
+  happened to be on.
+- Per-shadow XP writes feeding a counter nothing read.
+
+None produced an error. All were found by measuring, not by reading. When
+something looks like it costs more than it should, instrument it before
+theorising — and when adding a diagnostic, CHECK THE BUILD TIMESTAMP AGAINST
+THE SESSION START before trusting what it reports. That trap cost two full
+diagnostic cycles today.
+
 ## 4. Do-not-refix registry (fixed or refuted — re-reporting is a defect)
 
 Fixed 2026-07: SLS backup-cache + 20s save coalescing + not-own WeakSet/batch-dedup/fiber
