@@ -577,13 +577,29 @@ module.exports = {
         aggregatedData, allShadowsLength: totalCount,
       });
 
-      if (
-        shouldCache &&
-        (this.settings.cachedTotalPowerShadowCount || 0) === aggregated.totalShadows
-      ) {
+      // WRITE GATE RELAXED (2026-07-30). This required
+      // cachedTotalPowerShadowCount to EXACTLY equal the aggregated
+      // totalShadows. On an actively-growing army that is almost never true:
+      // the walk takes seconds over 281k records while extraction keeps adding
+      // shadows, so the count has already moved on by the time the result is
+      // ready. The cache was therefore essentially never written — and an
+      // unwritten cache cannot be read, so every single call did a full walk.
+      //
+      // This is why two earlier fixes did nothing. Making the READ
+      // stale-tolerant and removing extraction's explicit invalidation both
+      // addressed a cache that had no contents to serve or invalidate. The
+      // measured rate went 1.6 -> 2.5 walks/min across those changes, which
+      // should have been the clue.
+      //
+      // Exact count agreement was never the right condition anyway: this is a
+      // snapshot aggregate whose consumers already tolerate 5 minutes of
+      // staleness. Cache it whenever the aggregation itself succeeded, and
+      // record the count it was computed against for diagnostics.
+      if (shouldCache) {
         this._armyStatsCache = aggregated;
         this._armyStatsCacheTime = Date.now();
         this._armyStatsCacheKey = this.getArmyStatsCacheKey();
+        this._armyStatsCacheCount = aggregated.totalShadows;
       }
 
       return aggregated;
