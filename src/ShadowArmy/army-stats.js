@@ -480,22 +480,51 @@ module.exports = {
     return { aggregated, shouldCache: true };
   },
 
-  async getAggregatedArmyStats() {
+  /**
+   * @param {boolean} [forceRecalculate=false] bypass the cache entirely.
+   *   ADDED 2026-07-30: two callers in SoloLevelingStats/achievements.js
+   *   (:407, :455) have always passed `true` here expecting a forced refresh,
+   *   but the function accepted no parameters, so the argument was silently
+   *   discarded and they got whatever was cached. Those are last-resort paths
+   *   that run precisely when the cached figure looked wrong, so ignoring them
+   *   defeated their purpose. Honouring it also keeps the stale-tolerant fast
+   *   path below safe: anything that genuinely needs current numbers can ask.
+   */
+  async getAggregatedArmyStats(forceRecalculate = false) {
     // cacheKey (getArmyStatsCacheKey) already encodes {timestamp, count, version}
     // and is the real "did the army change" signal — it's the primary validity
     // check below. This TTL is only a safety-net ceiling for clock-drift/edge
     // cases, not a forced re-scan cadence (previously 1.5s, which re-ran the
     // full-store dual scan every 1.5-5s during any UI/XP activity regardless
     // of whether the army had actually changed).
-    const cacheTtlMs = 30000;
+    // STALE-TOLERANT (2026-07-30) — same change already made to
+    // getTopGenerals, for the same reason. The comment above is accurate that
+    // cacheKey is the real "did the army change" signal, but that turns out to
+    // be the wrong INVALIDATION POLICY here: the key encodes {timestamp, count,
+    // version} of the total-power cache, so every extraction and every power
+    // delta busts it. At ~60 messages/min that is continuous, and each miss
+    // costs a full walk of all 281k records. Measured: 12,949 IDB callbacks,
+    // 17.4% of all traffic in the suite.
+    //
+    // These are AGGREGATE army figures (totals and averages over 281,000
+    // records). A few newly-extracted shadows move them by a fraction of a
+    // percent, so serving a slightly stale aggregate is a far better trade than
+    // rescanning the store to chase a rounding difference.
+    //
+    // Tradeoff: displayed aggregate stats can lag up to 5 minutes behind the
+    // live army. Total POWER is unaffected — settings.cachedTotalPower is
+    // maintained incrementally by _applyTotalPowerDelta and stays exact.
+    const STALE_OK_MS = 300000;
     const now = Date.now();
     const currentCacheKey = this.getArmyStatsCacheKey();
     if (
+      !forceRecalculate &&
       this._armyStatsCache &&
       this._armyStatsCacheTime &&
-      this._armyStatsCacheKey === currentCacheKey &&
-      now - this._armyStatsCacheTime < cacheTtlMs
+      now - this._armyStatsCacheTime < STALE_OK_MS
     ) {
+      // Key kept current for diagnostics / future finer-grained invalidation.
+      this._armyStatsCacheKey = currentCacheKey;
       return this._armyStatsCache;
     }
 
