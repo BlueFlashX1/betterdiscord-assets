@@ -83,15 +83,32 @@ module.exports = {
     try {
       const now = Date.now();
       const cacheKey = this.getArmyStatsCacheKey();
-      // Same reasoning as getAggregatedArmyStats (army-stats.js): cacheKey is the
-      // real validity signal, this TTL is only a safety-net ceiling.
-      const cacheTtlMs = 30000;
+      // STALE-TOLERANT CACHE (2026-07-30). This used to re-walk whenever
+      // cacheKey changed, with a 30s ceiling. getArmyStatsCacheKey encodes
+      // {timestamp, count, version} of the total-power cache, so ANY extraction
+      // or power delta changes it — and at ~60 messages/min that is constant.
+      // Result: a full 281k-record walk roughly every 30s just to re-pick the
+      // same 7 shadows. The profiler measured 20,831 IDB callbacks from this
+      // path, 28% of all traffic in the suite.
+      //
+      // The key is a correct "did anything change" signal but the wrong
+      // invalidation policy for THIS data: it is the top 7 of 281,000 by
+      // strength, and a handful of freshly-extracted shadows are essentially
+      // never among them. So a key change no longer forces an immediate
+      // re-walk; it is allowed to serve a stale result up to STALE_OK_MS.
+      //
+      // Tradeoff, stated plainly: a newly-extracted shadow that genuinely
+      // belongs in the top 7 can take up to 5 minutes to start contributing
+      // buffs. That is worth ~12x fewer full-army walks. An unchanged key is
+      // served for the same window, since nothing changed at all in that case.
+      const STALE_OK_MS = 300000;
       if (
         this._topGeneralsCache &&
-        this._topGeneralsCacheKey === cacheKey &&
         this._topGeneralsCacheTime &&
-        now - this._topGeneralsCacheTime < cacheTtlMs
+        now - this._topGeneralsCacheTime < STALE_OK_MS
       ) {
+        // Key retained for diagnostics//future finer-grained invalidation.
+        this._topGeneralsCacheKey = cacheKey;
         return this._topGeneralsCache;
       }
 
