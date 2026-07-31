@@ -486,8 +486,16 @@ module.exports = {
             this._invalidateSnapshot();
             // Inline cache invalidation — avoids racing the +300ms widget refresh
             // that a deferred setTimeout would cause.
-            this._armyStatsCache = null;
-            this._armyStatsCacheTime = null;
+            // ARMY-STATS CACHE NO LONGER INVALIDATED HERE (2026-07-30).
+            // Extraction fires constantly (~34 msg/min), and nulling this cache
+            // forced the next getAggregatedArmyStats() into a full 281k walk —
+            // measured at 1.6 walks/min, 47.7% of all IDB traffic, even after
+            // that method was made stale-tolerant, because an explicit null
+            // bypasses the TTL entirely.
+            // One new shadow moves an army-wide aggregate by ~0.0004%. Letting
+            // the 5-minute staleness window govern is the same trade already
+            // taken in getAggregatedArmyStats; invalidating here silently
+            // undid it. _widgetDirty (set separately) still refreshes the UI.
             this._invalidateCapCountCache();
 
             // INCREMENTAL CACHE: Update total power cache
@@ -988,8 +996,9 @@ module.exports = {
         // value nothing reads.
         this.saveSettings();
 
-        this._armyStatsCache = null;
-        this._armyStatsCacheTime = null;
+        // Batch counterpart of the single-extraction case above — same
+        // reasoning, and worse here: a large ARISE nulled the cache once per
+        // batch, guaranteeing a full walk on the next aggregate read.
         this._shadowPowerCache = new Map();
 
         // ONE batch event
