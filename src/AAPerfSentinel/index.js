@@ -1302,13 +1302,29 @@ module.exports = class AAPerfSentinel {
         // sawtooths hard, so half-averages flagged "RISING" on a session whose
         // first and last samples were both low. Only the floor — the level GC
         // can no longer reclaim below — indicates retention.
-        const mid = Math.floor(heaps.length / 2);
-        const floorA = Math.min(...heaps.slice(0, mid));
-        const floorB = Math.min(...heaps.slice(mid));
+        // WARM-UP EXCLUDED (2026-07-30). Comparing the first half of a session
+        // to the second half cannot tell a leak from a cache that fills once
+        // and stays. This suite holds TWO full-army decompressed caches
+        // (ShadowArmy._snapshotCache, Dungeons._shadowsCache) at ~250MB each on
+        // a 281k army, so every session climbs from ~250MB to a ~500MB plateau
+        // and then oscillates there. That plateau was reported as
+        // "RISING (retention — investigate)" in every single report, and it
+        // cost a full investigation to disprove — a metric that always says
+        // "leak" carries no information.
+        //
+        // Skip the first third of samples (cache warm-up), then compare the
+        // floor of the remaining first half against the second half. A real
+        // leak keeps climbing after warm-up; a plateau does not.
+        const warm = Math.floor(heaps.length / 3);
+        const settled = heaps.length - warm >= 4 ? heaps.slice(warm) : heaps;
+        const mid = Math.floor(settled.length / 2);
+        const floorA = Math.min(...settled.slice(0, mid));
+        const floorB = Math.min(...settled.slice(mid));
         const peakA = Math.max(...heaps.slice(0, mid));
         const peakB = Math.max(...heaps.slice(mid));
         lines.push(`  heap FLOOR (post-GC, the leak signal): ${floorA}MB -> ${floorB}MB ` +
-          `— ${floorB - floorA > 40 ? "RISING (retention — investigate)" : "stable (GC reclaims to the same level)"}`);
+          `— ${floorB - floorA > 40 ? "RISING after warm-up (retention — investigate)" : "stable (plateau; GC reclaims to the same level)"}` +
+          `  [warm-up samples excluded: ${heaps.length - settled.length}]`);
         lines.push(`  heap peak (churn, NOT a leak signal): ${peakA}MB -> ${peakB}MB`);
       }
       lines.push("");
