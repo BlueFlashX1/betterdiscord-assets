@@ -887,7 +887,22 @@ module.exports = {
     // CROSS-PLUGIN SNAPSHOT: Check ShadowArmy's shared snapshot before hitting IDB.
     // If ShadowArmy already has a fresh snapshot (<2s old), use it directly —
     // avoids redundant IDB cursor + decompression that other consumers already triggered.
-    const snapshot = this.shadowArmy.getShadowSnapshot?.();
+    // SHARED SNAPSHOT, 60s WINDOW (2026-07-30). This only tried
+    // getShadowSnapshot(), whose TTL is 2 SECONDS — so it almost always
+    // returned null and execution fell through to the branch below, which
+    // loads and decompresses Dungeons' OWN copy of all 281k shadows. The
+    // result was two full decompressed armies resident at once
+    // (ShadowArmy._snapshotCache + Dungeons._shadowsCache), ~250MB each,
+    // which is the entire reason heap plateaus near 500MB.
+    //
+    // getShadowSnapshotForDeploy() exists for precisely this case and is
+    // documented as such: same array, 60s TTL. That matches the 60s TTL this
+    // cache already applies to its own copy, so it is the SAME staleness
+    // class — not a new tradeoff. Preferring the 2s snapshot first keeps the
+    // freshest data when it happens to be available.
+    const snapshot =
+      this.shadowArmy.getShadowSnapshot?.() ||
+      this.shadowArmy.getShadowSnapshotForDeploy?.();
     if (snapshot) {
       // Normalize identifiers on snapshot (ShadowArmy's snapshot is already decompressed)
       snapshot.forEach((s) => { if (s && !s.id) s.id = s.i; });
