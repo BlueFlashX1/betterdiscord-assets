@@ -579,8 +579,8 @@ module.exports = {
         summaryStats.shadowTotalXP = shadowResults.totalXP;
         summaryStats.shadowsLeveledUp = shadowResults.leveledUp;
         summaryStats.shadowsRankedUp = shadowResults.rankedUp;
-        if (shadowResults.deferredPostProcess) {
-          this.showToast('Shadow XP growth processing in background...', 'info');
+        if (shadowResults.growthBanked) {
+          this.showToast('Shadow growth banked — applying in background...', 'info');
         }
       }
     }

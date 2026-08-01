@@ -331,7 +331,6 @@ module.exports = {
     this._deployRebalanceInFlight = new Set();
     this._deployStarterWarmInFlight = null;
     this._deployStarterShadowCap = 240;
-    this._pendingDungeonXpPostProcess = new Map();
 
     this.currentChannelKey = null;
     this._isWindowVisible = !document.hidden;

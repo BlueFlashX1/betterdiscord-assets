@@ -626,6 +626,28 @@ branch was for grant-pipeline records that no longer exist (was dead: usingPostX
 always false). IDB fallback retained for defensive paths. Expected: the paired rows drop to
 one row at ~half the request rate; verify via IDB REQUESTS BY CALLER table.
 
+REDESIGNED 2026-07-31 (pending-growth accumulator — supersedes the pass-through fix
+above, which halved the duplicate but left the fetch itself): at 200k-shadow deploys
+(user is Shadow Monarch, infinite cap) one completion accumulates ~51k contributors, so
+grantShadowDungeonXP's contributor fetch was ~257 chunked transactions / ~51k gets PER
+COMPLETION — 95% of ShadowArmy IDB traffic while farming (sentinel: 286k requests in
+one session). The fetch's only real consumers post-98b48a8: per-shadow rank for the
+USER XP mirror multiplier, and full records for natural growth. USER DECISIONS
+(2026-07-31, both accepted): (1) rank multiplier now uses the DUNGEON rank as proxy
+(allocation deploys same-rank ±1 by design, so drift is small); (2) growth hours are
+BANKED per shadow id via ShadowArmy.bankPendingGrowth and applied by a 30s hidden-gated
+drain (progression.js drainPendingGrowth: 500 ids/tick, transformShadowsBatch
+merge-on-write, net _applyTotalPowerDelta — never zero cachedTotalPowerShadowCount).
+Pending map is memory-resident, persisted ONCE on stop() (hard crash loses only
+in-flight banked hours — accepted; per-completion persistence would be a multi-MB
+serialize). The deferred XP post-process machinery (_queueDeferredDungeonXpPostProcess
+/ _runDeferredDungeonXpPostProcess / _fetchDungeonShadowsByIds) is DELETED — its
+level/rank before-after diff had been dead since 98b48a8 (nothing wrote XP in between)
+and its growth-save phase never appeared in the sentinel transaction probe at 200k
+scale, i.e. growth was likely not persisting anyway. Verify: getShadowsByIds<Dungeons
+rows vanish from IDB REQUESTS BY CALLER; drain shows as small periodic
+transformShadowsBatch batches instead.
+
 Refuted 2026-07-13 (do NOT re-propose): blanket [class*=]→[class^=] (stem
 ambiguity: container_=693 hashes — use class-substitution allowlist instead);
 portal canvas gradient bucket-caching (radii oscillate per frame by design);

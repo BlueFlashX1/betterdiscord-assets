@@ -78,6 +78,169 @@ module.exports = {
     return { updatedShadows: [] };
   },
 
+  // ── PENDING NATURAL GROWTH (banked dungeon combat hours, drained in background) ──
+  //
+  // Dungeons banks participation-weighted combat hours per shadow id at
+  // completion (bankPendingGrowth) instead of fetching every contributor
+  // record at that moment — a 200k-shadow deploy made that fetch ~51k chunked
+  // IDB gets per completion, 95% of ShadowArmy's IDB traffic (sentinel
+  // 2026-07-31). The drain interval (index.js) applies banked hours in small
+  // merge-on-write batches: transformShadowsBatch reads the FRESH record
+  // inside its own transaction, so autoPromote/self-heal writes land safely
+  // in between. Hours for the same shadow merge additively — one
+  // applyNaturalGrowth(h1+h2) equals two smaller applications up to
+  // per-application rounding, so banking is the same growth, later.
+
+  /** BdApi.Data key for the persisted pending-growth map (user-scoped). */
+  _pendingGrowthDataKey() {
+    return this.userId ? `pendingGrowthHours_${this.userId}` : 'pendingGrowthHours';
+  },
+
+  /** Restore banked growth hours at startup (persisted once, on stop()). */
+  _restorePendingGrowth() {
+    this._pendingGrowthHours = {};
+    try {
+      const stored = BdApi.Data.load('ShadowArmy', this._pendingGrowthDataKey());
+      if (stored && typeof stored === 'object') {
+        for (const [sid, hours] of Object.entries(stored)) {
+          const h = Number(hours);
+          if (h > 0 && sid) this._pendingGrowthHours[sid] = h;
+        }
+      }
+    } catch (error) {
+      this.debugError('GROWTH', 'Failed to restore pending growth hours', error);
+    }
+  },
+
+  /**
+   * Persist banked hours. Called from stop() only — the map can hold one
+   * entry per deployed shadow (hundreds of thousands), so per-completion
+   * persistence would reintroduce a multi-MB serialize on the very path this
+   * accumulator exists to unburden. A hard crash loses only in-flight banked
+   * hours (bounded, passive system) — same tradeoff as pendingSharedXp.
+   */
+  _persistPendingGrowth() {
+    try {
+      BdApi.Data.save('ShadowArmy', this._pendingGrowthDataKey(), this._pendingGrowthHours || {});
+    } catch (error) {
+      this.debugError('GROWTH', 'Failed to persist pending growth hours', error);
+    }
+  },
+
+  /** Bank combat hours per shadow id ({ id: hours }). Returns true if anything banked. */
+  bankPendingGrowth(hoursByShadowId) {
+    if (!hoursByShadowId || typeof hoursByShadowId !== 'object') return false;
+    const pending = this._pendingGrowthHours || (this._pendingGrowthHours = {});
+    let banked = 0;
+    for (const [sid, hours] of Object.entries(hoursByShadowId)) {
+      const h = Number(hours);
+      if (!(h > 0)) continue;
+      const key = String(sid).trim();
+      if (!key) continue;
+      pending[key] = (pending[key] || 0) + h;
+      banked++;
+    }
+    return banked > 0;
+  },
+
+  /**
+   * Apply banked growth for up to maxShadows ids. Runs on a 30s interval
+   * (index.js), hidden-gated like autoPromoteGrades — the backlog just
+   * accumulates hours until the next visible tick. Ids whose record no
+   * longer exists (extracted/deleted) are consumed, not retried.
+   */
+  async drainPendingGrowth(maxShadows = 500) {
+    if (this._pendingGrowthDrainInFlight) return 0;
+    const pending = this._pendingGrowthHours;
+    if (!pending || !this.storageManager?.transformShadowsBatch) return 0;
+    const ids = Object.keys(pending).slice(0, Math.max(1, maxShadows));
+    if (ids.length === 0) return 0;
+
+    // Snapshot the hours being applied — bankPendingGrowth can add MORE hours
+    // for the same shadow mid-drain; subtracting the snapshot (instead of
+    // deleting the key) keeps those late hours banked for the next tick.
+    const hoursSnapshot = {};
+    for (const id of ids) {
+      const h = Number(pending[id]);
+      if (h > 0) hoursSnapshot[id] = h;
+    }
+
+    this._pendingGrowthDrainInFlight = true;
+    let applied = 0;
+    let netPowerDelta = 0;
+    try {
+      // Suppress attemptAutoRankUp's per-shadow power delta (and its full
+      // clearShadowPowerCache) — the net delta is applied once, below.
+      this._batchXpInProgress = true;
+      try {
+        const CHUNK = 250;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const chunk = ids.slice(i, i + CHUNK);
+          const { failedIds } = await this.storageManager.transformShadowsBatch(
+            chunk,
+            (freshRecord) => {
+              const shadow = this.getShadowData(freshRecord);
+              if (!shadow) return null;
+              const sid = String(shadow.id || shadow.i || '');
+              const hours = hoursSnapshot[sid];
+              if (!(hours > 0)) return null;
+
+              const prevPower = this._getShadowPowerValue?.(shadow) ?? (Number(shadow.strength) || 0);
+              if (!this.applyNaturalGrowth(shadow, hours)) return null;
+              // Growth can cross promotion thresholds (same behavior as the
+              // old completion-time path).
+              this.attemptAutoRankUp(shadow);
+              const newPower = this._getShadowPowerValue?.(shadow) ?? (Number(shadow.strength) || 0);
+              netPowerDelta += newPower - prevPower;
+              this.invalidateShadowPowerCache(shadow);
+              applied++;
+              return this.prepareShadowForSave(shadow) ?? null;
+            },
+            { chunkSize: chunk.length }
+          );
+
+          // Consume the applied hours. failedIds retry next tick with their
+          // hours intact; missing/skipped ids are consumed so an extracted
+          // shadow can't wedge the queue.
+          const failedSet = new Set((failedIds || []).map((id) => String(id)));
+          for (const id of chunk) {
+            if (failedSet.has(String(id))) continue;
+            const remaining = (Number(pending[id]) || 0) - (hoursSnapshot[id] || 0);
+            if (remaining > 0.0001) pending[id] = remaining;
+            else delete pending[id];
+          }
+
+          if (i + CHUNK < ids.length) await new Promise((r) => setTimeout(r, 0));
+        }
+      } finally {
+        this._batchXpInProgress = false;
+      }
+
+      if (applied > 0) {
+        this._invalidateSnapshot?.();
+        // Strength changed — bump the write-gen counter the hourly
+        // compression gate uses (see army-stats.js:_applyTotalPowerDelta).
+        this._armyWriteGen = (this._armyWriteGen || 0) + 1;
+        // NOTE: cachedTotalPowerShadowCount is deliberately NOT zeroed —
+        // zeroing forces the next getTotalShadowPower into a full-store walk
+        // (see attemptAutoRankUp's incremental note). The army total moves by
+        // exactly the summed strength change.
+        if (netPowerDelta !== 0 && typeof this._applyTotalPowerDelta === 'function') {
+          await this._applyTotalPowerDelta(
+            { strength: Math.abs(netPowerDelta) },
+            netPowerDelta > 0 ? 'increment' : 'decrement'
+          );
+        }
+      }
+      return applied;
+    } catch (error) {
+      this.debugError('GROWTH', 'Pending-growth drain failed', error);
+      return applied;
+    } finally {
+      this._pendingGrowthDrainInFlight = false;
+    }
+  },
+
   async grantShadowXP(baseAmount, reason = 'message', shadowIds = null, options = {}) {
     const perShadowAmounts =
       options && typeof options === 'object' && options.perShadowAmounts && typeof options.perShadowAmounts === 'object'

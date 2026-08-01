@@ -81,6 +81,12 @@ const ShadowArmy = class ShadowArmy {
     this._pendingSharedXp = 0;
     this._sharedXpFlushInterval = null;
 
+    // Banked dungeon growth hours per shadow id (see progression.js
+    // bankPendingGrowth / drainPendingGrowth) — drained on a 30s interval,
+    // persisted on stop().
+    this._pendingGrowthHours = {};
+    this._pendingGrowthDrainInterval = null;
+
     // Cache for Solo Leveling data (user stats, rank, level)
     this._soloDataCache = null;
     this._soloDataCacheTime = 0;
@@ -203,6 +209,8 @@ const ShadowArmy = class ShadowArmy {
 
     // Restore any shared XP that hadn't been flushed before the last stop/crash
     this._restorePendingSharedXp();
+    // Restore banked growth hours that hadn't been drained before the last stop
+    this._restorePendingGrowth();
 
     try {
       this.storageManager = new ShadowStorageManager(
@@ -598,6 +606,20 @@ const ShadowArmy = class ShadowArmy {
       });
     }, 10 * 60 * 1000);
 
+    // Drain banked dungeon growth hours (bankPendingGrowth) in small batches.
+    // Hidden-gated like auto-promote — the backlog accumulates hours and
+    // catches up on visible ticks; drainPendingGrowth no-ops when empty.
+    if (this._pendingGrowthDrainInterval) {
+      clearInterval(this._pendingGrowthDrainInterval);
+    }
+    this._pendingGrowthDrainInterval = setInterval(() => {
+      if (this._isStopped) return;
+      if (document.hidden) return;
+      this.drainPendingGrowth().catch((error) => {
+        this.debugError('GROWTH', 'Pending-growth drain tick failed', error);
+      });
+    }, 30000);
+
     // Listen for Dungeons essence awards via shared event bus
     {
       if (this._dungeonEssenceListener) {
@@ -775,6 +797,10 @@ const ShadowArmy = class ShadowArmy {
       clearInterval(this._sharedXpFlushInterval);
       this._sharedXpFlushInterval = null;
     }
+    if (this._pendingGrowthDrainInterval) {
+      clearInterval(this._pendingGrowthDrainInterval);
+      this._pendingGrowthDrainInterval = null;
+    }
 
     // Self-heal resume timer: scheduled by resumeSelfHeal() with a 30s delay,
     // not tracked in _retryTimeouts. The _isStopped guard inside its callback
@@ -886,6 +912,14 @@ const ShadowArmy = class ShadowArmy {
       this._persistPendingSharedXp();
     } catch (error) {
       console.error('[ShadowArmy] Failed to persist pending shared XP on stop:', error);
+    }
+
+    // Persist banked growth hours (drained incrementally at runtime; the map
+    // is only written to disk here — see progression.js _persistPendingGrowth).
+    try {
+      this._persistPendingGrowth();
+    } catch (error) {
+      console.error('[ShadowArmy] Failed to persist pending growth hours on stop:', error);
     }
 
     // Close IndexedDB connection

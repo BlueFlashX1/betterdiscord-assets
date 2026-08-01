@@ -488,18 +488,13 @@ module.exports = {
     const baseMobXP = 10; // Base XP per mob kill
     const baseBossXP = 100; // Base XP for full boss kill
 
-    // Fetch only shadows that actually contributed in this dungeon.
-    const contributionShadowIds = contributionEntries.map(([shadowId]) => String(shadowId));
-    const allShadows = await this._fetchDungeonShadowsByIds(contributionShadowIds);
-    const shadowMap = new Map(
-      allShadows
-        .map((s) => [String(this.getShadowIdValue(s) || ''), s])
-        .filter(([id]) => !!id)
-    );
-
+    // FETCH-FREE (2026-07-31). This used to fetch every contributor record
+    // just to read each shadow's rank for the XP multiplier — at 200k-shadow
+    // deploy scale that was ~51k chunked IDB gets per completion, 95% of
+    // ShadowArmy's IDB traffic (sentinel). Allocation deploys same-rank ±1
+    // shadows by design (rank-tiered buckets), so the dungeon's own rank
+    // stands in as the multiplier proxy and no record is needed.
     let totalXPGranted = 0;
-    // Track before-state for level/rank change detection after batch processing
-    const beforeStates = new Map(); // shadowId -> { level, rank }
     const xpByShadowId = {}; // shadowId -> xp
     const rawContributionByShadowId = {}; // shadowId -> pre-multiplier participation score
 
@@ -512,31 +507,13 @@ module.exports = {
     const combatDuration = Math.max(0, Date.now() - combatStartAt);
     const combatHours = combatDuration / (1000 * 60 * 60);
 
+    // Shadow-rank multiplier proxy (was per-shadow rank, read from the fetched
+    // record): dungeon rank stands in for every contributor. E=1.0, D=1.3, etc.
+    const shadowRankMultiplier = 1.0 + dungeonRankIndex * 0.3;
+
     // Process shadow contributions (functional approach)
     for (const [rawShadowId, contribution] of contributionEntries) {
       const shadowId = String(rawShadowId);
-      const shadow = shadowMap.get(shadowId);
-      if (!shadow) continue;
-
-      // Get shadow rank multiplier (higher rank shadows get more XP)
-      const shadowRank = shadow.rank || 'E';
-      const shadowRanks = this.shadowArmy.shadowRanks || [
-        'E',
-        'D',
-        'C',
-        'B',
-        'A',
-        'S',
-        'SS',
-        'SSS',
-        'SSS+',
-        'NH',
-        'Monarch',
-        'Monarch+',
-        'Shadow Monarch',
-      ];
-      const shadowRankIndex = shadowRanks.indexOf(shadowRank);
-      const shadowRankMultiplier = 1.0 + shadowRankIndex * 0.3; // E=1.0, D=1.3, SSS=2.4, etc.
 
       const mobsKilled = Number(contribution?.mobsKilled) || 0;
       const bossDamage = Number(contribution?.bossDamage) || 0;
@@ -556,13 +533,6 @@ module.exports = {
       ));
 
       if (totalXP > 0) {
-        // Record before-state for level/rank change detection
-        beforeStates.set(shadowId, {
-          level: shadow.level || 1,
-          rank: shadow.rank,
-          name: shadow.roleName || shadow.role || shadow.name || 'Shadow',
-        });
-
         xpByShadowId[shadowId] = totalXP;
         rawContributionByShadowId[shadowId] = rawContribution;
         totalXPGranted += totalXP;
@@ -610,48 +580,31 @@ module.exports = {
     // progression and is what the intrinsic rank-up gate reads. Only the XP
     // write is gone.
     //
-    // postXpShadows was this grant's in-memory result, used downstream purely
-    // as a cache to skip a re-fetch. With the grant gone it was passed empty,
-    // which sent the post-process down its IDB fallback — re-fetching the exact
-    // contributor set fetched above (line ~493) on every dungeon completion, a
-    // 1:1 duplicate read (~200 records × ~61 completions/session = 45% of
-    // ShadowArmy's IDB traffic, sentinel 2026-07-31). Nothing writes these
-    // records between that fetch and the deferred task anymore, so the
-    // grant-time fetch IS the current state: pass it through instead.
-    const xpGrantSucceeded = true;
-
-    if (!xpGrantSucceeded) {
-      return {
-        totalXP: 0,
-        leveledUp: [],
-        rankedUp: [],
-        deferredPostProcess: false,
-      };
+    // Combat GROWTH is banked, not applied here (2026-07-31): the hours go to
+    // ShadowArmy's pending-growth accumulator and are applied in small
+    // merge-on-write batches by its 30s drain (progression.js
+    // drainPendingGrowth). The old deferred post-process fetched every
+    // contributor record at completion to apply growth inline — ~51k IDB gets
+    // per completion at 200k-deploy scale — and its write phase never showed
+    // up in the sentinel's transaction probe, so growth was likely not
+    // persisting at that scale anyway.
+    const growthBanked = Boolean(this.shadowArmy.bankPendingGrowth?.(growthHoursByShadowId));
+    if (!growthBanked) {
+      this.debugLog?.('XP', 'bankPendingGrowth unavailable or empty — shadow growth hours not banked this completion');
     }
-
-    const deferredPostProcess = this._queueDeferredDungeonXpPostProcess({
-      channelKey,
-      dungeonName: dungeon?.name,
-      dungeonRank: dungeon?.rank,
-      xpTargetIds,
-      beforeStatesEntries: Array.from(beforeStates.entries()),
-      combatHours,
-      growthHoursByShadowId,
-      prefetchedShadows: allShadows,
-    });
 
     const elapsedMs = Date.now() - grantStartedAt;
     this.settings.debug && console.log(
       `[Dungeons] ⏱️ SHADOW XP GRANT: "${dungeon?.name || channelKey}" [${dungeon?.rank || '?'}] | ` +
       `targets=${xpTargetIds.length} | totalXP=${totalXPGranted.toLocaleString()} | ` +
-      `deferred=${deferredPostProcess} | ${elapsedMs}ms`
+      `growthBanked=${growthBanked} | ${elapsedMs}ms`
     );
 
     return {
       totalXP: totalXPGranted,
       leveledUp: [],
       rankedUp: [],
-      deferredPostProcess,
+      growthBanked,
     };
   }
 };
