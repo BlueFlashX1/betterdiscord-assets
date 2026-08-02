@@ -1,0 +1,6 @@
+{
+  "name": "MessageEditHistory",
+  "description": "Records the previous text of edited messages and shows the full version history inline. Captures edits made while Discord is running — Discord's API exposes no history for past edits.",
+  "version": "1.0.0",
+  "author": "Solo Leveling Theme Dev"
+}

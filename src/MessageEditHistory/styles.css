@@ -1,0 +1,95 @@
+/* MessageEditHistory — inline badge + version popout */
+
+.sl-meh-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+  vertical-align: baseline;
+  color: #8ab4f8;
+  background: rgba(88, 101, 242, 0.12);
+  border: 1px solid rgba(88, 101, 242, 0.35);
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.sl-meh-badge:hover,
+.sl-meh-badge:focus-visible {
+  background: rgba(88, 101, 242, 0.25);
+  border-color: rgba(88, 101, 242, 0.6);
+  outline: none;
+}
+
+.sl-meh-popout {
+  position: fixed;
+  z-index: 3000;
+  max-width: 460px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  background: rgba(10, 10, 16, 0.98);
+  border: 1px solid rgba(88, 101, 242, 0.4);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  color: #dcddde;
+  font-size: 13px;
+}
+
+.sl-meh-popout-title {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  color: #8ab4f8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sl-meh-popout-body {
+  overflow-y: auto;
+  /* Own scroll container so long histories never widen the popout or push
+     the page — matches the suite's overflow discipline. */
+  overflow-x: hidden;
+}
+
+.sl-meh-version + .sl-meh-version {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sl-meh-version-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.sl-meh-version-num {
+  font-weight: 600;
+}
+
+.sl-meh-version-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.sl-meh-popout-foot {
+  margin-top: 8px;
+  padding-top: 6px;
+  font-size: 11px;
+  opacity: 0.5;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sl-meh-empty {
+  opacity: 0.6;
+  font-style: italic;
+}
