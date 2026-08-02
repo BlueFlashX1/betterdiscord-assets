@@ -297,7 +297,12 @@ function purgeUtilityEntries() {
     const feed = this._guildFeeds[guildId];
     if (!Array.isArray(feed) || feed.length === 0) continue;
 
-    const filtered = feed.filter((entry) => !entry?.eventType || entry.eventType === "message");
+    // "edit" is retained alongside "message": it records what a monitored
+    // user actually wrote and is anchored to a real message, unlike the
+    // transient status/typing/relationship signals this purge exists to drop.
+    const filtered = feed.filter(
+      (entry) => !entry?.eventType || entry.eventType === "message" || entry.eventType === "edit"
+    );
     if (filtered.length === feed.length) continue;
 
     const diff = feed.length - filtered.length;

@@ -17,6 +17,11 @@ const { buildComponents } = require("./components");
 const ShadowSensesUiMethods = require("./plugin-ui-methods");
 const SensesEngineFeed = require("./senses-engine-feed");
 const SensesEngineEvents = require("./senses-engine-events");
+const SLEvents = require("../shared/event-bus");
+
+// Emitted by MessageEditHistory when it captures a message edit; that plugin
+// is the source of truth for the payload shape.
+const MESSAGE_EDIT_EVENT = "MessageEditHistory:editRecorded";
 const SensesEngineUtils = require("./senses-engine-utils");
 const { _TransitionCleanupUtils } = require("./shared-utils");
 const { createToast } = require("../shared/toast");
@@ -167,7 +172,8 @@ class SensesEngine {
 
     // Purge entries older than 3 days on startup
     this._purgeOldEntries();
-    // Keep history chat-only: status/typing/relationship events are toast-only intel
+    // Keep history chat-only: status/typing/relationship events are toast-only
+    // intel. Message edits are kept — they carry chat content, not presence.
     this._purgeUtilityEntries();
     // Do NOT call _flushToDisk() here — the constructor runs before the 30s
     // flush interval is started (subscribe() hasn't been called yet) which
@@ -221,6 +227,16 @@ class SensesEngine {
     this._subscribeEvent("MESSAGE_CREATE", this._handleMessageCreate);
     this._subscribeEvent("CHANNEL_SELECT", this._handleChannelSelect);
     this._subscribeEvent("TYPING_START", this._handleTypingStart);
+
+    // Message edits arrive over the shared bus from MessageEditHistory (which
+    // owns the pre-edit content snapshot), not from the dispatcher. No-ops
+    // when that plugin is disabled — the event simply never fires.
+    this._handleExternalMessageEdit = this._onExternalMessageEdit.bind(this);
+    try {
+      SLEvents.on(MESSAGE_EDIT_EVENT, this._handleExternalMessageEdit);
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Failed to subscribe message-edit bus event", err);
+    }
     this._presenceUnsubs = PRESENCE_EVENT_NAMES.map(
       (eventName) => onPresence(eventName, this._handlePresenceUpdate)
     );
@@ -289,6 +305,14 @@ class SensesEngine {
     if (this._presenceUnsubs) {
       for (const unsub of this._presenceUnsubs) { try { unsub(); } catch (_) {} }
       this._presenceUnsubs = null;
+    }
+    if (this._handleExternalMessageEdit) {
+      try {
+        SLEvents.off(MESSAGE_EDIT_EVENT, this._handleExternalMessageEdit);
+      } catch (err) {
+        this._plugin.debugError("SensesEngine", "Failed to unsubscribe message-edit bus event", err);
+      }
+      this._handleExternalMessageEdit = null;
     }
     this._burstMap?.clear();
     this._handleMessageCreate = null;

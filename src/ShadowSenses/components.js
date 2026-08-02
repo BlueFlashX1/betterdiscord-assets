@@ -15,6 +15,7 @@ function buildComponents(pluginRef) {
     status: "STATUS",
     typing: "TYPING",
     relationship: "CONNECTION",
+    edit: "EDIT",
   };
 
   function getEventLabel(eventType) {

@@ -1257,8 +1257,72 @@ function onChannelSelect(payload) {
   }
 }
 
+/**
+ * Feed entry for an edit made by a monitored user.
+ *
+ * Driven by MessageEditHistory's `MessageEditHistory:editRecorded` bus event,
+ * not by a dispatcher subscription — recovering a message's pre-edit text
+ * needs a content snapshot taken before the edit lands, which that plugin
+ * already maintains. Duplicating it here would mean a second snapshot cache
+ * of every message in memory for no gain.
+ *
+ * Same relevance gate as onMessageCreate: monitored author with an active
+ * deployment. Without it, every edit in every subscribed channel would land
+ * in the feed.
+ */
+function onExternalMessageEdit(detail) {
+  try {
+    const authorId = detail?.authorId;
+    const messageId = detail?.messageId;
+    if (!authorId || !messageId) return;
+
+    const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+    if (!monitoredIds.has(authorId)) return;
+    const deployment = this._plugin.deploymentManager.getDeploymentForUser(authorId);
+    if (!deployment) return;
+
+    ensureCurrentGuildId(this);
+    // resolveMessageChannelContext reads channel_id/guild_id off a message
+    // shape, so hand it the equivalent fields from the bus payload.
+    const channelContext = resolveMessageChannelContext(this, {
+      channel_id: detail.channelId,
+      guild_id: null,
+    });
+    if (!channelContext) return;
+    const { guildId, channelName } = channelContext;
+
+    const authorName = this._resolveUserName(authorId, deployment.targetUsername || "Unknown");
+    const before = String(detail.previousContent ?? "");
+    const after = String(detail.newContent ?? "");
+
+    const entry = {
+      eventType: "edit",
+      messageId,
+      authorId,
+      authorName,
+      channelId: detail.channelId,
+      channelName,
+      guildId,
+      guildName: this._plugin._getGuildName(guildId),
+      // Non-message entries render `content` as plain text (components.js
+      // getContentText), so the before/after pair is formatted here.
+      content: `${authorName} edited a message\nbefore: ${before || "—"}\nafter: ${after || "—"}`,
+      timestamp: detail.at || Date.now(),
+      shadowName: deployment.shadowName,
+      shadowRank: deployment.shadowRank,
+    };
+
+    // Deliberately not burst-grouped: grouping only merges eventType
+    // "message" entries, and an edit is a discrete event worth its own row.
+    this._addToGuildFeed(guildId, entry);
+  } catch (err) {
+    this._plugin.debugError("SensesEngine", "Error in message-edit handler", err);
+  }
+}
+
 module.exports = {
   _onChannelSelect: onChannelSelect,
+  _onExternalMessageEdit: onExternalMessageEdit,
   _onMessageCreate: onMessageCreate,
   _pollMonitoredPresenceStatuses: pollMonitoredPresenceStatuses,
   _onPresenceUpdate: onPresenceUpdate,

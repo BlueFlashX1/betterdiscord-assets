@@ -1,6 +1,7 @@
 import STYLES from "./styles.css";
 const { pollForDispatcher } = require("../shared/dispatcher");
 const { loadSettings, saveSettings } = require("../shared/settings");
+const SLEvents = require("../shared/event-bus");
 const { createContentCache } = require("./content-cache");
 const { createDecorator } = require("./decorator");
 const store = require("./history-store");
@@ -9,6 +10,11 @@ const { Webpack } = BdApi;
 
 const PLUGIN_ID = "MessageEditHistory";
 const STYLE_ID = "sl-message-edit-history-css";
+
+// Cross-plugin event (shared/event-bus.js). Consumed by ShadowSenses to show
+// edits by monitored users in its feed. This module is the source of truth for
+// the payload shape — keep consumers in sync when it changes.
+const EVENT_EDIT_RECORDED = "MessageEditHistory:editRecorded";
 
 const DEFAULTS = {
   debug: false,
@@ -185,14 +191,32 @@ module.exports = class MessageEditHistory {
       this._knownIds.add(msg.id);
       this._decorator?.decorateNow(msg.id);
 
+      const at = Date.now();
+
       store.appendVersion({
         messageId: msg.id,
         channelId: msg.channel_id ?? null,
         authorId: msg.author?.id ?? null,
         previousContent: oldContent,
-        at: Date.now(),
+        at,
       }, this._settings.maxVersionsPerMessage)
         .catch((err) => this._error("appendVersion", err));
+
+      // Announce to the suite. Emitted independently of the write above so a
+      // storage failure doesn't also cost the live notification — consumers
+      // treat this as a signal, not a promise that the version was persisted.
+      try {
+        SLEvents.emit(EVENT_EDIT_RECORDED, {
+          messageId: msg.id,
+          channelId: msg.channel_id ?? null,
+          authorId: msg.author?.id ?? null,
+          previousContent: oldContent,
+          newContent,
+          at,
+        });
+      } catch (err) {
+        this._error("emit editRecorded", err);
+      }
 
       this._log("recorded edit for", msg.id);
     } catch (err) {
