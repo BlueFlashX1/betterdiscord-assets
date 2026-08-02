@@ -46,6 +46,7 @@ Object.assign(
   require('./runtime-visibility'),
   require('./notifications-cleanup'),
   require('./restore-gc-toast'),
+  require('./settings-layer-tag'),
   require('./css-management')
 );
 

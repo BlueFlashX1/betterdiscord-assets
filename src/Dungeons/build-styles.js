@@ -435,14 +435,13 @@ function buildCSS() {
   box-sizing: border-box !important;
 }
 
-/* Hide boss HP bar when settings/modals are open */
-[class*='layer']:has(${sel.userSettings}) .dungeon-boss-hp-container,
-[class*='layer']:has(${sel.settingsContainer}) .dungeon-boss-hp-container,
-[class*='layer']:has(${sel.standardSidebarView}) .dungeon-boss-hp-container,
-[class*='layer'][class*='baseLayer'] ~ [class*='layer'] .dungeon-boss-hp-container,
-body:has(${sel.userSettings}) .dungeon-boss-hp-container,
-body:has(${sel.settingsContainer}) .dungeon-boss-hp-container,
-body:has(${sel.standardSidebarView}) .dungeon-boss-hp-container {
+/* Hide boss HP bar when settings/modals are open.
+   The six :has() forms these replace (body:has / [class*='layer']:has) made
+   the style engine re-test <body> on every document mutation; settings-layer-tag.js
+   now stamps the state as an attribute. See DKB bd-has-selector-to-data-attr-tagging.
+   The sibling-layer rule below needs no JS and stays as-is. */
+body[data-sl-dg-settings='1'] .dungeon-boss-hp-container,
+[class*='layer'][class*='baseLayer'] ~ [class*='layer'] .dungeon-boss-hp-container {
   display: none !important;
   visibility: hidden !important;
 }

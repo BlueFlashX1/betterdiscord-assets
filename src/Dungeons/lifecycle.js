@@ -24,6 +24,9 @@ module.exports = {
     await this.loadSettings();
     this._buildRankLookupTables();
     this.injectCSS();
+    // Must run alongside injectCSS: the boss-bar hide rules match
+    // body[data-sl-dg-settings] and are inert until this stamps it.
+    this.startSettingsLayerTag();
     this.installDelegatedUiHandlers();
 
     this.loadPluginReferences();
@@ -115,6 +118,7 @@ module.exports = {
   async stop() {
     this.started = false;
     this.removeDelegatedUiHandlers();
+    this.stopSettingsLayerTag();
 
     this._stopRuntimePipelines();
     this._clearStopCachesAndState();
