@@ -1,3 +1,35 @@
+/**
+ * combat-role-damage — THE damage formula. One mixin (see index.js).
+ *
+ * Every combatant in the plugin resolves damage through
+ * `calculateDamageBreakdown`: shadow->mob, mob->shadow, boss->player and
+ * player->anything. `calculateDamage` and `calculateUserDamage` are thin
+ * wrappers over it. If you change the formula here, you change it for all of
+ * them — that symmetry is deliberate, not incidental.
+ *
+ * The formula:  damage = (15 + strength*3 + intelligence*2)
+ *                        x getRankDamageMultiplier(attackerRank, defenderRank)
+ *                        - defense terms
+ *   then a natural crit roll (crit chance = agility * 0.3, capped 40%) which
+ *   multiplies the result IN PLACE and reports itself via `wasCrit`.
+ *
+ * INVARIANT THAT BITES: `breakdown.damage` ALREADY includes the crit
+ * multiplier when `wasCrit` is true. `applyEnhancedCritMultiplier`
+ * (stats-integration.js) therefore DIVIDES by the multiplier to re-base it.
+ * Handing that function raw, un-critted damage silently divides the hit
+ * instead of multiplying it — and it early-returns unchanged when the crit
+ * damage bonus is 0, so the crit becomes a no-op. That was a real shipped bug
+ * on four player crit paths (fixed 2026-08-03); use player-flow's
+ * `_applyExternalCrit` for any crit granted from OUTSIDE this roll.
+ *
+ * `normalizeShadowCombatStatsByRank` compresses stats above 3.5x the
+ * same-rank mob reference. Note the pivot uses the SHADOW's own rank, so it
+ * caps runaway grade/veterancy inflation — it does NOT penalise attacking
+ * downward. For a baseline shadow it never fires.
+ *
+ * Rank scaling constants live in init-state.js (`this.rankScaling`), NOT in
+ * constants.js. The `??` fallbacks in combat-primitives must mirror them.
+ */
 module.exports = {
   buildDungeonCombatSnapshot({ dungeon, aliveMobs, bossAlive }) {
     const mobById = new Map();

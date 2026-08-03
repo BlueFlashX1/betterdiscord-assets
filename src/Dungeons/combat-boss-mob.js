@@ -1,3 +1,35 @@
+/**
+ * combat-boss-mob — where damage actually lands. One mixin (see index.js).
+ *
+ * `applyDamageToBoss(channelKey, damage, source, shadowId, isCritical)` is the
+ * ONLY way boss HP goes down. Every source funnels through it: the shadow
+ * army's aggregated slice, player chat attacks, player skills, and each
+ * damage-over-time tick. It applies, in order:
+ *   1. BOSS_DAMAGE_RESISTANCE (rank-scaled, 10% at E -> 65% at Shadow Monarch)
+ *   2. the PER-CALL cap  (_getBossDamageCapPct)
+ *   3. Ruler's Authority resist reduction
+ *   4. phase shields at 75/50/25% HP
+ *
+ * THE CAP IS PER CALL, NOT PER TICK. This surprises people. The shadow army
+ * sums its whole slice into ONE call, so the cap does bound the army — but
+ * each DOT effect is a SEPARATE call with its own allowance. Four DOTs plus
+ * the army is five allowances, which is why a boss can die in ~6-10 ticks
+ * rather than the 1/capPct = 17 the cap looks like it guarantees.
+ *
+ * The cap is RANK-RELATIVE (`_getDeployedRankAdvantage`): at parity with the
+ * deployed army it is 6% of max HP, so a fair fight cannot be one-shot;
+ * every rank of advantage multiplies it by 1.6 until it reaches 100% at +6
+ * ranks, where overwhelming force IS allowed to one-shot. Under-ranked armies
+ * are not punished further — they already fail to reach the cap. The roster
+ * average is memoised on shadowAllocation.updatedAt so the combat tick never
+ * walks thousands of shadows.
+ *
+ * `attackMobs(channelKey, source, messageElement)` is the mob-side twin. Note
+ * the player branch resolves its externally-granted crit ONCE per swing
+ * (_resolveUserMobCrit) and applies it to every mob — the crit belongs to the
+ * attack, not to each target. Natural per-mob crits still roll inside
+ * calculateUserDamage.
+ */
 const C = require('./constants');
 const { getRankIndex } = require('../shared/rank-utils');
 const Dungeons = { RANK_MULTIPLIERS: C.RANK_MULTIPLIERS };

@@ -1,3 +1,37 @@
+/**
+ * combat-shadow-execution — the shadow army's attack tick. One mixin (index.js).
+ *
+ * Entry point: `processShadowAttacks(channelKey, cyclesMultiplier,
+ * isWindowVisible, tickBudget)`, called from corpse-tick-pipeline's combat tick.
+ *
+ * THE ROTATION (the thing to understand before editing):
+ * Per tick this processes only TICK_BUDGET shadows (default 500) starting at a
+ * per-dungeon cursor, NOT the whole roster. Each shadow is therefore visited
+ * once per `ceil(N / TICK_BUDGET)` ticks, and when its turn comes it is credited
+ * the REAL elapsed time since its last visit. That is what keeps per-tick CPU
+ * flat as the army grows — cost scales with TICK_BUDGET, never with N.
+ *
+ * WHY `scaleFactor` EXISTS (do not "simplify" it back to 1):
+ * getCappedAttackElapsedMs hard-caps credited time at 5 minutes to bound the
+ * attack LOOP — that clamp is what stopped a measured 350-465s spike when a
+ * backgrounded client refocused. But the true revisit gap grows with roster
+ * size and passes 5 minutes at ~50,000 deployed shadows, so above that the
+ * clamp was silently discarding the difference and army DPS flat-lined:
+ * every shadow past ~50k contributed nothing. `scaleFactor` is
+ * rawRevisitSpan / revisitSpan, which reproduces the discarded attacks
+ * ARITHMETICALLY — same numbers, no extra iterations, clamp still intact.
+ * Below 50k it is exactly 1 and behaviour is unchanged.
+ *
+ * This is NOT the old reservoir-sampling scaleFactor that was removed: that one
+ * was O(N) per tick because it resampled the whole roster to build a sample.
+ * The rotation already visits each shadow exactly once per cycle; this only
+ * corrects the clock.
+ *
+ * Damage itself is delegated to combat-role-damage (the single formula) and
+ * applied via combat-boss-mob.applyDamageToBoss, which owns resistance and the
+ * per-tick cap. Aggregate boss damage for the whole slice is summed here and
+ * applied in ONE call — so the cap bounds the slice, not each shadow.
+ */
 const C = require('./constants');
 
 module.exports = {

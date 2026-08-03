@@ -1,3 +1,54 @@
+/**
+ * Dungeons — entry point and mixin assembly.
+ *
+ * ARCHITECTURE (read this before editing any Dungeons/*.js file)
+ * -------------------------------------------------------------
+ * This plugin is ONE class whose behaviour lives in 40 sibling files. Each of
+ * those files exports a plain object of methods; the Object.assign block at the
+ * bottom of this file merges them all onto Dungeons.prototype. Consequences a
+ * reader will otherwise get wrong:
+ *
+ *  - Every method in every sibling file shares ONE `this`. A field set in
+ *    init-state.js is read directly in combat-*.js. There are no per-module
+ *    namespaces and no encapsulation.
+ *  - A sibling file can call any other file's method as `this.method()` with no
+ *    import. Grep by method name, not by import graph — the import graph is
+ *    almost empty and tells you nothing.
+ *  - Name collisions across files SILENTLY win by assignment order (the order
+ *    in the Object.assign list below). Adding a method whose name already
+ *    exists elsewhere replaces it with no warning.
+ *  - `this.settings` is user-facing config; `constants.js` is tuning that is
+ *    not user-facing. Both are read all over the combat path.
+ *
+ * WHERE THINGS HAPPEN
+ *  - lifecycle.js ................ start()/stop(); the only place teardown belongs
+ *  - init-state.js ............... every `this.*` field is declared here first,
+ *                                  including the precomputed rank lookup tables
+ *  - spawn-core.js / spawn-wave-builders.js .. dungeon + boss + mob creation
+ *  - message-observer.js ......... Discord messages -> combat triggers
+ *  - combat-primitives.js ........ shared math: rank multipliers, HP factors,
+ *                                  handleUserDefeat
+ *  - combat-shadow-execution.js .. the shadow army's attack tick (rotation)
+ *  - combat-boss-mob.js .......... damage application, the boss damage cap
+ *  - combat-role-damage.js ....... the single damage formula everything uses
+ *  - difficulty-contributions.js . XP/essence batching + the WARFRONT aggregate
+ *  - player-flow.js .............. join/leave/attack for the human player
+ *  - player-sync-allocation.js ... how many shadows deploy where
+ *  - resurrection-completion.js .. dungeon completion, payouts, revives
+ *
+ * COMBAT TICK, end to end (the chain most edits touch):
+ *   corpse-tick-pipeline.js tick
+ *     -> combat-shadow-execution.processShadowAttacks()   (rotating slice)
+ *     -> combat-role-damage.calculateDamageBreakdown()    (the one formula)
+ *     -> combat-boss-mob.applyDamageToBoss()              (resist, then cap)
+ *     -> difficulty-contributions._processWarfrontTick()  (the mass battle)
+ *
+ * PERFORMANCE INVARIANTS — violating these has caused real, measured stalls:
+ *  - Per-tick cost must NOT scale with army size. Combat processes a fixed
+ *    TICK_BUDGET slice; the warfront reads an O(ranks) histogram.
+ *  - Never full-scan the ShadowArmy store (~281k records ≈ 45-50s).
+ *  - Message-driven work belongs on FluxDispatcher, not a DOM observer.
+ */
 const C = require('./constants');
 
 const Dungeons = class Dungeons {
