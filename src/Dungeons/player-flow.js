@@ -1,5 +1,47 @@
 module.exports = {
+  /**
+   * Force every dungeon's userParticipating flag to agree with
+   * settings.userActiveDungeon, which is the single source of truth for where
+   * the player is.
+   *
+   * Why this is needed: selectDungeon/leaveDungeon persist settings
+   * SYNCHRONOUSLY but write the dungeon record fire-and-forget
+   * (storageManager.saveDungeon(...).catch(...), four sites in this file). A
+   * reload landing between the two leaves the pair disagreeing, in either
+   * direction:
+   *   - dungeon says participating, settings says nobody -> "ghost" attacks
+   *     credited to a player who left, because processUserAttack only reads
+   *     the dungeon flag.
+   *   - settings names a dungeon whose record says not participating -> the
+   *     one-dungeon-at-a-time check in selectDungeon sees a live previous
+   *     dungeon and refuses every other join, locking the player out.
+   *
+   * Deriving the flag instead of trusting it fixes both without awaiting the
+   * IDB write on a click handler.
+   */
+  _reconcileParticipation() {
+    const active = this.settings.userActiveDungeon || null;
+    const alive = this.settings.userHP === undefined || this.settings.userHP > 0;
+    if (!(this.activeDungeons instanceof Map)) return;
+
+    for (const [key, dungeon] of this.activeDungeons) {
+      if (!dungeon) continue;
+      const shouldParticipate =
+        key === active && !dungeon.completed && !dungeon.failed && alive;
+      if (dungeon.userParticipating !== shouldParticipate) {
+        this.debugLog?.(
+          `Participation reconciled for ${key}: ${dungeon.userParticipating} -> ${shouldParticipate}`
+        );
+        dungeon.userParticipating = shouldParticipate;
+      }
+    }
+  },
+
   validateActiveDungeonStatus() {
+    // Run first so a stale flag is corrected even on the early-return paths
+    // below (the "no active dungeon" case is exactly the ghost-attack one).
+    this._reconcileParticipation();
+
     if (!this.settings.userActiveDungeon) {
       return true; // No active dungeon, status is valid
     }
@@ -13,8 +55,11 @@ module.exports = {
         `Active dungeon ${channelKey} no longer exists or is completed/failed. Clearing active status.`
       );
 
-      // Clear active dungeon reference
+      // Clear active dungeon reference, then re-derive flags against the now
+      // empty active slot so a lingering dungeon record cannot keep claiming
+      // the player.
       this.settings.userActiveDungeon = null;
+      this._reconcileParticipation();
 
       // NOTE: Do NOT delete corpse pile here — _processCorpsePile runs async after
       // completeDungeon sets completed=true, so deleting here would race and nuke it.

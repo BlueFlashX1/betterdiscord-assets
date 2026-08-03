@@ -509,6 +509,27 @@ module.exports = {
       // userCriticalHits / userAttackCount for a player who is already dead.
       // SHADOWS persist by design (see below); the player's own skills do not.
       if (dungeon.activeDots) dungeon.activeDots = {};
+
+      // DEATH PENALTY: forfeit the XP banked from this run's mob kills but not
+      // yet granted (it is paid out in a batch at completion —
+      // resurrection-completion.js _consumePendingDungeonMobXP). Previously a
+      // wipe cost nothing at all: you were ejected, your shadows finished the
+      // dungeon, and you still collected the full payout. Canon puts a price on
+      // dying in a gate; this is that price without permadeath — level, stats
+      // and army are all untouched, but the raid you died in earns you nothing.
+      // The boss/completion grants are separately gated on participation.
+      const forfeited = Math.max(0, Math.floor(Number(dungeon.pendingUserMobXP) || 0));
+      if (forfeited > 0) {
+        dungeon.pendingUserMobXP = 0;
+        dungeon.pendingUserMobKills = 0;
+        const batchKey = dungeon._xpBatchKey;
+        if (batchKey) {
+          this._pendingDungeonMobXPByBatch?.delete(batchKey);
+          this._pendingDungeonMobKillsByBatch?.delete(batchKey);
+        }
+        this.debugLog?.('XP', `Death penalty: forfeited ${forfeited} unbanked dungeon XP`);
+        this.showToast?.(`Defeated — ${forfeited.toLocaleString()} unclaimed XP lost.`, 'error');
+      }
     }
 
     // Clear active dungeon
