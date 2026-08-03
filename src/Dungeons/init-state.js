@@ -683,15 +683,16 @@ module.exports = {
       this._mobStatTable.vitality[i]     = 150 + i * 100 + Math.floor(i * i * 40);
     }
 
-    // Boss HP bonus — piecewise: polynomial early, logarithmic taper late (Step 2c)
+    // Boss HP bonus — uniform polynomial across every rank.
+    //
+    // This used to taper logarithmically above SSS (9051 + 2000*log2(i-6)),
+    // which grew only 1.57x across the top FIVE ranks (9051 -> 14221) and made
+    // SSS+ through Shadow Monarch feel interchangeable. The taper was also
+    // nearly irrelevant next to the vitality term it is added to, so removing
+    // it costs little and restores late-game separation.
     this._bossHPBonusTable = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      if (i <= 7) {
-        this._bossHPBonusTable[i] = Math.pow(i + 1, 2.5) * 50;
-      } else {
-        const sssValue = Math.pow(8, 2.5) * 50; // ~9051
-        this._bossHPBonusTable[i] = sssValue + 2000 * Math.log2(i - 6);
-      }
+      this._bossHPBonusTable[i] = Math.pow(i + 1, 2.5) * 50;
     }
 
     // Spawn phase boundaries (Step 3)

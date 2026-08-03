@@ -1,4 +1,5 @@
 const C = require('./constants');
+const { getRankIndex } = require('../shared/rank-utils');
 const Dungeons = { RANK_MULTIPLIERS: C.RANK_MULTIPLIERS };
 
 module.exports = {
@@ -815,6 +816,59 @@ module.exports = {
     }
   },
 
+  /**
+   * Mean rank index of the shadows deployed to this dungeon, minus the boss's
+   * rank index. 0 means "I sent an evenly-matched army"; +3 means the army
+   * averages three whole ranks above the boss.
+   *
+   * Memoized on shadowAllocation.updatedAt: reallocation is rare, combat ticks
+   * are not, and the roster can hold thousands of shadows.
+   *
+   * @returns {number} rank advantage, or 0 when the roster is unknown.
+   */
+  _getDeployedRankAdvantage(dungeon) {
+    const alloc = dungeon?.shadowAllocation;
+    const roster = alloc?.shadows;
+    if (!Array.isArray(roster) || roster.length === 0) return 0;
+
+    const key = `${dungeon.channelKey}:${alloc.updatedAt || 0}:${roster.length}`;
+    if (this._bossCapRankCache?.key === key) return this._bossCapRankCache.value;
+
+    let sum = 0;
+    for (const s of roster) sum += getRankIndex(s?.rank || 'E');
+    const avgShadowRank = sum / roster.length;
+    const bossRank = getRankIndex(dungeon?.boss?.rank || dungeon?.rank || 'E');
+
+    const value = avgShadowRank - bossRank;
+    this._bossCapRankCache = { key, value };
+    return value;
+  },
+
+  /**
+   * Per-tick boss damage cap as a fraction of max HP.
+   *
+   * At parity (advantage <= 0) this returns BOSS_DAMAGE_CAP_PCT, preserving the
+   * original guarantee that a boss survives at least 1/capPct ticks. Each full
+   * rank of advantage multiplies the cap by BOSS_DAMAGE_CAP_RANK_GROWTH, so an
+   * army that badly outclasses the gate eventually reaches 1.0 (uncapped) and
+   * CAN one-shot it — which is the intended reward for overwhelming force.
+   */
+  _getBossDamageCapPct(dungeon) {
+    const base = Number.isFinite(this.settings?.bossDamageCapPct)
+      ? this.settings.bossDamageCapPct
+      : (C.BOSS_DAMAGE_CAP_PCT || 0.06);
+    const growth = Number.isFinite(this.settings?.bossDamageCapRankGrowth)
+      ? this.settings.bossDamageCapRankGrowth
+      : (C.BOSS_DAMAGE_CAP_RANK_GROWTH || 1.6);
+
+    const advantage = this._getDeployedRankAdvantage(dungeon);
+    // Negative advantage is NOT punished further — under-ranked shadows already
+    // deal less damage and will not approach the cap anyway.
+    if (advantage <= 0) return base;
+
+    return Math.min(1, base * Math.pow(growth, advantage));
+  },
+
   async applyDamageToBoss(channelKey, damage, source, shadowId = null, isCritical = false, nowOverride = null) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
@@ -870,8 +924,13 @@ module.exports = {
       damage = Math.max(1, Math.floor(damage * (1 - bossResistance)));
     }
 
-    // 3) PER-HIT DAMAGE CAP — no single hit exceeds X% of boss maxHP
-    const capPct = C.BOSS_DAMAGE_CAP_PCT || 0.06;
+    // 3) PER-TICK DAMAGE CAP, scaled by how far the deployed army outranks the
+    //    boss. A flat cap made every boss die in the same ~17 ticks at every
+    //    rank, which erased the 219x effective-HP spread between E and Shadow
+    //    Monarch. Now: deploying same-rank (or weaker) shadows keeps the
+    //    original floor so bosses cannot be one-shot, while an overwhelming
+    //    army widens the cap until a one-shot becomes possible.
+    const capPct = this._getBossDamageCapPct(dungeon);
     const maxDamagePerHit = Math.max(1, Math.floor((dungeon.boss.maxHp || 1) * capPct));
     damage = Math.min(damage, maxDamagePerHit);
 

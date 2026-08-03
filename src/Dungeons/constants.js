@@ -123,7 +123,14 @@ module.exports = {
   },
 
   // 2) PER-HIT DAMAGE CAP — no single hit can exceed this % of boss maxHP
-  BOSS_DAMAGE_CAP_PCT: 0.06, // 6% of maxHP per hit (boss needs 17+ hits minimum)
+  // Cap at PARITY (deployed army averages the boss's own rank): 6% of maxHP per
+  // tick, so an evenly-matched fight still needs 17+ ticks and can't be one-shot.
+  BOSS_DAMAGE_CAP_PCT: 0.06,
+  // Each full rank the deployed army averages ABOVE the boss multiplies the cap.
+  // 1.6x/rank: +1 rank 9.6%, +2 15%, +3 25%, +4 39%, +5 63%, +6 100% (one-shot).
+  // Raise it to make overwhelming force pay off sooner; lower it to keep even
+  // lopsided fights lasting several ticks.
+  BOSS_DAMAGE_CAP_RANK_GROWTH: 1.6,
 
   // 3) BOSS PHASE SHIELD — brief invulnerability at HP thresholds
   BOSS_PHASE_THRESHOLDS: [0.75, 0.50, 0.25],

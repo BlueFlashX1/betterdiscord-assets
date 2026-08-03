@@ -685,6 +685,12 @@ module.exports = {
     // this function runs inside a synchronous transformShadowsBatch callback
     // and cannot await anything.
 
+    // Capture the pre-promotion rank BEFORE shadow.rank is reassigned below.
+    // _applyRankPromotionProgressCarry needs it to compute the OLD rank's
+    // XP-to-next-level and carry progress proportionally; the return value
+    // reports it as oldRank. Reading it after the mutation (or not declaring
+    // it at all) is what made every promotion throw ReferenceError.
+    const currentRank = shadow.rank;
     const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
     const oldXp = Math.max(0, Number(shadow.xp) || 0);
     // Capture pre-promotion power so the cached army total can be adjusted by
