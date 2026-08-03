@@ -64,7 +64,15 @@ module.exports = class AAPerfSentinel {
     this._loaf = null; // Long Animation Frames: browser-attributed script + style/layout
     this._slowEvents = new Map(); // Event Timing: slow interaction handlers
     this._storage = new Map(); // owner -> {writes, bytes, totalMs, maxMs} for localStorage
-    this._timerGauge = new Map(); // owner -> {created, cleared} (leak gauge)
+    // owner -> {created, cleared, iCreated, iCleared} (leak gauge).
+    // A timer is "retired" when it can no longer run: a one-shot timeout that
+    // FIRED, or any timer explicitly cleared. Both decrement, so `live` is a
+    // true outstanding count rather than created-minus-clearCalls.
+    this._timerGauge = new Map();
+    // id -> {owner, isInterval}. Drives retire-once accounting: the id is the
+    // only thing that ties a fire/clear back to the timer's CREATOR, so the
+    // owner is no longer guessed from whoever happened to call clearTimeout.
+    this._liveTimers = new Map();
     this._netGauge = new Map(); // owner -> {calls, totalMs} for fetch/XHR
     this._cssGauge = new Map(); // owner -> {added, removed} for BdApi.DOM styles
     this._listenerSites = new Map(); // "owner site on:type" -> add count
@@ -168,6 +176,24 @@ module.exports = class AAPerfSentinel {
     }
   }
 
+  /**
+   * Mark a timer as no longer outstanding — called when a one-shot fires and
+   * when any timer is explicitly cleared. Retire-once: the id is dropped from
+   * _liveTimers first, so clearTimeout() on an already-fired id (a very common
+   * defensive pattern) cannot double-count. Attribution comes from the
+   * creator's owner, recorded at creation, not from the caller's stack.
+   */
+  _retireTimer(id) {
+    if (id === null || id === undefined) return;
+    const rec = this._liveTimers.get(id);
+    if (!rec) return;
+    this._liveTimers.delete(id);
+    const g = this._timerGauge.get(rec.owner);
+    if (!g) return;
+    g.cleared++;
+    if (rec.isInterval) g.iCleared++;
+  }
+
   _wrapCallback(owner, kind, fn, site = "") {
     const self = this;
     return function (...args) {
@@ -187,23 +213,41 @@ module.exports = class AAPerfSentinel {
     const self = this;
     const o = this._originals;
 
-    const countCreated = (owner) => {
+    const countCreated = (owner, isInterval) => {
       if (owner === "discord/other") return;
-      const g = self._timerGauge.get(owner) || { created: 0, cleared: 0 };
+      const g = self._timerGauge.get(owner) || { created: 0, cleared: 0, iCreated: 0, iCleared: 0 };
       g.created++;
+      if (isInterval) g.iCreated++;
       self._timerGauge.set(owner, g);
     };
     window.setTimeout = function (fn, delay, ...args) {
       if (typeof fn !== "function") return o.setTimeout.call(window, fn, delay, ...args);
       const { owner, site } = self._ownerSiteFromStack();
-      countCreated(owner);
-      return o.setTimeout.call(window, self._wrapCallback(owner, "timer", fn, site), delay, ...args);
+      countCreated(owner, false);
+      const wrapped = self._wrapCallback(owner, "timer", fn, site);
+      // The id isn't known until setTimeout returns, so the callback reads it
+      // from a box. Safe: JS is single-threaded, so the callback cannot run
+      // before this function returns and fills the box in.
+      const box = { id: null };
+      const id = o.setTimeout.call(window, function (...a) {
+        // A fired one-shot is gone — retire it BEFORE the callback, so a
+        // callback that re-arms a new timer doesn't get tangled with this one.
+        self._retireTimer(box.id);
+        return wrapped.apply(this, a);
+      }, delay, ...args);
+      box.id = id;
+      if (owner !== "discord/other") self._liveTimers.set(id, { owner, isInterval: false });
+      return id;
     };
     window.setInterval = function (fn, delay, ...args) {
       if (typeof fn !== "function") return o.setInterval.call(window, fn, delay, ...args);
       const { owner, site } = self._ownerSiteFromStack();
-      countCreated(owner);
-      return o.setInterval.call(window, self._wrapCallback(owner, "timer", fn, site), delay, ...args);
+      countCreated(owner, true);
+      // Deliberately NOT retired on fire: an interval keeps running until it
+      // is explicitly cleared, so every tick still means it is outstanding.
+      const id = o.setInterval.call(window, self._wrapCallback(owner, "timer", fn, site), delay, ...args);
+      if (owner !== "discord/other") self._liveTimers.set(id, { owner, isInterval: true });
+      return id;
     };
     window.requestAnimationFrame = function (fn) {
       if (typeof fn !== "function") return o.requestAnimationFrame.call(window, fn);
@@ -669,23 +713,16 @@ module.exports = class AAPerfSentinel {
 
     o.clearInterval = window.clearInterval;
     o.clearTimeout = window.clearTimeout;
-    const countCleared = (owner) => {
-      const g = self._timerGauge.get(owner) || { created: 0, cleared: 0 };
-      g.cleared++;
-      self._timerGauge.set(owner, g);
-    };
+    // Both clears retire by id. clearTimeout/clearInterval are interchangeable
+    // in browsers, and _retireTimer reads the kind off the creation record, so
+    // either entry point accounts correctly. No _stopped guard needed: retiring
+    // is idempotent and keeps _liveTimers from retaining ids after teardown.
     window.clearInterval = function (id) {
-      if (!self._stopped) {
-        const owner = self._ownerFromStack();
-        if (owner !== "discord/other") countCleared(owner);
-      }
+      self._retireTimer(id);
       return o.clearInterval.call(window, id);
     };
     window.clearTimeout = function (id) {
-      if (!self._stopped) {
-        const owner = self._ownerFromStack();
-        if (owner !== "discord/other") countCleared(owner);
-      }
+      self._retireTimer(id);
       return o.clearTimeout.call(window, id);
     };
 
@@ -1250,17 +1287,26 @@ module.exports = class AAPerfSentinel {
     // Leak gauges — unbounded growth in either column is the signal.
     const gaugeRows = [];
     for (const [owner, g] of this._timerGauge) {
-      gaugeRows.push({ owner, timers: `${g.created}/${g.cleared}`, live: g.created - g.cleared });
+      gaugeRows.push({
+        owner,
+        timers: `${g.created}/${g.cleared}`,
+        live: g.created - g.cleared,
+        liveIv: (g.iCreated || 0) - (g.iCleared || 0),
+      });
     }
     if (gaugeRows.length > 0) {
-      lines.push("── LEAK GAUGES (created/cleared — steadily growing 'live' = leak) ──");
-      lines.push("plugin                    timers made/cleared   live   listeners add/remove   css add/remove   net calls");
+      lines.push("── LEAK GAUGES ──");
+      lines.push("  'live' = timers still able to run: one-shots that fired are retired, so a");
+      lines.push("  growing 'live' IS a real signal. 'iv' is how many of those are setIntervals.");
+      lines.push("  Listener add/remove CANNOT see a listener die with its GC'd DOM node, so");
+      lines.push("  'adds >> removes' is churn until the heap FLOOR trend below confirms a leak.");
+      lines.push("plugin                    timers made/cleared   live     iv   listeners add/remove   css add/remove   net calls");
       for (const r of gaugeRows.sort((a, b) => b.live - a.live).slice(0, 20)) {
         const d = this._domGauge.get(r.owner);
         const c = this._cssGauge.get(r.owner);
         const n = this._netGauge.get(r.owner);
         lines.push(
-          `${r.owner.padEnd(25)} ${r.timers.padStart(17)} ${String(r.live).padStart(6)}   ${(d ? `${d.adds}/${d.removes}` : "-").padStart(18)}   ${(c ? `${c.added}/${c.removed}` : "-").padStart(14)}   ${(n ? `${n.calls} (${this._fmtMs(n.totalMs)}ms)` : "-").padStart(9)}`
+          `${r.owner.padEnd(25)} ${r.timers.padStart(17)} ${String(r.live).padStart(6)} ${String(r.liveIv).padStart(4)}   ${(d ? `${d.adds}/${d.removes}` : "-").padStart(18)}   ${(c ? `${c.added}/${c.removed}` : "-").padStart(14)}   ${(n ? `${n.calls} (${this._fmtMs(n.totalMs)}ms)` : "-").padStart(9)}`
         );
       }
       lines.push("");
@@ -1680,6 +1726,10 @@ module.exports = class AAPerfSentinel {
     this._stopped = true;
     const o = this._originals;
     if (!o) return;
+
+    // Outstanding ids can never be retired once the wrappers are gone — drop
+    // them so the map doesn't pin ids for the rest of the session.
+    this._liveTimers.clear();
 
     // Restore globals. Wrapped callbacks still registered elsewhere check
     // _stopped and pass straight through with zero measurement.
