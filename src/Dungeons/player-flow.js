@@ -677,6 +677,30 @@ module.exports = {
     } catch (_) { /* auto-cast must never break deploy */ }
   },
 
+  /**
+   * Apply a crit that was granted from OUTSIDE the damage roll.
+   *
+   * applyEnhancedCritMultiplier is a RE-BASER: it divides by `multiplier` first
+   * because calculateDamageBreakdown has already done `damage *= critMultiplier`
+   * for a natural crit. Handing it raw damage therefore divides the hit instead
+   * of multiplying it — and when critDamageBonus is 0 (any player without the
+   * skill-tree node) it early-returns the input untouched, so the crit did
+   * literally nothing. That silently no-op'd the CriticalHit plugin bonus, the
+   * skill-tree passive crit, Mutilation's forced crit and the Shadow Monarch
+   * opening strike.
+   *
+   * Baking the multiplier in first puts the input in the form the re-baser
+   * expects, so bonus=0 yields a clean `multiplier`x hit and bonus>0 scales it
+   * the same way a natural crit scales.
+   */
+  _applyExternalCrit(damage, multiplier, critDamageBonus) {
+    const base = Math.max(0, Number(damage) || 0);
+    if (base <= 0) return 0;
+    const mult = Number(multiplier);
+    if (!Number.isFinite(mult) || mult <= 1) return Math.max(1, Math.floor(base));
+    return this.applyEnhancedCritMultiplier(base * mult, mult, critDamageBonus);
+  },
+
   _resolveUserBossDamage(dungeon, options = {}) {
     const {
       messageElement = null,
@@ -704,17 +728,29 @@ module.exports = {
     // forceCritical: lore-accurate — Mutilation's every hit is a guaranteed critical
     let isCritical = forceCritical || Boolean(breakdown.wasCrit);
 
-    if (isCritical && critDamageBonus > 0) {
-      const critMult = forceCritical ? 2.5 : (breakdown.critMultiplier || 1);
-      damage = this.applyEnhancedCritMultiplier(damage, critMult, critDamageBonus);
+    // NATURAL crit only: breakdown.damage already carries breakdown.critMultiplier,
+    // so this re-bases it onto the enhanced multiplier. Using forceCritical's 2.5
+    // here divided by the wrong basis whenever a forced crit coincided with a
+    // natural one.
+    if (breakdown.wasCrit && critDamageBonus > 0) {
+      damage = this.applyEnhancedCritMultiplier(damage, breakdown.critMultiplier || 1, critDamageBonus);
+    }
+
+    // Forced crit (e.g. Mutilation) on a hit that did NOT roll a natural crit:
+    // the damage is raw, so the multiplier has to be baked in, not divided out.
+    if (forceCritical && !breakdown.wasCrit) {
+      damage = this._applyExternalCrit(damage, 2.5, critDamageBonus);
     }
 
     const pluginCrit = Boolean(messageElement && this.checkCriticalHit(messageElement));
     const passiveCrit = !forceCritical && !pluginCrit && !isCritical && Boolean(this.rollSkillTreeCombatCrit?.());
 
-    if (pluginCrit || passiveCrit) {
+    // One crit per hit: only promote a non-crit. Previously this re-entered on a
+    // hit that had ALREADY crit, stacking a second multiplier — invisible while
+    // the call was a no-op, but a silent 2x on top of 2.5x once it works.
+    if ((pluginCrit || passiveCrit) && !isCritical) {
       isCritical = true;
-      damage = this.applyEnhancedCritMultiplier(damage, 2.0, critDamageBonus);
+      damage = this._applyExternalCrit(damage, 2.0, critDamageBonus);
     }
 
     // SHADOW MONARCH PERK (Dagger Arts -> Shadow Edge rider): the Monarch's
@@ -727,7 +763,8 @@ module.exports = {
         this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
       if (!isCritical) {
         isCritical = true;
-        damage = this.applyEnhancedCritMultiplier(damage, 2.5, critDamageBonus);
+        // Externally granted, so the damage here is raw — bake the multiplier in.
+        damage = this._applyExternalCrit(damage, 2.5, critDamageBonus);
       }
       dungeon._smFirstStrikeDone = true;
     }
