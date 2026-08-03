@@ -150,11 +150,31 @@ module.exports = {
     this.toasts = null;
 
     // Rank scaling — single source of truth for combat damage + mob/boss/shadow HP
+    //
+    // Damage multiplier is clamp((powerStep^gap)^damageExponent, min, max) where
+    // gap = attackerRankIndex - defenderRankIndex. Applies symmetrically to every
+    // matchup: shadow→mob, mob→shadow, and the player (combat-role-damage.js:516
+    // is the single call site).
+    //
+    // damageMax 3.25 -> 8.0 (2026-08-03): the old ceiling stopped differentiating
+    // at just +4.6 ranks, so a Shadow Monarch shadow hit an E mob with exactly the
+    // same rank bonus as an A-rank shadow would — every gap from +5 to +12
+    // collapsed to one number. 8.0 pushes that out to +8.2. The rank ladder is 13
+    // wide, so removing the cap entirely would need ~21.4; 8.0 is deliberately
+    // short of that, leaving the extreme end compressed rather than explosive
+    // (stats already carry a ~644x spread from E to Shadow Monarch, so the rank
+    // multiplier is the seasoning, not the meal).
+    //
+    // damageMin 0.35 is intentionally NOT lowered here — it is the floor that
+    // keeps under-ranked shadows contributing instead of being dead weight. Note
+    // it is generous: an E shadow still deals 35% of its damage to a Shadow
+    // Monarch target. Lower it toward ~0.15 if under-ranked deployments should
+    // feel genuinely futile.
     this.rankScaling = {
       powerStep: 1.35,
       damageExponent: 0.85,
       damageMin: 0.35,
-      damageMax: 3.25,
+      damageMax: 8.0,
       mobHpStep: 1.18,
       mobHpMaxFactor: 12,
       bossHpStep: 1.3,

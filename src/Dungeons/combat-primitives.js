@@ -685,9 +685,13 @@ module.exports = {
   },
 
   getRankDamageMultiplier(attackerRank, defenderRank) {
-    const exponent = this.rankScaling?.damageExponent ?? 0.9;
-    const min = this.rankScaling?.damageMin ?? 0.25;
-    const max = this.rankScaling?.damageMax ?? 4.0;
+    // Fallbacks MUST mirror init-state.js's rankScaling block. They previously
+    // read 0.9 / 0.25 / 4.0 against live values of 0.85 / 0.35 / 3.25 — reading
+    // this function alone gave the wrong curve, and any path that reached it
+    // before rankScaling was initialised would silently use a different one.
+    const exponent = this.rankScaling?.damageExponent ?? 0.85;
+    const min = this.rankScaling?.damageMin ?? 0.35;
+    const max = this.rankScaling?.damageMax ?? 8.0;
     const list = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : ['E'];
     const key = `${exponent}|${min}|${max}|${this.rankScaling?.powerStep ?? 1.35}|${list.join(
       ','
