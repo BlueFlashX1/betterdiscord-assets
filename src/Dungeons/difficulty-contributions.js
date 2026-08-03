@@ -1,4 +1,5 @@
 const SLEvents = require('../shared/event-bus');
+const C = require('./constants');
 
 module.exports = {
   _resolveDungeonXPBatchKey(channelKey, dungeonLike = null) {
@@ -177,8 +178,6 @@ module.exports = {
 
       const rateRaw = Number(this.settings?.warfrontKillRatePerShadow);
       const rate = Number.isFinite(rateRaw) && rateRaw > 0 ? Math.min(rateRaw, 1) : 0.015;
-      const capRaw = Number(this.settings?.warfrontMaxKillsPerTick);
-      const perTickCap = Number.isFinite(capRaw) && capRaw >= 100 ? Math.floor(capRaw) : 5000;
 
       // RANK-AWARE WAR MATH (lore: "it takes 10 C-Ranks to possibly overpower
       // a B-Rank" — one rank step ≈ 10:1 in mass battle; at 2+ ranks the gap is
@@ -195,14 +194,62 @@ module.exports = {
       let effPower = 0;
       let casualtyWeight = 0;
       const surplusShare = armySize > 0 ? surplus / armySize : 0;
+      // Mean effective rank of the engaged surplus, accumulated in the same
+      // pass (no extra iteration) — it sizes the per-tick kill ceiling below.
+      let rankWeightedSum = 0;
+      let engagedCount = 0;
       for (const effIdxKey in hist) {
         const count = hist[effIdxKey] * surplusShare; // surplus slice of each tier
         if (!(count > 0)) continue;
-        const diff = parseFloat(effIdxKey) - hostIdx; // effective idx (rank + grade bump)
+        const effIdx = parseFloat(effIdxKey);
+        const diff = effIdx - hostIdx; // effective idx (rank + grade bump)
         effPower += count * this.clampNumber(Math.pow(10, diff), 0.001, 100);
         // Inverse for casualties: fodder dies en masse to a higher host.
         casualtyWeight += count * this.clampNumber(Math.pow(10, -diff), 0.001, 100);
+        rankWeightedSum += count * effIdx;
+        engagedCount += count;
       }
+
+      // PER-TICK KILL CEILING — a FRACTION OF THE REMAINING HOST, not a flat
+      // number.
+      //
+      // It used to be a flat 5,000/tick, which saturated almost immediately:
+      // at one rank above the host only ~33k shadows were needed to reach it,
+      // at two ranks only ~3.3k. Past that the entire rest of the army
+      // contributed nothing, and every gate took the same 200 ticks to clear
+      // regardless of its size — a 1,000,000-reserve Shadow Monarch host and a
+      // 50,000-reserve S-rank host annihilated at an identical rate.
+      //
+      // Scaling by remaining reserves makes the mechanic SCALE-FREE: the war
+      // lasts a bounded number of ticks whatever the host's size, and whatever
+      // the army's size. That is the property that survives the unbounded-army
+      // future (DKB guides/projects/shadowarmy-aggregate-tail-design.md) —
+      // adding shadows shortens the approach to the ceiling but can never
+      // collapse a war into a single tick.
+      //
+      // Rank superiority raises the ceiling on the same 1.6x/rank curve the
+      // boss damage cap uses, so overwhelming force annihilates fast without a
+      // special case. The old flat value survives as a FLOOR so small hosts are
+      // not slowed down.
+      const hostFractionRaw = Number(this.settings?.warfrontHostFractionPerTick);
+      const hostFraction = Number.isFinite(hostFractionRaw) && hostFractionRaw > 0
+        ? Math.min(hostFractionRaw, 1)
+        : (C.WARFRONT_HOST_FRACTION_PER_TICK || 0.02);
+      const capFloorRaw = Number(this.settings?.warfrontMaxKillsPerTick);
+      const capFloor = Number.isFinite(capFloorRaw) && capFloorRaw >= 100
+        ? Math.floor(capFloorRaw)
+        : (C.WARFRONT_MIN_KILLS_PER_TICK || 5000);
+      const meanEffRank = engagedCount > 0 ? rankWeightedSum / engagedCount : hostIdx;
+      const rankEdge = Math.max(0, meanEffRank - hostIdx);
+      const edgeMult = this.clampNumber(
+        Math.pow(C.WARFRONT_CAP_RANK_GROWTH || 1.6, rankEdge),
+        1,
+        C.WARFRONT_CAP_RANK_MAX || 8
+      );
+      const perTickCap = Math.max(
+        capFloor,
+        Math.floor(dungeon.war.reserves * hostFraction * edgeMult)
+      );
       // The Monarch takes the field: participating amplifies the whole war
       // effort (same lever as the boss-damage commander's presence bonus).
       if (dungeon.userParticipating) {

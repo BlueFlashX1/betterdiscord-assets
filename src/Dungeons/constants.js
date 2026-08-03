@@ -292,6 +292,23 @@ module.exports = {
   // revisit triggers, at DevKnowledgeBase guides/projects/
   // shadowarmy-aggregate-tail-design.md. Read it BEFORE raising this past 1M.
   DEPLOY_CEILING_ABSOLUTE: 500000,
+  // WARFRONT per-tick kill ceiling (difficulty-contributions.js).
+  // Expressed as a fraction of the host's REMAINING reserves rather than a flat
+  // number, so the mass battle is scale-free: a 1,000,000-reserve gate and a
+  // 50,000-reserve gate both take a bounded number of ticks, and an unbounded
+  // army can approach the ceiling faster but never collapse a war into one
+  // tick. 0.02 => ~50 ticks minimum at rank parity.
+  WARFRONT_HOST_FRACTION_PER_TICK: 0.02,
+  // Floor, so small hosts are not slowed down by the fraction. This is the old
+  // flat cap; settings.warfrontMaxKillsPerTick still overrides it and now acts
+  // as the FLOOR rather than an absolute ceiling.
+  WARFRONT_MIN_KILLS_PER_TICK: 5000,
+  // Rank superiority raises the ceiling on the same curve as the boss damage
+  // cap: 1.6x per mean effective rank above the host, capped at 8x
+  // (~6 ticks to annihilate — "functional annihilation" territory).
+  WARFRONT_CAP_RANK_GROWTH: 1.6,
+  WARFRONT_CAP_RANK_MAX: 8,
+
   // Upper bound on the rotation catch-up multiplier (combat-shadow-execution.js).
   // 64 covers a ~3.2M-shadow roster at the default 3s tick / 500 budget before
   // damage starts being truncated again; it exists only so a pathological
