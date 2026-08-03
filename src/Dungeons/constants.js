@@ -285,6 +285,12 @@ module.exports = {
   // Still below the top mob capacities (Monarch+ wants 750k, Shadow Monarch
   // 1.5M). Those remain deliberately unreachable; raise this only alongside a
   // heap measurement at the new size.
+  //
+  // PAST ~1M THIS APPROACH STOPS WORKING — every deployed shadow is a retained
+  // object, so memory, not CPU, ends it. The design for an unbounded army
+  // (bounded head of real objects + O(ranks) aggregate tail) is drafted, with
+  // revisit triggers, at DevKnowledgeBase guides/projects/
+  // shadowarmy-aggregate-tail-design.md. Read it BEFORE raising this past 1M.
   DEPLOY_CEILING_ABSOLUTE: 500000,
   // Upper bound on the rotation catch-up multiplier (combat-shadow-execution.js).
   // 64 covers a ~3.2M-shadow roster at the default 3s tick / 500 budget before
