@@ -293,6 +293,14 @@ module.exports = {
 
   getRankRequirements() {
     // Rank requirements: [level, achievements required, description]
+    //
+    // The level-2000 Shadow Monarch ceiling is INTENTIONAL — an aspirational
+    // prestige cap, not a pacing target. Do not compress these to "make the
+    // endgame reachable": the level milestones in achievement-definitions.js
+    // run to 2000 and _routeShadowMonarchXp freezes leveling once the rank is
+    // held, so lowering the SM threshold strands every achievement gated above
+    // the new value. Pace the endgame through XP REWARDS (see rankScaledXP in
+    // Dungeons/resurrection-completion.js) rather than through these numbers.
     return {
       E: { level: 1, achievements: 0, name: 'E-Rank Hunter', next: 'D' },
       D: { level: 10, achievements: 2, name: 'D-Rank Hunter', next: 'C' },

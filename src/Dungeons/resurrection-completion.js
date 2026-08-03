@@ -1,4 +1,20 @@
 const SLEvents = require('../shared/event-bus');
+const DungeonConstants = require('./constants');
+
+/**
+ * XP for finishing rank-R content, scaled by that rank's difficulty multiplier
+ * rather than linearly by rank index.
+ *
+ * The old `base + index * step` form paid a Shadow Monarch clear only 7x an
+ * E-rank clear while the boss carried ~92x the HP, so high-rank dungeons were
+ * strictly worse XP per unit of effort. RANK_MULTIPLIERS is the same curve the
+ * combat side already uses for difficulty (E 1x -> Shadow Monarch 61x), so
+ * reward now tracks difficulty on one shared scale.
+ */
+function rankScaledXP(base, rank) {
+  const mult = DungeonConstants.RANK_MULTIPLIERS?.[rank];
+  return Math.floor(base * (Number.isFinite(mult) && mult > 0 ? mult : 1));
+}
 
 module.exports = {
   getResurrectionCost(shadowRank) {
@@ -387,11 +403,10 @@ module.exports = {
 
     // User XP calculation + early boss ARISE UI
     phaseStartAt = Date.now();
-    const rankIndex = this.getRankIndexValue(snap.rank);
 
     if (reason === 'complete') {
       if (this.soloLevelingStats) {
-        const completionXP = 100 + rankIndex * 50;
+        const completionXP = rankScaledXP(100, snap.rank);
         if (
           this._grantUserDungeonXP(completionXP, 'dungeon_complete', {
             channelKey,
@@ -426,7 +441,7 @@ module.exports = {
         );
         this.showToast(`${snap.name}: No XP earned — no combat contribution.`, 'info');
       } else if (this.soloLevelingStats) {
-        const bossXP = 200 + rankIndex * 100;
+        const bossXP = rankScaledXP(200, snap.rank);
         if (
           this._grantUserDungeonXP(bossXP, 'dungeon_boss_kill', {
             channelKey,
