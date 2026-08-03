@@ -570,6 +570,36 @@ module.exports = {
     this._deployAssignedUnionValid = false;
   },
 
+  /**
+   * How many shadows this dungeon may draw: the army minus the standing reserve,
+   * minus what the OTHER active dungeons actually hold right now.
+   *
+   * @param {string} channelKey    dungeon being sized (excluded from the tally)
+   * @param {number} armyCount     total shadows known to the allocation cache
+   * @param {number} reserveFrac   fraction held back army-wide (e.g. 0.25)
+   * @returns {number} cap, never below MIN_DEPLOY_FLOOR
+   */
+  _computeArmyAvailableCap(channelKey, armyCount, reserveFrac) {
+    const MIN_DEPLOY_FLOOR = 24;
+    const pool = Math.floor(Math.max(0, armyCount) * (1 - reserveFrac));
+
+    let committedElsewhere = 0;
+    const active = this.activeDungeons;
+    if (active && typeof active[Symbol.iterator] === 'function') {
+      for (const [otherKey, other] of active) {
+        if (otherKey === channelKey) continue;
+        if (!other || other.completed || other.failed || !other.shadowsDeployed) continue;
+        // What it actually holds — NOT what its rank would like to have.
+        const held = Number(other.shadowAllocation?.shadows?.length)
+          || Number(other.boss?.expectedShadowCount)
+          || 0;
+        if (Number.isFinite(held) && held > 0) committedElsewhere += held;
+      }
+    }
+
+    return Math.max(MIN_DEPLOY_FLOOR, pool - committedElsewhere);
+  },
+
   _buildDeployStarterAllocation(channelKey, dungeon) {
     // Deploy target scales with mob capacity (rank-rebalance, 2026-06-08; table +
     // ceiling centralized + raised, wave 9, 2026-07-12):
@@ -604,20 +634,28 @@ module.exports = {
       ? this.clampNumber(scaleRaw, 0.1, 5)
       : 1;
 
-    const deployedDungeonCount = Math.max(
-      1,
-      Array.from(this.activeDungeons.values()).filter(
-        (d) => d && !d.completed && !d.failed && d.shadowsDeployed
-      ).length
-    );
     const knownShadowCount = Number.isFinite(this.allocationCache?.count)
       ? Math.max(0, Math.floor(this.allocationCache.count))
       : 0;
 
-    // Available army: total army minus reserve, split equally across active dungeons.
-    // e.g. 53k army, 1 dungeon, 25% reserve → armyAvailableCap = 39,750
+    // Available army: total minus reserve, minus what the OTHER active dungeons
+    // have actually committed.
+    //
+    // This used to be an equal split by dungeon COUNT, which silently starved
+    // high-rank gates: a dungeon only ever takes min(want, cap), so four
+    // trivial dungeons each held a full 1/N reservation while using ~2% of it,
+    // and the share they never touched was not offered to anyone. With a 281k
+    // army, four low-rank dungeons alongside one Shadow Monarch dungeon
+    // deployed 44,850 of 210,750 available shadows — the Shadow Monarch gate
+    // ran at 42,150 instead of 200,000 while 165,900 shadows sat idle. Opening
+    // a low-rank dungeon actively weakened the hard one, which is backwards.
+    //
+    // Charging only what others really hold means small dungeons cost what they
+    // use. This is first-come between two genuinely large dungeons — the second
+    // gets the remainder — which is still strictly better than starving both,
+    // and the periodic rebalance re-runs this as allocations change.
     const armyAvailableCap = knownShadowCount > 0
-      ? Math.max(24, Math.floor((knownShadowCount * (1 - RESERVE_FRACTION)) / deployedDungeonCount))
+      ? this._computeArmyAvailableCap(channelKey, knownShadowCount, RESERVE_FRACTION)
       : deployCeiling;
 
     let targetCount;
