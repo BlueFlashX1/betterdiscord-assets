@@ -266,8 +266,13 @@ module.exports = {
         const rotationTicks = previewAssignedLen > 0
           ? Math.ceil(previewAssignedLen / TICK_BUDGET)
           : 1;
+        // rawRevisitSpan is the TRUE inter-visit gap; revisitSpan is what the
+        // attack loop is allowed to iterate. They diverge once the roster passes
+        // ~(cap / activeInterval) * TICK_BUDGET shadows (~50k at 3s / 500), and
+        // the difference is made up arithmetically via scaleFactor below.
+        const rawRevisitSpan = rotationTicks * cyclesMultiplier * activeInterval;
         const revisitSpan = Math.min(
-          rotationTicks * cyclesMultiplier * activeInterval,
+          rawRevisitSpan,
           5 * 60 * 1000  // 5-minute safety cap
         );
 
@@ -343,9 +348,30 @@ module.exports = {
 
         const maxShadowsToProcess = combatReadyShadows.length;
 
-        // scaleFactor = 1: exact damage, no approximation.
-        // Each shadow deals damage for its real elapsed time; no scaling needed.
-        const scaleFactor = 1;
+        // ROTATION CATCH-UP (2026-08-03). Each shadow is credited at most
+        // revisitSpan of elapsed time, but its true inter-visit gap is
+        // rawRevisitSpan. Below ~50k deployed shadows these are equal and this
+        // is exactly 1 — the existing behaviour, unchanged.
+        //
+        // Above that the 5-minute clamp truncated the difference and threw it
+        // away: at 200k deployed each shadow was credited 5 of every 20 minutes,
+        // so army DPS flat-lined near 50k and every shadow past it was
+        // decorative. Raising the deploy ceiling alone could not have fixed
+        // that — the damage was being discarded downstream of the roster size.
+        //
+        // The clamp itself stays. It bounds the attack LOOP, which is what
+        // caused the measured 350-465s refocus spikes. Damage is arithmetic, so
+        // multiplying the result reproduces the discarded attacks without
+        // iterating them: same numbers, same fixed 500-shadow-per-tick cost.
+        //
+        // This is NOT the old reservoir-sampling scaleFactor. That was expensive
+        // because it walked every assigned shadow each tick to build a sample;
+        // the rotation already visits each shadow exactly once per cycle, and
+        // this only corrects the clock.
+        const catchUpScale = revisitSpan > 0 ? rawRevisitSpan / revisitSpan : 1;
+        const scaleFactor = this.settings?.rotationCatchUpScaling === false
+          ? 1
+          : this.clampNumber(catchUpScale, 1, C.ROTATION_CATCHUP_SCALE_MAX || 64);
 
         // ARMY POWER (2026-07-14): a deliberate, tunable flat multiplier on all
         // shadow damage (boss AND mobs) so the shadow horde hits hard — the

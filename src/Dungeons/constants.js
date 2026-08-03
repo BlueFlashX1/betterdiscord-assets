@@ -269,6 +269,29 @@ module.exports = {
   // clamped to 50000 -- no top-end differentiation). 200000 sits just under a typical
   // late-game army's available-cap headroom (75% of army, split across active dungeons),
   // so it only governs the truly extreme ranks, not normal play.
-  DEPLOY_CEILING_ABSOLUTE: 200000,
+  // Raised 200000 -> 500000 (2026-08-03), now that army DPS actually scales past
+  // ~50k deployed (see ROTATION_CATCHUP_SCALE_MAX below — before that fix every
+  // shadow beyond ~50k was decorative, so a higher ceiling would have bought
+  // memory cost and no damage).
+  //
+  // What this limit is actually for: MEMORY, not CPU. Combat processes a fixed
+  // TICK_BUDGET slice per tick regardless of roster size, but every deployed
+  // shadow is retained as a full object in shadowAllocations. Rough cost is
+  // ~300-600 bytes each: ~57-114 MB at 200k, ~143-286 MB at 500k, ~286-572 MB
+  // at 1M. Measured heap is 367 MB typical / 880 MB peak against a 4096 MB
+  // limit, so 500k is comfortable and 1M+ is not — re-measure the heap FLOOR in
+  // AAPerfSentinel before going higher.
+  //
+  // Still below the top mob capacities (Monarch+ wants 750k, Shadow Monarch
+  // 1.5M). Those remain deliberately unreachable; raise this only alongside a
+  // heap measurement at the new size.
+  DEPLOY_CEILING_ABSOLUTE: 500000,
+  // Upper bound on the rotation catch-up multiplier (combat-shadow-execution.js).
+  // 64 covers a ~3.2M-shadow roster at the default 3s tick / 500 budget before
+  // damage starts being truncated again; it exists only so a pathological
+  // rotationTicks value can't produce an absurd damage spike. Set
+  // settings.rotationCatchUpScaling = false to disable the correction entirely
+  // and return to the pre-2026-08-03 behaviour (army DPS caps near 50k deployed).
+  ROTATION_CATCHUP_SCALE_MAX: 64,
   ARISE_SVG: require('../shared/arise-svg').ARISE_SVG
 };
