@@ -763,11 +763,39 @@ module.exports = {
     }
   },
 
-  async attackMobs(channelKey, source) {
+  /**
+   * Externally-granted crit for ONE user attack, resolved once and reused for
+   * every mob in the swing.
+   *
+   * The boss path (_resolveUserBossDamage) applies the CriticalHit-plugin crit
+   * and the skill-tree passive crit on top of the natural roll; the mob path
+   * never did, so equipment crit-damage, the passive, and the plugin bonus were
+   * all inert for the whole mob phase. Natural per-mob crits already happen
+   * inside calculateUserDamage — this only adds the external layer.
+   *
+   * @returns {{isCritical: boolean, apply: (damage:number)=>number}}
+   */
+  _resolveUserMobCrit(messageElement = null) {
+    const critDamageBonus = this.getUserCritDamageBonus?.() || 0;
+    const pluginCrit = Boolean(messageElement && this.checkCriticalHit?.(messageElement));
+    const passiveCrit = !pluginCrit && Boolean(this.rollSkillTreeCombatCrit?.());
+    if (!pluginCrit && !passiveCrit) {
+      return { isCritical: false, apply: (damage) => damage };
+    }
+    return {
+      isCritical: true,
+      apply: (damage) => this._applyExternalCrit(damage, 2.0, critDamageBonus),
+    };
+  },
+
+  async attackMobs(channelKey, source, messageElement = null) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon || !dungeon.mobs?.activeMobs?.length) return;
 
     if (source === 'user') {
+      // Resolved ONCE per swing, not per mob: the plugin/passive crit belongs to
+      // the attack, not to each target.
+      const userCrit = this._resolveUserMobCrit(messageElement);
       // User attacks mobs
       dungeon.mobs.activeMobs
         .filter((mob) => mob && mob.hp > 0)
@@ -779,7 +807,7 @@ module.exports = {
             vitality: mob.vitality,
           };
 
-          const userDamage = this.calculateUserDamage(mobStats, mob.rank);
+          const userDamage = userCrit.apply(this.calculateUserDamage(mobStats, mob.rank));
           const mobId = this.getEnemyKey(mob, 'mob');
           const adjustedUserDamage = this.applyStatusAdjustedIncomingDamage(
             channelKey,

@@ -588,6 +588,14 @@ module.exports = {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
 
+    // Completed/failed dungeons deliberately linger in activeDungeons while the
+    // corpse pile finishes processing (see validateActiveDungeonStatus). Without
+    // this guard a chat message during that window still resolved an attack —
+    // and once the boss was dead it fell through to attackMobs, crediting kills
+    // against a dungeon already marked complete. castDungeonCombatSkill has
+    // carried the same guard all along; the chat-attack path did not.
+    if (dungeon.completed || dungeon.failed || dungeon._completing) return;
+
     // User must explicitly deploy (DEPLOY SHADOWS button) AND join (JOIN button)
     // before messages trigger attacks. No auto-deploy or auto-join on message.
     if (!dungeon.shadowsDeployed || !dungeon.userParticipating) return;
@@ -609,7 +617,7 @@ module.exports = {
         );
       }
     } else {
-      await this.attackMobs(channelKey, 'user');
+      await this.attackMobs(channelKey, 'user', messageElement);
     }
   },
 

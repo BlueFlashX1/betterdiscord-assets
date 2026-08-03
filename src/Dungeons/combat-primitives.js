@@ -501,6 +501,14 @@ module.exports = {
     // Remove user from current dungeon participation
     if (dungeon) {
       dungeon.userParticipating = false;
+      // Player-cast damage-over-time effects must die with the player. The DOT
+      // tick loop (player-flow.js _processDotTicks) has no participation gate —
+      // it is driven by the dungeon combat tick, which only skips
+      // completed/failed dungeons — so a DOT left standing here kept dealing
+      // damage as source 'user' and kept incrementing userDamageDealt /
+      // userCriticalHits / userAttackCount for a player who is already dead.
+      // SHADOWS persist by design (see below); the player's own skills do not.
+      if (dungeon.activeDots) dungeon.activeDots = {};
     }
 
     // Clear active dungeon
