@@ -198,6 +198,7 @@ const FORUM_THREAD_BODY_ATTR = "data-sl-in-forum-or-thread";
 const DM_BODY_ATTR = "data-sl-in-dm";
 const HOME_BODY_ATTR = "data-sl-in-home";
 const READONLY_BODY_ATTR = "data-sl-channel-readonly";
+const CHAT_LAYER_BODY_ATTR = "data-sl-chat-layer";
 
 // Memoized SEND_MESSAGES permission bit — the constants module never
 // changes within a client session. Resolved lazily on first readonly check.
@@ -448,6 +449,86 @@ function installVoiceChatBodyAttr() {
   };
 }
 
+// ── Chat-layer (thread/forum overlay) body attribute ──────────────
+//
+// Replaces `body:has(div[class^="chatLayerWrapper_"])` in
+// SoloLevelingTheme/modules/guild.css — the only :has() in the suite whose
+// subject is <body>, which forces the style engine to re-test <body> on DOM
+// mutations anywhere in the document. Every other :has() here is anchored on
+// a narrow subject ([role="dialog"], div[class^="layer_"]) and is left alone.
+//
+// A prior audit (DKB bd-has-selector-to-data-attr-tagging) recorded this rule
+// as un-convertible because the URL stays on the text channel, so CHANNEL_SELECT
+// never fires. That rules out a dispatcher trigger — but not a childList
+// observer on the layer container, which is what this uses. Layers mount
+// rarely (unlike the message list), so observing them is cheap.
+
+let _chatLayerObserver = null;
+let _chatLayerRefCount = 0;
+let _chatLayerRafPending = false;
+let _chatLayerLastValue = null;
+
+function _writeChatLayerAttribute() {
+  try {
+    if (!document.body) return;
+    const value = document.querySelector('div[class^="chatLayerWrapper_"]') ? "true" : "false";
+    // Only write on change — an unconditional attribute write invalidates
+    // style for the whole document, reintroducing the cost this removes.
+    if (value === _chatLayerLastValue) return;
+    _chatLayerLastValue = value;
+    document.body.setAttribute(CHAT_LAYER_BODY_ATTR, value);
+  } catch (_) {}
+}
+
+function _scheduleChatLayerWrite() {
+  if (_chatLayerRafPending) return;
+  _chatLayerRafPending = true;
+  requestAnimationFrame(() => {
+    _chatLayerRafPending = false;
+    _writeChatLayerAttribute();
+  });
+}
+
+/**
+ * Install the shared chat-layer body-attribute watcher (refcounted, like
+ * installVoiceChatBodyAttr). Returns an uninstall function.
+ */
+function installChatLayerBodyAttr() {
+  _chatLayerRefCount++;
+
+  if (!_chatLayerObserver) {
+    _writeChatLayerAttribute(); // immediate first write
+
+    // Observe the layer container rather than document.body: layers mount
+    // rarely, and a layer element can mount empty and populate a frame later,
+    // so subtree observation is needed but affordable at this scope.
+    const target =
+      document.querySelector('[class*="layerContainer_"]') ||
+      document.querySelector('[class*="layers_"]') ||
+      document.body;
+
+    if (target) {
+      _chatLayerObserver = new MutationObserver(_scheduleChatLayerWrite);
+      _chatLayerObserver.observe(target, { childList: true, subtree: true });
+    }
+  }
+
+  return function uninstallChatLayerBodyAttr() {
+    _chatLayerRefCount = Math.max(0, _chatLayerRefCount - 1);
+    if (_chatLayerRefCount > 0) return;
+
+    if (_chatLayerObserver) {
+      _chatLayerObserver.disconnect();
+      _chatLayerObserver = null;
+    }
+    _chatLayerRafPending = false;
+    _chatLayerLastValue = null;
+    try {
+      document.body?.removeAttribute(CHAT_LAYER_BODY_ATTR);
+    } catch (_) {}
+  };
+}
+
 module.exports = {
   getCurrentChannel,
   isVoiceChannelChat,
@@ -457,7 +538,9 @@ module.exports = {
   isChannelReadonly,
   debugVoiceChannelChat,
   installVoiceChatBodyAttr,
+  installChatLayerBodyAttr,
   VC_BODY_ATTR,
+  CHAT_LAYER_BODY_ATTR,
   FORUM_THREAD_BODY_ATTR,
   DM_BODY_ATTR,
   HOME_BODY_ATTR,

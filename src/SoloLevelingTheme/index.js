@@ -10,7 +10,7 @@
 // Shared body-attribute watcher — toggles body[data-sl-in-voice-chat="true"]
 // while the user is viewing a voice / stage channel. Theme uses this to swap
 // the channel sidebar background to match the VC main-area dark background.
-const { installVoiceChatBodyAttr } = require('../shared/channel-context');
+const { installVoiceChatBodyAttr, installChatLayerBodyAttr } = require('../shared/channel-context');
 
 // Shared toolbar child tagger — stamps data-sl-tb="…" on toolbar children so
 // modules/toolbar-org.css can use attribute-equality selectors instead of
@@ -138,6 +138,14 @@ module.exports = class SoloLevelingTheme {
       this._uninstallVcBodyAttr = null;
     }
 
+    // Chat-layer (thread overlay) watcher — feeds body[data-sl-chat-layer],
+    // which modules/guild.css uses in place of body:has(chatLayerWrapper_).
+    try {
+      this._uninstallChatLayerAttr = installChatLayerBodyAttr();
+    } catch (_) {
+      this._uninstallChatLayerAttr = null;
+    }
+
     // Install the toolbar child tagger (data-sl-tb attributes consumed by
     // modules/toolbar-org.css). Refcounted like the body-attr watcher.
     try {
@@ -179,6 +187,10 @@ module.exports = class SoloLevelingTheme {
     this._classMap = null;
 
     // Release the body-attr watcher refcount.
+    if (typeof this._uninstallChatLayerAttr === 'function') {
+      try { this._uninstallChatLayerAttr(); } catch (_) {}
+      this._uninstallChatLayerAttr = null;
+    }
     if (typeof this._uninstallVcBodyAttr === 'function') {
       try { this._uninstallVcBodyAttr(); } catch (_) {}
       this._uninstallVcBodyAttr = null;

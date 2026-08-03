@@ -733,16 +733,21 @@ div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"] {
       catches both the case before any chat tab opens AND while
       viewing the VC chat tab.
 
-   C) body:has(div[class^="chatLayerWrapper_"])
+   C) body[data-sl-chat-layer="true"]
       Thread sidebar overlay opened on top of a text channel
       (URL channel still type 0, chatLayerWrapper_ in DOM). Also
       redundantly catches forum-post and VC-chat openings already
       handled by A/B — harmless redundancy.
+      Was body:has(div[class^="chatLayerWrapper_"]) — the only :has()
+      in the suite anchored on <body>, so the style engine re-tested it
+      on every document mutation. installChatLayerBodyAttr()
+      (shared/channel-context.js) now stamps the attribute from a
+      layer-container observer. Requires the theme plugin to be running.
 
    Any gate engaging hides the member list. */
 body[data-sl-in-forum-or-thread="true"] aside[class^="membersWrap_"],
 body[data-sl-in-voice-chat="true"] aside[class^="membersWrap_"],
-body:has(div[class^="chatLayerWrapper_"]) aside[class^="membersWrap_"] {
+body[data-sl-chat-layer="true"] aside[class^="membersWrap_"] {
   display: none !important;
 }
 
