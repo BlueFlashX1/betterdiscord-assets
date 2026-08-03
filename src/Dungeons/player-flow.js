@@ -85,9 +85,10 @@ module.exports = {
         this.showToast(`Already in ${prevDungeon.name}! Complete it first.`, 'error');
         return;
       }
-      if (prevDungeon) {
-        prevDungeon.userParticipating = false;
-      }
+      // (Removed a `prevDungeon.userParticipating = false` here: prevDungeon is
+      // completed/failed by this point and is never persisted on this path —
+      // only the NEW dungeon is saved below — so the write never reached disk
+      // and only masked the reconciliation gap it looked like it was closing.)
     }
 
     // JOIN is lightweight — just mark participation. No shadow allocation, no combat start.
