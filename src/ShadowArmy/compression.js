@@ -4,8 +4,17 @@
  *
  * Tiered Compression:
  *   Tier 1 (top 1,000): Full data (generals + elites)
- *   Tier 2 (next 9,000): Regular compression (_c:1, 80% savings)
- *   Tier 3 (rest): Ultra-compression (_c:2, 95% savings)
+ *   Tier 2 (next 9,000): Regular compression (_c:1)
+ *   Tier 3 (rest): Ultra-compression (_c:2)
+ *
+ * MEASURED SAVINGS (2026-08-03, on a fully-populated veteran record; the
+ * long-standing "80%/95%" figures in this file were far too optimistic):
+ *   full 713 B  ->  _c:1 450 B (36.9% saved)  ->  _c:2 342 B (52.0% saved)
+ * Retained V8 heap: 849 B -> 736 B (13.3%) -> 416 B (51.0%).
+ * _c:1 saves comparatively little BY DESIGN: it re-adds rank/role/level/
+ * strength/extractedAt under their FULL names so IndexedDB secondary indexes
+ * still resolve, giving it 25 keys against the source record's 20. Do not
+ * "fix" that without checking the index definitions.
  */
 const C = require('./constants');
 const SLEvents = require('../shared/event-bus');
@@ -38,11 +47,11 @@ module.exports = {
     return this.derivePersonalityFromRole(shadow.role || shadow.ro || '');
   },
 
-  // COMPRESSION (regular _c:1, 80% savings)
+  // COMPRESSION (regular _c:1 — ~37% serialized, ~13% heap; see file header)
 
   /**
-   * Compress shadow data (80% memory reduction per shadow).
-   * Full format (500 bytes) → Compressed format (100 bytes).
+   * Compress shadow data. Measured ~36.9% smaller serialized
+   * (713 B → 450 B on a veteran record), ~13% off retained heap.
    */
   compressShadow(shadow) {
     if (!shadow || !shadow.id) return null;
@@ -97,10 +106,11 @@ module.exports = {
     };
   },
 
-  // ULTRA-COMPRESSION (_c:2, 95% savings)
+  // ULTRA-COMPRESSION (_c:2 — ~52% serialized, ~51% heap; see file header)
 
   /**
-   * Ultra-compress shadow data (95% memory reduction).
+   * Ultra-compress shadow data. Measured ~52% smaller serialized
+   * (713 B → 342 B) and ~51% off retained heap.
    * Used for shadows beyond top 1,000 (cold data).
    */
   compressShadowUltra(shadow) {
@@ -318,8 +328,8 @@ module.exports = {
    * Runs periodically (every hour) alongside natural growth.
    *
    * Tier 1: Top 1,000 — Full format (Elite Force)
-   * Tier 2: Next 9,000 — Regular compression (80% savings)
-   * Tier 3: Rest — Ultra-compression (95% savings)
+   * Tier 2: Next 9,000 — Regular compression (~37% serialized)
+   * Tier 3: Rest — Ultra-compression (~52% serialized)
    */
   async processShadowCompression() {
     try {

@@ -77,7 +77,9 @@ module.exports = {
   /**
    * Get top 7 generals (strongest shadows by total power).
    * Automatic selection — no manual favorites.
-   * 1.5s TTL cache for repeated access within the same tick.
+   * STALE-TOLERANT cache: STALE_OK_MS = 300000 (5 minutes), not a
+   * per-tick cache. Deliberate — see the note in the body; re-walking
+   * 281k records to re-pick the same 7 shadows was the cost being avoided.
    */
   async getTopGenerals() {
     try {
