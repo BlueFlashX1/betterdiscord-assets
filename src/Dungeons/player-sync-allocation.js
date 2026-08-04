@@ -1235,15 +1235,35 @@ module.exports = {
     return this.clampNumber(rawScale, 1, safeMax);
   },
 
+  // GEOMETRIC, not linear (changed 2026-08-03). The old form was
+  // `base + rankIndex * 0.14`, clamped to 12, and it could not deliver
+  // rank-to-rank differentiation at the top of the ladder: boss HP is dominated
+  // by bossVitality*10, and mob vitality grows QUADRATICALLY
+  // (150 + 100i + 40i^2). A quadratic's consecutive-rank ratio decays toward 1,
+  // so late ranks collapsed together — Monarch+ -> Shadow Monarch was only
+  // 1.22x. Steepening the linear step does NOT fix that: raising it from 0.14
+  // to 0.75 (5.4x steeper) moved the top step to just 1.26x. Only a multiplier
+  // that itself grows geometrically can hold the ratio up.
+  //
+  // At 1.25^rank the top steps are ~1.47-1.54x and E -> Shadow Monarch spans
+  // 774x. The ceiling is 60 because 2.3 * 1.25^12 = 33.5 and a lower cap would
+  // flatten exactly the ranks this exists to separate (a cap of 12 re-created
+  // the original bug, and 1.18^rank actually REGRESSED at the top because of it).
+  //
+  // Parity fight length is unaffected: the per-tick boss damage cap is a
+  // PERCENTAGE of maxHP (6% at rank parity), so ticks-to-kill stays ~17 at
+  // every rank no matter how large the pool is. Bigger HP only penalises
+  // under-ranked armies, whose raw DPS rather than the cap is the binding
+  // constraint — which is the intended differentiation.
   getStaticBossHpMultiplier(rankIndex) {
     const safeRankIndex = Math.max(0, Number.isFinite(rankIndex) ? rankIndex : 0);
     const base = Number.isFinite(this.settings?.staticBossHpBaseMultiplier)
       ? this.settings.staticBossHpBaseMultiplier
       : 2.3;
-    const rankStep = Number.isFinite(this.settings?.staticBossHpRankStep)
-      ? this.settings.staticBossHpRankStep
-      : 0.14;
-    return this.clampNumber(base + safeRankIndex * rankStep, 1, 12);
+    const rankGrowth = Number.isFinite(this.settings?.staticBossHpRankGrowth)
+      ? this.settings.staticBossHpRankGrowth
+      : 1.25;
+    return this.clampNumber(base * Math.pow(rankGrowth, safeRankIndex), 1, 60);
   },
 
   getShadowPressureMobFactor(dungeon) {

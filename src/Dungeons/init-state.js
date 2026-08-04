@@ -120,7 +120,12 @@ module.exports = {
       shadowPressureBossScaleStep: 0.18,
       shadowPressureScaleMax: 2.75,
       staticBossHpBaseMultiplier: 2.3,
-      staticBossHpRankStep: 0.14,
+      // GEOMETRIC per rank (was staticBossHpRankStep: 0.14, linear — replaced
+      // 2026-08-03). See getStaticBossHpMultiplier in player-sync-allocation.js
+      // for why a linear step could not separate the top ranks. Old saves that
+      // still carry staticBossHpRankStep are harmless: the reader keys off
+      // staticBossHpRankGrowth and falls back to this default when absent.
+      staticBossHpRankGrowth: 1.25,
       rankAllocationDeployPoolShare: 0.8,
       rankAllocationPreferredPairShare: 0.8,
       rankAllocationSameRankShare: 0.75,

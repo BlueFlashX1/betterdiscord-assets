@@ -24,6 +24,15 @@ const C = require('./constants');
  *   multiplier. The rankBonus and stat tables come precomputed from
  *   init-state.js; nothing here does per-entity math at spawn time.
  *
+ *   staticBossHpMultiplier is GEOMETRIC in rank (2.3 * 1.25^rankIndex, capped
+ *   60) as of 2026-08-03. It has to be: the dominant term above is
+ *   bossVitality*10, and mob vitality grows quadratically, so a linear
+ *   multiplier left the top ranks nearly identical (Monarch+ -> Shadow Monarch
+ *   was 1.22x). Now ~1.47-1.54x per rank at the top, 774x across the ladder.
+ *   Existing in-flight bosses keep their old HP — restore-gc-toast only
+ *   rescales bosses that are INFLATED relative to the formula, never deflated
+ *   ones, so no active fight becomes harder mid-run.
+ *
  * ── INVARIANTS ───────────────────────────────────────────────────────────
  *  - `mobCapacity` and `war.reserves` are seeded together and must stay
  *    consistent: the warfront grinds down reserves while the frontline kills
