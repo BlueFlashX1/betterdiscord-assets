@@ -412,6 +412,30 @@ module.exports = {
     return this._pickBestSettingsCandidate(candidates, false);
   },
 
+  /**
+   * Cheap structural sanity check for a candidate that is about to be PROMOTED
+   * TO CANONICAL by a backup restore.
+   *
+   * Deliberately only the three corruption checks _validateCleanSettingsForSave
+   * opens with — invalid level, invalid XP, all-stats-zero above level 5 — and
+   * NOT the full save-path validator. That one also runs regression checks
+   * against the file-backup cache and is built to ABORT; running it here could
+   * block a legitimate recovery, which is strictly worse than restoring a
+   * slightly stale backup.
+   *
+   * Failing this does NOT stop the backup being returned and used for this
+   * session — it only stops corrupt data being written over the main store,
+   * where it would become the thing every future load trusts.
+   */
+  _isStructurallySaneForPromotion(candidate) {
+    if (!candidate || typeof candidate !== 'object') return false;
+    if (!candidate.level || candidate.level < 1 || !Number.isInteger(candidate.level)) return false;
+    if (typeof candidate.xp !== 'number' || isNaN(candidate.xp) || candidate.xp < 0) return false;
+    const statSum = Object.values(candidate.stats || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (statSum === 0 && candidate.level > 5 && (candidate.unallocatedStatPoints || 0) === 0) return false;
+    return true;
+  },
+
   async _tryIndexedDbBackupRestore() {
     if (!this.saveManager) return null;
     try {
@@ -420,11 +444,20 @@ module.exports = {
 
       const backupData = backups[0].data;
       this.debugLog('LOAD_SETTINGS', 'Loaded from IndexedDB backup');
-      try {
-        await this.saveManager.save('settings', backupData);
-        this.debugLog('LOAD_SETTINGS', 'Restored backup to main');
-      } catch (restoreError) {
-        this.debugError('LOAD_SETTINGS', 'Failed to restore backup', restoreError);
+      if (this._isStructurallySaneForPromotion(backupData)) {
+        try {
+          await this.saveManager.save('settings', backupData);
+          this.debugLog('LOAD_SETTINGS', 'Restored backup to main');
+        } catch (restoreError) {
+          this.debugError('LOAD_SETTINGS', 'Failed to restore backup', restoreError);
+        }
+      } else {
+        this.debugError(
+          'LOAD_SETTINGS',
+          new Error(
+            `IndexedDB backup failed structural checks (level=${backupData?.level}, xp=${backupData?.xp}) — using it for this session but NOT promoting it to the main store`
+          )
+        );
       }
       return backupData;
     } catch (error) {
@@ -440,11 +473,20 @@ module.exports = {
 
       this.debugLog('LOAD_SETTINGS', 'Loaded from BdApi.Data backup');
       if (this.saveManager) {
-        try {
-          await this.saveManager.save('settings', saved);
-          this.debugLog('LOAD_SETTINGS', 'Migrated backup to IndexedDB');
-        } catch (migrateError) {
-          this.debugError('LOAD_SETTINGS', 'Migration failed', migrateError);
+        if (this._isStructurallySaneForPromotion(saved)) {
+          try {
+            await this.saveManager.save('settings', saved);
+            this.debugLog('LOAD_SETTINGS', 'Migrated backup to IndexedDB');
+          } catch (migrateError) {
+            this.debugError('LOAD_SETTINGS', 'Migration failed', migrateError);
+          }
+        } else {
+          this.debugError(
+            'LOAD_SETTINGS',
+            new Error(
+              `BdApi.Data backup failed structural checks (level=${saved?.level}, xp=${saved?.xp}) — using it for this session but NOT migrating it to IndexedDB`
+            )
+          );
         }
       }
       return saved;

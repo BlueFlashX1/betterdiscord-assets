@@ -941,12 +941,29 @@ module.exports = class SoloLevelingToasts {
     });
   }
 
+  // Fast phase: 10 attempts x 2s. Slow phase: SLOW_HOOK_RETRIES x 30s.
+  //
+  // The fast phase alone used to be the whole budget, and exhausting it set a
+  // counter that nothing re-armed except start()/stop() — so if
+  // SoloLevelingStats had not finished its multi-tier async settings load
+  // within ~20 seconds (file backup -> IndexedDB -> BdApi.Data -> legacy, with
+  // quality scoring), toasts never hooked again for the entire session and the
+  // only trace was a debug-mode log. Plugin load order is not guaranteed
+  // either, so this is reachable on a cold start with a large settings blob.
+  //
+  // The slow phase keeps trying for ~10 more minutes at negligible cost, then
+  // genuinely stops. Every timer still goes through _setTrackedTimeout so
+  // stop() cancels it — a raw setTimeout here would leak.
+  static FAST_HOOK_RETRIES = 10;
+  static SLOW_HOOK_RETRIES = 20;
+
   _canRetrySoloHook() {
     if (!this._hookRetryCount) this._hookRetryCount = 0;
-    if (this._hookRetryCount >= 10) {
+    const total = SoloLevelingToasts.FAST_HOOK_RETRIES + SoloLevelingToasts.SLOW_HOOK_RETRIES;
+    if (this._hookRetryCount >= total) {
       this.debugLog(
         "HOOK_ABORT",
-        "Max retry attempts (10) reached for SoloLevelingStats hook -- giving up"
+        `Hook to SoloLevelingStats abandoned after ${total} attempts (~10.5 min) -- it never became available`
       );
       return false;
     }
@@ -960,7 +977,8 @@ module.exports = class SoloLevelingToasts {
       this._clearTrackedTimeout(this._hookRetryId);
       this._hookRetryId = null;
     }
-    this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
+    const delay = this._hookRetryCount > SoloLevelingToasts.FAST_HOOK_RETRIES ? 30000 : 2000;
+    this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), delay);
   }
 
   _resolveSoloLevelingInstance() {
