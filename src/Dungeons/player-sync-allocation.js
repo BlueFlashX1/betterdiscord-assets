@@ -1,5 +1,35 @@
 const C = require('./constants');
 
+/**
+ * player-sync-allocation — how many shadows go where. One mixin (see index.js).
+ *
+ * Entry point: _buildDeployStarterAllocation(channelKey, dungeon), which sizes
+ * a deployment and fetches the roster. Also owns getStaticBossHpMultiplier and
+ * the shadow-pressure scaling helpers.
+ *
+ * SIZING CHAIN (each step clamps the one before):
+ *   target = mobCapacity(rank) x DEPLOY_MOB_RATIO x deployScale
+ *          -> capped by _computeArmyAvailableCap  (army minus reserve minus
+ *             what OTHER active dungeons actually hold)
+ *          -> capped by DEPLOY_CEILING_ABSOLUTE
+ *
+ * _computeArmyAvailableCap charges what other dungeons ACTUALLY HOLD, not an
+ * equal 1/N split. The split version silently starved big gates: a dungeon
+ * only ever takes min(want, cap), so four trivial dungeons each reserved a
+ * full share while using ~2% of it and the remainder was offered to nobody.
+ * Measured, that left a Shadow Monarch gate at 42,150 shadows out of 208,050
+ * available. Consequence of the current design: it is first-come between two
+ * genuinely large dungeons, and the periodic rebalance re-runs it.
+ *
+ * FETCHES MUST STAY BOUNDED. The roster read uses getShadowsByRankLimited with
+ * an explicit per-rank count, never getShadows({rank}) — which looks filtered
+ * but opens an unbounded cursor over a ~281k-record store.
+ *
+ * Allocation size affects rotation-cycle length and memory, NOT per-tick CPU:
+ * combat processes a fixed TICK_BUDGET slice regardless. That is why the
+ * deploy ceiling is a memory decision (~300-600 bytes per retained shadow),
+ * not a CPU one.
+ */
 module.exports = {
   // Shared by _scheduleSpawnRankStarterWarm (below) and player-flow.js's cold-cache
   // recovery warm calls -- previously each computed this independently (one via a

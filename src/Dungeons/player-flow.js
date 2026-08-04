@@ -1,3 +1,35 @@
+/**
+ * player-flow — the HUMAN player's side of a dungeon. One mixin (see index.js).
+ * Everything here is about the person; the shadow army is handled elsewhere
+ * and keeps fighting independently of all of it.
+ *
+ * Entry points: selectDungeon (join), leaveDungeon, processUserAttack (fires
+ * from Discord messages), _resolveUserBossDamage, _processDotTicks.
+ *
+ * STATE MODEL — settings.userActiveDungeon is the SINGLE SOURCE OF TRUTH for
+ * where the player is; dungeon.userParticipating is DERIVED from it by
+ * _reconcileParticipation. That asymmetry is deliberate: settings persist
+ * synchronously while the dungeon record is written fire-and-forget, so the
+ * two can disagree after a reload. Trusting the dungeon flag on its own
+ * produced both a ghost-attack bug (dungeon still claiming a player who left)
+ * and a hard join lockout (settings naming a dungeon whose record disagreed).
+ *
+ * ATTACKS come from message-observer.js on ANY message in the active channel,
+ * not only the player's own, gated by a global 2s cooldown stamped at decision
+ * time. Own-author messages are deferred ~120ms so the CriticalHit plugin has
+ * time to apply its class — that delay is load-bearing, not incidental.
+ *
+ * CRIT TRAP: damage from calculateUserDamageBreakdown ALREADY includes the
+ * natural crit multiplier. Any crit granted from outside that roll (plugin
+ * crit, skill-tree passive, forced crit, Shadow Monarch first strike) must go
+ * through _applyExternalCrit — passing raw damage to applyEnhancedCritMultiplier
+ * divides the hit instead of multiplying it, and silently does nothing at all
+ * when the crit-damage bonus is 0. That shipped as a real bug on four paths.
+ *
+ * DEATH lives in combat-primitives.handleUserDefeat, not here: it clears
+ * participation, wipes the player's DOTs (shadows persist by design), and
+ * forfeits the run's unbanked XP.
+ */
 module.exports = {
   /**
    * Force every dungeon's userParticipating flag to agree with

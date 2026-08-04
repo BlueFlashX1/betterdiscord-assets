@@ -1,5 +1,34 @@
 const C = require('./constants');
 
+/**
+ * combat-primitives — shared combat math + player defeat. One mixin (index.js).
+ *
+ * Everything here is pure-ish lookup used by the rest of the combat path:
+ *   getRankDamageMultiplier(attacker, defender)
+ *       clamp((powerStep^gap)^damageExponent, damageMin, damageMax).
+ *       Applies SYMMETRICALLY to shadow->mob, mob->shadow and the player —
+ *       combat-role-damage.js has the single call site. Equal rank is exactly
+ *       1.0 by construction; that neutrality is intentional.
+ *   getMobRankHpFactorByIndex / getShadowRankHpFactorByIndex — HP scaling.
+ *       Shadow HP is deliberately far below mob HP at the same rank and the
+ *       gap NARROWS with rank: shadows are weaker than their living
+ *       counterparts and close the distance as the Monarch grows. That is
+ *       canon, not a bug — do not "balance" it away.
+ *   calculateBossBaseStats / calculateMobBaseStats — read the precomputed
+ *       tables from init-state.js.
+ *   handleUserDefeat(channelKey) — the player death path.
+ *
+ * CONFIG LIVES ELSEWHERE: the rankScaling numbers this file reads are declared
+ * in init-state.js, NOT constants.js. The `??` fallbacks here must mirror them
+ * exactly; when they drifted, reading this file alone described a damage curve
+ * the game never used.
+ *
+ * handleUserDefeat contract: clears participation, clears the player's DOTs
+ * (they must die with the player — the DOT tick has no participation gate of
+ * its own), forfeits the run's unbanked mob XP, and deliberately leaves the
+ * shadow army fighting. Shadows persisting past the player's death is a lore
+ * requirement, not an oversight.
+ */
 module.exports = {
   calculateHPSync(vitality, rank = 'E') {
     const safeVitalityRaw = Number(vitality);

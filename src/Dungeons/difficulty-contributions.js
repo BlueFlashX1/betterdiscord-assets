@@ -1,3 +1,36 @@
+/**
+ * difficulty-contributions — XP/essence batching and the WARFRONT. One mixin.
+ *
+ * Two responsibilities that share this file because both are per-kill economy:
+ *
+ * 1. BATCHED PAYOUTS. Mob-kill XP and essence accumulate on the dungeon
+ *    (pendingUserMobXP / _pendingEssence) and are paid out once at completion
+ *    rather than per kill. _queuePendingDungeonMobXP / _consumePendingDungeonMobXP
+ *    are the accessors. NOTE the consumer takes max(snapshotXP, queuedXP), so
+ *    discarding this XP means clearing BOTH the dungeon fields and the
+ *    per-batch maps — clearing one lets the other resurrect it (that is what
+ *    the death penalty in handleUserDefeat has to do).
+ *
+ * 2. THE WARFRONT (_processWarfrontTick) — the aggregate mass battle, and the
+ *    reason huge armies do not cost huge CPU. The object-simulated frontline
+ *    stays small (2x performanceAliveMobCap shadows fight real mob objects);
+ *    every shadow BEYOND that grinds dungeon.war.reserves down arithmetically.
+ *
+ *    Cost is O(ranks), not O(army): _getWarIntel builds a rank histogram and
+ *    caches it against the allocation ARRAY IDENTITY, so it recomputes only
+ *    when the allocation is replaced. Kills route through _onMobKilled so XP,
+ *    essence and gate credit reuse the normal pipeline.
+ *
+ *    War math is lore-shaped: each shadow's weight is 10^(shadowRank - hostRank)
+ *    clamped [0.001, 100] — one rank below is fodder, one above shreds ten.
+ *    The per-tick kill ceiling is a FRACTION OF REMAINING RESERVES (not a flat
+ *    number) raised by rank superiority, which is what makes the mechanic
+ *    scale-free: a bigger army reaches the ceiling sooner but can never
+ *    collapse a war into a single tick, at any army size.
+ *
+ * If you add a per-shadow loop anywhere in the warfront path, you have
+ * defeated the entire point of it.
+ */
 const SLEvents = require('../shared/event-bus');
 const C = require('./constants');
 

@@ -1,5 +1,29 @@
 const { UnifiedSaveManager } = require('./bootstrap-runtime');
 
+/**
+ * init-state — every `this.*` field the plugin owns, declared in one place.
+ * One mixin (see index.js); called from the constructor via _initDefaults /
+ * _initTimers / _initCaches / _initState / _initUI.
+ *
+ * Because all 40 sibling files share one `this`, this file is the closest
+ * thing the plugin has to a schema. If you cannot find where a field comes
+ * from, look here first.
+ *
+ * IT ALSO OWNS THE TUNING THAT ISN'T IN constants.js — a real trap:
+ *   this.rankScaling = { powerStep, damageExponent, damageMin, damageMax,
+ *                        mobHpStep, bossHpStep, shadowHp* ... }
+ * combat-primitives reads these with `??` fallbacks. Those fallbacks MUST
+ * mirror the values here; they drifted once (0.9/0.25/4.0 in the fallback
+ * against 0.85/0.35/3.25 live) and reading that function alone gave a damage
+ * curve the game never used.
+ *
+ * PRECOMPUTED LOOKUP TABLES built here, all indexed by rank index:
+ *   _mobStatTable ....... quadratic mob stat growth
+ *   _bossHPBonusTable ... boss HP bonus (uniform polynomial)
+ *   _flatResCostTable ... resurrection mana cost per shadow rank
+ * They exist so the combat path does zero math per entity. Adding a rank means
+ * extending every table here, not just the RANK_ORDER list in shared/rank-utils.
+ */
 module.exports = {
   _initDefaults() {
     this.defaultSettings = {
