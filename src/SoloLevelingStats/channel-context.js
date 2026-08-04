@@ -1,5 +1,36 @@
 const dc = require("../shared/discord-classes");
 
+/**
+ * channel-context — "where did this message happen, and is it mine?"
+ * Object.assign'd onto the SoloLevelingStats prototype. Consumed by the
+ * message observers and the XP path, which run per message.
+ *
+ * Entry points: getChannelStore(), getChannelTypeById(channelId),
+ * isThreadLikeChannelType(type), doesMessageFiberMatchAuthorId(el, id),
+ * extractMentionCountFromText(text).
+ *
+ * EVERYTHING HERE IS ON THE PER-MESSAGE HOT PATH. In a busy server this runs
+ * tens of times a second, so each helper is written to be cheap and to fail
+ * soft: an unresolvable channel returns a neutral value rather than throwing,
+ * because a throw here would kill XP for that message.
+ *
+ * doesMessageFiberMatchAuthorId walks the React fiber, which is the expensive
+ * one — call it LAST, after cheaper checks have already ruled the message out.
+ * The suite's rule is that own-message and monitored-user gates come before
+ * any DOM query or fiber walk; this helper is exactly what that rule is
+ * protecting against.
+ *
+ * Discord's hashed classes are reached through `dc` (shared/discord-classes),
+ * never hardcoded — that resolver returns an exact class when the running
+ * client exposes a unique one and falls back to a substring selector, so a
+ * rename degrades instead of breaking.
+ *
+ * Thread-like channel types are treated separately because threads and forum
+ * posts report a different channel type while still being "in" a parent
+ * channel; XP attribution follows the parent, so a new Discord channel type
+ * has to be classified here or it silently attributes to nothing.
+ */
+
 module.exports = {
   extractMentionCountFromText(messageText = '') {
     if (!messageText) return 0;

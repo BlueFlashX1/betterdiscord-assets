@@ -1,5 +1,39 @@
 const C = require('./constants');
 
+/**
+ * achievements — unlock evaluation and the titles that come with them.
+ * Object.assign'd onto the SoloLevelingStats prototype.
+ *
+ * Entry points: checkAchievements(), checkAchievementCondition(achievement),
+ * unlockAchievement(achievement), revalidateUnlockedAchievements(),
+ * cleanupUnwantedTitles().
+ *
+ * Definitions live in achievement-definitions.js (76 entries); this file only
+ * evaluates them. Conditions are declarative `{ type, value }` pairs, so
+ * adding an achievement should never require editing this file — if it does,
+ * add the condition TYPE here and keep the data over there.
+ *
+ * ACHIEVEMENTS GATE RANK. getRankRequirements (progression-read-model) needs
+ * BOTH a level and an achievement count, up to 35 for Shadow Monarch. That
+ * makes this file part of the progression path, not decoration: an achievement
+ * that can never unlock permanently caps rank.
+ *
+ * That is a live constraint, not hypothetical — 26 achievements are gated on
+ * levels above 560, and levelling FREEZES once Shadow Monarch is held. The
+ * ceiling is only reachable because the level requirement (2000) sits above
+ * all of them. Anything that lowers a level threshold has to be checked
+ * against this file's gates.
+ *
+ * revalidateUnlockedAchievements exists because unlock state can drift from
+ * reality across migrations and restores — it re-derives rather than trusting
+ * the stored list. cleanupUnwantedTitles prunes titles whose achievement no
+ * longer qualifies, so a corrupt restore cannot leave a permanent title
+ * awarded for something never earned.
+ *
+ * Any store reads here must stay bounded (ShadowArmy is ~281k records); count
+ * queries and capped reads only, never a full scan for a threshold check.
+ */
+
 module.exports = {
   checkAchievements() {
     const achievements = this.getAchievementDefinitions();

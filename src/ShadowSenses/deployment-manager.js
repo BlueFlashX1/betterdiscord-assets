@@ -1,5 +1,37 @@
 const { PLUGIN_NAME, RANKS } = require("./constants");
 const { _ttl } = require("./shared-utils");
+
+/**
+ * deployment-manager — which deployed shadow watches which Discord user.
+ * A standalone `class DeploymentManager`, INSTANTIATED by ShadowSenses
+ * (not a prototype mixin), and read cross-plugin by ShadowRecon.
+ *
+ * Entry points: load(), deploy(), recall(shadowId), getAvailableShadows(),
+ * getWeakestAvailableShadow().
+ *
+ * ── THE VERSION BUS (the thing that breaks silently) ─────────────────────
+ * `_version` is a getter/setter defined with Object.defineProperty in the
+ * constructor; assigning it fires a "change" event on an internal EventTarget
+ * that every UI tab subscribes to instead of polling.
+ *
+ * So a mutation only reaches the UI if it goes through `this._version++` (one
+ * underscore — the accessor), as _save() does. Writing `this.__version` (two
+ * underscores — the backing field) bypasses the setter entirely, as does
+ * mutating the deployments object without bumping at all. Either leaves every
+ * subscriber frozen on stale data with no error anywhere. If the UI "stops
+ * updating", suspect a mutation path that skipped the bump before suspecting
+ * the UI.
+ *
+ * _rebuildSets() maintains the derived lookup sets; anything that changes the
+ * deployment map must call it or membership queries go stale independently of
+ * the version bus.
+ *
+ * ── CROSS-PLUGIN ─────────────────────────────────────────────────────────
+ * Availability queries reach ShadowArmy through shared/plugin-bridge and must
+ * tolerate it being absent. getWeakestAvailableShadow deliberately walks ranks
+ * ascending with count-capped reads rather than scanning the store — a full
+ * scan at ~281k records took ~45-50s and read as a broken feature.
+ */
 const { getPluginInstance } = require("../shared/plugin-bridge");
 
 // Per-deployment "watch focus" (2026-07-13): which signal classes this shadow

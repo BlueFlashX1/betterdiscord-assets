@@ -1,5 +1,36 @@
 const SLEvents = require('../shared/event-bus');
 
+/**
+ * stats-integration — Dungeons' bridge to the OTHER plugins. One mixin (index.js).
+ *
+ * Everything here reaches outside the plugin: SoloLevelingStats for the
+ * player's stats, SkillTree for passives and active buffs, ItemVault for
+ * essence, the shared event bus for cross-plugin signals.
+ *
+ * Entry points: getSkillTreeBonuses(), getSkillTreeInstance(),
+ * getUserCritDamageBonus(), getUserCombatCritChanceBonus(),
+ * applyEnhancedCritMultiplier(), invalidateShadowCountCache().
+ *
+ * EVERY EXTERNAL READ MUST DEGRADE, NEVER THROW. Any of those plugins can be
+ * absent, disabled, or still loading at the moment combat asks. The contract
+ * here is that a missing plugin yields a neutral value — zero bonus, 1x
+ * multiplier — so combat keeps running. A throw from this file lands in the
+ * middle of a damage calculation, where there is no recovery path.
+ *
+ * applyEnhancedCritMultiplier LIVES HERE and is the suite's most misused
+ * function. It is a RE-BASER: it computes damage/multiplier first, because
+ * calculateDamageBreakdown has ALREADY multiplied a natural crit into the
+ * number. Handing it raw, un-critted damage divides the hit instead of
+ * multiplying it — and when the crit-damage bonus is 0 it early-returns
+ * unchanged, so the crit silently does nothing at all. Four player crit paths
+ * shipped broken that way. For a crit granted from OUTSIDE the damage roll,
+ * use player-flow's _applyExternalCrit, which bakes the multiplier in first.
+ *
+ * Caches here (shadow counts, plugin instances) are TTL'd because combat asks
+ * far more often than the answers change; invalidate rather than re-query in
+ * a loop.
+ */
+
 module.exports = {
   async initializeUserStats() {
     // Get stats ONCE at the start (avoid redundant calls)
