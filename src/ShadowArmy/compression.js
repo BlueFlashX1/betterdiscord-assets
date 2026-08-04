@@ -1069,7 +1069,19 @@ module.exports = {
     if (nextGrade !== 'General' && nextGrade !== 'Marshal' && nextGrade !== 'Grand Marshal') return true;
     const census = this._speciesCensus;
     if (!census) {
-      this._buildSpeciesGradeCensus().catch(() => {});
+      // Officer promotions (General/Marshal/Grand Marshal) are DEFERRED until
+      // the census exists, so a census that can never be built stalls them
+      // permanently. The empty catch here discarded that failure entirely —
+      // the symptom was officers silently never promoting, with nothing in the
+      // log to point at the cause. Surface it; the deferral behaviour is
+      // unchanged.
+      this._buildSpeciesGradeCensus().catch((error) => {
+        this.debugError?.(
+          'GRADE',
+          'Species-grade census build failed — officer promotions stay deferred until it succeeds',
+          error
+        );
+      });
       return false; // defer officer promotions until the census exists
     }
     const key = this._getShadowSpeciesKey(raw);

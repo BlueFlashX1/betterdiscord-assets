@@ -1,3 +1,44 @@
+/**
+ * ShadowArmy — entry point. Owns the ShadowArmy class: state, start()/stop(),
+ * the skill-gated resource activation, and every recurring interval (hourly
+ * compression, 30s grade/rank promotion, 10min XP flush, 30s growth drain).
+ *
+ * TWO DIFFERENT COMPOSITION MECHANISMS — do not confuse them:
+ *  - The sibling MIXINS (progression, compression, combat-stats, army-stats,
+ *    watchers, extraction, migrations, self-heal, shadow-management,
+ *    animation, ui-settings, widget, modal) are Object.assign'd onto
+ *    ShadowArmy.prototype at the bottom of this file. They share one `this`
+ *    and call each other as this.method() with no imports.
+ *  - storage.js is NOT a mixin. ShadowStorageManager is a real class,
+ *    INSTANTIATED as this.storageManager. Its methods are reached through
+ *    that instance, never through `this`.
+ *
+ * WIRING GOTCHA: decompressShadow / decompressShadowUltra live in
+ * compression.js but are manually attached onto the storage INSTANCE right
+ * after construction. storage.js cannot decompress on its own — if that wiring
+ * is removed or reordered, every read returns still-compressed records and the
+ * failure surfaces far away from the cause.
+ *
+ * SCALE INVARIANTS — this store holds ~281,000 records. Violating these has
+ * produced measured 45-50s stalls:
+ *  - NEVER read the whole store. Use getShadowsByIds (chunked), rank-indexed
+ *    count-capped reads, or forEachShadowBatchPaged. getShadows({}, 0, Infinity)
+ *    is the documented full-walk trap and survives only as a fallback.
+ *  - transformShadowsBatch is the merge-on-write primitive that nearly every
+ *    recurring pass now uses instead of snapshot-then-put. Its transformFn MUST
+ *    BE SYNCHRONOUS: an await inside it lets the IDB transaction auto-commit
+ *    mid-flight, and every remaining id in that chunk fails with
+ *    TransactionInactiveError.
+ *  - transformShadowsBatch reports failedIds instead of throwing. A caller that
+ *    already charged the player (essence, XP) must refund on that list — see
+ *    the refund block in compression.js autoPromoteGrades.
+ *  - getCacheKey / createZeroStatBlock are defined near-identically in
+ *    storage.js, combat-stats.js AND compression.js. Changing cache-key
+ *    derivation means changing all three.
+ *  - Cached totals (cachedTotalPower, cachedTotalPowerShadowCount) are
+ *    maintained INCREMENTALLY via _applyTotalPowerDelta. Any path that mutates
+ *    a shadow's power must go through it or the cache silently drifts.
+ */
 const C = require('./constants');
 const ShadowStorageManager = require('./storage');
 const { buildWidgetComponents } = require('./components');

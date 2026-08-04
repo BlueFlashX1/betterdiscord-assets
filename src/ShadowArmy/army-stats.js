@@ -98,7 +98,20 @@ module.exports = {
 
   async getTotalShadowPower(forceRecalculate = false) {
     if (!forceRecalculate && this.storageManager && this.settings.cachedTotalPowerTimestamp) {
-      const currentCount = (await this.storageManager.getTotalCount()) || 0;
+      // getTotalCount() REJECTS on an IDB error (storage.js — request.onerror
+      // calls reject). This call used to be unguarded while the recalculation
+      // branch a few lines below wraps its equivalent work in try/catch, so a
+      // transient IDB hiccup threw straight out of getTotalShadowPower — from
+      // the CACHE-HIT path, the one that is supposed to be the cheap and safe
+      // one. Degrade to a full recalculation instead: slower, but it returns a
+      // number rather than propagating to every caller of army power.
+      let currentCount = 0;
+      try {
+        currentCount = (await this.storageManager.getTotalCount()) || 0;
+      } catch (error) {
+        this.debugError('POWER', 'getTotalCount failed on the cache-check path — recalculating', error);
+        currentCount = -1; // cannot match cachedCount, so the cache is skipped
+      }
       const cachedCount = this.settings.cachedTotalPowerShadowCount || 0;
 
       if (currentCount === cachedCount) {
