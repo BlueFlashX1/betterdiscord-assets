@@ -34,22 +34,43 @@
  * so such stems never enter the allowlist).
  */
 
-// Generated from DiscordClasses/discordclasses.json (2026-07-13):
+// Generated from DiscordClasses/discordclasses.json (2026-07-13, canary 577267):
 // stems used by src/SoloLevelingTheme/modules/*.css whose semantic key maps
 // to exactly one hashed class across the entire dataset. Regenerate the
 // analysis (see memory/scratch/selector-audit-wave2-2026-07-13.md) before
 // adding entries.
+//
+// RE-VALIDATED 2026-08-04 against canary 587595. 55 of 62 stems still resolve
+// to exactly one hash. Changes made:
+//   REMOVED `contentColumn` — now TWO hashes (contentColumn__23e6b,
+//     contentColumn__6d3d8). snippets.css:206,242 uses [class*="contentColumn_"]
+//     to suppress scrollbars on BOTH columns; substituting one hash would have
+//     silently dropped the other. This is the exact Gate 1 failure mode, and it
+//     was live — Gate 2 alone would not catch it, because a client with only one
+//     of the two modules loaded sees a "unique" stem and substitutes.
+//   REMOVED `field` — now two hashes (field__2f582, field_db41ea).
+//   ADDED `roleMention` — one hash (roleMention__75297), used by chat.css:103
+//     in the HOT message-list region.
+// Five stems (contentDefault, embedFull, peopleListItem, searchAnswer,
+// sectionHidden) no longer appear in the dataset at all. Left in place: Gate 2
+// simply finds nothing and skips them, and they may still exist in clients the
+// scrape missed. Re-check them at the next revalidation.
+//
+// LESSON: this list decays as Discord re-hashes. Re-validate against a current
+// DiscordClasses scrape periodically — Gate 2 does NOT make Gate 1 redundant,
+// it only covers stems that are ambiguous in the CURRENTLY LOADED bundle.
 const ALLOWLIST_STEMS = [
   'activitySection', 'anchor', 'buttonsInner', 'cardPrimary',
   'channelTextAreaDisabled', 'chatContent', 'chatLayerWrapper',
-  'childWrapper', 'codeBlockText', 'connectedAccounts', 'contentColumn',
+  'childWrapper', 'codeBlockText', 'connectedAccounts',
   'contentDefault', 'control', 'defaultKeybindGroup', 'edited', 'embedFull',
-  'faq', 'field', 'guildBoostingSettings', 'guilds', 'guildsList',
+  'faq', 'guildBoostingSettings', 'guilds', 'guildsList',
   'headerBarInner', 'headerTop', 'itemCard', 'linkTop', 'listBox',
   'listItems', 'markup', 'membersWrap', 'messageGroupWrapper', 'misc',
   'modalContentInner', 'modeSelected', 'navScroller', 'peopleColumn',
   'peopleList', 'peopleListItem', 'popoutContentWrapper', 'profileBody',
-  'quickswitcher', 'reactionTooltip', 'repliedMessage', 'rootWithShadow',
+  'quickswitcher', 'reactionTooltip', 'repliedMessage', 'roleMention',
+  'rootWithShadow',
   'scrollableContainer', 'searchAnswer', 'searchResult', 'searchResultsWrap',
   'sectionHidden', 'selectDropdown', 'selectField', 'sidebarList',
   'sidebarRegion', 'tabListScroller', 'tabPanelScroller', 'themedBackground',
