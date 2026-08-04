@@ -1,3 +1,40 @@
+/**
+ * Dungeons — shadow-side combat support (mixin).
+ *
+ * The most-consumed file in Dungeons: nine sibling modules call into it. It owns
+ * four things the combat loops depend on but never define themselves.
+ *
+ * 1. SETUP. `initializeShadowCombatData` and `initializeShadowHPSync` derive a
+ *    shadow's combat profile from ShadowArmy's stored data (personality, attack
+ *    interval, effective stats) rather than recomputing it. Both degrade to
+ *    literal defaults when ShadowArmy is absent, so combat still runs standalone.
+ *
+ * 2. ATTACK PACING. `getEffectiveAttackCooldownMs` and `getCappedAttackElapsedMs`
+ *    convert wall-clock elapsed into a bounded attack count. The 5-minute
+ *    MAX_CATCHUP_MS ceiling exists because a backgrounded tab has its timers
+ *    throttled: without it, refocusing replayed the entire gap as one synchronous
+ *    burst (the measured 350-465s spike ticks).
+ *    CROSS-FILE PAIR: combat-shadow-execution.js applies its own 5-minute cap to
+ *    revisitSpan, but compensates for it arithmetically via `scaleFactor`
+ *    (rawRevisitSpan / revisitSpan). This file's cap has no such compensation —
+ *    it is a burst guard, not a throughput model. Change one and check the other,
+ *    since together they set effective DPS at very large deployment counts.
+ *
+ * 3. LIFECYCLE. `maybePruneDungeonShadowState` is the only thing keeping the
+ *    per-dungeon Maps bounded. It runs when the allocation count changes or every
+ *    60s, and drops entries for shadows no longer assigned. Any new per-shadow Map
+ *    added to a dungeon must be pruned here too or it grows without limit.
+ *
+ * 4. ELIGIBILITY. `getCombatReadyShadows` is the single gate deciding who fights.
+ *    It excludes three disjoint groups: dead, marked-for-trade by ShadowExchange,
+ *    and deployed by ShadowSenses. The latter two are CROSS-PLUGIN reads, cached
+ *    for 5s — so a shadow withdrawn elsewhere can still swing for up to 5 seconds.
+ *
+ * INVARIANT worth knowing: `dungeon.shadowHP` holds combat participants, not the
+ * whole army. It is lazily populated, which is why the heal pass can scan it
+ * directly. That scan is still capped, as a long fight grows it toward the full
+ * allocation size.
+ */
 module.exports = {
   initializeShadowCombatData(shadow, dungeon) {
     // Get shadow personality from ShadowArmy (uses stored data if available)

@@ -1,5 +1,37 @@
 const { RANK_ORDER: SOLO_RANK_ORDER } = require('../shared/rank-utils');
 
+/**
+ * SkillTree — SP spending and skill-level mutation (mixin).
+ *
+ * Eight sibling modules read from this file; it is the only place skill levels
+ * and the SP balance are written. Everything else in SkillTree consumes the
+ * result via `getSkillLevel` / `getSkillEffect`.
+ *
+ * SPEND FLOW. Both entry points — `unlockOrUpgradeSkill` (one level) and
+ * `maxUpgradeSkill` (as many as SP allows) — follow the same shape: resolve the
+ * skill and its tier, check requirements, compute cost, deduct SP, raise the
+ * level, then hand off to `_finalizeSkillUpgrade`.
+ *
+ * THE COST FORMULA IS DUPLICATED IN THREE PLACES and they must stay identical:
+ * `getSkillUpgradeCost` (cumulative), `getNextUpgradeCost` (single step), and
+ * `_buildMaxUpgradePlan` (the bulk planner). All three use
+ * ceil(baseCost x level x multiplier) per level, with level 0 -> 1 costing
+ * baseCost flat. If one drifts, bulk upgrading silently charges a different
+ * price than clicking upgrade repeatedly, and the UI preview stops matching what
+ * is actually deducted. Change one, change all three.
+ *
+ * WHY `_finalizeSkillUpgrade` MATTERS. A level change is not local — it
+ * invalidates two caches (computed skill bonuses, and the Shadow Monarch rank
+ * check, since some upgrades are rank-gated), persists settings, refreshes the
+ * button, and dispatches a `SkillTree:skillLevelChanged` DOM event that other
+ * plugins listen for. Never write `settings.skillLevels` without routing through
+ * it, or consumers keep serving stale bonuses.
+ *
+ * REQUIREMENTS are checked per-skill, not per-level (stat minimums, rank floor,
+ * prerequisite skills) — which is why `maxUpgradeSkill` can safely apply many
+ * levels behind a single `canUnlockSkill` call. Affordability is the only
+ * per-level constraint, and the planner handles that.
+ */
 const SkillTreeUpgradeMethods = {
   _syncUnlockedSkillState(skillId) {
     if (!Array.isArray(this.settings.unlockedSkills)) {
