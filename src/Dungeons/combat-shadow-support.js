@@ -13,7 +13,7 @@
  *    convert wall-clock elapsed into a bounded attack count. The 5-minute
  *    MAX_CATCHUP_MS ceiling exists because a backgrounded tab has its timers
  *    throttled: without it, refocusing replayed the entire gap as one synchronous
- *    burst (the measured 350-465s spike ticks).
+ *    burst (measured PERF SPIKE ticks of 350-465ms).
  *    CROSS-FILE PAIR: combat-shadow-execution.js applies its own 5-minute cap to
  *    revisitSpan, but compensates for it arithmetically via `scaleFactor`
  *    (rawRevisitSpan / revisitSpan). This file's cap has no such compensation —
@@ -172,7 +172,7 @@ module.exports = {
     // (combat-shadow-execution.js): span itself scales with wall-clock elapsed,
     // so without this ceiling a long-backgrounded (timer-throttled) session made
     // the boss/mob attack loops iterate proportionally to the whole gap in one
-    // synchronous burst on refocus — the measured 350-465s PERF SPIKE ticks.
+    // synchronous burst on refocus — measured PERF SPIKE ticks of 350-465ms.
     const MAX_CATCHUP_MS = 5 * 60 * 1000;
     const maxCatchUp = Math.min(Math.max(span * 2, effectiveCooldown * 4), MAX_CATCHUP_MS);
     const elapsed = Number(timeSinceLastAttack);

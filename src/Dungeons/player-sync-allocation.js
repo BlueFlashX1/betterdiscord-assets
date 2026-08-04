@@ -17,8 +17,12 @@ const C = require('./constants');
  * equal 1/N split. The split version silently starved big gates: a dungeon
  * only ever takes min(want, cap), so four trivial dungeons each reserved a
  * full share while using ~2% of it and the remainder was offered to nobody.
- * Measured, that left a Shadow Monarch gate at 42,150 shadows out of 208,050
- * available. Consequence of the current design: it is first-come between two
+ * The worked case that motivated it (281k army, 4 trivial gates + 1 Shadow
+ * Monarch gate): 25% is held in reserve, leaving 210,750 deployable. Split
+ * five ways that is 42,150 each — so the SM gate got 42,150 while the four
+ * trivial gates together needed only 2,700 and stranded ~165,900 idle. Charging
+ * actual holdings instead gives the SM gate 210,750 - 2,700 = 208,050, a 4.9x
+ * improvement. Consequence of the current design: it is first-come between two
  * genuinely large dungeons, and the periodic rebalance re-runs it.
  *
  * FETCHES MUST STAY BOUNDED. The roster read uses getShadowsByRankLimited with
@@ -27,8 +31,11 @@ const C = require('./constants');
  *
  * Allocation size affects rotation-cycle length and memory, NOT per-tick CPU:
  * combat processes a fixed TICK_BUDGET slice regardless. That is why the
- * deploy ceiling is a memory decision (~300-600 bytes per retained shadow),
- * not a CPU one.
+ * deploy ceiling is a memory decision, not a CPU one. Measured on this record
+ * shape: ~640 bytes of retained V8 heap per deployed shadow (603 serialized),
+ * and near-identical whether beast fields are populated or null, because object
+ * shape dominates and the rank/role strings intern. That is ~170 MB at 281k and
+ * ~610 MB at the 1M ceiling — which is why 1M is where this approach ends.
  */
 module.exports = {
   // Shared by _scheduleSpawnRankStarterWarm (below) and player-flow.js's cold-cache

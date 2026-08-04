@@ -17,7 +17,7 @@ const C = require('./constants');
  *     A backgrounded tab has its timers throttled by the browser, so on resume
  *     the elapsed gap must be applied as a bounded CATCH-UP rather than by
  *     replaying every missed tick. Replaying is what produced the measured
- *     350-465s refocus spikes; the caps that prevent it live here and in
+ *     350-465ms refocus spikes; the caps that prevent it live here and in
  *     getCappedAttackElapsedMs (combat-shadow-support.js). If you widen one,
  *     check the other.
  *

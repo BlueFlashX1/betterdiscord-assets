@@ -13,7 +13,7 @@
  *
  * WHY `scaleFactor` EXISTS (do not "simplify" it back to 1):
  * getCappedAttackElapsedMs hard-caps credited time at 5 minutes to bound the
- * attack LOOP — that clamp is what stopped a measured 350-465s spike when a
+ * attack LOOP — that clamp is what stopped measured 350-465ms spike ticks when a
  * backgrounded client refocused. But the true revisit gap grows with roster
  * size and passes 5 minutes at ~50,000 deployed shadows, so above that the
  * clamp was silently discarding the difference and army DPS flat-lined:
@@ -394,7 +394,7 @@ module.exports = {
         // that — the damage was being discarded downstream of the roster size.
         //
         // The clamp itself stays. It bounds the attack LOOP, which is what
-        // caused the measured 350-465s refocus spikes. Damage is arithmetic, so
+        // caused the measured 350-465ms refocus spike ticks. Damage is arithmetic, so
         // multiplying the result reproduces the discarded attacks without
         // iterating them: same numbers, same fixed 500-shadow-per-tick cost.
         //
