@@ -1,6 +1,7 @@
 const buildChatUIComponents = require('./components');
 const dc = require('../shared/discord-classes');
 const { createTrackedTimers } = require('../shared/tracked-timers');
+const { installChatLayerBodyAttr } = require('../shared/channel-context');
 
 module.exports = {
   _loadSLUtils() {
@@ -8,6 +9,18 @@ module.exports = {
   },
 
   async start() {
+    // Chat-layer (thread/forum overlay) watcher — feeds body[data-sl-chat-layer]
+    // so styles.css can key off an attribute instead of running
+    // `body:has(div[class^="chatLayerWrapper_"])`, the one :has() shape whose
+    // subject is <body> and therefore re-tests on document-wide mutations.
+    // Refcounted in shared/channel-context, so subscribing alongside
+    // SoloLevelingTheme installs a single shared observer, not a second one.
+    try {
+      this._uninstallChatLayerAttr = installChatLayerBodyAttr();
+    } catch (_) {
+      this._uninstallChatLayerAttr = null;
+    }
+
     let bootstrapSettingsChanged = false;
     try {
       if (this._isRunning) {
@@ -299,6 +312,14 @@ module.exports = {
 
   stop() {
     this._isRunning = false;
+
+    // Release the shared chat-layer observer (refcounted — the observer only
+    // disconnects once the last subscriber releases it).
+    if (typeof this._uninstallChatLayerAttr === 'function') {
+      try { this._uninstallChatLayerAttr(); } catch (_) {}
+      this._uninstallChatLayerAttr = null;
+    }
+
     this._shadowBuffsRefreshPromise = null;
     this._shadowBuffsRefreshAt = 0;
     // Reset toast-once flags so re-enable starts fresh: a transient file

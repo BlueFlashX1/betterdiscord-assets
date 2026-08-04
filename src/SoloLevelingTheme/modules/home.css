@@ -40,8 +40,15 @@ main[aria-label="Friends"] aside.refresh-active-now {
   background-image: none !important;
 }
 
-/* Server/group-DM member list (right panel) — full dark wash on panel */
-.members_c8ffbb,
+/* Server/group-DM member list (right panel) — full dark wash on panel
+   Prefix form, not a baked hash. `.members_c8ffbb` was the only hardcoded
+   Discord class hash left in the suite; it silently stops matching whenever
+   Discord rebuilds and re-hashes. `members_` is the same stem this file
+   already uses further down, and it survives rehashing. (It is not in
+   class-substitution's ALLOWLIST_STEMS, so it stays an attribute selector at
+   runtime rather than being swapped for an exact class — correctness over the
+   marginal selector-matching win on a single rule.) */
+div[class^="members_"],
 div[class^="membersWrap_"] {
   background: var(--sl-color-black) !important;
   background-image: none !important;

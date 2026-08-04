@@ -406,6 +406,15 @@ const CriticalHit = class CriticalHit {
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.critMessages);
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.settings);
       BdApi.DOM.removeStyle(C.CSS_STYLE_IDS.animation);
+
+      // @font-face elements injected by styling.js (id `cha-font-<name>`) are
+      // raw <style> nodes, not BdApi styles, so removeStyle cannot reach them.
+      // BD's documented rule is that stop() reverses every modification; without
+      // this they survive disabling the plugin. Ids are derived from the font
+      // name, so there may be more than one.
+      try {
+        document.querySelectorAll('style[id^="cha-font-"]').forEach((el) => el.remove());
+      } catch (_) {}
       this._critCSSInjected = false;
       this.critCSSRules?.clear();
       if (this._critCSSRebuildRAF) {

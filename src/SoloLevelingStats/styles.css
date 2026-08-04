@@ -1489,12 +1489,18 @@
          strip's edge back so HP/MP numerics + the EXP bar stay fully
          visible.
 
-         Gates (both must hold):
+         Gates (both must hold), and both are ATTRIBUTES rather than :has():
            body[data-sl-in-voice-chat="true"]
-             only in voice / stage channels (set by the SoloLevelingTheme-
-             installed body-attr watcher)
-           :has(div[class^="chatLayerWrapper_"])
+             only in voice / stage channels
+           body[data-sl-chat-layer="true"]
              only when the VC chat overlay panel is actually present
+
+         Both attributes come from scoped observers in
+         shared/channel-context.js. This file no longer runs
+         :has(div[class^="chatLayerWrapper_"]) directly — that shape puts the
+         subject on <body>, forcing a re-test on mutations anywhere in the
+         document. The observer watches only the layer container and writes
+         only on change.
 
          Outside VC or with chat panel closed, the strip keeps its full
          width unchanged.
@@ -1505,7 +1511,13 @@
          460 was tight, 490 left too much gap, 475 is the sweet spot.
          Drag-resize can shift this — acceptable tradeoff vs JS-driven
          width sync. */
-      body[data-sl-in-voice-chat="true"]:has(div[class^="chatLayerWrapper_"]) #sls-chat-ui {
+      /* Attribute, not :has(). `body:has(div[class^="chatLayerWrapper_"])` is
+         the one selector shape whose subject is <body>, so the style engine
+         re-tests it on DOM mutations anywhere in the document. The equivalent
+         state is published as body[data-sl-chat-layer] by a scoped observer in
+         shared/channel-context.js (installed from lifecycle.js start()), which
+         watches only the layer container and writes only on change. */
+      body[data-sl-in-voice-chat="true"][data-sl-chat-layer="true"] #sls-chat-ui {
         margin-right: 475px !important;
         transition: margin-right 0.2s ease !important;
       }
