@@ -290,6 +290,23 @@ module.exports = {
       return applied;
     } finally {
       this._pendingGrowthDrainInFlight = false;
+      // DOUBLE-GRANT GUARD (2026-08-04): growth is written to the shadow records
+      // in IDB immediately, but the pending-hours bookkeeping used to be flushed
+      // ONLY in stop() (index.js). A crash or force-quit therefore restored
+      // already-applied hours from disk and granted them a SECOND time.
+      //
+      // Persisting here closes that window. Runs in `finally` so a mid-drain
+      // throw still records whatever was consumed before it — leaving hours
+      // banked that were already applied is the exact failure being fixed.
+      //
+      // Cheap enough to do per drain: BdApi.Data.save is a synchronous
+      // whole-config write, but measured at 0.8ms max for ShadowArmy's ~956KB
+      // config, and the drain runs at most 2x/min. No debounce needed.
+      try {
+        this._persistPendingGrowth?.();
+      } catch (_) {
+        /* never let bookkeeping failure mask the drain result */
+      }
     }
   },
 
