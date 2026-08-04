@@ -1,5 +1,43 @@
 const C = require('./constants');
 
+/**
+ * spawn-core — dungeon creation and the mob-spawn pipeline. One mixin (index.js).
+ * Reached from message-observer (a chat message may spawn a gate), player-flow
+ * (deploying restarts the pipeline) and restore-gc-toast (recovery on reload).
+ *
+ * ── SPAWN FLOW ───────────────────────────────────────────────────────────
+ *   message in a channel
+ *     -> checkDungeonSpawn(channelKey, channelInfo)   gated by cooldown +
+ *          per-guild dungeon caps (getMaxDungeonsForGuild,
+ *          getActiveDungeonCountForGuild)
+ *     -> calculateDungeonRank()                       picks the gate's rank
+ *     -> build the dungeon object: biome, beast families, mob capacity from
+ *        DUNGEON_MOB_CAPACITY_BY_RANK, boss stats, war reserves
+ *     -> startMobSpawning(channelKey)                 begins the wave loop
+ *          (spawn-wave-builders.js does the per-wave construction)
+ *
+ * BOSS HP is composed here, and every term matters:
+ *     (100 + bossVitality*10 + rankBonus) * staticBossHpMultiplier * armyMultiplier
+ *   Vitality is UNWEIGHTED on purpose — species weights already differentiate
+ *   combat behaviour, and applying them to HP as well made tanky species
+ *   (golem 1.9x, dragon 1.6x) effectively unkillable on top of the 8x army
+ *   multiplier. The rankBonus and stat tables come precomputed from
+ *   init-state.js; nothing here does per-entity math at spawn time.
+ *
+ * ── INVARIANTS ───────────────────────────────────────────────────────────
+ *  - `mobCapacity` and `war.reserves` are seeded together and must stay
+ *    consistent: the warfront grinds down reserves while the frontline kills
+ *    live mob objects, and both feed the same completion accounting.
+ *  - ensureDeployedSpawnPipeline is the RECOVERY path — a deployed dungeon
+ *    whose spawn loop died (hot reload, error, resume) gets restarted through
+ *    it. It is guarded by _logSpawnPipelineGuard's cooldown so a persistent
+ *    failure cannot spam the log every tick.
+ *  - Demon Castle floors take a different route entirely: they have preset
+ *    totals and count DOWN, so aggregate/warfront accounting is skipped for
+ *    them. Check `dungeon._isDemonCastle` before adding anything that assumes
+ *    open-gate semantics.
+ */
+
 module.exports = {
   getChannelInfoFromLocation() {
     try {

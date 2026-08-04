@@ -1,5 +1,43 @@
 const C = require('./constants');
 
+/**
+ * combat-status-effects — every debuff in the game. One mixin (see index.js).
+ * The widest API surface in the plugin (~37 methods), but they are variations
+ * on one shape, so learn the shape rather than the list.
+ *
+ * ── ADDRESSING ───────────────────────────────────────────────────────────
+ * Effects are stored per dungeon, keyed (targetType, targetId, effectName):
+ *   targetType is 'boss' | 'mob' | 'shadow' | 'user'
+ *   targetId   is 'boss' / 'user' for the singletons, the entity id otherwise
+ * _ensureCombatStatusState creates the per-dungeon bucket;
+ * _readActiveStatusEffect is the ONLY correct read (it filters expiry, so
+ * reading the bucket directly hands you effects that have already lapsed);
+ * _purgeCombatStatusEffect / clearCombatStatusState tear down.
+ *
+ * ── TWO FAMILIES ─────────────────────────────────────────────────────────
+ * DOT effects (_DOT_EFFECTS = poison, bleed, burn, necrotic) deal damage per
+ * tick as a PERCENTAGE OF MAX HP. That is deliberate: percentage damage is
+ * rank-independent, so no scaling table has to be maintained alongside the
+ * rank curve, and a DOT is equally relevant against an E gate and a Shadow
+ * Monarch gate.
+ *
+ * Modifier effects (armorBreak, slow, frostbite, and the necrotic anti-heal
+ * rider) do not tick — combat reads them at damage time through the various
+ * `_get...` and `_apply...` helpers below.
+ *
+ * ── THE COST TRAP ────────────────────────────────────────────────────────
+ * Boss DOT ticks call applyDamageToBoss ONCE PER EFFECT, and that function
+ * caps each CALL independently. So four DOTs are four separate cap
+ * allowances stacked on top of the shadow army's single aggregated call —
+ * which is why a boss dies in roughly 6-10 ticks rather than the 1/capPct = 17
+ * the cap looks like it guarantees. Adding a fifth DOT shortens every boss
+ * fight in the game; that is a balance decision, not a local one.
+ *
+ * Player-cast DOTs must die with the player: handleUserDefeat clears
+ * dungeon.activeDots because the DOT tick loop has no participation gate of
+ * its own and would otherwise keep crediting a dead player's damage.
+ */
+
 const DEFAULT_STATUS_EFFECTS = C.COMBAT_STATUS_EFFECTS || {
   poison: { maxStacks: 4, durationMs: 9000, tickMs: 1000, damagePctPerStack: 0.0025, maxDamagePct: 0.018 },
   armorBreak: { maxStacks: 3, durationMs: 7000, damageAmpPerStack: 0.06, maxDamageAmp: 0.2 },

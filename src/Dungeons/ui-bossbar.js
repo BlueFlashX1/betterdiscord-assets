@@ -1,5 +1,33 @@
 const dc = require("../shared/discord-classes");
 
+/**
+ * ui-bossbar — the in-channel boss HP bar and everything drawn on it.
+ * One mixin (see index.js). The largest UI file in the plugin.
+ *
+ * Entry point: updateBossHPBar(channelKey). Combat NEVER calls it directly —
+ * it calls queueHPBarUpdate (runtime-visibility.js), which coalesces the
+ * thousands of damage events a tick produces into one repaint. Calling this
+ * per damage event is the difference between a smooth bar and a stalled
+ * client, so route through the queue.
+ *
+ * COMPOSITION (each piece repaints independently so the whole bar does not
+ * have to be rebuilt for a small change):
+ *   _buildBossBarCombatSkillsRow / _updateBossBarCombatSkillButtons
+ *   _buildActiveEffectsRow       / _updateActiveEffectsRow
+ *   _updateGateTimerFastPath     — timer-only path, deliberately skips the
+ *                                  rest of the bar because it fires every
+ *                                  second and nothing else has changed
+ *
+ * Discord's hashed classes are reached through `dc` (shared/discord-classes),
+ * never hardcoded: that helper resolves an exact class when the running client
+ * exposes a unique one and falls back to a substring selector otherwise. A
+ * literal hash here would match exactly one Discord build.
+ *
+ * _getCurrentChannelKeyFast exists because the naive lookup was measurably hot
+ * on this path — the bar re-renders far more often than the channel changes.
+ * Prefer it over re-deriving the channel inside render helpers.
+ */
+
 const { escapeHtml } = require('../shared/escape-html');
 
 module.exports = {
