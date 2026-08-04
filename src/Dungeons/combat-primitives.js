@@ -334,7 +334,7 @@ module.exports = {
     let manaChanged = false;
     const skillBonuses = this.getSkillTreeBonuses?.() || {};
 
-    // SHADOW MONARCH PERK (Longevity -> Eternal Vigor, player-exclusive): out of combat,
+    // SHADOW MONARCH PERK (Will to Recover -> Eternal Vigor, player-exclusive): out of combat,
     // HP & mana refill to FULL instantly (no regen wait); in combat, regen is doubled.
     const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
     let smRegenMult = 1;

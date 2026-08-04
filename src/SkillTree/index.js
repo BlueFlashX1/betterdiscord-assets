@@ -789,6 +789,10 @@ module.exports = class SkillTree {
         commander_of_shadows: 'shadow_army_expansion',
         gate_ruler: 'shadow_exchange',
         shadow_sovereign: 'eternal_shadow_monarch',
+        // Canon correction (2026-08-03): this skill's effect is regeneration,
+        // which in Solo Leveling is Will to Recover. Longevity is the immunity
+        // passive and now lives in INNATE_PASSIVES. Preserves invested levels.
+        longevity: 'will_to_recover',
       };
       const activeSkillIdRenameMap = {
         stealth_active: 'stealth_technique',

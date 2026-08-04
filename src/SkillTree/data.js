@@ -27,6 +27,19 @@ const INNATE_PASSIVES = [
     statusText: "Always Active • Auto-Scaling",
   },
   {
+    // Canon: Longevity is the BROAD immunity passive (all diseases, toxins and
+    // abnormal status effects), while Detoxification above covers only the
+    // poison/magical subset. Display-only, like every INNATE_PASSIVES entry —
+    // the mechanic lives in Dungeons/combat-status-effects.js, where it is
+    // realised in full at Shadow Monarch as Perfect Body.
+    id: "longevity",
+    name: "Longevity",
+    mode: "auto-scaling",
+    desc: "Innate System passive granting resistance to diseases, toxins and abnormal status effects — the broad immunity that Detoxification only partially covers. At Shadow Monarch it is realised in full as Perfect Body: no enemy status effect of any kind can land.",
+    lore: "The System hardened Jin-Woo's body until sickness, poison and affliction simply stopped taking hold.",
+    statusText: "Always Active • Total immunity at Shadow Monarch",
+  },
+  {
     id: "tenacity",
     name: "Tenacity",
     mode: "conditional",
@@ -57,10 +70,16 @@ const SKILL_TREE = {
     growthRate: 1.0,
     skills: [
       {
-        id: "longevity",
-        name: "Longevity",
+        // Renamed from `longevity` (2026-08-03) to match canon: in Solo Leveling,
+        // Will to Recover is the regeneration passive and Longevity is the
+        // status-ailment immunity. This skill's effect was always regeneration, so
+        // it belongs under Will to Recover; Longevity now sits in INNATE_PASSIVES
+        // where the immunity actually lives. Old saves are carried over by
+        // skillIdRenameMap in index.js — the level is preserved, not reset.
+        id: "will_to_recover",
+        name: "Will to Recover",
         desc: "Accelerate HP and mana recovery between combat exchanges. Base: +12% HP regen, +12% mana regen. Per level: +5% each. Requires 10 VIT, 8 INT.",
-        lore: "A long-endurance System passive adapted here to keep Jin-Woo battle-ready between heavy exchanges.",
+        lore: "The System regenerates Jin-Woo from any non-fatal wound — the passive that regrew what the Double Dungeon took.",
         requirement: { level: 15, vitality: 10, intelligence: 8 },
         baseEffect: { hpRegenBonus: 0.12, manaRegenBonus: 0.12 },
         perLevelEffect: { hpRegenBonus: 0.05, manaRegenBonus: 0.05 },

@@ -288,7 +288,11 @@ module.exports = {
     if (!this._isCombatStatusEffectsEnabled()) return null;
     if (!channelKey || targetType !== 'user') return null;
 
-    // SHADOW MONARCH PERK (Detoxification -> Perfect Body, player-exclusive):
+    // SHADOW MONARCH PERK (Longevity -> Perfect Body, player-exclusive):
+    // Attributed to Longevity, not Detoxification — in Solo Leveling canon
+    // Longevity is the broad immunity (all diseases, toxins and abnormal status
+    // effects) while Detoxification covers only the poison/magical subset, which
+    // is what the pre-SM behaviour below already models.
     // total immunity to EVERY status ailment (magical AND physical — poison, burn,
     // frostbite, necrotic, bleed, armorBreak, stun, fear). No enemy effect can ever
     // land on the Shadow Monarch. This is the single chokepoint for enemy->user status.
