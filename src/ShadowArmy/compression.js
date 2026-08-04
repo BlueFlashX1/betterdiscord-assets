@@ -671,6 +671,9 @@ module.exports = {
 
     let promoted = 0;
     let essenceSpent = 0;
+    // id -> essence charged for that promotion, so a partial write failure can
+    // be refunded precisely. See the refund block after transformShadowsBatch.
+    const essenceCostById = new Map();
     let remainingEssence = currentEssence;
     // Essence-budget decisions (who gets promoted, to what grade, at what
     // cost) stay computed here from the snapshot — this is a single
@@ -706,7 +709,13 @@ module.exports = {
       this._recordOfficerPromotion(entry.raw, entry.grade, nextGrade);
 
       const id = this.getCacheKey?.(entry.raw) || entry.raw?.id || entry.raw?.i;
-      if (id) idsToPromote.push(id);
+      if (id) {
+        idsToPromote.push(id);
+        // Remember what THIS shadow cost, so a failed write can be refunded
+        // exactly (grade costs differ per tier — a flat average would refund
+        // the wrong amount).
+        essenceCostById.set(String(id), cost);
+      }
     }
 
     if (promoted > 0) {
@@ -774,6 +783,33 @@ module.exports = {
         );
         if (failedIds.length > 0) {
           this.debugError('GRADE', `transformShadowsBatch: ${failedIds.length} promoted shadow(s) failed to save`, { failedIds });
+
+          // REFUND. Essence was deducted up-front (before this write) so a
+          // concurrent Dungeons:awardEssence credit isn't clobbered. That is
+          // correct for the happy path, but it means a shadow whose write
+          // FAILED kept its old grade while its essence was already gone —
+          // permanently, since nothing here put it back. Refund exactly what
+          // the failed ids cost, and mirror it to ItemVault so the audit trail
+          // matches the balance (the spend was already emitted above).
+          let refund = 0;
+          for (const failedId of failedIds) {
+            refund += Number(essenceCostById.get(String(failedId))) || 0;
+          }
+          if (refund > 0) {
+            essenceConfig.essence = (essenceConfig.essence || 0) + refund;
+            essenceSpent = Math.max(0, essenceSpent - refund);
+            if (SLEvents) {
+              try {
+                SLEvents.emit('ItemVault:add', {
+                  itemId: 'shadow_essence',
+                  amount: refund,
+                  source: 'ShadowArmy',
+                  reason: 'grade_promotion_refund',
+                });
+              } catch (_) { /* audit mirror only — the balance above is authoritative */ }
+            }
+            this.debugLog?.('GRADE', `Refunded ${refund} essence for ${failedIds.length} failed promotion(s)`);
+          }
         }
       }
       this._invalidateSnapshot?.();

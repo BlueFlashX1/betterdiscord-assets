@@ -258,7 +258,14 @@ module.exports = {
     // extraction XP) and stay bounded by it. Returning empty rather than
     // silently walking the store keeps the cost impossible to reintroduce by
     // accident; the log line names the caller if one ever tries.
-    if (!Array.isArray(shadowIds) && !perShadowAmounts) {
+    // An EMPTY array must be treated as "no targets" too. Array.isArray([]) is
+    // true, so `shadowIds: []` used to sail past this guard; targetShadowIds
+    // then resolved to null (length > 0 fails) and execution fell into the
+    // army-wide branch below, which enumerates the ENTIRE store via
+    // getAllShadowsRaw — the ~281k-record cost this guard exists to make
+    // "impossible to reintroduce by accident". No caller passes [] today, so
+    // this closes a trap rather than fixing a live regression.
+    if ((!Array.isArray(shadowIds) || shadowIds.length === 0) && !perShadowAmounts) {
       this.debugLog(
         'SHADOW_XP',
         `grantShadowXP called with no target ids (amount=${baseAmount}, reason=${reason}) — ignored; army-wide XP is derived now`
