@@ -1,3 +1,39 @@
+/**
+ * calculation-bonuses — the XP economy and every multiplier feeding it.
+ * Object.assign'd onto the SoloLevelingStats prototype, so `this` is the live
+ * plugin. Consumed by xp-processing, progression-read-model, and the Dungeons
+ * damage path (via getSkillTreeBonuses / getActiveSkillBuffs).
+ *
+ * ── PER-MESSAGE XP CHAIN ─────────────────────────────────────────────────
+ *   baseXP 10
+ *     + character bonus (0.15/char, capped 75)
+ *     + calculateQualityBonus / calculateMessageTypeBonus
+ *     + calculateTimeBonus / calculateActivityStreakBonus
+ *     + flat channel bonus
+ *     x anti-abuse decay
+ *     -> applyXpGovernors: sqrt-compressed above the SOFT cap
+ *        (220 + level*2.8), hard-clamped at (420 + level*4.2)
+ *
+ * Both caps scale with level, so the ceiling rises as you do — but per-message
+ * XP also SHRINKS with level via the reduction multiplier in xp-processing
+ * (floor 0.6x). Curve and reward move in opposite directions; that interaction
+ * is the single biggest lever on pacing, and neither half is obvious from the
+ * other file.
+ *
+ * ── LEVEL & STAT CURVES ──────────────────────────────────────────────────
+ *   getXPRequiredForLevel(level) = 100*level^1.6 + 100*level*0.25
+ *     Power law, NOT exponential. Cached, because the accumulate-to-derive-
+ *     level loop in progression-read-model calls it once per level.
+ *   getStatPointsForLevel(level) = 5 below 100, then 4 / 3 / 2 / 1 by tier —
+ *     front-loaded on purpose so early levels feel generous.
+ *
+ * Stat BONUSES have soft caps even though stats themselves do not: strength's
+ * XP bonus flattens above 20, intelligence's tier bonus above 15. Raising a
+ * stat past those points is not wasted, it just stops paying into XP.
+ *
+ * getSkillTreeBonuses reads ANOTHER plugin (SkillTree) and must tolerate it
+ * being absent — a missing skill tree means zero bonuses, never a throw.
+ */
 module.exports = {
   calculateQualityBonus(messageText, messageLength) {
     let bonus = 0;

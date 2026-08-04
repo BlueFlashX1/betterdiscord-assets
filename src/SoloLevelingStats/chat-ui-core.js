@@ -1,5 +1,31 @@
 const { showToolbarTooltip, hideToolbarTooltip, removeToolbarTooltip, ensureTooltipCSS } = require('../shared/toolbar-tooltip');
 
+/**
+ * chat-ui-core — the channel-header stats button and its popup.
+ * Object.assign'd onto the SoloLevelingStats prototype.
+ *
+ * Entry points: ensureHeaderStatsButton(), removeHeaderStatsButton(),
+ * toggleHeaderStatsPopup(), openHeaderStatsPopup().
+ *
+ * ensureHeaderStatsButton is IDEMPOTENT and is called repeatedly — Discord
+ * rebuilds the channel header on navigation, theme changes and re-renders, so
+ * the button must be re-inserted without ever producing a second copy. Treat
+ * "already present" as the normal case, not an error.
+ *
+ * The toolbar itself is reached through the shared header-toolbar hub rather
+ * than a per-plugin observer: several plugins in this suite inject into the
+ * same header, and one shared observer replaced ~6 competing ones. Adding a
+ * private MutationObserver here reintroduces that cost.
+ *
+ * Tooltips come from shared/toolbar-tooltip and are GLOBAL — removeToolbarTooltip
+ * must be called on teardown or a tooltip outlives the button it described and
+ * hangs in the DOM pointing at nothing.
+ *
+ * This file renders; it does not compute. Values come from
+ * progression-read-model (derived) and settings-store (persisted). Anything
+ * that looks like game math belongs in one of those, not here.
+ */
+
 module.exports = {
   _getChannelHeaderToolbar() {
     const selectors = [

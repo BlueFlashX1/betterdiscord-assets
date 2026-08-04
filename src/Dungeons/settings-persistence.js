@@ -1,5 +1,35 @@
 const { DungeonStorageManager, MobBossStorageManager } = require('./storage');
 
+/**
+ * settings-persistence — Dungeons' own settings, plus the runtime-config
+ * accessors the combat path reads every tick. One mixin (see index.js).
+ *
+ * Entry points: saveSettings(immediate), markCombatSettingsDirty(reason),
+ * sanitizeCriticalCombatSettings(), getDungeonRankList(),
+ * getBossGateRuntimeConfig(rank, mobCapacity), getMobWaveRuntimeConfig().
+ *
+ * WHY THE GETTERS EXIST. Combat needs tuning values thousands of times a tick.
+ * These accessors resolve `this.settings` overrides against constants.js
+ * defaults ONCE per call and are cheap by construction — read them, do not
+ * re-derive their contents inline in a hot loop, and do not cache their
+ * results across ticks (settings can change mid-session).
+ *
+ * sanitizeCriticalCombatSettings is a REPAIR pass, not validation: a setting
+ * that arrives NaN, negative, or wildly out of range gets clamped back to a
+ * sane value rather than rejected. Combat has no error path for a bad tuning
+ * number — a NaN multiplier silently turns every damage calculation into NaN,
+ * which propagates into stored HP and corrupts the dungeon. Clamping is
+ * deliberately more forgiving than the settings-store guards in
+ * SoloLevelingStats, because the failure mode here is corruption rather than
+ * lost progress.
+ *
+ * saveSettings is debounced; markCombatSettingsDirty is the signal that
+ * something combat-relevant changed and the next save must actually run.
+ * Dungeon RECORDS (the dungeons themselves, mobs, bosses) are a different
+ * store entirely — DungeonStorageManager / MobBossStorageManager above, not
+ * this file.
+ */
+
 // Rank -> boss-gate kill multiplier. Hoisted to module scope (frozen) because
 // getBossGateRuntimeConfig runs on the combat hot path (per boss-hit and per
 // shadow-combat tick); rebuilding this constant literal every call was pure

@@ -1,3 +1,28 @@
+/**
+ * progression-read-model — DERIVED progression values. Object.assign'd onto
+ * the SoloLevelingStats prototype.
+ *
+ * This file computes; it does not persist. Nothing here should write settings —
+ * saving lives in settings-store.js, and mixing the two is how a read path
+ * ends up overwriting real progress with a derived default.
+ *
+ * Entry points: getCurrentLevel(), getRankRequirements(), getUnifiedBuffSummary(),
+ * and the small formatters the UI uses.
+ *
+ * LEVEL IS DERIVED, NOT STORED. getCurrentLevel accumulates
+ * getXPRequiredForLevel(n) (calculation-bonuses.js) against totalXP until it
+ * runs out. Consequences: totalXP is the source of truth, level is a view of
+ * it, and anything that mutates level directly will be silently overwritten on
+ * the next read.
+ *
+ * RANK requires BOTH a level threshold and an achievement count — see
+ * getRankRequirements. The level-2000 Shadow Monarch ceiling is intentional
+ * (an aspirational prestige cap) and must not be "fixed" downward: 26
+ * achievements are gated above level 560, and _routeShadowMonarchXp
+ * (xp-processing.js) FREEZES levelling once the rank is held, so a lower
+ * threshold permanently strands all of them. Pace the endgame through XP
+ * rewards instead.
+ */
 module.exports = {
   getBuffPercents(statKey, titleBonus, shadowBuffs) {
     // Title: support both old format (raw numbers) and new format (percentages)
