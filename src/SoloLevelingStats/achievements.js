@@ -9,12 +9,7 @@ const C = require('./constants');
  * cleanupUnwantedTitles().
  *
  * Definitions live in achievement-definitions.js (76 array entries but only 75
- * distinct ids — `shadow_sovereign` is defined TWICE, at ~line 428 as the
- * Level-2000 capstone and ~line 579 as a Lv-1500 + 18k-messages award, with
- * different titleBonus payloads. Lookup-by-id returns the first, and unlock
- * state keys on id, so the second is effectively unreachable. Unresolved —
- * renaming a shipped id would orphan existing unlock records, so it needs a
- * deliberate migration decision, not a silent edit); this file only
+ * distinct ids); this file only
  * evaluates them. Conditions are declarative `{ type, value }` pairs, so
  * adding an achievement should never require editing this file — if it does,
  * add the condition TYPE here and keep the data over there.
@@ -41,6 +36,23 @@ const C = require('./constants');
  */
 
 module.exports = {
+  // KNOWN DATA BUG — `shadow_sovereign` is defined TWICE in
+  // achievement-definitions.js: ~line 428 as the Level-2000 + 35-achievement
+  // capstone, and ~line 579 as a Level-1500 + 18k-messages award, with
+  // different titleBonus payloads.
+  //
+  // Because this loop walks the WHOLE array and skips ids already unlocked,
+  // the easier Lv-1500 entry fires first and claims the id. From that point the
+  // Lv-2000 capstone is permanently skipped: it can never be earned, and the
+  // player keeps the Lv-1500 variant's weaker bonus. The Shadow Monarch rank
+  // itself still gates on level 2000 + 35 achievements and is unaffected — it
+  // is only the matching capstone ACHIEVEMENT that is short-circuited.
+  //
+  // Not fixed here because it is a save-migration decision: renaming the
+  // Lv-1500 entry's id leaves `shadow_sovereign` already in existing unlocked
+  // arrays (still wrongly satisfying the capstone) and re-fires a toast for the
+  // renamed one. A correct fix renames it AND rewrites stale unlock records
+  // whose level is below 2000.
   checkAchievements() {
     const achievements = this.getAchievementDefinitions();
     let newAchievements = [];
