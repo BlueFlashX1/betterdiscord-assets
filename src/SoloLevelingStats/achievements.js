@@ -8,7 +8,13 @@ const C = require('./constants');
  * unlockAchievement(achievement), revalidateUnlockedAchievements(),
  * cleanupUnwantedTitles().
  *
- * Definitions live in achievement-definitions.js (76 entries); this file only
+ * Definitions live in achievement-definitions.js (76 array entries but only 75
+ * distinct ids — `shadow_sovereign` is defined TWICE, at ~line 428 as the
+ * Level-2000 capstone and ~line 579 as a Lv-1500 + 18k-messages award, with
+ * different titleBonus payloads. Lookup-by-id returns the first, and unlock
+ * state keys on id, so the second is effectively unreachable. Unresolved —
+ * renaming a shipped id would orphan existing unlock records, so it needs a
+ * deliberate migration decision, not a silent edit); this file only
  * evaluates them. Conditions are declarative `{ type, value }` pairs, so
  * adding an achievement should never require editing this file — if it does,
  * add the condition TYPE here and keep the data over there.

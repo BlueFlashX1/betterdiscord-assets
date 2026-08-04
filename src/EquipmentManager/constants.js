@@ -7,9 +7,12 @@
  *     { id, name, slot, rarity, icon, description, levelReq,
  *       stats: {...EMPTY_STATS, <overrides>}, specialEffects: [],
  *       setId: string|null, source, lore }
- *     `slot` is one of the 8 EQUIPMENT_SLOTS keys, plus the special 'ring'.
- *   EQUIPMENT_SETS      setId -> { name, pieces: [10 item ids], bonuses:
+ *     EQUIPMENT_SLOTS has 10 keys, but an item's `slot` uses only 8 values:
+ *     weapon, helmet, chestplate, gloves, boots, earring, necklace, and the
+ *     special 'ring' (which fills either ring1 or ring2). No item uses offHand.
+ *   EQUIPMENT_SETS      setId -> { name, pieces: [item ids], bonuses:
  *                       { pieceCount: statBlock } }
+ *                       7 sets; six have 10 pieces, one has 3 — do not assume 10.
  *   Drop tables         DROP_CHANCE_BY_RANK, RARITY_POOL_BY_RANK,
  *                       RARITY_WEIGHTS_BY_RANK, RARITY_ORDER,
  *                       GUARANTEED_DROPS, GRANT_ONLY_SET_IDS
@@ -27,7 +30,7 @@
  *    Regalia). Reordering it affects drop-degradation logic that lives in
  *    Dungeons, NOT in this file.
  *
- * Integrity was verified programmatically (2026-08-04): no duplicate ids, no
+ * Integrity was verified programmatically (2026-08-03): 107 unique ids, no
  * dangling setId references, no invalid slots, and every EQUIPMENT_SETS.pieces
  * entry resolves to a real item. Re-run that check after bulk edits.
  */

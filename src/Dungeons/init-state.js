@@ -13,9 +13,11 @@ const { UnifiedSaveManager } = require('./bootstrap-runtime');
  *   this.rankScaling = { powerStep, damageExponent, damageMin, damageMax,
  *                        mobHpStep, bossHpStep, shadowHp* ... }
  * combat-primitives reads these with `??` fallbacks. Those fallbacks MUST
- * mirror the values here; they drifted once (0.9/0.25/4.0 in the fallback
- * against 0.85/0.35/3.25 live) and reading that function alone gave a damage
- * curve the game never used.
+ * mirror the values here. They have drifted before — a stale fallback triple
+ * against different live values meant reading that function alone gave a damage
+ * curve the game never used. Currently in sync at
+ * powerStep 1.35 / damageExponent 0.85 / damageMin 0.35 / damageMax 8.0
+ * (init-state ~line 198; combat-primitives ~line 750). Change one, change both.
  *
  * PRECOMPUTED LOOKUP TABLES built here, all indexed by rank index:
  *   _mobStatTable ....... quadratic mob stat growth
