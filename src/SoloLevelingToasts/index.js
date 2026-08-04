@@ -1,3 +1,26 @@
+/**
+ * SoloLevelingToasts — the suite's toast engine (v2). A full, self-contained
+ * plugin class; other plugins detect it via `instance.toastEngineVersion >= 2`
+ * and route their notifications here instead of using BdApi's.
+ *
+ * Owns: plain toasts, card toasts, grouping/coalescing, rate limiting, particle
+ * effects — and a Patcher.after hook on SoloLevelingStats.showNotification that
+ * intercepts that plugin's own toasts.
+ *
+ * Entry points: showToast(), showCardToast(), hookIntoSoloLeveling().
+ *
+ * INVARIANTS
+ *  - EVERY setTimeout must go through _setTrackedTimeout. stop() cancels only
+ *    what that registry knows about, so a raw setTimeout anywhere in this file
+ *    is a leak that survives plugin disable.
+ *  - The SoloLevelingStats hook is best-effort and ASYNCHRONOUS. It retries in
+ *    two phases (10 x 2s, then 20 x 30s) because that plugin's multi-tier
+ *    settings load can take far longer than the old 20-second budget — when it
+ *    did, toasts silently never hooked for the rest of the session. Never
+ *    assume the hook is live; every path must work unhooked.
+ *  - This plugin reads another through BdApi.Plugins.get, so it must tolerate
+ *    SoloLevelingStats being absent, disabled, or mid-load at any moment.
+ */
 import STYLES from "./styles.css";
 import {
   extractMessageText,

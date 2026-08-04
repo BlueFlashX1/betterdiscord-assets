@@ -1,3 +1,32 @@
+/**
+ * settings-store — persistence for the player's progression. Object.assign'd
+ * onto the SoloLevelingStats prototype, so `this` is the live plugin.
+ *
+ * THIS FILE HOLDS THE USER'S ACTUAL PROGRESS. Treat every change here as
+ * data-loss-sensitive; the guards below exist because each one was a real bug.
+ *
+ * Entry points: loadSettings(), saveSettings(immediate) (20s debounce),
+ * _saveSettingsImmediate(), _validateCleanSettingsForSave().
+ *
+ * FOUR STORAGE TIERS, tried in order on load, scored rather than trusted:
+ *   file backup -> IndexedDB (this.saveManager) -> BdApi.Data -> legacy .data.json
+ * Candidates are quality-scored so a healthy older copy beats a degraded newer
+ * one. readFileBackup/writeFileBackup live in a SIBLING module, not here.
+ *
+ * INVARIANTS
+ *  - `_startupLoadComplete` must be true before ANY save. Saving before the
+ *    load finishes reintroduces "load defaults -> immediately save -> overwrite
+ *    real progress", which is the worst failure this plugin has had.
+ *  - _validateCleanSettingsForSave ABORTS a save on invalid level, invalid XP,
+ *    or all-stats-zero above level 5. It is a save-path gate and also runs
+ *    regression checks against the file-backup cache — do NOT reuse it on a
+ *    recovery path, where aborting would block a legitimate repair.
+ *  - Backup RESTORES gate promotion-to-canonical on
+ *    _isStructurallySaneForPromotion (the three cheap corruption checks only).
+ *    A failing backup is still returned and used for the session; it is simply
+ *    not written over the main store, so corruption cannot become the thing
+ *    every future load trusts.
+ */
 module.exports = {
   recomputeHPManaFromStats(totalStatsOverride = null) {
     const totalStats = totalStatsOverride || this.getTotalEffectiveStats();

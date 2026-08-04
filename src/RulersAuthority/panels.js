@@ -1,3 +1,29 @@
+/**
+ * panels — Discord chrome manipulation for RulersAuthority.
+ *
+ * NOT a class and NOT a mixin: this exports plain functions, each taking the
+ * plugin instance as an explicit first argument (`ctx`) and mutating it. So
+ * `this` means nothing here — state lives on `ctx`. That is unlike most of the
+ * suite, where sibling modules are Object.assign'd onto one prototype.
+ *
+ * Owns: panel push/pull, the hover-to-reveal state machine, channel hiding and
+ * category crush, DM gripping, and the toolbar icon.
+ * Entry points: togglePanel(ctx, ...), setupHoverHandlers(ctx),
+ * setupToolbarObserver(ctx), getSoloLevelingData(ctx).
+ *
+ * INVARIANTS
+ *  - `_hiddenIdSetCache` is a module-level Map held DELIBERATELY off the
+ *    persisted guildData. A live Set stored there once got JSON.stringify'd to
+ *    {} on save, silently corrupting every later load. Keep runtime Sets out of
+ *    anything that gets serialised.
+ *  - getSoloLevelingData reads another plugin through BdApi.Plugins.get, so it
+ *    must tolerate SoloLevelingStats being absent, disabled, or still loading.
+ *  - The DM-apply reentrancy guard (`ctx._dmApplyInProgress`) is cleared in a
+ *    microtask on the assumption that the MutationObserver's own callback is
+ *    already queued ahead of it. Both are microtasks, so that ordering is not
+ *    spec-guaranteed across engines — if this guard ever misbehaves, suspect
+ *    the ordering assumption first rather than the throttle.
+ */
 // Panel Control — Sidebar, Members, Profile, Search
 // Macro panel control (toggle, restore, count), hover-to-expand system,
 // micro channel/category/DM operations, context menus, toolbar icon,

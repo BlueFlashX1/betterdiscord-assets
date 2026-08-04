@@ -1,3 +1,36 @@
+/**
+ * EquipmentManager/constants — pure data plus three small lookups. No class,
+ * no mixin, no side effects.
+ *
+ * SHAPE
+ *   EQUIPMENT_DATABASE  flat object keyed by item id (107 entries). Each:
+ *     { id, name, slot, rarity, icon, description, levelReq,
+ *       stats: {...EMPTY_STATS, <overrides>}, specialEffects: [],
+ *       setId: string|null, source, lore }
+ *     `slot` is one of the 8 EQUIPMENT_SLOTS keys, plus the special 'ring'.
+ *   EQUIPMENT_SETS      setId -> { name, pieces: [10 item ids], bonuses:
+ *                       { pieceCount: statBlock } }
+ *   Drop tables         DROP_CHANCE_BY_RANK, RARITY_POOL_BY_RANK,
+ *                       RARITY_WEIGHTS_BY_RANK, RARITY_ORDER,
+ *                       GUARANTEED_DROPS, GRANT_ONLY_SET_IDS
+ *   Lookups             getEquipmentById (direct property access),
+ *                       getEquipmentForSlot (linear filter — fine at n=107),
+ *                       getRarityColor (falls back to E-grey)
+ *
+ * FAILURE MODES ARE SILENT — nothing here validates at load:
+ *  - A DUPLICATE object key does not error. The last one wins and the earlier
+ *    item vanishes with no warning.
+ *  - A typo'd `setId` never matches a set, so that piece simply never counts
+ *    toward a set bonus. No crash, just quietly missing content.
+ *  - RARITY_ORDER deliberately omits 'E' (no E-tier items exist) and includes
+ *    'SSS' as real-but-undroppable (reserved for grant-only Shadow Monarch
+ *    Regalia). Reordering it affects drop-degradation logic that lives in
+ *    Dungeons, NOT in this file.
+ *
+ * Integrity was verified programmatically (2026-08-04): no duplicate ids, no
+ * dangling setId references, no invalid slots, and every EQUIPMENT_SETS.pieces
+ * entry resolves to a real item. Re-run that check after bulk edits.
+ */
 // EquipmentManager/constants.js
 // Solo Leveling themed equipment system — lore-accurate items, set bonuses, drop tables.
 

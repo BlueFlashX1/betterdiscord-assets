@@ -1,3 +1,26 @@
+/**
+ * ShadowRecon — guild and user intelligence. A standalone class
+ * (`module.exports = class ShadowRecon`), NOT a mixin — unusual for this suite,
+ * so there is no shared `this` with sibling files here.
+ *
+ * Owns: guild dossiers, staff/permission analysis, and opt-in presence/voice/
+ * aura tracking of the users ShadowSenses has deployed shadows against.
+ *
+ * Entry points: start()/stop(), openGuildDossier(guildId),
+ * refreshDispatcherSubs()/_onPresenceUpdate(), openUserIntelModal().
+ *
+ * CROSS-PLUGIN: reads ShadowSenses.deploymentManager.getDeployments() directly,
+ * with a documented one-shot disk fallback when that plugin is not mounted. It
+ * must keep working with ShadowSenses absent or disabled.
+ *
+ * PERFORMANCE INVARIANT: _getShadowDeploymentMap() is TTL-cached (5s) and must
+ * be hoisted ONCE per dispatch batch in every presence/voice/channel handler —
+ * never called per record. Calling it inside a per-user loop reintroduces the
+ * regression the 5s cache was added to fix.
+ *
+ * Marked-guild state loads from BdApi.Data at startup; a transient read failure
+ * currently resets the set for the session rather than retrying (known, minor).
+ */
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createToast } = require("../shared/toast");
 const { loadSettings, saveSettings } = require("../shared/settings");
