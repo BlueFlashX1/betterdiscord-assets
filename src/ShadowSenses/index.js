@@ -1,3 +1,42 @@
+/**
+ * ShadowSenses — entry point. TWO classes live in this file, and confusing
+ * them is the most common way to break the plugin.
+ *
+ *   class SensesEngine   — the intel engine: feeds, event handlers, per-guild
+ *       storage. SensesEngineUtils / SensesEngineFeed / SensesEngineEvents are
+ *       Object.assign'd onto ITS prototype.
+ *   module.exports = class ShadowSenses — the actual BD plugin.
+ *       ShadowSensesUiMethods (plugin-ui-methods.js) is mixed onto THIS one.
+ *
+ * So `this` inside senses-engine-*.js is the ENGINE; `this` inside
+ * plugin-ui-methods.js is the PLUGIN. The engine reaches the plugin via
+ * `this._plugin`. Mixing a method onto the wrong prototype fails SILENTLY —
+ * it simply never gets called.
+ *
+ * FILE MAP
+ *   senses-engine-events.js .. every Dispatcher/bus handler (MESSAGE_CREATE,
+ *                              TYPING_START, presence, relationship, and the
+ *                              MessageEditHistory bus consumer)
+ *   senses-engine-feed.js .... per-guild feed storage, caps, purge, disk flush,
+ *                              and the _feedBus version signal the UI listens to
+ *   components.js ............ all React UI; buildComponents(pluginRef) returns
+ *                              { SensesPanel }
+ *   plugin-ui-methods.js ..... CSS, toolbar icon, popup mount/unmount, settings
+ *   deployment-manager.js .... which deployed shadow watches which user
+ *
+ * INVARIANTS
+ *  - DeploymentManager._version is a getter/setter defined in its constructor.
+ *    Every mutation must go through `this._version++` (as _save does) or the
+ *    "change" event never fires and every UI subscriber silently freezes.
+ *  - Both tabs SUBSCRIBE to an EventTarget rather than polling. If
+ *    sensesEngine or deploymentManager is null when a tab mounts, that tab
+ *    never updates — there is no retry.
+ *  - Feed entries persist only for eventType "message" and "edit";
+ *    _purgeUtilityEntries drops the rest on startup by design.
+ *  - Optional shared modules loaded in shared-utils.js may be null. Teardown
+ *    must never DEPEND on them — see the transition-timer fallback in
+ *    _deactivateSensesResources below.
+ */
 const fs = require("fs");
 const path = require("path");
 const {
@@ -629,10 +668,33 @@ module.exports = class ShadowSenses {
     }
     this._escHandler = null;
 
-    // Transitions
-    _TransitionCleanupUtils?.cancelPendingTransition?.(this);
-    _TransitionCleanupUtils?.clearNavigateRetries?.(this);
-    _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+    // Transitions. The optional-chaining here is load-failure tolerant, which
+    // means a missing TransitionCleanupUtils would silently skip teardown and
+    // leave these timers firing against the nulled refs below. The fallback
+    // clears the same four fields inline so cleanup never depends on an
+    // external plugin file being present.
+    if (_TransitionCleanupUtils) {
+      _TransitionCleanupUtils.cancelPendingTransition?.(this);
+      _TransitionCleanupUtils.clearNavigateRetries?.(this);
+      _TransitionCleanupUtils.cancelChannelViewFade?.(this);
+    } else {
+      try {
+        clearTimeout(this._transitionNavTimeout);
+        clearTimeout(this._transitionCleanupTimeout);
+        clearTimeout(this._channelFadeResetTimer);
+        this._transitionNavTimeout = null;
+        this._transitionCleanupTimeout = null;
+        this._channelFadeResetTimer = null;
+        // Always a Set (index.js:471, 509) — mirrors clearNavigateRetries.
+        const retries = this._navigateRetryTimers;
+        if (retries && typeof retries.clear === 'function') {
+          for (const timerId of retries) clearTimeout(timerId);
+          retries.clear();
+        }
+      } catch (err) {
+        this.debugError?.('CLEANUP', 'Inline transition-timer teardown failed', err);
+      }
+    }
 
     // CSS + refs
     this.removeCSS();
