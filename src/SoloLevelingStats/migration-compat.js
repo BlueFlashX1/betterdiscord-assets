@@ -67,6 +67,74 @@ module.exports = {
     }
   },
 
+  /**
+   * ONE-TIME REPAIR (2026-08-03) for the `shadow_sovereign` id collision.
+   *
+   * Two different achievements shared that id: the Level-2000 + 35-achievement
+   * capstone (defined first) and a Level-1500 + 18k-messages heir award
+   * (defined later). checkAchievements walks the WHOLE definitions array and
+   * skips any id already unlocked, so the far easier heir entry fired first,
+   * claimed the id, and left the capstone permanently unearnable — the player
+   * kept the heir's weaker titleBonus instead of the capstone's crown.
+   *
+   * The heir entry is now `shadow_sovereign_herald`. This repairs saves whose
+   * `shadow_sovereign` came from that old path. NOTHING EARNED IS EVER
+   * REMOVED WITHOUT REPLACEMENT:
+   *   - qualifies for the capstone (level >= 2000 AND >= 35 unlocked)
+   *       -> keep `shadow_sovereign` (it now resolves to the capstone, so the
+   *          correct crown bonus finally applies) and ADD the herald, which was
+   *          legitimately earned at 1500 on the way up.
+   *   - does not qualify
+   *       -> swap `shadow_sovereign` for `shadow_sovereign_herald` and remap a
+   *          matching activeTitle, so the capstone becomes earnable again and
+   *          the displayed title is preserved.
+   *
+   * Either branch leaves the unlocked count >= its previous value, so no
+   * achievement-count gate regresses. Guarded by a persisted once-flag.
+   */
+  _migrateShadowSovereignSplit() {
+    const FLAG = 'migration_shadow_sovereign_split_v1';
+    try {
+      if (BdApi.Data.load('SoloLevelingStats', FLAG)) return;
+
+      const unlocked = this.settings?.achievements?.unlocked;
+      if (Array.isArray(unlocked) && unlocked.includes('shadow_sovereign')) {
+        // Evaluate BEFORE mutating — mirrors how checkAchievementCondition
+        // reads it ('achievements' compares unlocked.length).
+        const level = Number(this.settings.level) || 0;
+        const qualifiesForCapstone = level >= 2000 && unlocked.length >= 35;
+
+        if (!unlocked.includes('shadow_sovereign_herald')) {
+          unlocked.push('shadow_sovereign_herald');
+        }
+
+        if (!qualifiesForCapstone) {
+          const at = unlocked.indexOf('shadow_sovereign');
+          at >= 0 && unlocked.splice(at, 1);
+          if (this.settings.achievements.activeTitle === 'Shadow Sovereign') {
+            this.settings.achievements.activeTitle = 'Shadow Sovereign Herald';
+          }
+        }
+
+        // Invalidate the memoised unlocked-Set so checkAchievements rebuilds it.
+        this._unlockedAchievementSet = null;
+        this._unlockedAchievementSetSize = -1;
+
+        this.debugLog?.(
+          'MIGRATE_SOVEREIGN',
+          qualifiesForCapstone
+            ? 'Capstone retained; Shadow Sovereign Herald granted.'
+            : 'Reassigned to Shadow Sovereign Herald; capstone earnable again.'
+        );
+      }
+
+      BdApi.Data.save('SoloLevelingStats', FLAG, true);
+    } catch (error) {
+      // Never block startup on a cosmetic repair — leave the save untouched.
+      this.debugError?.('MIGRATE_SOVEREIGN', error);
+    }
+  },
+
   migrateData() {
     // Migration logic for future updates
     try {
@@ -131,6 +199,8 @@ module.exports = {
       ) {
         this.settings.unallocatedStatPoints = 0;
       }
+
+      this._migrateShadowSovereignSplit();
     } catch (error) {
       this.debugError('MIGRATE_DATA', error);
       // Don't wipe real progress on a migration error. If the user has

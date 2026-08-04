@@ -576,11 +576,16 @@ module.exports = {
         }, // S-Rank Jin-Woo: assassin speed, dual dagger crits, shadow INT, combat awareness
       },
       {
-        id: 'shadow_sovereign',
-        name: 'Shadow Sovereign',
+        // Renamed from 'shadow_sovereign' (2026-08-03). It collided with the
+        // Level-2000 capstone above, and because checkAchievements walks the
+        // whole array and skips already-unlocked ids, this easier entry claimed
+        // the id first and made the capstone permanently unearnable. This is the
+        // messages-earned counterpart to 'shadow_sovereign_heir' (crits-earned).
+        id: 'shadow_sovereign_herald',
+        name: 'Shadow Sovereign Herald',
         description: 'Reach Monarch+ rank (Lv 1500) and send 18,000 messages — heir to the shadow throne',
         condition: { type: 'compound', conditions: [{ type: 'level', value: 1500 }, { type: 'messages', value: 18000 }] },
-        title: 'Shadow Sovereign',
+        title: 'Shadow Sovereign Herald',
         titleBonus: { xp: 2.3, intelligencePercent: 0.4, agilityPercent: 0.3, strengthPercent: 0.25, critChance: 0.15 }, // Shadow heir: necromantic INT, shadow speed, growing power
       },
       {

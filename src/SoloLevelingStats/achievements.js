@@ -36,23 +36,17 @@ const C = require('./constants');
  */
 
 module.exports = {
-  // KNOWN DATA BUG — `shadow_sovereign` is defined TWICE in
-  // achievement-definitions.js: ~line 428 as the Level-2000 + 35-achievement
-  // capstone, and ~line 579 as a Level-1500 + 18k-messages award, with
-  // different titleBonus payloads.
+  // DUPLICATE IDS ARE A SILENT, PERMANENT HAZARD HERE — this loop walks the
+  // WHOLE definitions array and skips any id already unlocked, so if two
+  // achievements share an id the EASIER one fires first, claims the id, and
+  // makes the harder one unearnable forever while the player keeps the weaker
+  // titleBonus. Nothing errors; the achievement simply never arrives.
   //
-  // Because this loop walks the WHOLE array and skips ids already unlocked,
-  // the easier Lv-1500 entry fires first and claims the id. From that point the
-  // Lv-2000 capstone is permanently skipped: it can never be earned, and the
-  // player keeps the Lv-1500 variant's weaker bonus. The Shadow Monarch rank
-  // itself still gates on level 2000 + 35 achievements and is unaffected — it
-  // is only the matching capstone ACHIEVEMENT that is short-circuited.
-  //
-  // Not fixed here because it is a save-migration decision: renaming the
-  // Lv-1500 entry's id leaves `shadow_sovereign` already in existing unlocked
-  // arrays (still wrongly satisfying the capstone) and re-fires a toast for the
-  // renamed one. A correct fix renames it AND rewrites stale unlock records
-  // whose level is below 2000.
+  // That happened once: `shadow_sovereign` was both the Level-2000 capstone and
+  // a Level-1500 award. Fixed 2026-08-03 — the Lv-1500 entry is now
+  // `shadow_sovereign_herald`, with a one-time repair in migration-compat.js
+  // (_migrateShadowSovereignSplit) for saves that unlocked the id via the old
+  // path. Ids are unique as of that date; keep them that way.
   checkAchievements() {
     const achievements = this.getAchievementDefinitions();
     let newAchievements = [];
