@@ -1,3 +1,41 @@
+/**
+ * xp-processing — turns a Discord message into XP, levels and stat growth.
+ * Object.assign'd onto the SoloLevelingStats prototype. Runs PER MESSAGE, so
+ * everything here is written for that budget (note the hoisted tables below —
+ * they used to be reallocated on every message).
+ *
+ * ── FLOW ─────────────────────────────────────────────────────────────────
+ *   message
+ *     -> _resolveMessageProcessingContext        channel/thread context
+ *     -> dedup gate: _buildRecentMessageHash + _isRecentMessageDuplicate
+ *          (normalised text hash in a rolling window — stops copy-paste and
+ *           edit-spam farming; _pruneRecentMessages keeps the map bounded)
+ *     -> XP assembly in calculation-bonuses.js (quality/type/time/streak,
+ *          then the soft+hard governors)
+ *     -> level reduction multiplier: 1/(1+(level-10)*0.01), floor 0.6x
+ *     -> apply to totalXP  ... unless _routeShadowMonarchXp intercepts
+ *
+ * ── THE SHADOW MONARCH INTERCEPT (read before touching rank thresholds) ──
+ * _routeShadowMonarchXp fires when settings.rank === 'Shadow Monarch'. It
+ * deliberately does NOT touch settings.xp / settings.totalXP — because level
+ * is DERIVED from totalXP (progression-read-model), adding to it would keep
+ * levelling past the cap. Instead XP is converted into architect favour and
+ * minted into base stats.
+ *
+ * Consequence, and it is not local: once the rank is held, LEVEL FREEZES
+ * PERMANENTLY. That is why the level-2000 Shadow Monarch threshold cannot
+ * simply be lowered — 26 achievements are gated on levels above 560, and they
+ * would become permanently unreachable the moment the rank was granted
+ * earlier. Pace the endgame through XP rewards, not through that threshold.
+ *
+ * ── OTHER INVARIANTS ─────────────────────────────────────────────────────
+ *  - Per-message XP SHRINKS with level while the caps in calculation-bonuses
+ *    RISE with it. Both halves are needed to reason about pacing.
+ *  - The dedup map is bounded by pruning, not by size — an unbounded map here
+ *    is a leak that grows with chat volume.
+ *  - Stat bonuses flatten above their thresholds (strength 20, intelligence
+ *    15); stats keep growing, their XP contribution does not.
+ */
 // PERF: hoist the intelligence-tier bonus table once at module load.
 // Previously allocated 1 array + 3 object literals on every message via
 // _getIntelligenceTierBonus → _collectXpBonusState → awardXP → processMessageSent.

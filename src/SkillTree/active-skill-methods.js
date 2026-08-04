@@ -1,3 +1,36 @@
+/**
+ * active-skill-methods — castable skills: unlock state, mana, cooldowns, and
+ * the cast lifecycle. Object.assign'd onto the SkillTree prototype.
+ *
+ * Entry points: isActiveSkillUnlocked(id), _getEffectiveManaCost(base),
+ * _getSharedManaInfo(), _setSharedMana(next, maxHint), _persistSettingsFast().
+ *
+ * ── MANA IS SHARED, NOT OWNED ────────────────────────────────────────────
+ * The mana pool belongs to SoloLevelingStats, not to this plugin. SkillTree
+ * READS and WRITES it through _getSharedManaInfo / _setSharedMana, and the
+ * same pool simultaneously funds Dungeons' shadow resurrections. Three
+ * consumers, one balance.
+ *
+ * That makes it the plugin's main correctness hazard:
+ *  - Never cache a mana value across an await. Between read and write, a
+ *    dungeon tick can have spent from the same pool, and a stale write
+ *    silently refunds mana that was already used.
+ *  - Always go through _setSharedMana rather than writing SoloLevelingStats'
+ *    settings directly — it is what keeps the max-mana hint and the derived
+ *    HP/mana recompute in step.
+ *  - _getSoloLevelingInstance is TTL-cached and can return null. A missing or
+ *    still-loading SoloLevelingStats must mean "cannot cast", never a throw.
+ *
+ * ── PHASES ───────────────────────────────────────────────────────────────
+ * ACTIVE_SKILL_PHASES below is the state machine every castable skill moves
+ * through. Read it first — most of this file is transitions between those
+ * states, and a skill stuck mid-phase is almost always a transition that
+ * returned early without advancing or resetting.
+ *
+ * _persistSettingsFast exists because cast state changes far more often than
+ * a normal debounced save would capture; it is deliberately a lighter path
+ * than the full settings save and must not be used for progression data.
+ */
 const ACTIVE_SKILL_PHASES = Object.freeze({
   LOCKED: "LOCKED",
   IDLE: "IDLE",
