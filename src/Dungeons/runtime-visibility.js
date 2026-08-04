@@ -1,5 +1,36 @@
 const { _PluginUtils } = require('./bootstrap-runtime');
 const C = require('./constants');
+
+/**
+ * runtime-visibility — when the plugin is allowed to do work, and the HP-bar
+ * render queue. One mixin (see index.js). ~15 other src files call into it.
+ *
+ * Three responsibilities that share a file because all three gate on the same
+ * signal (is this window actually being looked at):
+ *
+ *  1. VISIBILITY TRACKING — startVisibilityTracking / isWindowVisible.
+ *     Listens to `visibilitychange` ONLY, deliberately not blur/focus: those
+ *     fire on every window switch, including switching to another app while
+ *     Discord stays visible, which would pause a dungeon the user is watching.
+ *
+ *  2. PAUSE / RESUME — pauseAllDungeonProcessing / resumeAllDungeonProcessing.
+ *     A backgrounded tab has its timers throttled by the browser, so on resume
+ *     the elapsed gap must be applied as a bounded CATCH-UP rather than by
+ *     replaying every missed tick. Replaying is what produced the measured
+ *     350-465s refocus spikes; the caps that prevent it live here and in
+ *     getCappedAttackElapsedMs (combat-shadow-support.js). If you widen one,
+ *     check the other.
+ *
+ *  3. HP-BAR RENDER QUEUE — queueHPBarUpdate / processHPBarUpdateQueue.
+ *     Coalesces bar repaints instead of writing DOM per damage event. Combat
+ *     applies thousands of damage events per tick; every one calling the DOM
+ *     directly is the difference between a smooth bar and a stalled client.
+ *     Call queueHPBarUpdate, never touch the bar DOM from combat code.
+ *
+ * INVARIANT: every listener registered here is also recorded in `this._listeners`
+ * so stop() can remove it. Adding a bare addEventListener leaks past plugin
+ * disable — the map is the teardown contract, not a debugging aid.
+ */
 const Dungeons = { RANK_MULTIPLIERS: C.RANK_MULTIPLIERS };
 
 module.exports = {

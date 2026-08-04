@@ -1,3 +1,30 @@
+/**
+ * combat-shadow-allocation — which shadows are assigned to which dungeon, and
+ * the attack-loop start/stop plumbing. One mixin (see index.js).
+ *
+ * Sits between player-sync-allocation (decides HOW MANY shadows a dungeon
+ * gets) and combat-shadow-execution (spends them each tick). This file decides
+ * WHICH ones, and keeps `this.shadowAllocations` (channelKey -> shadow[]) and
+ * `dungeon.shadowAllocation` in agreement.
+ *
+ * Entry points: _markAllocationDirty, _applyRoleDiversityGuarantee,
+ * startBossAttacks / stopShadowAttacks / stopAllShadowAttacks.
+ *
+ * ALLOCATION IDENTITY IS LOAD-BEARING. Two hot-path caches key off the
+ * allocation ARRAY OBJECT, not its contents:
+ *   - _getWarIntel's rank histogram (difficulty-contributions.js)
+ *   - the deployed-rank-advantage memo behind the boss damage cap
+ *     (combat-boss-mob.js)
+ * Both compare by identity, so REPLACING the array invalidates them correctly
+ * while MUTATING it in place leaves them stale — the warfront would keep using
+ * a histogram for shadows that are no longer there. Always assign a new array.
+ *
+ * _markAllocationDirty is the signal that the roster changed; combat events
+ * fire it constantly, so anything it triggers must be cheap. Rank-tiered
+ * selection deliberately prefers same-rank and one-rank-higher shadows, and
+ * _applyRoleDiversityGuarantee then ensures the deployment is not all one role
+ * — an all-striker army loses to attrition it cannot heal through.
+ */
 module.exports = {
   _markAllocationDirty(reason = 'unknown', { shadowSetChanged = false } = {}) {
     this._allocationDirty = true;

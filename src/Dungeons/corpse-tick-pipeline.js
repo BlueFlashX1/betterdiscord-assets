@@ -1,5 +1,46 @@
 const SLEvents = require('../shared/event-bus');
 
+/**
+ * corpse-tick-pipeline — THE COMBAT TICK DRIVER. One mixin (see index.js).
+ *
+ * The most connected file in the plugin: ~24 other src files call something
+ * defined here. If you are tracing "what runs during combat", start here.
+ * It also owns the corpse pile (dead mobs awaiting ARISE extraction), which
+ * lives ON the dungeon object so it survives hot-reload via IDB.
+ *
+ * ── TICK FLOW ────────────────────────────────────────────────────────────
+ *   combat tick
+ *     ├─ split the global budget across ACTIVE dungeons
+ *     │    perDungeonShadowBudget = 500 / N   (NOT 500 each — N dungeons used
+ *     │    to run N x 500, so cost grew with dungeon count)
+ *     │    _tickManaBudgetPerDungeon = manaPool / N  (stops two dungeons
+ *     │    double-spending the same resurrection mana)
+ *     │
+ *     ├─ Promise.all over _processDungeonCombatTick(...)   ← PARALLEL:
+ *     │    tick time is max(perDungeon), not sum(perDungeon)
+ *     │
+ *     └─ per dungeon, in order:
+ *          _processDotTicks              player DOTs        (player-flow.js)
+ *          processCombatStatusEffects    mob/boss DOTs      (combat-status-effects.js)
+ *          processShadowAttacks          the army's slice   (combat-shadow-execution.js)
+ *          processBossAttacks            boss retaliation   (combat-boss-mob.js)
+ *          processMobAttacks             mob retaliation    (combat-boss-mob.js)
+ *          _processWarfrontTick          the mass battle    (difficulty-contributions.js)
+ *
+ * ── INVARIANTS ───────────────────────────────────────────────────────────
+ *  - Dungeons run CONCURRENTLY. Per-dungeon state (allocations, deadShadows)
+ *    is isolated, but shared player state (userHP, userMana) has real race
+ *    potential — it is tolerated because SoloLevelingStats re-syncs and saves
+ *    are debounced. Do not add un-budgeted shared mutations here.
+ *  - Budgets are DIVIDED, never per-dungeon constants. Anything you add that
+ *    costs per-tick must take its share from the same pool or opening a second
+ *    dungeon doubles the cost.
+ *  - The warfront runs LAST, after the object-simulated frontline, and must
+ *    stay O(ranks). A per-shadow loop there defeats the whole design.
+ *  - Corpse piles are stored on `dungeon.corpsePile` deliberately (not a
+ *    separate Map) so they persist with the dungeon record. Demon Castle
+ *    floors skip them entirely — corrupted souls cannot be extracted.
+ */
 module.exports = {
   _addToCorpsePile(channelKey, deadMob, isBoss = false) {
     if (!deadMob) return;
