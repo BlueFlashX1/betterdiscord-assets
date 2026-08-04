@@ -31,9 +31,10 @@
  *    for 5s — so a shadow withdrawn elsewhere can still swing for up to 5 seconds.
  *
  * INVARIANT worth knowing: `dungeon.shadowHP` holds combat participants, not the
- * whole army. It is lazily populated, which is why the heal pass can scan it
- * directly. That scan is still capped, as a long fight grows it toward the full
- * allocation size.
+ * whole army, and it GROWS toward the full allocation size over a long fight.
+ * Anything that touches it per-tick must therefore be rotation-budgeted, not a
+ * full scan — the heal pass learned this the hard way (see _applyShadowHealPass).
+ * Per-tick cost must never scale with fight duration.
  */
 module.exports = {
   initializeShadowCombatData(shadow) {
@@ -242,8 +243,9 @@ module.exports = {
   // state (updateRoleCombatStateFromPressure), surfaced as shadowHealFraction
   // by getRoleCombatTickContext. Heals only ALIVE-but-damaged shadows (never
   // revives — that's the mana-gated resurrection path) and never overheals.
-  // Bounded by dungeon.shadowHP (lazily populated with combat participants,
-  // not the whole army), so it's cheap even for very large armies.
+  // Rotation-budgeted like the attack path: at most HEAL_TICK_BUDGET entries
+  // are visited per tick from a persistent cursor, so per-tick cost is constant
+  // no matter how large shadowHP grows or how long the fight runs.
   _applyShadowHealPass(channelKey, dungeon) {
     if (!dungeon) return;
     if (this.settings?.shadowHealerRestorationEnabled === false) return;
@@ -258,20 +260,56 @@ module.exports = {
     const shadowHP = dungeon.shadowHP;
     if (!shadowHP || shadowHP.size === 0) return;
 
-    // shadowHP is lazily populated with combat participants; over a long fight
-    // it can grow toward the dungeon's allocation size. Each entry's check is
-    // trivial (a couple compares), but cap the scan as a safety valve so a very
-    // large dungeon can't turn this into an unbounded per-tick loop.
-    const HEAL_SCAN_CAP = 6000;
+    // ROTATION-BUDGETED (2026-08-04) — this used to scan up to 6,000 entries
+    // EVERY tick. shadowHP grows toward the dungeon's allocation size over a
+    // fight, so once a fight ran long enough to saturate it, every combat tick
+    // paid a full 6,000-entry scan. Measured: per-dungeon Dungeons-timer work
+    // rose 2.23x while tick CADENCE stayed flat (60.6 vs 66.7 calls/min) —
+    // the signature of per-tick cost growing, not more ticks.
+    //
+    // The attack path solved this long ago: it visits TICK_BUDGET shadows per
+    // tick from a cursor, so cost scales with the budget and never with N.
+    // This now does the same. Per-tick cost is constant regardless of how long
+    // a fight has been running.
+    //
+    // Throughput is preserved by scaling the per-visit heal by the revisit
+    // span: a shadow seen once every `revisit` ticks heals `revisit`x as much
+    // when its turn comes. Clamped so a huge roster cannot turn one visit into
+    // a full heal.
+    //
+    // This also FIXES a fairness bug: the old cap meant entries past index
+    // 6,000 in insertion order were never healed at all. The rotation reaches
+    // every participant eventually.
+    const HEAL_TICK_BUDGET = 500; // mirrors TICK_BUDGET in combat-shadow-execution
+    const size = shadowHP.size;
+    const revisit = Math.max(1, Math.ceil(size / HEAL_TICK_BUDGET));
+    const effectiveFraction = Math.min(0.5, healFraction * revisit);
+
+    // Persistent cursor. Map iterators stay valid across ticks, but prune
+    // replaces dungeon.shadowHP with a NEW Map — so re-seed when identity changes.
+    if (dungeon._healIterMap !== shadowHP || !dungeon._healIter) {
+      dungeon._healIter = shadowHP.values();
+      dungeon._healIterMap = shadowHP;
+    }
+
     let scanned = 0;
     let healedCount = 0;
-    for (const hpData of shadowHP.values()) {
-      if (++scanned > HEAL_SCAN_CAP) break;
+    let wrapped = false;
+    while (scanned < HEAL_TICK_BUDGET) {
+      const next = dungeon._healIter.next();
+      if (next.done) {
+        if (wrapped) break; // empty or fully consumed twice — stop, don't spin
+        dungeon._healIter = shadowHP.values();
+        wrapped = true;
+        continue;
+      }
+      scanned++;
+      const hpData = next.value;
       if (!hpData) continue;
       const maxHp = Number(hpData.maxHp) || 0;
       const hp = Number(hpData.hp) || 0;
       if (maxHp <= 0 || hp <= 0 || hp >= maxHp) continue; // dead or already full
-      hpData.hp = Math.min(maxHp, hp + Math.max(1, Math.floor(maxHp * healFraction)));
+      hpData.hp = Math.min(maxHp, hp + Math.max(1, Math.floor(maxHp * effectiveFraction)));
       healedCount++;
     }
 
