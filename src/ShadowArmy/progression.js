@@ -128,17 +128,45 @@ module.exports = {
   },
 
   /** Bank combat hours per shadow id ({ id: hours }). Returns true if anything banked. */
+  /**
+   * A bankable key must look like a real shadow id: `shadow_<ts>_<suffix>`.
+   * Anything else can never match a stored record, so banking it wedges the
+   * drain queue forever (see the incident note on drainPendingGrowth).
+   * Deliberately lenient on suffix length — observed ids run 8-9 chars.
+   */
+  _isBankableShadowId(key) {
+    return typeof key === 'string' && /^shadow_\d{10,}_[A-Za-z0-9]+$/.test(key);
+  },
+
   bankPendingGrowth(hoursByShadowId) {
     if (!hoursByShadowId || typeof hoursByShadowId !== 'object') return false;
     const pending = this._pendingGrowthHours || (this._pendingGrowthHours = {});
     let banked = 0;
+    let rejected = 0;
+    let firstRejected = null;
     for (const [sid, hours] of Object.entries(hoursByShadowId)) {
       const h = Number(hours);
       if (!(h > 0)) continue;
       const key = String(sid).trim();
       if (!key) continue;
+      // GATE (2026-08-04): reject ids that cannot possibly resolve. 1,436
+      // malformed 12-char keys (`NN_xxxxxxxxx` — the tail of a real id) had
+      // accumulated at the HEAD of the queue and permanently blocked the drain.
+      if (!this._isBankableShadowId(key)) {
+        rejected++;
+        if (!firstRejected) firstRejected = key;
+        continue;
+      }
       pending[key] = (pending[key] || 0) + h;
       banked++;
+    }
+    if (rejected > 0) {
+      // LOUD on purpose: the original source of the malformed ids was never
+      // identified. If this ever fires, it names the live producer.
+      this.debugError?.('GROWTH', `bankPendingGrowth rejected ${rejected} malformed shadow id(s)`, {
+        firstRejected,
+        rejected,
+      });
     }
     return banked > 0;
   },
@@ -153,6 +181,30 @@ module.exports = {
     if (this._pendingGrowthDrainInFlight) return 0;
     const pending = this._pendingGrowthHours;
     if (!pending || !this.storageManager?.transformShadowsBatch) return 0;
+    // SELF-HEAL (2026-08-04) — purge unresolvable keys before slicing.
+    //
+    // This queue is drained as `Object.keys(pending).slice(0, maxShadows)`, i.e.
+    // always the OLDEST 500 keys. Malformed ids never match a record, so they
+    // are never consumed, so the very same 500 come back every 30s forever:
+    // head-of-line blocking. Measured live: 1,436 malformed 12-char keys sat at
+    // indices 0-1435, so all 500 of every slice were garbage. The backlog froze
+    // at 20,576, ~2,000 IDB requests/min burned indefinitely, and 19,140
+    // legitimate shadows silently never received their banked growth.
+    //
+    // Purging is safe: a key that fails _isBankableShadowId cannot address a
+    // stored record under any code path, so nothing recoverable is discarded.
+    let purged = 0;
+    for (const key of Object.keys(pending)) {
+      if (!this._isBankableShadowId(key)) {
+        delete pending[key];
+        purged++;
+      }
+    }
+    if (purged > 0) {
+      this.debugLog?.('GROWTH', `Purged ${purged} unresolvable id(s) from the growth queue`);
+      this._persistPendingGrowth?.();
+    }
+
     const ids = Object.keys(pending).slice(0, Math.max(1, maxShadows));
     if (ids.length === 0) return 0;
 
