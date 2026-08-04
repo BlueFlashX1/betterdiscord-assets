@@ -78,23 +78,24 @@ const SkillTreeUpgradeMethods = {
   },
 
   /**
-   * Get skill unlock cost
-   * @param {Object} skill - Skill definition
+   * Get skill unlock cost. Driven entirely by the tier — every skill in a tier
+   * costs the same to unlock, which is why no skill argument is taken.
    * @param {Object} tier - Tier definition
    * @returns {number} - Unlock cost in SP
    */
-  getSkillUnlockCost(skill, tier) {
+  getSkillUnlockCost(tier) {
     return tier.baseCost || 1;
   },
 
   /**
-   * Get total upgrade cost for a skill up to a certain level
-   * @param {Object} skill - Skill definition
+   * Get total upgrade cost up to a certain level. Cost per level is tier-driven;
+   * only the level CAP is skill-specific, and clamping is the caller's job here
+   * (see getNextUpgradeCost, which does take a skill for exactly that reason).
    * @param {Object} tier - Tier definition
    * @param {number} targetLevel - Target level
    * @returns {number} - Total upgrade cost
    */
-  getSkillUpgradeCost(skill, tier, targetLevel) {
+  getSkillUpgradeCost(tier, targetLevel) {
     if (targetLevel <= 1) return 0;
 
     const baseCost = tier.baseCost || 1;

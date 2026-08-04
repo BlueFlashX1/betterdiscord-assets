@@ -176,7 +176,7 @@ module.exports = {
             this.initializeShadowHPSync(shadow, shadowHP);
 
             !dungeon.shadowCombatData.has(shadowId) &&
-              dungeon.shadowCombatData.set(shadowId, this.initializeShadowCombatData(shadow, dungeon));
+              dungeon.shadowCombatData.set(shadowId, this.initializeShadowCombatData(shadow));
           } catch (error) {
             this.errorLog('SHADOW_INIT', `Failed to initialize shadow ${shadowId}`, error);
           }

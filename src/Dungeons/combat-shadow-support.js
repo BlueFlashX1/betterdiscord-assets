@@ -36,7 +36,7 @@
  * allocation size.
  */
 module.exports = {
-  initializeShadowCombatData(shadow, dungeon) {
+  initializeShadowCombatData(shadow) {
     // Get shadow personality from ShadowArmy (uses stored data if available)
     let personality = 'balanced';
     let attackInterval = 2000; // Base interval

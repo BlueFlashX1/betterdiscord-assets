@@ -1359,8 +1359,8 @@ module.exports = class SkillTree {
         const skillLevel = this.getSkillLevel(skill.id);
         if (skillLevel > 0) {
           // Calculate SP spent: unlock cost + upgrade costs
-          totalSpent += this.getSkillUnlockCost(skill, tier);
-          totalSpent += this.getSkillUpgradeCost(skill, tier, skillLevel);
+          totalSpent += this.getSkillUnlockCost(tier);
+          totalSpent += this.getSkillUpgradeCost(tier, skillLevel);
         }
       });
     });
