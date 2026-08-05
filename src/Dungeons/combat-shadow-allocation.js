@@ -739,14 +739,11 @@ module.exports = {
       // Calculate average attack interval from assigned shadows
       const assignedShadows = this.shadowAllocations.get(channelKey) || [];
       if (assignedShadows.length > 0) {
-        const intervals = assignedShadows
-          .map((shadow) => {
-            if (this.shadowArmy.calculateShadowAttackInterval) {
-              return this.shadowArmy.calculateShadowAttackInterval(shadow, 2000);
-            }
-            return 2000; // Default
-          })
-          .filter((i) => i > 0);
+        // PHANTOM-API REMOVAL (2026-08-05): this mapped each shadow through
+        // this.shadowArmy.calculateShadowAttackInterval, which has never
+        // existed — every element was always the 2000 default, so the whole
+        // map/filter/average below has always computed exactly 2000.
+        const intervals = assignedShadows.length > 0 ? [2000] : [];
         if (intervals.length > 0) {
           // Use average interval (rounded to nearest 100ms for performance)
           activeInterval =

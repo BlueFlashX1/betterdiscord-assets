@@ -624,17 +624,12 @@ module.exports = {
             : { mob: 1, boss: 1 };
 
           if (bossAliveNow && bossAttacks > 0) {
-            const perHitBossRaw = this.shadowArmy?.calculateShadowDamage
-              ? this.shadowArmy.calculateShadowDamage(shadow, {
-                  type: 'boss',
-                  rank: dungeon.boss.rank,
-                  strength: bossStats.strength,
-                  agility: bossStats.agility,
-                  intelligence: bossStats.intelligence,
-                  vitality: bossStats.vitality,
-                  perception: bossStats.perception,
-                })
-              : this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank, false);
+            // PHANTOM-API REMOVAL (2026-08-05): this used to prefer
+            // this.shadowArmy.calculateShadowDamage — a method that has NEVER
+            // existed in ShadowArmy at any point in git history (git -S finds
+            // zero commits). The "fallback" below has always been the only
+            // path that ran; it is the implementation, not a fallback.
+            const perHitBossRaw = this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank, false);
             const roleBossMultiplier = this.getRoleCombatOutgoingDamageMultiplier({
               shadow,
               combatData: finalCombatData,
@@ -656,9 +651,8 @@ module.exports = {
               const groupAttacks = Math.max(0, Math.round(mobAttacks * rankGroup.fraction));
               if (groupAttacks <= 0) continue;
 
-              const perHitMobRaw = this.shadowArmy?.calculateShadowDamage
-                ? this.shadowArmy.calculateShadowDamage(shadow, rankGroup.representative)
-                : this.calculateShadowDamage(shadow, rankGroup.representative, rankGroup.representative.rank, false);
+              // Same phantom-API removal as the boss path above.
+              const perHitMobRaw = this.calculateShadowDamage(shadow, rankGroup.representative, rankGroup.representative.rank, false);
               const roleMobMultiplier = this.getRoleCombatOutgoingDamageMultiplier({
                 shadow,
                 combatData: finalCombatData,
@@ -818,9 +812,11 @@ module.exports = {
           // combatDataToUpdate.attackInterval is set at init by initializeShadowCombatData
           // and remains valid until a rank or allocation change triggers re-init.
           if (this._combatTickCount % 10 === 0) {
-            if (this.shadowArmy?.calculateShadowAttackInterval) {
-              combatDataToUpdate.attackInterval = this.shadowArmy.calculateShadowAttackInterval(shadow, 2000);
-            } else {
+            // PHANTOM-API REMOVAL (2026-08-05): a branch preferring
+            // this.shadowArmy.calculateShadowAttackInterval stood here; that
+            // method has never existed, so this variance path below has always
+            // been the sole behaviour.
+            {
               const cooldownVariance = this._varianceNarrow();
               combatDataToUpdate.attackInterval = Math.max(
                 800,

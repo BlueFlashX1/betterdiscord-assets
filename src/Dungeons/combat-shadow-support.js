@@ -50,11 +50,15 @@ module.exports = {
         personality = personalityKey || shadow.personality || 'balanced';
       }
 
-      // Get base attack interval (now uses stored data from ShadowArmy)
-      if (this.shadowArmy.calculateShadowAttackInterval) {
-        // This will use stored baseAttackInterval if available
-        attackInterval = this.shadowArmy.calculateShadowAttackInterval(shadow, 2000);
-      }
+      // PHANTOM-API REMOVAL (2026-08-05): a guarded call to
+      // this.shadowArmy.calculateShadowAttackInterval stood here, with a
+      // comment claiming it "uses stored baseAttackInterval". Neither the
+      // method nor the field has EVER existed (zero commits in ShadowArmy
+      // history contain either). The guard always failed, so every shadow has
+      // always attacked at the flat 2000ms base — that is the actual,
+      // long-shipped behaviour, now stated instead of implied. If per-shadow
+      // attack speed is ever wanted, it needs to be BUILT (e.g. from agility
+      // via getShadowEffectiveStats), not resurrected.
 
       // Get effective stats (cached)
       if (this.shadowArmy.getShadowEffectiveStats) {

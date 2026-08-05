@@ -548,22 +548,18 @@ module.exports = {
           };
 
           // Distribute hits across random shadow targets, accumulate per-shadow damage
-          // Personality-based targeting (ShadowArmy) sampled once per rank group
-          const useShadowArmyTargeting = !!this.shadowArmy?.processMobAttackOnShadow;
+          // PHANTOM-API REMOVAL (2026-08-05): a "personality-based targeting"
+          // branch gated on this.shadowArmy.processMobAttackOnShadow stood
+          // here. That method has never existed in ShadowArmy history, so the
+          // gate was always false and the random-pick path below has always
+          // been the sole targeting behaviour. If personality-weighted mob
+          // targeting is ever wanted, the ShadowArmy side must be built first.
           const hitsPerTarget = new Map();
 
           for (let h = 0; h < simulatedHits; h++) {
             let targetId = null;
 
-            if (useShadowArmyTargeting && h < group.totalHits) {
-              // Use ShadowArmy personality targeting for sampled (non-scaled) hits
-              const attackResult = this.shadowArmy.processMobAttackOnShadow(mob, aliveShadows);
-              if (attackResult?.targetShadow) {
-                targetId = resolveShadowMapKey(attackResult.targetShadow);
-              }
-            }
-
-            if (!targetId) {
+            {
               // ACCURATE TARGETING: Skip shadows whose accumulated damage already exceeds HP.
               // Try up to 3 picks to find a shadow that's still "alive" after queued damage.
               for (let pick = 0; pick < 3; pick++) {
