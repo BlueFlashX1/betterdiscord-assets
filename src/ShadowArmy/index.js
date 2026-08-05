@@ -647,16 +647,39 @@ const ShadowArmy = class ShadowArmy {
       });
     }, 10 * 60 * 1000);
 
-    // Drain banked dungeon growth hours (bankPendingGrowth) in small batches.
-    // Hidden-gated like auto-promote — the backlog accumulates hours and
-    // catches up on visible ticks; drainPendingGrowth no-ops when empty.
+    // Drain banked dungeon growth hours (bankPendingGrowth), batch-sized by
+    // backlog depth.
+    //
+    // STRUCTURAL FIX (2026-08-05). Banking is unbounded — one id per
+    // contributor per dungeon completion, up to allocation size — while the
+    // drain removed a flat 500 per 30s AND skipped every hidden tick. Measured
+    // over a 193-min session: banking ~535 ids/min against a realized drain of
+    // ~251/min (only ~25% of ticks fired), so the queue DIVERGED to 125k and
+    // could never converge. The hidden-gate was the wrong instinct for this
+    // workload: the drain is pure IDB work with no DOM or rendering cost, so
+    // hidden time is precisely when it should run hardest — combat is quiet
+    // and there is no frame budget to protect. (Auto-promote keeps its gate;
+    // it feeds visible UI.)
+    //
+    // Batch scales with backlog so a deep queue converges instead of pacing
+    // the producer: visible ticks stay moderate (500-2,000) to bound IDB
+    // contention with live combat reads; hidden ticks go to 1,000-5,000.
+    // At the observed worst case (125k backlog) that is ~10k/min hidden —
+    // clears in ~13 min of idle — and ~4k/min visible, ~7x the banking rate.
+    // drainPendingGrowth chunks at 250/transaction with event-loop yields
+    // between chunks, and its in-flight guard makes an over-long pass skip
+    // the next tick rather than overlap it.
     if (this._pendingGrowthDrainInterval) {
       clearInterval(this._pendingGrowthDrainInterval);
     }
     this._pendingGrowthDrainInterval = setInterval(() => {
       if (this._isStopped) return;
-      if (document.hidden) return;
-      this.drainPendingGrowth().catch((error) => {
+      const backlog = Object.keys(this._pendingGrowthHours || {}).length;
+      if (backlog === 0) return;
+      const batch = document.hidden
+        ? Math.min(5000, Math.max(1000, Math.ceil(backlog / 10)))
+        : Math.min(2000, Math.max(500, Math.ceil(backlog / 50)));
+      this.drainPendingGrowth(batch).catch((error) => {
         this.debugError('GROWTH', 'Pending-growth drain tick failed', error);
       });
     }, 30000);
