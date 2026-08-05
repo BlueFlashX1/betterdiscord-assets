@@ -63,6 +63,9 @@ module.exports = {
       // steamroll, lower for more challenge. (Not the old inflation bug — this
       // is the clean, single-source power lever.)
       shadowDamageScalar: 2.0,
+      // MONARCH'S WILL (SM perk, 2026-08-05): damage multiplier for shadows
+      // fighting in dungeons OTHER than the one the Monarch has joined.
+      monarchsWillMultiplier: 1.25,
       // PERFORMANCE MODE (default ON): clamps concurrent alive mobs to
       // performanceAliveMobCap regardless of dungeon rank. High-rank dungeons
       // allowed up to 1M alive mobs, and several per-tick passes scan the full

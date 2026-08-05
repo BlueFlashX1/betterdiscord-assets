@@ -37,6 +37,23 @@
  * Per-tick cost must never scale with fight duration.
  */
 module.exports = {
+  /**
+   * Per-shadow attack interval from EFFECTIVE agility (2026-08-05).
+   *
+   * This is the honest rebuild of the phantom
+   * shadowArmy.calculateShadowAttackInterval the old code believed in: fast
+   * shadows genuinely swing faster now. Curve: 2400 / (1 + agility/3000),
+   * clamped [900, 2600] — agility 0 -> 2400ms, 3000 -> 1200ms, high rollers
+   * bottom out at 900 (still above getEffectiveAttackCooldownMs's 800 floor,
+   * so downstream pacing math is untouched). Uses the cached effective-stats
+   * read, so it is cheap enough for init and the periodic refresh alike.
+   */
+  computeShadowAttackIntervalMs(shadow) {
+    const stats = this.getShadowEffectiveStatsCached?.(shadow) || {};
+    const agility = Math.max(0, Number(stats.agility) || Number(shadow?.agility) || 0);
+    return this.clampNumber(Math.round(2400 / (1 + agility / 3000)), 900, 2600);
+  },
+
   initializeShadowCombatData(shadow) {
     // Get shadow personality from ShadowArmy (uses stored data if available)
     let personality = 'balanced';
@@ -50,15 +67,11 @@ module.exports = {
         personality = personalityKey || shadow.personality || 'balanced';
       }
 
-      // PHANTOM-API REMOVAL (2026-08-05): a guarded call to
-      // this.shadowArmy.calculateShadowAttackInterval stood here, with a
-      // comment claiming it "uses stored baseAttackInterval". Neither the
-      // method nor the field has EVER existed (zero commits in ShadowArmy
-      // history contain either). The guard always failed, so every shadow has
-      // always attacked at the flat 2000ms base — that is the actual,
-      // long-shipped behaviour, now stated instead of implied. If per-shadow
-      // attack speed is ever wanted, it needs to be BUILT (e.g. from agility
-      // via getShadowEffectiveStats), not resurrected.
+      // Per-shadow attack speed — BUILT 2026-08-05. (A phantom call to
+      // shadowArmy.calculateShadowAttackInterval stood here for months; that
+      // method never existed and every shadow attacked at a flat 2000ms.
+      // computeShadowAttackIntervalMs above is the real implementation.)
+      attackInterval = this.computeShadowAttackIntervalMs(shadow);
 
       // Get effective stats (cached)
       if (this.shadowArmy.getShadowEffectiveStats) {

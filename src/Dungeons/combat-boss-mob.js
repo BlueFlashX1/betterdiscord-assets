@@ -548,18 +548,32 @@ module.exports = {
           };
 
           // Distribute hits across random shadow targets, accumulate per-shadow damage
-          // PHANTOM-API REMOVAL (2026-08-05): a "personality-based targeting"
-          // branch gated on this.shadowArmy.processMobAttackOnShadow stood
-          // here. That method has never existed in ShadowArmy history, so the
-          // gate was always false and the random-pick path below has always
-          // been the sole targeting behaviour. If personality-weighted mob
-          // targeting is ever wanted, the ShadowArmy side must be built first.
+          // Personality-based targeting — BUILT 2026-08-05. The gate below was
+          // a phantom for months (the method never existed and this was always
+          // false); ShadowArmy/combat-stats.js now implements it for real:
+          // tanks draw aggro, the backline gets hit least. The alive/HP checks
+          // below still run on its pick, so a personality-chosen but already-
+          // dying shadow falls through to the random path unchanged.
+          const useShadowArmyTargeting = !!this.shadowArmy?.processMobAttackOnShadow;
           const hitsPerTarget = new Map();
 
           for (let h = 0; h < simulatedHits; h++) {
             let targetId = null;
 
-            {
+            if (useShadowArmyTargeting && h < group.totalHits) {
+              const attackResult = this.shadowArmy.processMobAttackOnShadow(mob, aliveShadows);
+              if (attackResult?.targetShadow) {
+                const rawId = this.getShadowIdValue(attackResult.targetShadow);
+                if (rawId !== null && rawId !== undefined) {
+                  const resolved = resolveShadowMapKey(rawId) ?? rawId;
+                  const hpData = getShadowHpData(resolved);
+                  const queued = shadowDamageMap.get(resolved) || 0;
+                  if (hpData && hpData.hp - queued > 0) targetId = resolved;
+                }
+              }
+            }
+
+            if (!targetId) {
               // ACCURATE TARGETING: Skip shadows whose accumulated damage already exceeds HP.
               // Try up to 3 picks to find a shadow that's still "alive" after queued damage.
               for (let pick = 0; pick < 3; pick++) {

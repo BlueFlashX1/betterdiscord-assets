@@ -413,11 +413,41 @@ module.exports = {
         // restoring the old double-role/behaviour inflation bug. Default 2.0
         // (~restores the pre-fix striker power and then some); tune via
         // settings.shadowDamageScalar.
-        const shadowDamageScalar = this.clampNumber(
+        let shadowDamageScalar = this.clampNumber(
           Number.isFinite(this.settings?.shadowDamageScalar) ? this.settings.shadowDamageScalar : 2.0,
           0.1,
           20
         );
+
+        // SHADOW MONARCH PERKS (2026-08-05) — both fold into the same scalar so
+        // the per-shadow hot loop below pays zero extra cost.
+        if (this.soloLevelingStats?.settings?.rank === 'Shadow Monarch') {
+          // LEGION SCALAR (aggregate-tail design doc, "cheap alternative"):
+          // the infinite-army fantasy without materializing infinite shadows.
+          // Army growth past the 500k deploy ceiling keeps paying as damage:
+          // 1M -> x2, 2M -> x3, 4M -> x4. Uses the 5s count cache (sync read;
+          // 0 during early startup, which correctly yields no bonus).
+          const armyCount = Number(this._shadowCountCache?.count) || 0;
+          if (armyCount > 500000) {
+            shadowDamageScalar *= 1 + Math.log2(armyCount / 500000);
+          }
+          // MONARCH'S WILL (DKB perk backlog, "recommended"): while the Monarch
+          // personally fights ELSEWHERE, his will drives the shadows he left
+          // behind — dungeons other than the joined one get a passive damage
+          // multiplier. Rewards commanding multiple fronts at once. No bonus
+          // when not joined anywhere (the will is diffuse) or in the dungeon
+          // he is present in (his presence already carries its own perks).
+          const joined = this.settings.userActiveDungeon;
+          if (joined && joined !== channelKey) {
+            shadowDamageScalar *= this.clampNumber(
+              Number.isFinite(this.settings?.monarchsWillMultiplier)
+                ? this.settings.monarchsWillMultiplier
+                : 1.25,
+              1,
+              3
+            );
+          }
+        }
 
         // TRACE: Log combat state every 10th tick
         if (this._combatTickCount % 10 === 0) {
@@ -812,17 +842,17 @@ module.exports = {
           // combatDataToUpdate.attackInterval is set at init by initializeShadowCombatData
           // and remains valid until a rank or allocation change triggers re-init.
           if (this._combatTickCount % 10 === 0) {
-            // PHANTOM-API REMOVAL (2026-08-05): a branch preferring
-            // this.shadowArmy.calculateShadowAttackInterval stood here; that
-            // method has never existed, so this variance path below has always
-            // been the sole behaviour.
-            {
-              const cooldownVariance = this._varianceNarrow();
-              combatDataToUpdate.attackInterval = Math.max(
-                800,
-                Math.floor((combatDataToUpdate.attackInterval || combatDataToUpdate.cooldown || 2000) * cooldownVariance)
-              );
-            }
+            // Per-shadow attack speed (BUILT 2026-08-05, replacing a phantom
+            // shadowArmy call that never existed). Recomputed from the stable
+            // agility-derived base each refresh, x narrow variance. This also
+            // fixes a pre-existing wobble: the old code multiplied the CURRENT
+            // interval by variance repeatedly, a slow random walk bounded only
+            // at 800 below; deriving from the base each time cannot drift.
+            const cooldownVariance = this._varianceNarrow();
+            combatDataToUpdate.attackInterval = Math.max(
+              800,
+              Math.floor(this.computeShadowAttackIntervalMs(shadow) * cooldownVariance)
+            );
           }
         }
 
