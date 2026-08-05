@@ -69,20 +69,31 @@ module.exports = {
       return score;
     };
 
-    const normalizedShadows = [];
+    // DECORATE-SORT-UNDECORATE (2026-08-05). The sort used to call
+    // readScore() from inside the comparator, so scores were computed
+    // LAZILY DURING the one synchronous .sort() call — up to n first-touch
+    // getShadowCombatScore computations plus ~n·log n cache lookups in a
+    // single blocking stretch. Measured at the auto-deploy call site
+    // (createDungeon -> deployShadows): avg 1,037ms, worst 2,229ms of
+    // main-thread freeze per dungeon spawn. The yielding loop above was
+    // pointless when the sort re-did all the work in one gulp.
+    //
+    // Scores are now computed HERE, inside the loop that already yields
+    // every `yieldStride` entries, and the sort compares plain numbers.
+    const decorated = [];
     const yieldStride = Number.isFinite(yieldEvery) && yieldEvery > 0 ? Math.floor(yieldEvery) : 2500;
     for (let i = 0; i < shadows.length; i++) {
       const normalized = this.normalizeShadowId(shadows[i]) || shadows[i];
-      normalized && normalizedShadows.push(normalized);
+      if (normalized) decorated.push([readScore(normalized), normalized]);
       if ((i + 1) % yieldStride === 0) {
         await this._yieldToEventLoop();
         if (!this.started) return null;
       }
     }
 
-    normalizedShadows.sort((a, b) => readScore(b) - readScore(a));
+    decorated.sort((a, b) => b[0] - a[0]);
     return {
-      sorted: normalizedShadows,
+      sorted: decorated.map((d) => d[1]),
       scoreCache,
     };
   },
