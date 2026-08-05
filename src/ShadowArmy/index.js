@@ -637,15 +637,17 @@ const ShadowArmy = class ShadowArmy {
     // what used to be a full-army XP grant on every chat message / quest
     // completion / etc into one grant per window (flushPendingSharedXp()
     // no-ops when nothing is pending).
+    // Shared-XP flush interval REMOVED (2026-08-05). flushPendingSharedXp has
+    // been a documented no-op since 2026-07-30 (derived veterancy replaced the
+    // army-wide XP walk), so this timer was a water wheel on a dry channel —
+    // firing every 10 minutes to do nothing. The function itself stays (stop()
+    // still calls it, and the persisted accumulator is load/saved for
+    // backward-compat; verified the live stored value is 0, so no pre-cutover
+    // XP was stranded).
     if (this._sharedXpFlushInterval) {
       clearInterval(this._sharedXpFlushInterval);
+      this._sharedXpFlushInterval = null;
     }
-    this._sharedXpFlushInterval = setInterval(() => {
-      if (this._isStopped) return;
-      this.flushPendingSharedXp().catch((error) => {
-        this.debugError('SHADOW_XP_SHARE', 'Scheduled shared-XP flush failed', error);
-      });
-    }, 10 * 60 * 1000);
 
     // Drain banked dungeon growth hours (bankPendingGrowth), batch-sized by
     // backlog depth.
