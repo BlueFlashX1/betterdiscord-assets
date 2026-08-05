@@ -129,7 +129,7 @@ module.exports = {
     const isBossFloor = DC.isBossFloor(floor);
     const tier = DC.getFloorTier(floor);
     const dungeonRank = DC.getDungeonRankForFloor(floor);
-    const rankIndex = this.getRankIndex?.(dungeonRank) || 0;
+    const rankIndex = this.getRankIndexValue?.(dungeonRank) || 0;
     const demonCount = DC.getDemonCount(floor);
 
     // Build boss config
@@ -302,7 +302,7 @@ module.exports = {
     // Boss floor bonus XP
     if (isBossFloor) {
       const bossConfig = DC.DEMON_CASTLE_BOSSES[floor];
-      const rankIndex = this.getRankIndex?.(bossConfig?.rank || 'B') || 0;
+      const rankIndex = this.getRankIndexValue?.(bossConfig?.rank || 'B') || 0;
       const bossXp = Math.floor((200 + rankIndex * 100) * DC.XP_BOSS_MULTIPLIER);
       this._grantUserDungeonXP(bossXp, 'demon_castle_boss', { floor, bossName: bossConfig?.name });
       state.totalBossesDefeated = (state.totalBossesDefeated || 0) + 1;

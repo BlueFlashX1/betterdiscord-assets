@@ -462,7 +462,7 @@ module.exports = {
   async renameShadow(shadow, rawName) {
     try {
       if (this.getSoloLevelingData?.()?.rank !== 'Shadow Monarch') {
-        this.showToast?.('Only the Shadow Monarch may name his generals.', 'error');
+        this._toast('Only the Shadow Monarch may name his generals.', 'error');
         return false;
       }
       const full = shadow && shadow._c ? this.decompressShadow(shadow) : shadow;
@@ -470,7 +470,7 @@ module.exports = {
       if (!id) return false;
       const grade = full.grade || 'Common';
       if (grade !== 'Marshal' && grade !== 'Grand Marshal') {
-        this.showToast?.('Only Marshal-grade and above may receive a name.', 'warning');
+        this._toast('Only Marshal-grade and above may receive a name.', 'warning');
         return false;
       }
       // Sanitize: strip control chars, collapse whitespace, cap length.
@@ -485,14 +485,14 @@ module.exports = {
       const compressed = this.compressShadow(full) || full;
       await this.storageManager.saveShadow(compressed);
       this._invalidateSnapshot?.();
-      this.showToast?.(
+      this._toast(
         name ? `"Arise, ${name}." — the Monarch has named a general.` : 'The general’s name has been withdrawn.',
         'success'
       );
       return true;
     } catch (error) {
       this.debugError?.('RENAME', 'Failed to name shadow', error);
-      this.showToast?.('Naming failed — see console.', 'error');
+      this._toast('Naming failed — see console.', 'error');
       return false;
     }
   },

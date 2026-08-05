@@ -1256,7 +1256,7 @@ module.exports = {
       this._invalidateSnapshot?.();
       this._gradeCacheTs = 0;
       this._speciesCensus = null; // force fresh census next cycle
-      this.showToast?.(
+      this._toast(
         `Army restructured: ${demoted} officers stepped down across ${Object.keys(species).length} species — ${refund.toLocaleString()} essence returned to the Monarch.`,
         'success'
       );
