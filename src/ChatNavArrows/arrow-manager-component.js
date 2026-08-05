@@ -41,8 +41,17 @@ function useScrollerBinding(React, options) {
       const now = Date.now();
       if (now - lastScrollLogRef.current > 3000) {
         lastScrollLogRef.current = now;
+        // BUGFIX (2026-08-05): this template referenced scrollTop/scrollHeight/
+        // clientHeight/atTop/atBottom — none of which exist in this scope
+        // (computeArrowVisibility returns only {showDown, showUp}). Because
+        // dbg's ARGUMENTS evaluate before the call regardless of debug mode,
+        // this threw an uncaught ReferenceError in the rAF handler every ~3s
+        // of continuous scrolling, since the day it was written. The arrows
+        // survived only because the state setters run before this line. The
+        // log itself could never have printed once.
+        const { scrollTop, scrollHeight, clientHeight } = scroller;
         dbg(
-          `scroll: top=${scrollTop}, height=${scrollHeight}, client=${clientHeight}, atTop=${atTop}, atBottom=${atBottom}, showDown=${!atBottom}, showUp=${!atTop}`
+          `scroll: top=${scrollTop}, height=${scrollHeight}, client=${clientHeight}, showDown=${showDown}, showUp=${showUp}`
         );
       }
     };
