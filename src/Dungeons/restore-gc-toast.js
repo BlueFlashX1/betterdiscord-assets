@@ -71,6 +71,25 @@ module.exports = {
             dungeon.shadowCombatData = new Map(Object.entries(loaded));
           }
 
+          // UNPACK shadowContributions (2026-08-05): saved as parallel arrays
+          // ({_packed:1, ids, mobsKilled, bossDamage}) because ~100k tiny
+          // objects made the synchronous store.put() clone the dominant cost
+          // of every debounced save (see storage.js sanitizer). Runtime code
+          // reads the plain-object shape, so rebuild it here. Pre-pack saves
+          // are plain objects already and skip this branch untouched.
+          if (dungeon.shadowContributions?._packed) {
+            const p = dungeon.shadowContributions;
+            const obj = {};
+            const n = Array.isArray(p.ids) ? p.ids.length : 0;
+            for (let i = 0; i < n; i++) {
+              obj[p.ids[i]] = {
+                mobsKilled: Number(p.mobsKilled?.[i]) || 0,
+                bossDamage: Number(p.bossDamage?.[i]) || 0,
+              };
+            }
+            dungeon.shadowContributions = obj;
+          }
+
           // MIGRATION: Legacy dungeons may lack biome/beastFamilies fields.
           // Without this, deploy can fail before mob spawning starts.
           if (!Array.isArray(dungeon.beastFamilies) || dungeon.beastFamilies.length === 0) {

@@ -235,6 +235,32 @@ class DungeonStorageManager {
       delete next._pooledMobRankGroups;
       delete next._shadowLastProcessed;
 
+      // PACK shadowContributions to parallel arrays (2026-08-05). It is the
+      // ONLY unbounded field left in this record — one {mobsKilled, bossDamage}
+      // entry per shadow that ever landed a kill, growing toward allocation
+      // size (100k+ at Shadow Monarch). It cannot be capped: completion reads
+      // it for XP/growth attribution, so dropping entries eats earned XP after
+      // a crash-restore. But its SHAPE was the cost — store.put() structured-
+      // clones synchronously, and ~100k tiny objects clone ~4x slower than
+      // three flat arrays (measured: full record 102ms -> ~25ms at 120k; with
+      // contributions removed entirely the same record is 1ms, so this field
+      // was effectively the whole payload of the measured 368ms-avg debounced
+      // save). Lossless; restore-gc-toast.js unpacks the _packed shape, and
+      // old saves (plain object) restore through the untouched legacy path.
+      if (next.shadowContributions && typeof next.shadowContributions === 'object'
+          && !next.shadowContributions._packed) {
+        const src = next.shadowContributions;
+        const ids = [], mobsKilled = [], bossDamage = [];
+        for (const key of Object.keys(src)) {
+          const e = src[key];
+          if (!e) continue;
+          ids.push(key);
+          mobsKilled.push(Number(e.mobsKilled) || 0);
+          bossDamage.push(Number(e.bossDamage) || 0);
+        }
+        next.shadowContributions = { _packed: 1, ids, mobsKilled, bossDamage };
+      }
+
       return next;
     })();
 
