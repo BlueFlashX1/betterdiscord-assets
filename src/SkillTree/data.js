@@ -35,9 +35,9 @@ const INNATE_PASSIVES = [
     id: "longevity",
     name: "Longevity",
     mode: "auto-scaling",
-    desc: "Innate System passive granting resistance to diseases, toxins and abnormal status effects — the broad immunity that Detoxification only partially covers. At Shadow Monarch it is realised in full as Perfect Body: no enemy status effect of any kind can land.",
+    desc: "Innate System passive granting TOTAL immunity to poison and necrotic affliction at any rank — the toxin/disease domain canon gives Jin-Woo from early on. Physical and elemental ailments (bleed, burn, frostbite, armor break) still land: canon Jin-Woo bleeds in every major fight. Those become immune too at Shadow Monarch, when this is realised in full as Perfect Body.",
     lore: "The System hardened Jin-Woo's body until sickness, poison and affliction simply stopped taking hold.",
-    statusText: "Always Active • Total immunity at Shadow Monarch",
+    statusText: "Always Active • Poison/necrotic immune • Total immunity at Shadow Monarch",
   },
   {
     id: "tenacity",

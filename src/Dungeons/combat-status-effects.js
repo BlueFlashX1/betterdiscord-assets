@@ -1,6 +1,16 @@
 const C = require('./constants');
 
 /**
+ * Ailments the innate Longevity passive makes the PLAYER outright immune to,
+ * at any rank. Canon scope: "diseases, toxins and abnormal status effects" —
+ * the toxin/affliction class only. Bleed, burn, frostbite and armorBreak are
+ * deliberately absent: canon Jin-Woo bleeds and burns constantly. Total
+ * immunity to those arrives with Perfect Body at Shadow Monarch (enforced
+ * upstream in applyEnemyCombatStatusEffects).
+ */
+const LONGEVITY_IMMUNE_EFFECTS = new Set(['poison', 'necrotic']);
+
+/**
  * combat-status-effects — every debuff in the game. One mixin (see index.js).
  * The widest API surface in the plugin (~37 methods), but they are variations
  * on one shape, so learn the shape rather than the list.
@@ -502,6 +512,19 @@ module.exports = {
     if (!effectConfig) return null;
 
     if (targetType === 'user') {
+      // LONGEVITY — TOXIN/AFFLICTION IMMUNITY (2026-08-05, canon-corrected).
+      // Canon Longevity grants immunity to "diseases, toxins and abnormal
+      // status effects" — and it is active from early on, not only at the
+      // end. But it was never blanket immunity: Jin-Woo bleeds in nearly
+      // every major fight (Igris, the Ant King, Baran, the Monarchs) and
+      // takes elemental damage. So the immunity is granted by CLASS, not
+      // wholesale: poison and necrotic (the toxin/affliction domain) can
+      // never land, while bleed / burn / frostbite / armorBreak remain real
+      // threats until Perfect Body (total immunity, including physical) at
+      // Shadow Monarch — which stays the meaningful endgame upgrade.
+      if (LONGEVITY_IMMUNE_EFFECTS.has(effectName)) {
+        return null;
+      }
       // Detoxification only resists toxins/magical debuffs — bleed is physical (lore-accurate)
       const isPhysical = effectName === 'bleed';
       if (!isPhysical) {
