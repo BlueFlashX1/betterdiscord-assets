@@ -436,26 +436,36 @@ module.exports = {
         }
       }
   
-      // --- PRIMARY: getAggregatedArmyStats + getTotalShadowPower ---
+      // --- PRIMARY: getAggregatedArmyStats (single source for BOTH figures) ---
       if (typeof shadowArmy.getAggregatedArmyStats === 'function') {
         try {
-          let totalPower = 0;
-  
-          // Direct calculation (preferred)
-          if (typeof shadowArmy.getTotalShadowPower === 'function') {
+          // ONE WALK, NOT TWO (2026-08-06, AAPerfSentinel). This used to call
+          // getTotalShadowPower(false) FIRST and getAggregatedArmyStats()
+          // after. On a large army both miss their caches on the same
+          // schedule (the army-stats cache has a 5-minute TTL, and the power
+          // cache misses whenever the shadow count has moved), so every
+          // achievement check walked all ~341k records TWICE, back to back.
+          // Measured: ShadowArmy held a flat ~6,000ms of main-thread IDB time
+          // in EVERY 5-minute window, 340,750 callbacks and 65% of the
+          // suite's entire IDB traffic, ~110k of which was this second walk.
+          //
+          // The aggregate walk already sums power over the same records —
+          // finalizeAggregatedArmyStats explicitly treats that streamed sum as
+          // the source of truth — so asking for power separately re-derived a
+          // number the next call was about to produce anyway. Take both from
+          // one result; getTotalShadowPower survives only as the fallback for
+          // when the aggregate can't produce a power figure.
+          const armyStats = await shadowArmy.getAggregatedArmyStats();
+          let totalPower = armyStats?.totalPower ?? 0;
+
+          if (!(totalPower > 0) && typeof shadowArmy.getTotalShadowPower === 'function') {
             try {
               totalPower = await shadowArmy.getTotalShadowPower(false);
             } catch (_) {
-              const stats = await shadowArmy.getAggregatedArmyStats();
-              totalPower = stats?.totalPower ?? 0;
+              totalPower = 0;
             }
-          } else {
-            const stats = await shadowArmy.getAggregatedArmyStats(true);
-            totalPower = stats?.totalPower ?? 0;
           }
-  
-          const armyStats = await shadowArmy.getAggregatedArmyStats();
-  
+
           // Diagnostic: IDB has data but aggregation returned 0 shadows -> reconcile.
           // This is a real mismatch (not honest-zero — honest-zero is armyStats.totalShadows
           // === 0 with a raw count of 0 too, handled above at the commit-result guard).
