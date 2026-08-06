@@ -34,6 +34,15 @@ const FLUSH_INTERVAL_MS = 30000;
 const LAG_PROBE_INTERVAL_MS = 200;
 const LAG_RING_SIZE = 300; // 60s of probe samples
 const LONGTASK_RING_SIZE = 20;
+// Recently-finished heavy (>=20ms) callbacks, used to name what overlapped a
+// long-task window. Small on purpose: this is a correlation aid, not a trace.
+const HEAVY_RING_SIZE = 60;
+// Burst captures are written at most 12 per SESSION, but nothing ever deleted
+// them across sessions — ~330 files (~11MB) had accumulated since July. Keep
+// the newest N on startup so the evidence trail stays useful but bounded.
+const BURST_FILE_KEEP = 30;
+// A stall worth explaining. Below this, the attribution tables already suffice.
+const LONGTASK_EXPLAIN_MS = 1000;
 const FRAME_DROP_THRESHOLD_MS = 33; // ~2 missed 60fps frames
 const OWN_NAME = "AAPerfSentinel";
 
@@ -91,6 +100,8 @@ module.exports = class AAPerfSentinel {
     this._dispatchByAction = new Map();
 
     this._longTasks = { count: 0, totalMs: 0, maxMs: 0, recent: [] };
+    this._heavyRing = [];       // recently-finished >=20ms callbacks
+    this._explainedStalls = []; // worst long tasks + what overlapped them
     this._prevSnap = null; // last flush's totals, for the window-delta section
     this._lagSamples = [];
     this._lagMax = 0;
@@ -160,6 +171,23 @@ module.exports = class AAPerfSentinel {
     if (ms > bucket.maxMs) bucket.maxMs = ms;
     if (ms > 50) bucket.longCalls++; // this callback WAS a long task
     if (ms >= 1) this._dirty = true;
+
+    // LONG-TASK CORRELATION RING (2026-08-06). The attribution tables answer
+    // "who spent the most time overall" but not "what was running during THAT
+    // 2.9s stall" — and the worst blocks are exactly the ones no single
+    // attributed callback explains (session worst long task 2934ms vs largest
+    // attributed callback 1065ms, so ~1.9s belonged to something unwrappable:
+    // async continuations, pre-load registration, or Discord itself). Keeping
+    // a small ring of recently-FINISHED heavy callbacks lets the long-task
+    // observer name everything that overlapped the stall window. This is
+    // correlation, not attribution: an entry here means "this ran during the
+    // block", NOT "this caused it". Only >=20ms callbacks are kept so the ring
+    // stays small and the hot path stays a single comparison for the rest.
+    if (ms >= 20) {
+      const now = Date.now();
+      this._heavyRing.push({ end: now, start: now - ms, ms, owner, kind, site: site || "" });
+      if (this._heavyRing.length > HEAVY_RING_SIZE) this._heavyRing.shift();
+    }
 
     // Per-site breakdown ("what happens at runtime"): owner × kind × fn name.
     if (site) {
@@ -854,6 +882,63 @@ module.exports = class AAPerfSentinel {
     return out;
   }
 
+  /**
+   * Name everything that overlapped a >=1s stall. The long-task entry gives a
+   * start time and duration in performance.now() space; the heavy ring stores
+   * Date.now() bounds, so convert once via the epoch offset and keep any
+   * callback whose [start,end] intersects the task window.
+   *
+   * READ THIS AS CORRELATION, NOT BLAME. A named callback ran during the
+   * block; it is not necessarily what blocked. The residual line is the
+   * actually-interesting number: task duration minus the sum of overlapping
+   * attributed work is time that belongs to something this plugin cannot
+   * wrap (async continuations, pre-load registration, Discord's own code).
+   */
+  _explainStall(entry) {
+    try {
+      const epochOffset = Date.now() - performance.now();
+      const taskStart = entry.startTime + epochOffset;
+      const taskEnd = taskStart + entry.duration;
+      const overlapping = this._heavyRing
+        .filter((h) => h.end >= taskStart && h.start <= taskEnd)
+        .sort((a, b) => b.ms - a.ms)
+        .slice(0, 6);
+      const attributedMs = overlapping.reduce((sum, h) => sum + h.ms, 0);
+      this._explainedStalls.push({
+        at: Date.now(),
+        ms: Math.round(entry.duration),
+        residualMs: Math.max(0, Math.round(entry.duration - attributedMs)),
+        overlapping: overlapping.map((h) => ({
+          owner: h.owner, kind: h.kind, ms: Math.round(h.ms), site: h.site.slice(0, 44),
+        })),
+      });
+      // Keep only the worst few for the whole session — these are rare by
+      // definition, and the report only has room to be useful, not complete.
+      this._explainedStalls.sort((a, b) => b.ms - a.ms);
+      if (this._explainedStalls.length > 5) this._explainedStalls.length = 5;
+    } catch (_) { /* diagnostics must never throw into the observer */ }
+  }
+
+  /**
+   * Delete all but the newest BURST_FILE_KEEP burst captures. The per-session
+   * cap of 12 bounds one run; nothing bounded the accumulation ACROSS runs, so
+   * they piled up indefinitely. Runs once at startup, best-effort.
+   */
+  _pruneOldBurstFiles() {
+    try {
+      const dir = BdApi.Plugins.folder;
+      const files = fs.readdirSync(dir)
+        .filter((f) => f.startsWith("AAPerfSentinel-burst-") && f.endsWith(".log"))
+        .sort(); // ISO timestamps in the name sort chronologically
+      const excess = files.length - BURST_FILE_KEEP;
+      if (excess <= 0) return;
+      for (const f of files.slice(0, excess)) {
+        try { fs.unlinkSync(path.join(dir, f)); } catch (_) { /* skip locked/missing */ }
+      }
+      this._burstsPruned = excess;
+    } catch (_) { /* best-effort housekeeping */ }
+  }
+
   _installLongTaskObserver() {
     try {
       this._perfObserver = new PerformanceObserver((list) => {
@@ -863,6 +948,7 @@ module.exports = class AAPerfSentinel {
           if (entry.duration > this._longTasks.maxMs) this._longTasks.maxMs = entry.duration;
           this._longTasks.recent.push({ at: Date.now(), ms: Math.round(entry.duration) });
           if (this._longTasks.recent.length > LONGTASK_RING_SIZE) this._longTasks.recent.shift();
+          if (entry.duration >= LONGTASK_EXPLAIN_MS) this._explainStall(entry);
           this._dirty = true;
         }
       });
@@ -968,6 +1054,22 @@ module.exports = class AAPerfSentinel {
           .map((e) => `${new Date(e.at).toLocaleTimeString()} ${e.ms}ms`)
           .join(", ");
         lines.push(`  last ${lt.recent.length}: ${recent}`);
+      }
+      if (this._explainedStalls.length > 0) {
+        lines.push(`  WORST STALLS (>=${LONGTASK_EXPLAIN_MS}ms) — what OVERLAPPED them (correlation, not blame):`);
+        for (const st of this._explainedStalls) {
+          const when = new Date(st.at).toLocaleTimeString();
+          lines.push(`    ${when} ${st.ms}ms block | ${st.residualMs}ms unattributed`);
+          if (st.overlapping.length === 0) {
+            lines.push("      (no attributed callback >=20ms overlapped — the whole block is outside this plugin's reach)");
+          }
+          for (const h of st.overlapping) {
+            lines.push(`      ${h.owner} ${h.kind} ${h.ms}ms ${h.site}`);
+          }
+        }
+        lines.push("    'unattributed' = block time minus overlapping attributed work: async");
+        lines.push("    continuations, pre-load registration, or Discord's own code. A large");
+        lines.push("    residual means the cause is NOT in the tables above.");
       }
     } else {
       lines.push("Long tasks: PerformanceObserver('longtask') unavailable in this renderer.");
@@ -1704,6 +1806,7 @@ module.exports = class AAPerfSentinel {
     this._installIdbWraps();
     this._installDomWrap();
     this._installLongTaskObserver();
+    this._pruneOldBurstFiles();
     this._installLoafObserver();
     this._installEventTimingObserver();
     this._installBdDataWrap();
