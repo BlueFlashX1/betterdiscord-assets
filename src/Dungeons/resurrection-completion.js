@@ -231,6 +231,15 @@ module.exports = {
         channelName: dungeon.channelName,
         guildName: dungeon.guildName,
         userParticipating: dungeon.userParticipating,
+        // ARISE eligibility (2026-08-05): userJoined is the permanent
+        // "was ever in this dungeon" flag (player-flow.js join). It was
+        // documented as the ARISE-eligibility flag from day one but never
+        // read — the arise gates below checked userParticipating, which
+        // player death flips to false (combat-primitives), so dying to
+        // the boss silently voided the entire arise pass. Dying costs the
+        // XP participation bonus (that check stays on userParticipating);
+        // it does not un-join you from the dungeon you fought in.
+        userJoined: Boolean(dungeon.userJoined || dungeon.userParticipating),
         shadowContributions: { ...dungeon.shadowContributions },
         boss: dungeon.boss ? { ...dungeon.boss } : null,
       bossGate: dungeon.bossGate ? { ...dungeon.bossGate, deployedAt: originalBossGateDeployedAt } : null,
@@ -492,7 +501,7 @@ module.exports = {
       // case where ShadowArmy isn't loaded at completion time — the bulk
       // pass would silently discard the boss, but the button waits and
       // retries once the plugin is back.
-      if (snap.userParticipating && !this.shadowArmy) {
+      if (snap.userJoined && !this.shadowArmy) {
         this.defeatedBosses.set(channelKey, {
           boss: snap.boss,
           dungeon: snap,
@@ -521,7 +530,7 @@ module.exports = {
     const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
     let arisePile = corpsePileSnapshot;
     if (
-      (snap.userParticipating || isShadowMonarch) &&
+      (snap.userJoined || isShadowMonarch) &&
       snap.boss &&
       (reason === 'boss' || reason === 'complete') &&
       this.shadowArmy &&
@@ -547,7 +556,7 @@ module.exports = {
     }
     const pileSize = arisePile.length;
     if (
-      (snap.userParticipating || isShadowMonarch) &&
+      (snap.userJoined || isShadowMonarch) &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
       pileSize > 0
     ) {
