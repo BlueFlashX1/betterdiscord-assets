@@ -484,8 +484,15 @@ module.exports = {
         } catch (_) {}
       }
 
-      // Boss ARISE button (only if user participated) — show early for responsiveness
-      if (snap.userParticipating) {
+      // Boss ARISE button — FALLBACK ONLY (auto-arise, 2026-08-05). The boss
+      // is now folded into the automatic extraction pass below for
+      // participants, same as the Shadow Monarch arise-anywhere path; the
+      // bulk extractor rolls the same 3 boss attempts the manual button
+      // gave, just in one pass. The manual button survives solely for the
+      // case where ShadowArmy isn't loaded at completion time — the bulk
+      // pass would silently discard the boss, but the button waits and
+      // retries once the plugin is back.
+      if (snap.userParticipating && !this.shadowArmy) {
         this.defeatedBosses.set(channelKey, {
           boss: snap.boss,
           dungeon: snap,
@@ -500,22 +507,24 @@ module.exports = {
     // Yield before heavy post-processing to keep UI responsive
     await this._yieldToEventLoop(0);
 
-    // ARISE Extraction (mob corpses)
+    // ARISE Extraction (mob corpses + boss)
     phaseStartAt = Date.now();
     let extractionResults = { extracted: 0, attempted: 0 };
-    // SHADOW MONARCH PERK (arise-anywhere, player-exclusive): the Monarch raises the
-    // dead even from dungeons he never entered. When he didn't join, his deployed
-    // shadows' kills are still arisen automatically, and the boss — which would
-    // otherwise require the manual arise button he can't reach while absent — is folded
-    // into the same extraction pass. Every other rank must still be physically present
-    // to arise (the deploy != join invariant holds for everyone below Shadow Monarch).
+    // AUTO-ARISE (2026-08-05): the boss is folded into the automatic
+    // extraction pass whenever a boss arise is legitimate — either the user
+    // participated (was physically present), or the SHADOW MONARCH
+    // arise-anywhere perk applies (the Monarch raises the dead even from
+    // dungeons he never entered). Every other rank must still be physically
+    // present to arise (the deploy != join invariant holds for everyone
+    // below Shadow Monarch). The dedupe guard keeps the fold from doubling
+    // a boss corpse some other path already pushed into the pile.
     const isShadowMonarch = this.soloLevelingStats?.settings?.rank === 'Shadow Monarch';
     let arisePile = corpsePileSnapshot;
     if (
-      isShadowMonarch &&
-      !snap.userParticipating &&
+      (snap.userParticipating || isShadowMonarch) &&
       snap.boss &&
       (reason === 'boss' || reason === 'complete') &&
+      this.shadowArmy &&
       !arisePile.some((c) => c && c.isBoss)
     ) {
       const b = snap.boss;
