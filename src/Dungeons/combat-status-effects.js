@@ -459,6 +459,41 @@ module.exports = {
     return this.clampNumber(rankRatio * 0.7 + statBonus * 0.3, 0.25, 3.0);
   },
 
+  /**
+   * Rank-scaled ailment susceptibility (2026-08-05). Weaker enemies are MORE
+   * prone to status ailments and suffer them longer; stronger enemies can
+   * shrug them off entirely and shake the rest off faster.
+   *   gap = source rank − target rank (from the ailment's _sourcePower):
+   *     gap ≥ 0 (weaker/equal target): no resist roll, duration amplified
+   *       +15% per rank of gap, capped at 2.0×.
+   *     gap < 0 (stronger target): 12%/rank chance to fully resist the
+   *       application (capped 60%), and duration shortened 15%/rank
+   *       (floored at 0.2×).
+   * Mob rank uses the dungeon's rank as proxy (same precedent as the XP
+   * grant — mobs spawn at dungeon rank). Effect MAGNITUDE for DOTs is
+   * already rank-scaled by _getDotSourceScaling (0.25–3.0× by rank ratio),
+   * so this deliberately governs only proc + duration — scaling magnitude
+   * here too would double-dip. Legacy applications without sourcePower get
+   * gap 0 → fully neutral, so nothing existing changes behavior.
+   */
+  _getAilmentSusceptibility(channelKey, targetType, sourcePower) {
+    const dungeon = this.activeDungeons?.get?.(channelKey);
+    const targetRank = targetType === 'boss'
+      ? (dungeon?.boss?.rank || dungeon?.rank || 'E')
+      : (dungeon?.rank || 'E');
+    const targetIdx = this.getRankIndexValue(targetRank);
+    const sourceIdx = Number.isFinite(sourcePower?.rankIndex) ? sourcePower.rankIndex : targetIdx;
+    const gap = sourceIdx - targetIdx;
+    if (gap >= 0) {
+      return { resistChance: 0, durationMult: Math.min(2.0, 1 + 0.15 * gap) };
+    }
+    const up = -gap;
+    return {
+      resistChance: Math.min(0.6, 0.12 * up),
+      durationMult: Math.max(0.2, 1 - 0.15 * up),
+    };
+  },
+
   _applyCombatStatusToEntity({ channelKey, targetType, targetId, effectName, stackDelta = 1, now = Date.now(), sourcePower = null }) {
     if (!this._isCombatStatusEffectsEnabled()) return null;
     const effectConfig = this._getStatusEffectConfig(effectName);
@@ -474,6 +509,19 @@ module.exports = {
           return null;
         }
       }
+    }
+
+    // Rank-scaled susceptibility for mobs and bosses (see helper above):
+    // weaker targets never resist and suffer amplified duration; stronger
+    // targets may shrug the application off entirely. The user path keeps
+    // its own Detoxification mechanics above.
+    let ailmentDurationMult = 1;
+    if (targetType === 'mob' || targetType === 'boss') {
+      const sus = this._getAilmentSusceptibility(channelKey, targetType, sourcePower);
+      if (sus.resistChance > 0 && Math.random() < sus.resistChance) {
+        return null; // shrugged off — too strong for this ailment source
+      }
+      ailmentDurationMult = sus.durationMult;
     }
 
     const bucket = this._getStatusBucket(channelKey, targetType, targetId, true);
@@ -493,7 +541,11 @@ module.exports = {
     const isPermanent = effectConfig.durationMs === Infinity;
     const durationMs = isPermanent
       ? Infinity
-      : Math.max(500, Math.floor(Math.max(500, Math.floor(effectConfig.durationMs || 3000)) * (1 - durationReduction)));
+      : Math.max(500, Math.floor(
+          Math.max(500, Math.floor(effectConfig.durationMs || 3000)) *
+          (1 - durationReduction) *
+          ailmentDurationMult
+        ));
     const nextState = {
       stacks: nextStacks,
       appliedAt: now,
