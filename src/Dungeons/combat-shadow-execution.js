@@ -871,10 +871,12 @@ module.exports = {
         // the whole army's boss damage. Without this the player was cosmetic
         // once shadows were deployed; now joining is a real, tunable buff on
         // top of the player's own per-message hit. Deploy-and-idle gets 1.0.
-        // DOMAIN OF THE MONARCH (2026-08-05): at Monarch-tier ranks the
-        // presence bonus rises to the canon +50% ("increases the stats of
-        // all the summoned shadows by 50%" — an area buff that changed the
-        // outcome of many of Jinwoo's battles). The explicit
+        // MONARCH-TIER PRESENCE (2026-08-05): at Monarch-tier ranks the
+        // passive presence bonus rises 0.25 → 0.50, echoing Domain of the
+        // Monarch's canon +50%. NOTE: this is NOT the castable Domain skill —
+        // that exists separately as the ACTIVE 'domain' buff
+        // (_getDomainShadowMultiplier / domainMultiplier in the swing math)
+        // and multiplies on top of this passive while cast. The explicit
         // userParticipationDamageBonus setting, when set, still wins.
         if (aggregatedBossDamage > 0) {
           const isMonarchTier =
