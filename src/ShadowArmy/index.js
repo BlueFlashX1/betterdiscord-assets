@@ -1004,6 +1004,7 @@ Object.assign(
   require('./extraction-queue'),
   require('./combat-stats'),
   require('./army-stats'),
+  require('./army-export'),
   require('./progression'),
   require('./migrations'),
   require('./self-heal'),

@@ -437,6 +437,13 @@ module.exports = {
           <div style="font-size: 10px; opacity: 0.7; margin-top: 4px;">Triggers a test ARISE animation with a dummy shadow to verify font & styling</div>
         </div>
 
+        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 2px;">
+          <button type="button" data-sa-action="export-db" style="padding: 6px 12px; background: #7c3aed; color: white; border: none; border-radius: 2px; cursor: pointer; font-size: 12px; font-weight: 600;">
+            Export Army Database
+          </button>
+          <div style="font-size: 10px; opacity: 0.7; margin-top: 4px;">Streams every shadow to SoloLevelingBackups/army-database.ndjson for external analysis. Progress toasts every 50k.</div>
+        </div>
+
         <div class="shadow-army-config" style="margin-top: 16px;">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
             <input type="checkbox" id="sa-debug-mode" ${
@@ -480,6 +487,11 @@ module.exports = {
         if (this.settings?.ariseAnimation && wasEnabled === false) {
           this.settings.ariseAnimation.enabled = wasEnabled;
         }
+      },
+      'export-db': () => {
+        // Fire-and-forget: exportArmyDatabase re-entry-guards itself and
+        // reports progress/completion via toasts.
+        this.exportArmyDatabase?.();
       },
       diagnostic: async () => {
         const resultDiv = container.querySelector('#shadow-army-diagnostic-result');
