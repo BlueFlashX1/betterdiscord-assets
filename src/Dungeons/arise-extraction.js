@@ -91,19 +91,28 @@ module.exports = {
   },
 
   async attemptBossExtraction(channelKey) {
+    // NOTE on early returns: the delegated click handler (ui-delegation.js)
+    // disables the button BEFORE calling this method, and only the fail/error
+    // paths below re-enable it. Every early return must therefore either
+    // re-enable (retryable condition) or remove (dead corpse) the button —
+    // a bare return leaves it stuck at opacity 0.5 / pointer-events none.
+
     // SkillTree gate: shadow_extraction must be unlocked
     const skillTree = this.getSkillTreeInstance?.();
     if (!skillTree || typeof skillTree.getSkillLevel !== 'function' || !(Number(skillTree.getSkillLevel('shadow_extraction')) >= 1)) {
       this.showToast('Shadow Extraction skill not unlocked. Unlock it in the Skill Tree.', 'error');
+      this._reEnableAriseButton(channelKey); // retryable after unlocking
       return;
     }
 
-    // Mutex: block concurrent extraction on same channel
+    // Mutex: block concurrent extraction on same channel — the in-flight
+    // call owns the button state, so no re-enable here.
     if (this.extractionInProgress.has(channelKey)) return;
 
     const bossData = this.defeatedBosses.get(channelKey);
     if (!bossData) {
       this.showToast('Boss corpse has degraded. Extraction no longer possible.', 'error');
+      this._removeAriseButton(channelKey); // corpse gone — button points at nothing
       return;
     }
 
@@ -123,6 +132,7 @@ module.exports = {
     // Guard: prevent arising a boss that was already successfully extracted
     if (this._arisedBossIds.has(bossId)) {
       this.showToast('Shadow already extracted from this boss.', 'info');
+      this._removeAriseButton(channelKey); // nothing left to arise here
       return;
     }
 
@@ -132,6 +142,7 @@ module.exports = {
     if (!this.shadowArmy) {
       this.extractionInProgress.delete(channelKey);
       this.showToast('Shadow Army plugin not found. Cannot extract shadow.', 'error');
+      this._reEnableAriseButton(channelKey); // retryable once the plugin loads
       return;
     }
 
@@ -139,6 +150,7 @@ module.exports = {
     if (!this.soloLevelingStats) {
       this.extractionInProgress.delete(channelKey);
       this.showToast('Solo Leveling Stats plugin not found. Cannot extract shadow.', 'error');
+      this._reEnableAriseButton(channelKey); // retryable once the plugin loads
       return;
     }
 

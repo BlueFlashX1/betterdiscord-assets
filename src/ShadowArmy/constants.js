@@ -396,20 +396,27 @@ const SHADOW_ROLE_STAT_WEIGHTS = {
 
 const SHADOW_ARMY_CAPACITY = {
   // cap = base + floor(sqrt(INT) × intScale)
-  // Example effective caps shown at typical INT for that rank tier.
+  // "Typical INT" figures use the empirical growth from live play,
+  // INT ≈ 2.85 × level at the rank's entry level (measured from a real
+  // save: INT 4702 at level 1649) — the old comments assumed 2-3× less
+  // INT than players actually have.
+  // SS and above steepened 2026-08-05: the top end now climbs ~2.4-2.5×
+  // per rank with a deliberate 3.7× leap into Monarch+ (~half a million
+  // at entry), so the last mortal rank reads as "approaching limitless"
+  // rather than a hard wall a large army is already past.
   //                     base      intScale   // @ typical INT → effective cap
   E:                  { base: 0,      intScale: 0 },       // No Shadow Extraction skill yet
-  D:                  { base: 15,     intScale: 3 },       // Job Change arc         — INT 25 → ~30
-  C:                  { base: 40,     intScale: 8 },       // Growing power           — INT 50 → ~96
-  B:                  { base: 80,     intScale: 15 },      // Mid-tier hunter         — INT 100 → ~230
-  A:                  { base: 200,    intScale: 30 },      // Post-Igris              — INT 200 → ~624
-  S:                  { base: 500,    intScale: 50 },      // Jeju Island arc         — INT 300 → ~1,366
-  SS:                 { base: 1000,   intScale: 80 },      // Late S-rank power       — INT 500 → ~2,788
-  SSS:                { base: 2500,   intScale: 150 },     // ch.227 "near two thousand" — INT 800 → ~6,743
-  'SSS+':             { base: 5000,   intScale: 250 },     // Approaching Monarch     — INT 1000 → ~12,905
-  NH:                 { base: 10000,  intScale: 400 },     // National Hunter level   — INT 1200 → ~24,859
-  Monarch:            { base: 30000,  intScale: 700 },     // Partial Ashborn         — INT 1500 → ~57,099
-  'Monarch+':         { base: 100000, intScale: 1500 },    // ch.240 "over 130 thousand" — INT 2000 → ~167,080
+  D:                  { base: 15,     intScale: 3 },       // Job Change arc          — INT 28 → ~31
+  C:                  { base: 40,     intScale: 8 },       // Growing power           — INT 71 → ~107
+  B:                  { base: 80,     intScale: 15 },      // Mid-tier hunter         — INT 142 → ~259
+  A:                  { base: 200,    intScale: 30 },      // Post-Igris              — INT 285 → ~706
+  S:                  { base: 500,    intScale: 50 },      // Jeju Island arc         — INT 570 → ~1,693
+  SS:                 { base: 1200,   intScale: 100 },     // Late S-rank power       — INT 855 → ~4,124
+  SSS:                { base: 3500,   intScale: 200 },     // Beyond ch.227's army    — INT 1140 → ~10,252
+  'SSS+':             { base: 8000,   intScale: 400 },     // Approaching Monarch     — INT 1425 → ~23,099
+  NH:                 { base: 20000,  intScale: 800 },     // National Hunter level   — INT 1995 → ~55,732
+  Monarch:            { base: 60000,  intScale: 1500 },    // Partial Ashborn         — INT 2850 → ~140,078
+  'Monarch+':         { base: 250000, intScale: 4000 },    // Beyond ch.240's 130k    — INT 4275 → ~511,533
   'Shadow Monarch':   { base: Infinity, intScale: 0 },     // Full Ashborn power — limitless
 };
 

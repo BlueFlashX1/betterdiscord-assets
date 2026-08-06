@@ -924,15 +924,22 @@ module.exports = {
             ? saveResult.completed
             : Math.max(0, chunkShadows.length - failedIndices.size);
           totalExtracted += effectiveSavedCount;
-          // Invalidate the cap-count cache after this chunk's writes land —
-          // mirrors the single-extraction path (extraction.js: the
-          // attemptExtractionWithRetries save-success block, which calls
-          // this right after saveShadow()). Without this, checkShadowArmyCap()
-          // called by the NEXT chunk's fresh re-check above (or by any
-          // concurrent extraction path) could read a stale pre-write count
-          // for up to 5s, allowing the army to overshoot its cap.
+          // Keep the cap-count cache accurate WITHOUT nuking it. The old
+          // _invalidateCapCountCache() here forced the next chunk's cap
+          // re-check into a fresh IDB store.count() — at 281k records
+          // that's a real count per chunk, every chunk, for the whole
+          // stream. This writer knows exactly how many records it just
+          // added, so bump the cached count in place: the next chunk's
+          // checkShadowArmyCap() reads the corrected value synchronously.
+          // If a CONCURRENT path invalidated the cache mid-chunk (its
+          // writes aren't in our tally), the cache is undefined, the
+          // guard skips, and the next check re-counts from IDB — same
+          // safety as before, just not paid on every chunk.
           if (effectiveSavedCount > 0) {
-            this._invalidateCapCountCache?.();
+            if (this._capCountCache !== undefined) {
+              this._capCountCache += effectiveSavedCount;
+              this._capCountCacheTime = Date.now();
+            }
           }
           const savedShadows = failedIndices.size > 0
             ? chunkShadows.filter((_, idx) => !failedIndices.has(idx))

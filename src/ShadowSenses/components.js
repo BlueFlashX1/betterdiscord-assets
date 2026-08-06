@@ -174,6 +174,133 @@ function buildComponents(pluginRef) {
     return out;
   }
 
+  // ─── Edit diff rendering ────────────────────────────────────────────
+  // An edit used to render as one run-on line ("X edited a message
+  // before: … after: …") — `content` is emitted with \n separators but
+  // non-message entries render it as plain text, and HTML collapses
+  // newlines. These build a labelled two-row diff instead and highlight
+  // the words that actually changed, so a one-character typo fix is
+  // visible at a glance instead of requiring a character hunt.
+
+  const EDIT_BEFORE_INK = "#e0919b";
+  const EDIT_AFTER_INK = "#7fd99a";
+  const MAX_DIFF_WORDS = 80;
+
+  const EDIT_ROW = (accent) => ({
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "8px",
+    padding: "1px 0 1px 8px",
+    borderLeft: `2px solid ${accent}`,
+  });
+  const EDIT_LABEL = (color) => ({
+    flex: "0 0 auto",
+    minWidth: "42px",
+    color,
+    fontSize: "10px",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    lineHeight: "1.9",
+    textTransform: "uppercase",
+    opacity: 0.85,
+  });
+  const EDIT_TEXT = (color) => ({
+    flex: "1 1 auto",
+    minWidth: 0,
+    color,
+    overflowWrap: "anywhere",
+  });
+  const EDIT_MARK = (color, bg) => ({
+    color,
+    background: bg,
+    borderRadius: "2px",
+    padding: "0 2px",
+    fontWeight: 600,
+  });
+
+  // Entries persisted before editBefore/editAfter existed carry only the
+  // flattened string, so old cards are recovered rather than left ugly.
+  const LEGACY_EDIT_RE = /^[\s\S]*? edited a message\nbefore: ([\s\S]*?)\nafter: ([\s\S]*)$/;
+
+  function resolveEditPair(entry) {
+    if (typeof entry.editBefore === "string" || typeof entry.editAfter === "string") {
+      return { before: entry.editBefore || "", after: entry.editAfter || "" };
+    }
+    const match = LEGACY_EDIT_RE.exec(String(entry.content || ""));
+    if (!match) return null;
+    return {
+      before: match[1] === "—" ? "" : match[1],
+      after: match[2] === "—" ? "" : match[2],
+    };
+  }
+
+  /**
+   * Common-prefix/suffix trim — whatever sits between the shared head and
+   * the shared tail is what changed. O(n) and exact for the common case
+   * (typo fix, single word swap); on a heavier rewrite it just widens the
+   * highlight, which is still honest rather than wrong.
+   */
+  function diffWordRanges(beforeWords, afterWords) {
+    const shorter = Math.min(beforeWords.length, afterWords.length);
+    let head = 0;
+    while (head < shorter && beforeWords[head] === afterWords[head]) head++;
+    let tail = 0;
+    while (
+      tail < shorter - head &&
+      beforeWords[beforeWords.length - 1 - tail] === afterWords[afterWords.length - 1 - tail]
+    ) tail++;
+    return {
+      head,
+      beforeEnd: beforeWords.length - tail,
+      afterEnd: afterWords.length - tail,
+    };
+  }
+
+  function buildDiffTextNodes(words, head, end, markStyle) {
+    if (words.length === 0) return ["—"];
+    const nodes = [];
+    for (let i = 0; i < words.length; i++) {
+      if (i > 0) nodes.push(" ");
+      nodes.push(i >= head && i < end
+        ? ce("span", { key: `d${i}`, style: markStyle }, words[i])
+        : words[i]);
+    }
+    return nodes;
+  }
+
+  function buildEditDiffNodes(entry) {
+    const pair = resolveEditPair(entry);
+    if (!pair) return null;
+    const beforeWords = pair.before.trim() ? pair.before.trim().split(/\s+/) : [];
+    const afterWords = pair.after.trim() ? pair.after.trim().split(/\s+/) : [];
+    // Skip the diff on very long edits — the highlight stops being useful
+    // once most of the text changed, and this runs during card render.
+    const range = (beforeWords.length <= MAX_DIFF_WORDS && afterWords.length <= MAX_DIFF_WORDS)
+      ? diffWordRanges(beforeWords, afterWords)
+      : { head: 0, beforeEnd: 0, afterEnd: 0 };
+
+    return ce("div", { style: { display: "flex", flexDirection: "column", gap: "3px" } },
+      ce("div", { style: EDIT_ROW(EDIT_BEFORE_INK) },
+        ce("span", { style: EDIT_LABEL(EDIT_BEFORE_INK) }, "Before"),
+        ce("span", { style: EDIT_TEXT("#b9a8c9") },
+          ...buildDiffTextNodes(
+            beforeWords, range.head, range.beforeEnd,
+            EDIT_MARK(EDIT_BEFORE_INK, "rgba(224, 145, 155, 0.16)")
+          )
+        )
+      ),
+      ce("div", { style: EDIT_ROW(EDIT_AFTER_INK) },
+        ce("span", { style: EDIT_LABEL(EDIT_AFTER_INK) }, "After"),
+        ce("span", { style: EDIT_TEXT("#e8e3f5") },
+          ...buildDiffTextNodes(
+            afterWords, range.head, range.afterEnd,
+            EDIT_MARK(EDIT_AFTER_INK, "rgba(127, 217, 154, 0.16)")
+          )
+        )
+      )
+    );
+  }
+
   function getContentText(entry, eventType) {
     if (eventType === "message") {
       if (!entry.content) return "— no text content —";
@@ -458,7 +585,11 @@ function buildComponents(pluginRef) {
     const borderColor = getBorderColor(entry.matchReason || null, priority);
     const badge = getMatchBadge(entry, priority);
     const burstBadge = getBurstBadge(msgCount);
-    const contentText = getContentText(entry, eventType);
+    // Edits render as a labelled before/after diff; the card header
+    // already carries "<author> EDIT", so the old restated prose line
+    // ("X edited a message") is dropped as redundant.
+    const editDiff = eventType === "edit" ? buildEditDiffNodes(entry) : null;
+    const contentText = editDiff || getContentText(entry, eventType);
     const firstContent = getFirstContentBlock(entry, msgCount);
     const mediaPreviews = buildMediaPreviews(entry);
     const headerNodes = buildFeedCardHeaderNodes(entry, {
@@ -746,6 +877,7 @@ function buildComponents(pluginRef) {
     const [feed, setFeed] = useState([]);
     const scrollRef = useRef(null);
     const prevLenRef = useRef(0);
+    const didInitialScrollRef = useRef(false);
 
     useEffect(() => {
       // Event-driven feed refresh — replaces the prior 5s setInterval
@@ -786,13 +918,34 @@ function buildComponents(pluginRef) {
     }, []);
 
     useEffect(() => {
-      if (feed.length > prevLenRef.current && scrollRef.current) {
+      const el = scrollRef.current;
+      if (!el || feed.length === 0) return;
+
+      if (!didInitialScrollRef.current) {
+        // Land on the NEWEST entry when the panel opens. The nearBottom
+        // heuristic below can't do this on its own: a fresh mount starts at
+        // scrollTop 0 with the whole feed below it, which reads as "user is
+        // scrolled up", so every open used to dump you at the oldest card.
+        // The panel is createRoot/unmount per open (plugin-ui-methods), so
+        // this ref is false again on each open — no stale-flag case.
+        didInitialScrollRef.current = true;
+        prevLenRef.current = feed.length;
+        el.scrollTop = el.scrollHeight;
+        // Lazy <img> media previews resolve after this pass and grow the
+        // scroll height, which would leave the newest card above the fold —
+        // re-pin once on the next frame.
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        });
+        return;
+      }
+
+      if (feed.length > prevLenRef.current) {
         // PERF (profiler 2026-07-29): scrollTop = scrollHeight forces a
         // synchronous layout of the whole feed (~10ms/append, 669ms worst).
         // Only auto-scroll when the user is already near the bottom — skips
         // the forced layout entirely while they're scrolled up reading, and
         // stops yanking their scroll position away.
-        const el = scrollRef.current;
         const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         if (nearBottom) {
           requestAnimationFrame(() => {

@@ -1304,8 +1304,13 @@ function onExternalMessageEdit(detail) {
       channelName,
       guildId,
       guildName: this._plugin._getGuildName(guildId),
-      // Non-message entries render `content` as plain text (components.js
-      // getContentText), so the before/after pair is formatted here.
+      // Structured pair — components.js renders these as a labelled
+      // before/after diff with the changed words highlighted.
+      editBefore: before,
+      editAfter: after,
+      // Flattened fallback, kept for entries read as plain text (and for
+      // feeds persisted by older builds, which components.js parses back
+      // into the pair above).
       content: `${authorName} edited a message\nbefore: ${before || "—"}\nafter: ${after || "—"}`,
       timestamp: detail.at || Date.now(),
       shadowName: deployment.shadowName,
