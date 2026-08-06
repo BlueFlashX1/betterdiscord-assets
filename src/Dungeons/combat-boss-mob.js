@@ -443,6 +443,20 @@ module.exports = {
       // T2-1: mobBudget is computed per-tick in _combatLoopTick as globalBudget / activeDungeonCount
       const maxMobsToSimulate = isWindowVisible ? mobBudget : Math.min(100, Math.floor(mobBudget * 0.2));
 
+      // MONARCH'S BLOODLUST (passive, 2026-08-05): a present player radiates
+      // intimidation — mobs 2+ ranks beneath them lose attacks to fear,
+      // 15% per rank of gap past the first, capped at 50%. This is the
+      // passive presence layer under the ACTIVE dragons_fear_mobs /
+      // bloodlust_mobs skills below (those fully paralyze; this only slows).
+      // Applied at the Phase-1 attack count so it propagates everywhere:
+      // group hits vs shadows, the all-dead aggregate vs the player, and
+      // attack cadence (feared mobs genuinely swing less often).
+      // Bosses are exempt — this is the mob loop; elites don't cower.
+      const fearUserRankIdx = dungeon.userParticipating
+        ? this.getRankIndexValue(userRank)
+        : -1;
+      const _fearRankIdxCache = new Map(); // mob rank -> index (few distinct ranks)
+
       // Phase 1: Count alive mobs and compute total attacks (lightweight scan — no damage calc)
       const mobAttackState = new Map(); // mob -> { timeSince, cooldown, attacks }
       let totalAliveMobs = 0;
@@ -464,7 +478,20 @@ module.exports = {
           (mob.attackCooldown || activeInterval) * slowMultiplier,
           activeInterval
         );
-        const attacks = this.calculateAttacksInSpan(timeSince, cooldown, cyclesMultiplier);
+        let attacks = this.calculateAttacksInSpan(timeSince, cooldown, cyclesMultiplier);
+        if (attacks > 0 && fearUserRankIdx >= 0) {
+          const mobRankKey = mob.rank || 'E';
+          let mobRankIdx = _fearRankIdxCache.get(mobRankKey);
+          if (mobRankIdx === undefined) {
+            mobRankIdx = this.getRankIndexValue(mobRankKey);
+            _fearRankIdxCache.set(mobRankKey, mobRankIdx);
+          }
+          const fearGap = fearUserRankIdx - mobRankIdx;
+          if (fearGap >= 2) {
+            const fearReduction = Math.min(0.5, 0.15 * (fearGap - 1));
+            attacks = Math.round(attacks * (1 - fearReduction));
+          }
+        }
         mobAttackState.set(mob, { timeSince, cooldown, attacks });
         if (attacks > 0) totalAttacksAll += attacks;
       }
@@ -525,6 +552,39 @@ module.exports = {
           }
 
         }
+
+        // IRON'S RAGE — taunt soak (2026-08-05): tank-personality shadows
+        // actively pull the swarm back onto themselves, absorbing up to half
+        // of any overflow that would otherwise leak through to the player
+        // (canon: Iron's Rage holding the ant horde at Jeju). Estimated from
+        // a bounded 120-shadow sample; soak = min(0.5, 3 × tank fraction),
+        // so a ~17% tank line reaches the full 50% soak.
+        let tankSoakFactor = 0;
+        if (dungeon.userParticipating && this.shadowArmy?.getShadowPersonalityKey) {
+          const sampleN = Math.min(120, aliveShadows.length);
+          let tankHits = 0;
+          const useFullScan = aliveShadows.length <= sampleN;
+          for (let i = 0; i < sampleN; i++) {
+            const s = useFullScan
+              ? aliveShadows[i]
+              : aliveShadows[(Math.random() * aliveShadows.length) | 0];
+            if (s && this.shadowArmy.getShadowPersonalityKey(s) === 'tank') tankHits++;
+          }
+          tankSoakFactor = Math.min(0.5, (tankHits / Math.max(1, sampleN)) * 3);
+        }
+        // OVERFLOW LEAK (2026-08-05): hits the shadow line cannot absorb no
+        // longer vanish — a fraction reaches the player as chip damage (see
+        // the redistribution block below). This is the missing middle state
+        // between "untouchable behind the wall" and "entire field's DPS in
+        // one lump when the wall dies": you feel the line failing first.
+        // Clamped per tick to half the player's max HP so a mega-swarm can
+        // never one-tick a player through a still-standing (if buckling) line.
+        const LEAK_THROUGH_FACTOR = 0.25;
+        const _userMaxHpForLeak = Number(this.settings?.userMaxHP) || 0;
+        const leakCapThisTick = _userMaxHpForLeak > 0
+          ? Math.floor(_userMaxHpForLeak * 0.5)
+          : Number.MAX_SAFE_INTEGER;
+        let leakedThisTick = 0;
 
         // One damage calculation per rank+role group × random shadow targets
         for (const group of rankGroups.values()) {
@@ -665,6 +725,7 @@ module.exports = {
           }
 
           // REDISTRIBUTE overflow hits to other alive shadows (second pass)
+          let redistributedHits = 0;
           if (overflowHits > 0 && aliveShadows.length > 0) {
             const redistributionCap = Math.min(overflowHits, aliveShadows.length * 2); // limit iterations
             for (let r = 0; r < redistributionCap; r++) {
@@ -705,9 +766,41 @@ module.exports = {
                 );
                 shadowDamageMap.set(resolvedTargetId, accDmg + dmg);
                 found = true;
+                redistributedHits++;
                 break;
               }
               if (!found) break; // All shadows effectively dead
+            }
+          }
+
+          // OVERFLOW LEAK: whatever the line could not absorb reaches the
+          // player — reduced to LEAK_THROUGH_FACTOR (most of a collapsing
+          // swarm still gets tangled in the wall), further soaked by tanks
+          // (Iron's Rage above), clamped by the per-tick cap.
+          const unabsorbedHits = overflowHits - redistributedHits;
+          if (
+            unabsorbedHits > 0 &&
+            dungeon.userParticipating &&
+            userStats &&
+            leakedThisTick < leakCapThisTick
+          ) {
+            const leakBase = this.calculateMobDamageToUser(
+              mobStats,
+              userStats,
+              rank,
+              userRank,
+              mobRole,
+              mob.beastFamily
+            );
+            let leaked = Math.floor(
+              leakBase * unabsorbedHits * hitWeight * LEAK_THROUGH_FACTOR *
+              this._varianceWide() * incomingDamageMultiplier
+            );
+            leaked = Math.floor(leaked * (1 - tankSoakFactor));
+            leaked = Math.min(leaked, leakCapThisTick - leakedThisTick);
+            if (leaked > 0) {
+              leakedThisTick += leaked;
+              totalUserDamage += leaked;
             }
           }
         }

@@ -871,12 +871,20 @@ module.exports = {
         // the whole army's boss damage. Without this the player was cosmetic
         // once shadows were deployed; now joining is a real, tunable buff on
         // top of the player's own per-message hit. Deploy-and-idle gets 1.0.
+        // DOMAIN OF THE MONARCH (2026-08-05): at Monarch-tier ranks the
+        // presence bonus rises to the canon +50% ("increases the stats of
+        // all the summoned shadows by 50%" — an area buff that changed the
+        // outcome of many of Jinwoo's battles). The explicit
+        // userParticipationDamageBonus setting, when set, still wins.
         if (aggregatedBossDamage > 0) {
+          const isMonarchTier =
+            this.getRankIndexValue(this.soloLevelingStats?.settings?.rank || 'E') >=
+            this.getRankIndexValue('Monarch');
           const participationBonus = dungeon.userParticipating
             ? this.clampNumber(
                 Number.isFinite(this.settings?.userParticipationDamageBonus)
                   ? this.settings.userParticipationDamageBonus
-                  : 0.25,
+                  : (isMonarchTier ? 0.5 : 0.25),
                 0,
                 2
               )
