@@ -478,9 +478,11 @@ module.exports = {
    */
   _getAilmentSusceptibility(channelKey, targetType, sourcePower) {
     const dungeon = this.activeDungeons?.get?.(channelKey);
-    const targetRank = targetType === 'boss'
-      ? (dungeon?.boss?.rank || dungeon?.rank || 'E')
-      : (dungeon?.rank || 'E');
+    const targetRank = targetType === 'user'
+      ? (this.soloLevelingStats?.settings?.rank || 'E')
+      : targetType === 'boss'
+        ? (dungeon?.boss?.rank || dungeon?.rank || 'E')
+        : (dungeon?.rank || 'E');
     const targetIdx = this.getRankIndexValue(targetRank);
     const sourceIdx = Number.isFinite(sourcePower?.rankIndex) ? sourcePower.rankIndex : targetIdx;
     const gap = sourceIdx - targetIdx;
@@ -511,12 +513,16 @@ module.exports = {
       }
     }
 
-    // Rank-scaled susceptibility for mobs and bosses (see helper above):
-    // weaker targets never resist and suffer amplified duration; stronger
-    // targets may shrug the application off entirely. The user path keeps
-    // its own Detoxification mechanics above.
+    // Rank-scaled susceptibility — SAME curve for every target type
+    // (2026-08-05): weaker targets never resist and suffer amplified
+    // duration; stronger targets may shrug the application off entirely.
+    // For the PLAYER this stacks WITH Detoxification above (detox is
+    // earned skill resistance, this is innate rank dominance): a Monarch+
+    // player vs typical mob-sourced ailments sits at the 60% resist cap
+    // with 0.2x duration — canon Jinwoo shrugging off paralysis/poison —
+    // while a low-rank player in a high-rank gate suffers 2x-held ailments.
     let ailmentDurationMult = 1;
-    if (targetType === 'mob' || targetType === 'boss') {
+    {
       const sus = this._getAilmentSusceptibility(channelKey, targetType, sourcePower);
       if (sus.resistChance > 0 && Math.random() < sus.resistChance) {
         return null; // shrugged off — too strong for this ailment source
