@@ -560,6 +560,20 @@ module.exports = {
             'info'
           );
         }
+        // Boss ARISE ceremony — the auto-arise fold removed the manual
+        // button, and with it the full-screen animation. The bulk pass
+        // reports the boss's shadow back so the ceremony still plays;
+        // mirrors the manual path's success handler (arise-extraction.js).
+        if (extractionResults.bossShadow) {
+          const bossShadow = extractionResults.bossShadow;
+          const sa = this.shadowArmy;
+          if (sa?.triggerArise && sa?.settings?.ariseAnimation?.enabled) {
+            sa.triggerArise(bossShadow);
+          } else {
+            this.showAriseSuccessAnimation(bossShadow, snap.boss);
+          }
+          this.showToast(`ARISE! "${bossShadow.roleName || bossShadow.role}" extracted!`, 'success');
+        }
       } catch (error) {
         this.errorLog('Failed to process corpse pile extraction', error);
       }

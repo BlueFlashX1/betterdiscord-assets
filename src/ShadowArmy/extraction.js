@@ -762,6 +762,10 @@ module.exports = {
     let totalPowerDelta = 0;
     const rankCounts = {};
     const extractedShadowIds = [];
+    // First successfully-SAVED boss shadow (raw pre-compression object, same
+    // shape the manual arise path hands to the ceremony animation). Returned
+    // so Dungeons can play the ARISE ceremony for the auto-arisen boss.
+    let bossShadowExtracted = null;
 
     const userRankIdx = this.shadowRanks.indexOf(userRank);
     const intelligence = userStats?.intelligence || 0;
@@ -805,6 +809,9 @@ module.exports = {
       const chunk = corpsePile.slice(i, chunkEnd);
       if (chunk.length === 0) break; // no headroom left, nothing more to extract this pass
       const chunkShadows = [];
+      // Boss shadows in this chunk: index into chunkShadows + the raw shadow
+      // object, so post-save we can tell whether the boss's save succeeded.
+      const chunkBossEntries = [];
 
       // RNG + shadow generation for this chunk (pure JS, no IDB)
       for (const corpse of chunk) {
@@ -898,7 +905,10 @@ module.exports = {
         const shadowToSave = this.prepareShadowForSave(shadow);
         chunkShadows.push(shadowToSave);
 
-        if (isBoss) this.recordBossExtractionAttempt(corpse.id, true);
+        if (isBoss) {
+          this.recordBossExtractionAttempt(corpse.id, true);
+          chunkBossEntries.push({ index: chunkShadows.length - 1, shadow });
+        }
       }
 
       // Persist this chunk's successes in tiny IDB write batches
@@ -944,6 +954,11 @@ module.exports = {
           const savedShadows = failedIndices.size > 0
             ? chunkShadows.filter((_, idx) => !failedIndices.has(idx))
             : chunkShadows;
+          for (const be of chunkBossEntries) {
+            if (!bossShadowExtracted && !failedIndices.has(be.index)) {
+              bossShadowExtracted = be.shadow;
+            }
+          }
           for (const savedShadow of savedShadows) {
             totalPowerDelta += (savedShadow.strength || savedShadow.s || 0);
             const r = savedShadow.rank || savedShadow.r || '?';
@@ -1035,7 +1050,7 @@ module.exports = {
       }
     }
 
-    return { extracted: totalExtracted, attempted: totalAttempted };
+    return { extracted: totalExtracted, attempted: totalAttempted, bossShadow: bossShadowExtracted };
   },
 
   // BOSS ATTEMPT TRACKING

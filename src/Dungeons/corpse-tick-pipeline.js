@@ -132,6 +132,9 @@ module.exports = {
     const total = pile.length;
     let extracted = 0;
     let attempted = 0;
+    // Successfully-arisen boss shadow (raw object) — returned to the
+    // completion flow so it can play the ARISE ceremony for the boss.
+    let bossShadow = null;
 
     this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
 
@@ -148,6 +151,7 @@ module.exports = {
         );
         extracted = Number(result?.extracted) || 0;
         attempted = Number(result?.attempted) || 0;
+        bossShadow = result?.bossShadow || null;
       } catch (error) {
         this.errorLog('Bulk corpse extraction failed; falling back to sequential batches', error);
       }
@@ -177,8 +181,15 @@ module.exports = {
           )
         );
 
-        for (const r of results) {
-          if (r.status === 'fulfilled' && r.value?.success) extracted++;
+        for (let ri = 0; ri < results.length; ri++) {
+          const r = results[ri];
+          if (r.status === 'fulfilled' && r.value?.success) {
+            extracted++;
+            // allSettled preserves order, so results[ri] maps to batch[ri]
+            if (!bossShadow && batch[ri]?.isBoss && r.value.shadow) {
+              bossShadow = r.value.shadow;
+            }
+          }
         }
 
         if (i + BATCH_SIZE < total) {
@@ -197,7 +208,7 @@ module.exports = {
       SLEvents.emit('ShadowArmy:batchExtractionComplete', { extracted, total: attempted, channelKey });
     }
 
-    return { extracted, attempted };
+    return { extracted, attempted, bossShadow };
   },
 
   async _mobSpawnLoopTick(isVisible = true) {
