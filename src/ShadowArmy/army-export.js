@@ -110,25 +110,30 @@ module.exports = {
     this._armyExportInProgress = true;
     const startedAt = Date.now();
     const fs = require('fs');
+    // BD's fs polyfill is NOT full Node fs. The first shipped version of
+    // this export called fs.appendFileSync per batch — which the polyfill
+    // does not provide — so the first batch threw and the export died with
+    // just the header line on disk. Feature-detect append support; without
+    // it, buffer every row in memory (~100MB at 285k shadows — a deliberate
+    // one-shot cost for a manually-triggered export) and write once at the
+    // end via writeFileSync, which the polyfill demonstrably has (the
+    // header write succeeded).
+    const canAppend = typeof fs.appendFileSync === 'function';
+    const headerLine = JSON.stringify({ _meta: 'shadow-army-export', startedAt, version: 1 }) + '\n';
+    const buffered = canAppend ? null : [headerLine];
     let count = 0;
     let nextProgressToast = 50000;
 
     try {
-      // Header line — lets analysis tools confirm which snapshot they read.
-      fs.writeFileSync(
-        filePath,
-        JSON.stringify({ _meta: 'shadow-army-export', startedAt, version: 1 }) + '\n',
-        'utf8'
-      );
+      if (canAppend) {
+        // Header line — lets analysis tools confirm which snapshot they read.
+        fs.writeFileSync(filePath, headerLine, 'utf8');
+      }
 
       await this.storageManager.forEachShadowBatchPaged((batch) => {
         // The walker IGNORES onBatch's return value — the only way to abort
         // the walk is to throw (the walker's try/catch rejects the promise).
         if (this._isStopped) throw new Error('EXPORT_ABORTED');
-        // NOTE: onBatch runs synchronously inside the live IDB transaction.
-        // The per-batch appendFileSync (~100-200KB) is deliberate: it keeps
-        // peak memory at one batch, and the sync write happens in the same
-        // event tick so the getAll keyset chain is never broken.
         const lines = [];
         for (const record of batch) {
           try {
@@ -140,20 +145,28 @@ module.exports = {
           }
         }
         count += batch.length;
-        fs.appendFileSync(filePath, lines.join('\n') + '\n', 'utf8');
+        const chunk = lines.join('\n') + '\n';
+        if (canAppend) {
+          fs.appendFileSync(filePath, chunk, 'utf8');
+        } else {
+          buffered.push(chunk);
+        }
         if (count >= nextProgressToast) {
           nextProgressToast += 50000;
-          this._toast?.(`Army export: ${count.toLocaleString()} shadows written…`, 'info');
+          this._toast?.(`Army export: ${count.toLocaleString()} shadows collected…`, 'info');
         }
       }, { batchSize: 500 });
 
       const elapsedS = Math.round((Date.now() - startedAt) / 1000);
       // Footer line — count lets readers detect a truncated export.
-      fs.appendFileSync(
-        filePath,
-        JSON.stringify({ _meta: 'end', count, elapsedS }) + '\n',
-        'utf8'
-      );
+      const footerLine = JSON.stringify({ _meta: 'end', count, elapsedS }) + '\n';
+      if (canAppend) {
+        fs.appendFileSync(filePath, footerLine, 'utf8');
+      } else {
+        buffered.push(footerLine);
+        fs.writeFileSync(filePath, buffered.join(''), 'utf8');
+        buffered.length = 0;
+      }
       this._toast?.(`Army database exported: ${count.toLocaleString()} shadows in ${elapsedS}s`, 'success', 6000);
       this.debugLog?.('EXPORT', 'Army database export complete', { count, elapsedS, filePath });
       return { count, path: filePath };
@@ -163,7 +176,18 @@ module.exports = {
         return null;
       }
       this.debugError?.('EXPORT', 'Army database export failed', e);
-      this._toast?.('Army export failed — see console.', 'error');
+      // DevTools may be unreachable (user cannot open the console) — persist
+      // the real error to a sidecar file next to the export so it can be
+      // diagnosed from disk.
+      try {
+        fs.writeFileSync(
+          filePath.replace(/\.ndjson$/, '.error.log'),
+          `${new Date().toISOString()} export failed after ${count} rows\n` +
+          `${e?.stack || e?.message || String(e)}\n`,
+          'utf8'
+        );
+      } catch (_) {}
+      this._toast?.('Army export failed — error saved to SoloLevelingBackups/army-database.error.log', 'error', 6000);
       return null;
     } finally {
       this._armyExportInProgress = false;
