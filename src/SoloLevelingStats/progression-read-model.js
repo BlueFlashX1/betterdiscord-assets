@@ -135,8 +135,6 @@ module.exports = {
           });
         Number(bonuses.questBonus || 0) > 0 &&
           passiveEntries.push({ label: 'Quest', value: this.formatSignedPercent(bonuses.questBonus, 1) });
-        Number(bonuses.longMsgBonus || 0) > 0 &&
-          passiveEntries.push({ label: 'Long Msg', value: this.formatSignedPercent(bonuses.longMsgBonus, 1) });
         Number(bonuses.allStatBonus || 0) > 0 &&
           passiveEntries.push({ label: 'All Stats', value: this.formatSignedPercent(bonuses.allStatBonus, 1) });
         Number(bonuses.attackCooldownReduction || 0) > 0 &&

@@ -9,7 +9,6 @@ function buildSkillTreeComponents(pluginInstance) {
     if (effect.xpBonus) parts.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
     if (effect.critBonus) parts.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
     if (effect.critDamageBonus) parts.push(`+${(effect.critDamageBonus * 100).toFixed(1)}% Crit Damage`);
-    if (effect.longMsgBonus) parts.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
     if (effect.questBonus) parts.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
     if (effect.allStatBonus) parts.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
     if (effect.attackCooldownReduction) {

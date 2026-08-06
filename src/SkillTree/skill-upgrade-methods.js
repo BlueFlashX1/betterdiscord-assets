@@ -148,10 +148,20 @@ const SkillTreeUpgradeMethods = {
     // Calculate effect: baseEffect applies once, then perLevelEffect scales with level and growth rate
     // For level 1: baseEffect only
     // For level 2+: baseEffect + (perLevelEffect * (level - 1) * growthRate)
-    Object.keys(skill.baseEffect || {}).forEach((key) => {
-      const baseValue = skill.baseEffect[key] || 0;
-      const perLevelValue =
-        skill.perLevelEffect && skill.perLevelEffect[key] ? skill.perLevelEffect[key] : 0;
+    //
+    // Iterate the UNION of both key sets (2026-08-05). This used to walk
+    // baseEffect's keys only, which silently dropped any bonus defined
+    // solely in perLevelEffect — no error, no warning, the skill just did
+    // nothing forever. No current skill hits that (all 18 audited), but the
+    // next perLevel-only bonus added would have become a ghost perk, which
+    // is exactly the failure class the phantom-API removals cleaned up.
+    const effectKeys = new Set([
+      ...Object.keys(skill.baseEffect || {}),
+      ...Object.keys(skill.perLevelEffect || {}),
+    ]);
+    effectKeys.forEach((key) => {
+      const baseValue = skill.baseEffect?.[key] || 0;
+      const perLevelValue = skill.perLevelEffect?.[key] || 0;
       // Level 1 gets base effect, each additional level adds perLevelEffect scaled by growth rate
       effect[key] = baseValue + perLevelValue * (level - 1) * growthRate;
     });

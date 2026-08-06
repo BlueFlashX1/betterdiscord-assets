@@ -496,9 +496,6 @@ module.exports = {
     if (hiddenBlessings?.xpBonus > 0) {
       totalPercentageBonus += hiddenBlessings.xpBonus * 100;
     }
-    if (messageLength > 200 && skillBonuses?.longMsgBonus > 0) {
-      totalPercentageBonus += skillBonuses.longMsgBonus * 100;
-    }
     if (skillBonuses?.allStatBonus > 0) {
       this._skillTreeStatMultiplier = 1 + skillBonuses.allStatBonus;
     }
