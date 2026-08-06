@@ -482,11 +482,19 @@ module.exports = {
     if (!Array.isArray(aliveShadows) || aliveShadows.length === 0) return null;
     const AGGRO = {
       tank: 3.0,       // frontline wall — actively draws attacks
+      defensive: 2.5,  // holds the line beside tanks (2026-08-05: army-db
+                       // export found 2,772 shadows with this key silently
+                       // falling to the 1.0 default, plus berserker/assassin/
+                       // support below — all real stored personalities the
+                       // table never knew)
       aggressive: 2.0, // in melee, exposed
+      berserker: 2.2,  // deeper in melee than aggressive, heedless
       balanced: 1.0,
       tactical: 0.8,   // mobile skirmishers
+      assassin: 0.7,   // strikes and vanishes
       strategic: 0.6,  // backline casters
       supportive: 0.5, // protected by the line
+      support: 0.5,    // stored alias of supportive
     };
     const n = aliveShadows.length;
     const K = Math.min(6, n);

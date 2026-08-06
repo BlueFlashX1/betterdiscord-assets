@@ -568,7 +568,12 @@ module.exports = {
             const s = useFullScan
               ? aliveShadows[i]
               : aliveShadows[(Math.random() * aliveShadows.length) | 0];
-            if (s && this.shadowArmy.getShadowPersonalityKey(s) === 'tank') tankHits++;
+            if (s) {
+              const pk = this.shadowArmy.getShadowPersonalityKey(s);
+              // 'defensive' holds the line beside tanks (same aggro tier in
+              // ShadowArmy's AGGRO table) — both count toward the soak.
+              if (pk === 'tank' || pk === 'defensive') tankHits++;
+            }
           }
           tankSoakFactor = Math.min(0.5, (tankHits / Math.max(1, sampleN)) * 3);
         }
