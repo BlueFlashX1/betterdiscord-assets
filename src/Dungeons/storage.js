@@ -187,12 +187,12 @@ class DungeonStorageManager {
       // Runtime-only pooled Map caches — not useful across sessions, cause TypeError on restore
       delete next._pooledMobDamageMap;
 
-      // Cap corpse pile to last 2500 entries for IDB storage (each ~100 bytes
-      // ≈ 250KB max). Raised 500 → 2500 (2026-08-05) in lockstep with the
+      // Cap corpse pile to last 5000 entries for IDB storage (each ~100 bytes
+      // ≈ 500KB max). Raised 500 → 5000 (2026-08-05) in lockstep with the
       // in-memory cap in corpse-tick-pipeline.js — keep both in sync.
       // Later mobs tend to be higher rank, so keep the tail.
-      if (Array.isArray(next.corpsePile) && next.corpsePile.length > 2500) {
-        next.corpsePile = next.corpsePile.slice(-2500);
+      if (Array.isArray(next.corpsePile) && next.corpsePile.length > 5000) {
+        next.corpsePile = next.corpsePile.slice(-5000);
       }
 
       // Convert Map fields to plain objects, CAPPED (2026-07-30, profiler:

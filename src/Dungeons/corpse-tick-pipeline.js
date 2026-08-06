@@ -67,12 +67,13 @@ module.exports = {
       isBoss,
     });
     // In-memory cap (mirrors the IDB-flush cap in storage.js): prevent the pile
-    // from growing unbounded on high kill-count dungeons. Raised 500 → 2500
-    // (2026-08-05): the bulk extractor's streaming profiles were tuned for
-    // piles this size ('fast' tier, ~15-30s arise), and the save-side cost is
-    // ~250KB into async IDB. Later mobs tend to be higher rank, so keep the tail.
-    if (dungeon.corpsePile.length > 2500) {
-      dungeon.corpsePile = dungeon.corpsePile.slice(-2500);
+    // from growing unbounded on high kill-count dungeons. Raised 500 → 5000
+    // (2026-08-05): a full pile lands exactly on the bulk extractor's
+    // 'balanced' streaming profile (~30-60s arise, UI stays responsive), and
+    // the save-side cost is ~500KB into async IDB. Later mobs tend to be
+    // higher rank, so keep the tail.
+    if (dungeon.corpsePile.length > 5000) {
+      dungeon.corpsePile = dungeon.corpsePile.slice(-5000);
     }
   },
 
