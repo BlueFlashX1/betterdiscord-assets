@@ -129,6 +129,18 @@ function _getToolbarHub() {
     // read up front and passes the element to every callback; subscribers
     // that accept the argument skip their own lookup entirely. Callbacks that
     // ignore the argument keep working exactly as before.
+    // PER-SUBSCRIBER ATTRIBUTION (2026-08-06). AAPerfSentinel showed
+    // `fireAll` in ALL FIVE of a session's worst stalls (908-2019ms each,
+    // avg 285ms over 312 calls) — but the sentinel attributes shared-singleton
+    // work to whichever plugin WON THE STARTUP RACE to create the hub, not to
+    // the subscriber whose callback actually burned the time. That made the
+    // cost unactionable: "SoloLevelingTheme fireAll" names this hub, not a
+    // culprit.
+    //
+    // Timing each callback closes the gap. Only a genuinely slow subscriber
+    // (>=50ms — a whole frame) logs, so this is silent in normal operation and
+    // self-announcing exactly when it matters. performance.now() per callback
+    // across ~6 subscribers is negligible next to the work being measured.
     fireAll() {
       if (this._rafScheduled || document.hidden) return;
       this._rafScheduled = true;
@@ -137,7 +149,17 @@ function _getToolbarHub() {
         let toolbar = null;
         try { toolbar = getChannelHeaderToolbar(); } catch (_) { toolbar = null; }
         for (const cb of this.callbacks) {
+          const t0 = performance.now();
           try { cb(toolbar); } catch (_) {}
+          const ms = performance.now() - t0;
+          if (ms >= 50) {
+            try {
+              console.warn(
+                `[__SL_ToolbarHub] slow subscriber: ${Math.round(ms)}ms — ` +
+                `${cb._slOwner || cb.name || '(anonymous)'}`
+              );
+            } catch (_) {}
+          }
         }
       });
     },
@@ -207,8 +229,28 @@ function _getToolbarHub() {
       }
     },
 
-    add(cb) {
+    /**
+     * @param {Function} cb        called with the resolved toolbar element
+     * @param {string} [owner]     label for slow-subscriber logging. Optional —
+     *   when omitted the owning .plugin.js is derived from the registration
+     *   stack ONCE, here, never on the fire path. Subscribers are anonymous
+     *   arrows in every current call site, so cb.name alone would report
+     *   nothing useful when a callback turns out to be the slow one.
+     */
+    add(cb, owner) {
       const wasEmpty = this.callbacks.size === 0;
+      if (!cb._slOwner) {
+        let label = owner || '';
+        if (!label) {
+          try {
+            const frame = (new Error().stack || '')
+              .split('\n')
+              .find((l) => l.includes('.plugin.js'));
+            label = frame ? (frame.match(/(\w+)\.plugin\.js/) || [])[1] || '' : '';
+          } catch (_) { /* label stays empty */ }
+        }
+        try { cb._slOwner = label || undefined; } catch (_) { /* frozen fn */ }
+      }
       this.callbacks.add(cb);
       if (wasEmpty) this._setup();
       // Fire only the newly-registered callback once on attach.

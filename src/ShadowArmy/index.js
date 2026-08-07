@@ -722,6 +722,19 @@ const ShadowArmy = class ShadowArmy {
         : Math.min(2000, Math.max(500, Math.ceil(backlog / 50)));
       if (this._hasActiveDungeon()) {
         batch = Math.max(100, Math.floor(Math.min(batch, 2000) / 4));
+      } else {
+        // IDLE CEILING (2026-08-06). The dungeon gate above was only half the
+        // problem. With NO dungeon active the drain deliberately went full
+        // rate to converge — and that alone reached 1.47M IDB calls, 8.62% of
+        // uptime and 823 callbacks over 50ms, measured in a session where the
+        // dungeon count was zero the whole time. "Idle" is not "free": every
+        // one of those get+put pairs is main-thread work competing with
+        // Discord itself, and the user is still reading chat.
+        //
+        // 1500/tick = ~3000/min still clears a 125k backlog in ~40min of idle
+        // — the convergence the backlog-scaling was added for — while capping
+        // the sustained IDB rate at roughly half what was measured.
+        batch = Math.min(batch, 1500);
       }
       this.drainPendingGrowth(batch).catch((error) => {
         this.debugError('GROWTH', 'Pending-growth drain tick failed', error);

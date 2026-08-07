@@ -1182,6 +1182,23 @@ module.exports = {
     this._debounceDungeonSave(channelKey, dungeon);
   },
 
+  /**
+   * Mid-combat crash-recovery snapshot. NOT the completion save — completion
+   * has its own path, so anything lost here costs progress, never correctness.
+   *
+   * CADENCE 5s -> 30s (2026-08-06). Measured: 191 saves at avg 1299ms (worst
+   * 3062ms) = 248 SECONDS of main-thread blocking in one session, the single
+   * largest attributed cost in the suite. The payload is dominated by
+   * shadowContributions — one entry per shadow that ever landed a kill,
+   * growing toward deploy size, re-packed and structured-cloned on every save
+   * (storage.js sanitizeDungeonForStorage documents this field as
+   * "effectively the whole payload").
+   *
+   * Raising the interval is the robust lever: it cuts total cost ~6x whether
+   * the expense is the pack loop or the clone, without touching correctness.
+   * The tradeoff is bounded and cheap — an unexpected crash now loses up to
+   * 30s of kill attribution instead of 5s.
+   */
   _debounceDungeonSave(channelKey, dungeon) {
     if (!this._dungeonSaveTimers) this._dungeonSaveTimers = new Map();
     if (this._dungeonSaveTimers.has(channelKey)) return; // Already scheduled
@@ -1189,12 +1206,27 @@ module.exports = {
     const timerId = this._setTrackedTimeout(() => {
       this._dungeonSaveTimers.delete(channelKey);
       if (this.storageManager) {
+        // Instrumented so the NEXT perf report answers what static reading
+        // cannot: how many contribution entries this record carries and how
+        // long the save actually took. Debug-gated, so it costs nothing off.
+        const t0 = this.settings.debug ? Date.now() : 0;
+        const contribCount = this.settings.debug
+          ? Object.keys(dungeon?.shadowContributions || {}).length
+          : 0;
         this.storageManager
           .saveDungeon(dungeon)
+          .then(() => {
+            this.settings.debug && console.log(
+              `[Dungeons] 💾 DUNGEON SAVE: ${Date.now() - t0}ms | ` +
+              `contributions=${contribCount.toLocaleString()} | ` +
+              `corpses=${(dungeon?.corpsePile || []).length} | ` +
+              `mobs=${(dungeon?.mobs?.activeMobs || []).length}`
+            );
+          })
           .catch((err) => this.errorLog('Failed to save dungeon', err));
       }
       this.markCombatSettingsDirty('debounced-dungeon-save');
-    }, 5000);
+    }, 30000);
     this._dungeonSaveTimers.set(channelKey, timerId);
   }
 };
