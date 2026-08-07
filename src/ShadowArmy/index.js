@@ -43,6 +43,7 @@ const C = require('./constants');
 const ShadowStorageManager = require('./storage');
 const { buildWidgetComponents } = require('./components');
 const SLEvents = require('../shared/event-bus');
+const { getPluginInstance: _getPluginInstance } = require('../shared/plugin-bridge');
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
@@ -554,6 +555,31 @@ const ShadowArmy = class ShadowArmy {
 
   // NATURAL GROWTH INTERVAL & WIDGET TIMERS
 
+  /**
+   * Is a dungeon running right now? Used to back the growth drain off while
+   * combat needs the same IDB store (see the drain interval).
+   *
+   * getPluginInstance is TTL-cached (3s in plugin-bridge) and this is called
+   * once per 30s drain tick, so the cross-plugin reach is effectively free.
+   * Fails CLOSED — any error or missing Dungeons reads as "no dungeon", which
+   * keeps the original full-rate drain rather than silently throttling
+   * forever if the probe ever breaks.
+   */
+  _hasActiveDungeon() {
+    try {
+      const dungeons = _getPluginInstance('Dungeons');
+      const active = dungeons?.activeDungeons;
+      if (!active || typeof active.size !== 'number' || active.size === 0) return false;
+      // A dungeon lingering in activeDungeons while completing is not combat.
+      for (const d of active.values()) {
+        if (d && !d.completed && !d.failed && !d._completing) return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   startNaturalGrowthInterval() {
     if (this.naturalGrowthInterval) {
       clearInterval(this.naturalGrowthInterval);
@@ -674,13 +700,29 @@ const ShadowArmy = class ShadowArmy {
     if (this._pendingGrowthDrainInterval) {
       clearInterval(this._pendingGrowthDrainInterval);
     }
+    //
+    // ACTIVE-COMBAT BACKOFF (2026-08-06). The reasoning above holds while the
+    // player is idle, but it assumed the drain competes only with itself.
+    // Measured during a live dungeon: transformShadowsBatch reached 86% of ALL
+    // IDB requests in the suite — 1.37M calls, 6% of uptime, 942 callbacks over
+    // 50ms and a worst of 2044ms — because banking (a dungeon banks one id per
+    // contributor) and draining ran flat out against each other while combat
+    // ticks needed the same store. A dungeon completion banks a burst that the
+    // drain then chases at up to 4k/min right when the frame budget matters
+    // most. While a dungeon is ACTIVE, take the smaller visible-tier batch and
+    // quarter it: the backlog still drains (combat is minutes, not hours) and
+    // converges fully the moment the run ends, which is exactly when the
+    // hidden/idle tiers below are free to go hard.
     this._pendingGrowthDrainInterval = setInterval(() => {
       if (this._isStopped) return;
       const backlog = Object.keys(this._pendingGrowthHours || {}).length;
       if (backlog === 0) return;
-      const batch = document.hidden
+      let batch = document.hidden
         ? Math.min(5000, Math.max(1000, Math.ceil(backlog / 10)))
         : Math.min(2000, Math.max(500, Math.ceil(backlog / 50)));
+      if (this._hasActiveDungeon()) {
+        batch = Math.max(100, Math.floor(Math.min(batch, 2000) / 4));
+      }
       this.drainPendingGrowth(batch).catch((error) => {
         this.debugError('GROWTH', 'Pending-growth drain tick failed', error);
       });

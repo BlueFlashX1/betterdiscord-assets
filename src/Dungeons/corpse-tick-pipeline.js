@@ -66,12 +66,14 @@ module.exports = {
       strength: Number(deadMob.strength) || 0,
       isBoss,
     });
-    // In-memory cap (mirrors the IDB-flush cap in storage.js): prevent the pile
-    // from growing unbounded on high kill-count dungeons. Raised 500 → 5000
-    // (2026-08-05): a full pile lands exactly on the bulk extractor's
-    // 'balanced' streaming profile (~30-60s arise, UI stays responsive), and
-    // the save-side cost is ~500KB into async IDB. Later mobs tend to be
-    // higher rank, so keep the tail.
+    // In-memory cap: how many bodies a bulk ARISE can raise. 5000 lands
+    // exactly on the bulk extractor's 'balanced' streaming profile (~30-60s
+    // arise, UI stays responsive). Later mobs tend to be higher rank, so keep
+    // the tail.
+    //
+    // NOT the same number as the persisted cap in storage.js (750) — see the
+    // comment there. Syncing them cost avg 1502ms per dungeon save; they
+    // answer different questions and are deliberately independent now.
     if (dungeon.corpsePile.length > 5000) {
       dungeon.corpsePile = dungeon.corpsePile.slice(-5000);
     }

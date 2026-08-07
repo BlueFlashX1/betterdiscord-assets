@@ -187,12 +187,23 @@ class DungeonStorageManager {
       // Runtime-only pooled Map caches — not useful across sessions, cause TypeError on restore
       delete next._pooledMobDamageMap;
 
-      // Cap corpse pile to last 5000 entries for IDB storage (each ~100 bytes
-      // ≈ 500KB max). Raised 500 → 5000 (2026-08-05) in lockstep with the
-      // in-memory cap in corpse-tick-pipeline.js — keep both in sync.
-      // Later mobs tend to be higher rank, so keep the tail.
-      if (Array.isArray(next.corpsePile) && next.corpsePile.length > 5000) {
-        next.corpsePile = next.corpsePile.slice(-5000);
+      // Cap corpse pile for IDB storage. DELIBERATELY DECOUPLED from the
+      // in-memory cap in corpse-tick-pipeline.js (2026-08-06) — the previous
+      // "keep both in sync" instruction was wrong, and raising both to 5000
+      // caused a measured regression: _debounceDungeonSave went to avg 1502ms
+      // across 167 saves (250s of blocking, worst 5506ms) because every
+      // debounced save structured-clones the whole dungeon, corpse pile
+      // included.
+      //
+      // The two caps answer different questions:
+      //   in-memory (5000) — how many bodies a bulk ARISE can raise. Gameplay.
+      //   persisted  (750) — how much survives an unexpected reload MID-run.
+      // Corpses are consumed at completion, so the persisted copy only exists
+      // to cover a crash. Losing the oldest (weakest — the tail is kept)
+      // corpses in that rare case is far cheaper than a multi-second main
+      // thread stall on every save of every dungeon.
+      if (Array.isArray(next.corpsePile) && next.corpsePile.length > 750) {
+        next.corpsePile = next.corpsePile.slice(-750);
       }
 
       // Convert Map fields to plain objects, CAPPED (2026-07-30, profiler:
