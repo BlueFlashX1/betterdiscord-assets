@@ -11,6 +11,9 @@ This file is the quick-entry index for currently relevant docs.
 ## Plugin Architecture
 - [Plugin Docs Folder](plugins/)
 
+## Planned / Specs
+- [SPEC: MentionBeacon](SPEC-mention-beacon.md) — BD plugin (passive mention + VC speaking capture, ban-safety doctrine) + one Übersicht "Discord" widget with mention flash; written 2026-08-09, not yet built
+
 ## Operations and Runbooks
 - [Operations Folder](operations/)
 - [Project Memory](operations/MEMORY.md)

@@ -1,0 +1,6 @@
+{
+  "name": "MentionBeacon",
+  "description": "Passive mention + voice-call capture for the desktop Discord widget. Subscribes to MESSAGE_CREATE / voice dispatches the client already receives and mirrors a rolling 3-day mentions feed plus live VC speaking state to ~/.cache/discord-pulse/. Zero network surface: no REST calls, no sending, no forced fetches — observation only (see docs/SPEC-mention-beacon.md ban-safety doctrine).",
+  "version": "1.0.3",
+  "author": "Matthew Thompson"
+}
