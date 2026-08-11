@@ -415,8 +415,16 @@ module.exports = {
       if (smPieces > 0) {
         const coreKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
         const totalBase = coreKeys.reduce((s, k) => s + (Number(baseStats[k]) || 0), 0);
-        const SM_REGALIA_DIVISOR = 5000; // full set ≈ +100% all stats per 5000 base stats, uncapped
-        const setMultiplier = (smPieces / 10) * (totalBase / SM_REGALIA_DIVISOR);
+        // Buffed 2026-08-10: the old formula (setMultiplier = pieces/10 * base/5000)
+        // gave almost nothing until ~5000 base stats, so the terminal Lv2000 reward
+        // felt weak. Now the full set GUARANTEES a strong floor (+100% all stats) AND
+        // keeps scaling — uncapped — as base stats climb, so it grows with the player.
+        // Effective (full set): +100% + (totalBase / 2000)*100% all stats, before the
+        // title/shadow multipliers applied below. Per-piece proportional via setFraction.
+        const SM_REGALIA_BASE = 1.0;      // +100% at full 10-piece set, before scaling
+        const SM_REGALIA_DIVISOR = 2000;  // additional fraction per point of total base stats, uncapped
+        const setFraction = smPieces / 10;
+        const setMultiplier = setFraction * (SM_REGALIA_BASE + totalBase / SM_REGALIA_DIVISOR);
         if (setMultiplier > 0) {
           for (const k of coreKeys) {
             smSetBonus[k] = Math.floor((Number(baseStats[k]) || 0) * setMultiplier);
