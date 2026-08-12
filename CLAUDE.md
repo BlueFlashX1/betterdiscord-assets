@@ -9,7 +9,7 @@
 - **Entry**: `src/<PluginName>/index.js` + `src/<PluginName>/manifest.json` (auto-injected as JSDoc banner)
 - **Output**: `plugins/<PluginName>.plugin.js` — CJS, `platform: node`, `target: node16`, no minification
 - **CSS**: `.css` imports bundled as string constants (`loader: { ".css": "text" }`)
-- **Commands**: `npm run build <PluginName>` / `npm run watch <PluginName>` / `npm run link:plugin <PluginName>`
+- **Commands**: `npm run build:plugin <PluginName>` / `npm run watch <PluginName>` / `npm run link:plugin <PluginName>`
 
 ## Source Structure (migrated plugins)
 
@@ -67,9 +67,9 @@ Output must be a single `.plugin.js` file. `BdApi` is global (no import). Node b
 ## Development Workflow
 
 1. **Edit** source in `src/<PluginName>/` (migrated) or `plugins/<Name>.plugin.js` (not yet migrated)
-2. **Build** with `npm run build <PluginName>` or `npm run watch` for live dev
+2. **Build** with `npm run build:plugin <PluginName>` or `npm run watch` for live dev
 3. **Test** — Ctrl+R in Discord to reload; symlink picks up output automatically
-4. **Commit** both `src/` source and `plugins/` output — BD needs the built output file
+4. **Commit** the `src/` source (the `plugins/*.plugin.js` output is gitignored — it's built locally and the symlink feeds BD)
 5. **Settings panels**: `rgba(10, 10, 16, 0.98)` background, statistics + Debug Mode toggle only
 
 ## Reference
