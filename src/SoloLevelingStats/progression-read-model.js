@@ -402,8 +402,9 @@ module.exports = {
     // title and shadow multipliers are designed for base stats and must not apply here.
     const baseCombatKeys = new Set(['attack', 'defense', 'critChance', 'critDamage']);
 
-    // SHADOW MONARCH PERK (H1 — Shadow Monarch's Regalia): the SM gear has NO fixed bonus.
-    // Its power scales with the player's OWN base stats and grows over time as those grow
+    // SHADOW MONARCH PERK (H1 — Shadow Monarch's Regalia): on TOP of the set's high fixed
+    // stats (it's the strongest gear in the game), this perk layers extra power that scales
+    // with the player's OWN base stats and grows over time as those grow
     // (mob defeats -> Kandiaru's Favor). Each equipped regalia piece contributes; the
     // full 10-piece set scales hardest. Computed here (not the cached equipment path) so
     // it stays fresh as base stats climb. Treated as a flat base-stat addition, like other
@@ -422,7 +423,7 @@ module.exports = {
         // Effective (full set): +100% + (totalBase / 2000)*100% all stats, before the
         // title/shadow multipliers applied below. Per-piece proportional via setFraction.
         const SM_REGALIA_BASE = 1.0;      // +100% at full 10-piece set, before scaling
-        const SM_REGALIA_DIVISOR = 2000;  // additional fraction per point of total base stats, uncapped
+        const SM_REGALIA_DIVISOR = 1000;  // additional fraction per point of total base stats, uncapped (grows twice as fast)
         const setFraction = smPieces / 10;
         const setMultiplier = setFraction * (SM_REGALIA_BASE + totalBase / SM_REGALIA_DIVISOR);
         if (setMultiplier > 0) {
