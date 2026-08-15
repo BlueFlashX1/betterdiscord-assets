@@ -70,6 +70,9 @@ const RARITY_COLORS = Object.freeze({
   NH:          '#14b8a6',
   Monarch:     '#fbbf24',
   'Monarch+':  '#f97316',
+  // Terminal tier. Matches the 'Shadow Monarch' hex already used by
+  // ShadowSenses/constants.js and ShadowArmy/modal.js.
+  'Shadow Monarch': '#8a2be2',
 });
 
 // ---------------------------------------------------------------------------
@@ -236,7 +239,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_monarchs_aegis',
     name: "Shadow Monarch's Aegis",
     slot: 'offHand',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A shield formed from condensed shadow energy, said to be the literal embodiment of the Shadow Monarch\'s will. Ordinary attacks phase through its surface as if striking smoke.',
     levelReq: 2000,
@@ -426,7 +429,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_monarchs_blade',
     name: "Shadow Monarch's Blade",
     slot: 'weapon',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A sword of pure condensed shadow, forged from the will of the Shadow Monarch himself. It exists between light and darkness.',
     levelReq: 2000,
@@ -444,7 +447,7 @@ const EQUIPMENT_DATABASE = {
     id: 'crown_of_the_shadow_monarch',
     name: 'Crown of the Shadow Monarch',
     slot: 'helmet',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '👑',
     description: 'A circlet of living shadow that crowns the ruler of all shadows. It confers absolute authority over any shadow-type entity.',
     levelReq: 2000,
@@ -459,7 +462,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_sovereigns_mantle',
     name: "Shadow Sovereign's Mantle",
     slot: 'chestplate',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A flowing mantle of shadow-silk that wraps the Shadow Monarch in absolute darkness. No physical force can pierce it while the Monarch\'s will holds.',
     levelReq: 2000,
@@ -474,7 +477,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_gauntlets',
     name: 'Shadow Gauntlets',
     slot: 'gloves',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'Gauntlets of solidified shadow that amplify every strike the Shadow Monarch delivers. The fingers flex without resistance — they feel like wearing nothing.',
     levelReq: 2000,
@@ -489,7 +492,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_greaves',
     name: 'Shadow Greaves',
     slot: 'boots',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'Greaves that let the Shadow Monarch walk through shadows as if through air. Distance means nothing to those who command the dark.',
     levelReq: 2000,
@@ -504,7 +507,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_monarchs_earring',
     name: "Shadow Monarch's Earring",
     slot: 'earring',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A single drop of solidified shadow, worn as an earring. It resonates with the full set, amplifying the Monarch\'s dominion.',
     levelReq: 2000,
@@ -519,7 +522,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_monarchs_necklace',
     name: "Shadow Monarch's Necklace",
     slot: 'necklace',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A strand of shadow-crystal beads that encircles the Shadow Monarch\'s throat. Each bead contains the memory of a fallen enemy.',
     levelReq: 2000,
@@ -534,7 +537,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_monarchs_ring_left',
     name: "Shadow Monarch's Ring (Void)",
     slot: 'ring',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A ring of pure shadow worn on the left hand. It is the seal of authority over life — the hand that commands shadows to rise.',
     levelReq: 2000,
@@ -549,7 +552,7 @@ const EQUIPMENT_DATABASE = {
     id: 'shadow_monarchs_ring_right',
     name: "Shadow Monarch's Ring (Domain)",
     slot: 'ring',
-    rarity: 'SSS',
+    rarity: 'Shadow Monarch',
     icon: '🌑',
     description: 'A ring of pure shadow worn on the right hand. It is the seal of dominion over space — the hand that extends the Monarch\'s domain.',
     levelReq: 2000,
@@ -592,8 +595,8 @@ const EQUIPMENT_DATABASE = {
   },
 
   // ── Kamish's Legacy — full 10-slot SS set ──────────────────────────────────
-  // The droppable ceiling. SSS is grant-only (the Shadow Monarch's Regalia), so
-  // SS is the top tier anyone can actually farm — it previously held a single
+  // 'Shadow Monarch' rarity is grant-only (the Regalia), so SS was historically
+  // the top tier anyone could farm — it previously held a single
   // item (Kamish's Wrath), which made the entire endgame chase one weapon on
   // repeat. Forged from the corpse of Kamish, the Catastrophe-class dragon, so
   // it sits alongside Kamish's Wrath rather than replacing it.
@@ -1956,11 +1959,12 @@ const DROP_CHANCE_BY_RANK = Object.freeze({
 // returned no drop. That made E-rank bosses drop 0% (despite an advertised
 // 55%) and burned ~70-78% of D/C bosses' successful rolls. Lowest real
 // rarity is 'D'.
-// NOTE: 'SSS' appears in NO pool. Every SSS-rarity item in the catalogue is a
+// NOTE: 'Shadow Monarch' appears in NO pool. Every item at that rarity is a
 // piece of the Shadow Monarch's Regalia, and that set is GRANT-ONLY (awarded in
-// full on reaching Shadow Monarch rank — Lv2000 + 35 achievements). Letting SSS
+// full on reaching Shadow Monarch rank — Lv2000 + 35 achievements). Letting it
 // drop would let the player farm the Regalia from bosses and make the terminal
-// reward meaningless. The droppable ceiling is therefore 'SS'.
+// reward meaningless. The droppable ceiling is therefore 'Monarch+'.
+// ('SSS' is now unused by any item — see the RARITY_ORDER note below.)
 const RARITY_POOL_BY_RANK = Object.freeze({
   E:                Object.freeze(['D', 'C']),
   D:                Object.freeze(['D', 'C']),
@@ -1991,15 +1995,27 @@ const GRANT_ONLY_SET_IDS = Object.freeze(['shadow_monarch_regalia']);
 //
 // 'E' is intentionally absent: no E-rarity equipment exists.
 //
-// 'SSS' is a real rarity but is NOT droppable — every SSS item is a Shadow
-// Monarch's Regalia piece (see GRANT_ONLY_SET_IDS), so the drop roll sees that
-// tier as empty and steps past it. The Regalia deliberately KEEPS rarity SSS
-// even though farmable tiers now sit above it: its power is a percentage
-// multiplier applied by SoloLevelingStats (uncapped, scales with base stats,
-// Shadow Monarch rank only), so it remains the strongest gear in the game
-// regardless of where its label sits on this ladder.
+// 'Shadow Monarch' is the terminal tier and is NOT droppable — every item at
+// that rarity is a Shadow Monarch's Regalia piece (see GRANT_ONLY_SET_IDS), and
+// no entry in RARITY_POOL_BY_RANK references it, so the drop roll can never
+// select it.
+//
+// ⚠️ CHANGED 2026-08-14: the Regalia previously carried rarity 'SSS', which left
+// the game's strongest gear labelled BELOW farmable 'SSS+'/'NH'/'Monarch'/
+// 'Monarch+' drops. Its power was always correct (a percentage multiplier applied
+// by SoloLevelingStats — uncapped, scales with base stats, Shadow Monarch rank
+// only), but the LABEL contradicted it. 'Shadow Monarch' is already a first-class
+// rank in shared/rank-utils.js RANK_ORDER and carries a colour in ShadowExchange,
+// ShadowSenses and ShadowArmy — EquipmentManager was the only module whose ladder
+// stopped at 'Monarch+'. This aligns it.
+//
+// Safe because grant-only is enforced STRUCTURALLY by GRANT_ONLY_SET_IDS in the
+// drop roll, not by which rarities appear in pools. 'SSS' is now unused by any
+// item but is kept in the ladder so historical saves holding SSS gear still
+// resolve a valid index.
 const RARITY_ORDER = Object.freeze([
   'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+',
+  'Shadow Monarch',
 ]);
 
 // Default weights for [lowest, middle, highest] rarity within a pool.
