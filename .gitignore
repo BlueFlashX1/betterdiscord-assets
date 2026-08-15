@@ -109,3 +109,6 @@ CODEBUDDY.md
 GEMINI.md
 QODER.md
 opencode.jsonc
+
+# R writes this to CWD on any plot call; nothing to do with this project.
+Rplots.pdf
