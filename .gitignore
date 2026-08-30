@@ -112,3 +112,11 @@ opencode.jsonc
 
 # R writes this to CWD on any plot call; nothing to do with this project.
 Rplots.pdf
+
+# Session scratch from the planning-with-files skill; regenerated per task.
+/findings.md
+/progress.md
+/task_plan.md
+
+# Playwright MCP page snapshots — tool output, not project state.
+.playwright-mcp/
